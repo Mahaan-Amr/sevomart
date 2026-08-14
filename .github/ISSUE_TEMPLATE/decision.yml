@@ -1,0 +1,32 @@
+name: تصمیم Wayfinder
+description: پرسشی که پیش از ساخت باید پاسخ داده شود
+title: "[Decision] "
+labels: ["kind:decision"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: پرسش
+      description: یک تصمیم مشخص که در یک نشست قابل حل باشد.
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: نوع Wayfinder
+      options: ["research", "prototype", "grilling", "task"]
+    validations:
+      required: true
+  - type: input
+    id: map
+    attributes:
+      label: نقشه والد
+      description: لینک Issue دارای برچسب wayfinder:map
+    validations:
+      required: true
+  - type: textarea
+    id: blockers
+    attributes:
+      label: مسدودکننده‌ها یا دلیل آزادبودن
+    validations:
+      required: true

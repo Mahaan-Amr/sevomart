@@ -1,0 +1,40 @@
+name: کار ساخت
+description: پیاده‌سازی تصمیم و spec بسته‌شده
+title: "[Build] "
+labels: ["kind:build"]
+body:
+  - type: input
+    id: decision
+    attributes:
+      label: تصمیم یا spec بالادستی
+      description: لینک Issue بسته‌شده و spec
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: نتیجه مورد انتظار
+      description: رفتار قابل مشاهده، نه فهرست فایل‌ها
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: معیارهای پذیرش
+      value: "- [ ] "
+    validations:
+      required: true
+  - type: dropdown
+    id: track
+    attributes:
+      label: مسیر
+      options: ["خریدار", "فروشنده", "پلتفرم مشترک"]
+    validations:
+      required: true
+  - type: textarea
+    id: contracts
+    attributes:
+      label: قراردادها و فایل‌های مشترک
+      description: اگر ندارد، «ندارد» بنویسید.
+    validations:
+      required: true
