@@ -61,20 +61,33 @@
     .section-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 12px; }
     .section-head h2 { margin: 0; }
     .link { display: inline-flex; align-items: center; min-height: 40px; border: 0; padding: 0 6px; background: transparent; color: var(--brand); font-size: 12px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .product { border: 1px solid var(--line); border-radius: 18px; background: var(--paper); text-align: right; padding: 0; overflow: hidden; box-shadow: var(--shadow-sm); transition: transform .2s ease, box-shadow .2s ease; }
-    .product:hover { transform: translateY(-2px); }
-    .product:active { transform: none; box-shadow: var(--inset); }
-    .product-art { height: 138px; position: relative; background: linear-gradient(145deg, #eadfe2, #faf6f7); }
-    .product-art::after { content: ""; position: absolute; inset: 26px 38px 14px; border-radius: 48% 48% 18% 18%; background: var(--brand); box-shadow: inset 0 0 0 12px rgba(255,255,255,.12); }
-    .product:nth-child(2) .product-art { background: linear-gradient(145deg, #e4d6da, #f6eef0); }
-    .product:nth-child(2) .product-art::after { background: var(--brand-dark); border-radius: 45% 45% 10px 10px; }
-    .product-body { padding: 11px; }
-    .product-name { font-weight: 600; line-height: 1.7; }
+    .profile-grid-section { padding-top: 4px; border-top: 1px solid var(--line); }
+    .profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+    .post-tile { position: relative; width: 100%; min-width: 0; aspect-ratio: 1; border: 0; border-radius: 0; padding: 0; overflow: hidden; background: var(--wash); }
+    .post-tile:focus-visible { outline-offset: -4px; z-index: 2; }
+    .post-art { position: absolute; inset: 0; background: linear-gradient(145deg, #eadfe2, #faf6f7); transition: transform .22s cubic-bezier(.22,.8,.28,1); }
+    .post-tile:hover .post-art { transform: scale(1.025); }
+    .post-art::after { content: ""; position: absolute; inset: 20% 28% 9%; border-radius: 48% 48% 16% 16%; background: var(--brand); box-shadow: inset 0 0 0 8px rgba(255,255,255,.12); }
+    .post-tile:nth-child(2n) .post-art { background: linear-gradient(145deg, #e4d6da, #f6eef0); }
+    .post-tile:nth-child(2n) .post-art::after { background: var(--brand-dark); border-radius: 45% 45% 10px 10px; }
+    .post-tile:nth-child(3n) .post-art { background: linear-gradient(145deg, var(--brand-pale), #faf8f8); }
+    .post-tile:nth-child(3n) .post-art::after { inset: 12% 22% 12%; border-radius: 44% 44% 24% 24%; background: var(--brand-soft); }
+    .post-tile:nth-child(4n) .post-art::after { inset: 28% 18% 12%; border-radius: 50% 50% 14px 14px; }
     .price { margin-top: 4px; font-weight: 700; font-size: 14px; color: var(--brand); }
     .surface { margin: 0 16px 14px; padding: 16px; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); box-shadow: var(--shadow-sm); }
-    .hero-art { height: 238px; margin: 0 16px 16px; border-radius: 22px; background: linear-gradient(145deg, #e4d6da, #faf6f7); position: relative; overflow: hidden; box-shadow: var(--inset); }
-    .hero-art::after { content: ""; position: absolute; inset: 38px 105px 20px; border-radius: 48% 48% 16% 16%; background: var(--brand); box-shadow: inset 0 0 0 18px rgba(255,255,255,.12); }
+    .post-media { width: 100%; aspect-ratio: 1; background: linear-gradient(145deg, #e4d6da, #faf6f7); position: relative; overflow: hidden; box-shadow: var(--inset); }
+    .post-media::after { content: ""; position: absolute; inset: 16% 29% 7%; border-radius: 48% 48% 16% 16%; background: var(--brand); box-shadow: inset 0 0 0 18px rgba(255,255,255,.12); }
+    .media-dots { position: absolute; inset-inline: 0; bottom: 12px; z-index: 2; display: flex; direction: ltr; justify-content: center; gap: 5px; }
+    .media-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.65); box-shadow: 0 1px 4px rgba(47,37,40,.18); }
+    .media-dots i.active { width: 16px; border-radius: 99px; background: #fff; }
+    .post-caption { padding: 16px; }
+    .caption-shop { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+    .caption-avatar { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px; background: var(--brand-pale); color: var(--brand); font-weight: 700; }
+    .caption-copy { margin-bottom: 14px; color: var(--ink); font-size: 13px; line-height: 1.9; }
+    .attached-product { padding: 14px; border-radius: 18px; background: var(--paper); box-shadow: var(--shadow-sm); }
+    .attached-label { color: var(--muted); font-size: 11px; font-weight: 600; }
+    .attached-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin: 4px 0 12px; }
+    .attached-heading h1 { margin: 0; font-size: 18px; }
     .chips { display: flex; gap: 8px; flex-wrap: wrap; }
     .chip { min-width: 44px; min-height: 38px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 7px 11px; box-shadow: var(--shadow-sm); }
     .chip.active { border-color: var(--brand); background: var(--brand-pale); color: var(--brand-dark); font-weight: 600; box-shadow: var(--inset); }
@@ -129,17 +142,11 @@
 
     /* Variant B: storefront story first, trust and seller identity dominate the entrance. */
     .variant-B .shop-hero { margin: 8px 14px 0; background: var(--paper); padding: 20px; border-radius: 22px; box-shadow: var(--shadow); }
-    .variant-B .grid { display: flex; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x mandatory; }
-    .variant-B .product { min-width: 76%; scroll-snap-align: start; }
-    .variant-B .product-art { height: 210px; }
     .variant-B .surface { box-shadow: var(--shadow-sm); }
 
     /* Variant C: basket-led, dense and utilitarian with a persistent order summary. */
     .variant-C .phone { background: var(--paper); }
     .variant-C .shop-hero { margin: 12px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow-sm); }
-    .variant-C .grid { grid-template-columns: 1fr; }
-    .variant-C .product { display: grid; grid-template-columns: 120px 1fr; min-height: 126px; }
-    .variant-C .product-art { height: 100%; }
     .variant-C .basket-dock { display: flex; position: sticky; top: 56px; z-index: 4; justify-content: space-between; align-items: center; margin: 0 12px; min-height: 40px; padding: 8px 12px; border: 0; border-radius: 0 0 14px 14px; background: var(--brand-pale); color: var(--brand-dark); font-weight: 600; box-shadow: var(--shadow-sm); }
     .variant-C .step-list { grid-template-columns: 1fr; }
     .variant-C .checkout-step { border-radius: 12px; border-right: 4px solid var(--line); }
@@ -196,30 +203,35 @@
     }
 
     function basketDock() {
-      if (variant !== 'C') return '';
-      return `<button class="basket-dock" data-action="cart"><span>سبد شما</span><span>${state.qty || 0} کالا · ${money(state.qty * 1280000)}</span></button>`;
+      if (variant !== 'C' || !state.qty) return '';
+      return `<button class="basket-dock" data-action="cart"><span>سبد شما</span><span>${state.qty} کالا · ${money(state.qty * 1280000)}</span></button>`;
     }
 
     function storeScreen() {
       return `${header()}${basketDock()}${shopHero()}
-        ${variant === 'B' ? '<section class="surface"><strong>از کارگاه کوچک ما</strong><p class="muted">هر لباس با پارچه سبک و در تعداد محدود دوخته می‌شود. سفارش‌ها تا دو روز کاری آماده ارسال می‌شوند.</p></section>' : ''}
-        <section class="section"><div class="section-head"><h2>${variant === 'C' ? 'برای افزودن سریع' : 'تازه‌های فروشگاه'}</h2><button class="link">دیدن همه</button></div>
-          <div class="grid">
-            <button class="product" data-action="product"><div class="product-art"></div><div class="product-body"><div class="product-name">پیراهن لینن آویسا</div><div class="price">${money(1280000)}</div><div class="muted">سه رنگ · موجود</div></div></button>
-            <button class="product" data-action="product"><div class="product-art"></div><div class="product-body"><div class="product-name">مانتوی سبک ماهور</div><div class="price">${money(1640000)}</div><div class="muted">دو رنگ · موجود</div></div></button>
+        <section class="profile-grid-section" aria-label="محتوای فروش نخل استودیو">
+          <div class="profile-grid">
+            ${Array.from({length: 9}, (_, index) => `<button class="post-tile" data-action="product" aria-label="باز کردن محتوای فروش ${index + 1}"><span class="post-art"></span></button>`).join('')}
           </div>
         </section>`;
     }
 
     function productScreen() {
       return `${header(true)}${basketDock()}
-        <div class="hero-art"></div>
-        <section class="surface"><div class="muted">نخل استودیو</div><h1>پیراهن لینن آویسا</h1><div class="price">${money(1280000)}</div>
-          <p class="muted">خنک و سبک، مناسب استفاده روزمره. آماده‌سازی تا دو روز کاری.</p>
-          <strong>رنگ</strong><div class="chips" style="margin:10px 0 18px"><button class="chip active">زیتونی</button><button class="chip">کرم</button><button class="chip">آبی</button></div>
-          <strong>اندازه</strong><div class="chips" style="margin-top:10px"><button class="chip">۳۶</button><button class="chip active">۳۸</button><button class="chip">۴۰</button></div>
-        </section>
-        <section class="surface">${paymentBadge()}${state.paymentDetails ? '<div class="details">پرداخت شما مستقیم به فروشگاه انجام می‌شود. شرایط بازگشت کالا پیش از پرداخت در دسترس است.</div>' : ''}</section>
+        <article>
+          <div class="post-media" aria-label="تصویر محتوای فروش"><span class="media-dots"><i class="active"></i><i></i><i></i></span></div>
+          <section class="post-caption">
+            <div class="caption-shop"><span class="caption-avatar">ن</span><strong>نخل استودیو</strong></div>
+            <p class="caption-copy"><strong>نخل استودیو</strong> پیراهن لینن آویسا؛ خنک و سبک برای روزهای گرم. این رنگ زیتونی با پارچه لینن نرم دوخته شده و سفارش تا دو روز کاری آماده می‌شود.</p>
+            <div class="attached-product">
+              <span class="attached-label">کالای متصل</span>
+              <div class="attached-heading"><h1>پیراهن لینن آویسا</h1><div class="price">${money(1280000)}</div></div>
+              <strong>رنگ</strong><div class="chips" style="margin:8px 0 14px"><button class="chip active">زیتونی</button><button class="chip">کرم</button><button class="chip">آبی</button></div>
+              <strong>اندازه</strong><div class="chips" style="margin-top:8px"><button class="chip">۳۶</button><button class="chip active">۳۸</button><button class="chip">۴۰</button></div>
+              ${paymentBadge()}${state.paymentDetails ? '<div class="details">پرداخت شما مستقیم به فروشگاه انجام می‌شود. شرایط بازگشت کالا پیش از پرداخت در دسترس است.</div>' : ''}
+            </div>
+          </section>
+        </article>
         <div class="sticky-action"><button class="primary" data-action="add">افزودن به سبد · ${money(1280000)}</button></div>`;
     }
 
