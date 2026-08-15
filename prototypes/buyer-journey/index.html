@@ -51,6 +51,10 @@
     .shop-hero { padding: 16px; }
     .shop-line { display: flex; gap: 12px; align-items: center; }
     .avatar { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 18px; background: var(--brand-pale); color: var(--brand); font-size: 20px; font-weight: 700; box-shadow: var(--shadow-sm); }
+    .shop-stats { display: flex; align-items: center; gap: 18px; margin: 12px 64px 0 0; direction: rtl; }
+    .shop-stat { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .shop-stat + .shop-stat { padding-right: 16px; border-right: 1px solid var(--line); }
+    .shop-stat svg { width: 16px; height: 16px; fill: none; stroke: var(--brand); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
     h1, h2, h3, p { margin-top: 0; }
     h1 { font-size: 22px; line-height: 1.65; margin-bottom: 4px; }
     h2 { font-size: 18px; line-height: 1.7; }
@@ -194,9 +198,23 @@
       return '<button class="pay-badge" data-action="payment-details">پرداخت مستقیم</button>';
     }
 
+    function statIcon(name) {
+      const paths = {
+        followers: '<path d="M8 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2.5 16c.4-3 2.2-4.5 5.5-4.5s5.1 1.5 5.5 4.5M13 5.5a2.5 2.5 0 0 1 0 5M14.5 12c1.8.5 2.8 1.8 3 4"/>',
+        purchases: '<path d="M4 7h12l-1 10H5L4 7ZM7 7a3 3 0 0 1 6 0M7.5 12l1.7 1.7 3.4-3.4"/>',
+        rating: '<path d="m10 2 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8L10 2Z"/>'
+      };
+      return `<svg viewBox="0 0 20 20" aria-hidden="true">${paths[name]}</svg>`;
+    }
+
     function shopHero() {
       return `<section class="shop-hero">
         <div class="shop-line"><div class="avatar">ن</div><div><h1>نخل استودیو</h1><p class="muted">پوشاک روزمره، دوخته‌شده در شیراز</p></div></div>
+        <div class="shop-stats" aria-label="آمار عمومی فروشگاه">
+          <span class="shop-stat" title="۱۲ هزار و ۴۰۰ دنبال‌کننده" aria-label="۱۲ هزار و ۴۰۰ دنبال‌کننده">${statIcon('followers')}<span>۱۲٫۴K</span></span>
+          <span class="shop-stat" title="۸۴۲ خرید تأییدشده" aria-label="۸۴۲ خرید تأییدشده">${statIcon('purchases')}<span>۸۴۲</span></span>
+          <span class="shop-stat" title="امتیاز ۴٫۸ از ۵ از خریداران دارای خرید تأییدشده" aria-label="امتیاز ۴٫۸ از ۵ از خریداران دارای خرید تأییدشده">${statIcon('rating')}<span>۴٫۸</span></span>
+        </div>
         ${paymentBadge()}
         ${state.paymentDetails ? '<div class="details">پرداخت شما مستقیم به فروشگاه انجام می‌شود. سوو درخواست مشکل را ثبت و پیگیری می‌کند؛ بازگشت وجه بر اساس شرایط فروشگاه انجام می‌شود.</div>' : ''}
       </section>`;
