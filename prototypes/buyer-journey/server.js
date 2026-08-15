@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = __dirname;
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
+const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.woff2': 'font/woff2' };
 
 const port = Number(process.env.SEVO_BUYER_PROTOTYPE_PORT || 4177);
 
