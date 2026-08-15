@@ -1,0 +1,30 @@
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+} from "@nestjs/common";
+import type { FastifyReply, FastifyRequest } from "fastify";
+
+@Catch()
+export class ApiExceptionFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const context = host.switchToHttp();
+    const request = context.getRequest<FastifyRequest>();
+    const reply = context.getResponse<FastifyReply>();
+    const status =
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    void reply.status(status).send({
+      code:
+        status === HttpStatus.INTERNAL_SERVER_ERROR
+          ? "INTERNAL_ERROR"
+          : "REQUEST_ERROR",
+      message: "درخواست انجام نشد. دوباره تلاش کنید.",
+      correlationId: request.id,
+    });
+  }
+}

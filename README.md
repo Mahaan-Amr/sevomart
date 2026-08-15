@@ -6,7 +6,19 @@
 
 ## وضعیت فعلی
 
-پروژه در مرحله تصمیم‌گیری محصول، نمونه‌سازی و آماده‌سازی مشخصات نسخه اول است. هنوز پشته فنی نهایی نشده و این مخزن عمداً کد محصول را پیش از بسته‌شدن تصمیم معماری scaffold نمی‌کند.
+پشته فنی، مرز ماژول‌ها و خط پایه مهندسی نسخه اول پذیرفته شده‌اند. مخزن یک pnpm workspace با web، API، worker، PostgreSQL محلی و کنترل‌های تست و CI دارد؛ قابلیت‌های محصول فقط از Issue ساخت افزوده می‌شوند.
+
+## اجرای محلی
+
+با Node.js `22.13+`، Corepack و Docker:
+
+```bash
+corepack enable
+pnpm install
+pnpm dev
+```
+
+این فرمان PostgreSQL محلی، web روی پورت `3000`، API روی پورت `3001` و worker را اجرا می‌کند. قرارداد API در `/openapi` دیده می‌شود. فرمان `pnpm quality` کنترل سریع پیش از commit و `pnpm test` مجموعه کامل آزمون‌هاست. جزئیات در [راهنمای خط پایه توسعه](docs/delivery/development-baseline.md) ثبت شده است.
 
 ## از کجا شروع کنیم؟
 
@@ -17,6 +29,7 @@
 5. [نقشه Wayfinder](docs/wayfinder/map.md)
 6. [راهنمای کار موازی](docs/delivery/parallel-work.md)
 7. [فهرست پژوهش‌ها](docs/research/README.md)
+8. [خط پایه توسعه، تست و CI](docs/delivery/development-baseline.md)
 
 ## اصل راهنما
 

@@ -1,0 +1,14 @@
+{
+  "name": "@sevo/database",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "prisma generate",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "typecheck": "prisma validate"
+  },
+  "devDependencies": {
+    "prisma": "7.9.1"
+  }
+}
