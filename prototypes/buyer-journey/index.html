@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>نمونه سفر خریدار سوو</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17231f;
+      --muted: #68746f;
+      --line: #e4e8e5;
+      --paper: #fff;
+      --wash: #f4f6f4;
+      --brand: #176b52;
+      --brand-dark: #0f4d3b;
+      --accent: #f2b84b;
+      --danger: #a23c35;
+      font-family: Tahoma, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e9eeeb; color: var(--ink); }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .phone {
+      width: min(100%, 470px);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding-bottom: 124px;
+      background: var(--paper);
+      box-shadow: 0 0 45px rgb(20 45 36 / 10%);
+      overflow: hidden;
+    }
+    .topbar { min-height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 94%); position: sticky; top: 0; z-index: 5; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 900; }
+    .brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 11px 11px 11px 4px; background: var(--brand); color: #fff; }
+    .icon-btn { border: 0; background: var(--wash); min-width: 38px; height: 38px; border-radius: 12px; color: var(--ink); }
+    .shop-hero { padding: 18px 16px; }
+    .shop-line { display: flex; gap: 12px; align-items: center; }
+    .avatar { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 20px; background: #ddede5; font-size: 25px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: 21px; margin-bottom: 6px; }
+    h2 { font-size: 19px; }
+    .muted { color: var(--muted); font-size: 13px; line-height: 1.75; }
+    .pay-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; border: 1px solid #b8d8cb; background: #f1faf6; color: var(--brand-dark); border-radius: 999px; padding: 7px 10px; font-size: 12px; font-weight: 800; }
+    .pay-badge::before { content: "↗"; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #d8eee4; }
+    .section { padding: 16px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 12px; }
+    .section-head h2 { margin: 0; }
+    .link { border: 0; padding: 0; background: transparent; color: var(--brand); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .product { border: 1px solid var(--line); border-radius: 18px; background: white; text-align: right; padding: 0; overflow: hidden; }
+    .product-art { height: 142px; position: relative; background: linear-gradient(145deg, #ece4d9, #d6c4ad); }
+    .product-art::after { content: ""; position: absolute; inset: 26px 38px 14px; border-radius: 48% 48% 18% 18%; background: #7b8f79; box-shadow: inset 0 0 0 12px rgb(255 255 255 / 12%); }
+    .product:nth-child(2) .product-art { background: linear-gradient(145deg, #dce8ed, #aabfc7); }
+    .product:nth-child(2) .product-art::after { background: #425768; border-radius: 45% 45% 10px 10px; }
+    .product-body { padding: 11px; }
+    .product-name { font-weight: 800; line-height: 1.6; }
+    .price { margin-top: 6px; font-weight: 900; font-size: 14px; }
+    .surface { margin: 0 16px 14px; padding: 16px; border: 1px solid var(--line); border-radius: 20px; background: white; }
+    .hero-art { height: 270px; margin: 0 16px 16px; border-radius: 26px; background: linear-gradient(145deg, #d8c5ac, #eee6dc); position: relative; overflow: hidden; }
+    .hero-art::after { content: ""; position: absolute; inset: 45px 100px 25px; border-radius: 48% 48% 16% 16%; background: #72856f; box-shadow: inset 0 0 0 18px rgb(255 255 255 / 14%); }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip { min-width: 48px; border: 1px solid var(--line); border-radius: 12px; background: white; padding: 9px 12px; }
+    .chip.active { border-color: var(--brand); background: #eef8f3; color: var(--brand-dark); font-weight: 800; }
+    .primary, .secondary { border-radius: 15px; min-height: 50px; padding: 0 18px; font-weight: 900; width: 100%; }
+    .primary { border: 0; color: white; background: var(--brand); box-shadow: 0 10px 25px rgb(23 107 82 / 18%); }
+    .secondary { border: 1px solid var(--line); color: var(--ink); background: white; }
+    .sticky-action { position: sticky; bottom: 92px; display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); background: rgb(255 255 255 / 96%); z-index: 4; }
+    .cart-row { display: grid; grid-template-columns: 68px 1fr auto; gap: 12px; align-items: center; }
+    .thumb { height: 68px; border-radius: 16px; background: linear-gradient(145deg, #d8c5ac, #7d907a); }
+    .qty { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+    .qty button { width: 28px; height: 28px; border: 0; border-radius: 8px; background: var(--wash); }
+    .totals { display: grid; gap: 10px; margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 14px; }
+    .total-line { display: flex; justify-content: space-between; }
+    .total-line.final { font-weight: 900; font-size: 17px; }
+    .field { display: grid; gap: 7px; margin: 14px 0; }
+    .field label { font-size: 13px; font-weight: 800; }
+    .field input { min-height: 50px; border: 1px solid #cfd6d2; border-radius: 14px; padding: 0 13px; direction: rtl; }
+    .otp { direction: ltr !important; text-align: center; letter-spacing: 8px; font-size: 22px; }
+    .step-list { display: grid; gap: 10px; }
+    .checkout-step { border: 1px solid var(--line); border-radius: 18px; background: white; overflow: hidden; }
+    .checkout-title { width: 100%; border: 0; background: white; min-height: 60px; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; font-weight: 900; }
+    .step-number { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--brand); font-size: 12px; }
+    .checkout-body { padding: 0 15px 15px; }
+    .choice { width: 100%; border: 1px solid var(--line); border-radius: 14px; background: white; padding: 13px; display: flex; justify-content: space-between; text-align: right; margin-top: 8px; }
+    .choice.active { border-color: var(--brand); background: #f4faf7; }
+    .notice { border-radius: 14px; background: #f3f8f5; padding: 12px; color: #29483e; line-height: 1.8; font-size: 13px; }
+    .details { margin-top: 8px; padding: 12px; border-radius: 12px; background: var(--wash); font-size: 12px; line-height: 1.9; color: var(--muted); }
+    .success { text-align: center; padding: 30px 20px 18px; }
+    .success-mark { display: grid; place-items: center; width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 26px; background: #dff2e8; color: var(--brand); font-size: 32px; }
+    .status-card { margin: 0 16px 14px; padding: 18px; border-radius: 22px; background: #173d32; color: white; }
+    .status-card .muted { color: #c9ded6; }
+    .timeline { position: relative; margin: 18px 0 4px; padding-right: 26px; }
+    .timeline::before { content: ""; position: absolute; right: 7px; top: 8px; bottom: 12px; width: 2px; background: #dbe3df; }
+    .event { position: relative; margin-bottom: 18px; }
+    .event::before { content: ""; position: absolute; right: -25px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: #cbd4cf; box-shadow: 0 0 0 4px white; }
+    .event.done::before { background: var(--brand); }
+    .event strong { display: block; margin-bottom: 4px; }
+    .problem-link { display: block; width: calc(100% - 32px); margin: 10px 16px; border: 0; background: transparent; color: var(--muted); text-decoration: underline; padding: 12px; }
+    .issue-panel { margin: 0 16px; padding: 16px; border: 1px solid #ead7d4; border-radius: 20px; background: #fffafa; }
+    .issue-options { display: grid; gap: 8px; }
+    .issue-option { border: 1px solid #ead7d4; background: white; border-radius: 13px; padding: 12px; text-align: right; }
+    .issue-option.active { border-color: var(--danger); background: #fff4f2; }
+    .prototype-bar { position: fixed; direction: ltr; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(calc(100% - 24px), 438px); z-index: 20; border-radius: 22px; background: #101916; color: white; padding: 8px; box-shadow: 0 16px 40px rgb(0 0 0 / 28%); }
+    .switch-row { display: grid; grid-template-columns: 42px 1fr 42px; gap: 8px; align-items: center; }
+    .prototype-bar button { border: 0; border-radius: 14px; min-height: 40px; background: #29332f; color: white; }
+    .variant-name { text-align: center; font-weight: 900; font-size: 13px; }
+    .state-line { margin-top: 6px; color: #b8c4bf; font: 11px/1.5 Consolas, monospace; text-align: center; direction: ltr; }
+    .back { border: 0; background: transparent; color: var(--ink); font-size: 22px; }
+
+    /* Variant B: storefront story first, trust and seller identity dominate the entrance. */
+    .variant-B { --brand: #6d3d70; --brand-dark: #4c2850; --wash: #faf4fa; }
+    .variant-B .shop-hero { background: linear-gradient(160deg, #46294a, #825285); color: white; padding: 26px 20px; border-radius: 0 0 34px 34px; }
+    .variant-B .shop-hero .muted { color: #eaddea; }
+    .variant-B .pay-badge { color: white; border-color: rgb(255 255 255 / 35%); background: rgb(255 255 255 / 14%); }
+    .variant-B .avatar { background: white; color: #4c2850; }
+    .variant-B .grid { display: flex; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x mandatory; }
+    .variant-B .product { min-width: 76%; scroll-snap-align: start; }
+    .variant-B .product-art { height: 210px; }
+    .variant-B .surface { box-shadow: 0 12px 35px rgb(50 20 55 / 8%); }
+
+    /* Variant C: basket-led, dense and utilitarian with a persistent order summary. */
+    .variant-C { --brand: #ad4f2d; --brand-dark: #79351f; --accent: #ffe0a5; --wash: #fff7ef; }
+    .variant-C .phone { background: #fffaf5; }
+    .variant-C .topbar { background: #25211e; color: white; }
+    .variant-C .brand-mark { background: var(--accent); color: #25211e; }
+    .variant-C .shop-hero { margin: 12px; border: 1px solid #eaded2; border-radius: 18px; background: white; }
+    .variant-C .grid { grid-template-columns: 1fr; }
+    .variant-C .product { display: grid; grid-template-columns: 120px 1fr; min-height: 126px; }
+    .variant-C .product-art { height: 100%; }
+    .variant-C .basket-dock { display: flex; position: sticky; top: 54px; z-index: 4; justify-content: space-between; align-items: center; margin: 0 12px; padding: 12px 14px; border-radius: 0 0 16px 16px; background: var(--accent); color: #3c2a1e; font-weight: 900; }
+    .variant-C .step-list { grid-template-columns: 1fr; }
+    .variant-C .checkout-step { border-radius: 10px; border-right: 4px solid #dbc6b5; }
+    .variant-C .checkout-step.current { border-right-color: var(--brand); }
+    @media (min-width: 720px) {
+      body { padding: 24px 0; }
+      .phone { min-height: calc(100vh - 48px); border-radius: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app"></main>
+  <script>
+    // PROTOTYPE — three variants of the buyer journey, switchable via ?variant= on one route.
+    const variants = {
+      A: 'خرید سریع و خطی',
+      B: 'فروشگاه و اعتماد در ابتدا',
+      C: 'سبد همیشه در دسترس'
+    };
+    const state = {
+      screen: 'store',
+      qty: 0,
+      authenticated: false,
+      otpSent: false,
+      addressDone: false,
+      shippingDone: false,
+      paymentDetails: false,
+      issueOpen: false,
+      issueType: ''
+    };
+    let variant = new URLSearchParams(location.search).get('variant')?.toUpperCase() || 'A';
+    if (!variants[variant]) variant = 'A';
+
+    const money = value => new Intl.NumberFormat('fa-IR').format(value) + ' تومان';
+    const header = (back = false) => `
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">س</span><span>سوو</span></div>
+        ${back ? '<button class="back" data-action="back" aria-label="بازگشت">→</button>' : '<button class="icon-btn" aria-label="جست‌وجو">⌕</button>'}
+      </header>`;
+
+    function paymentBadge() {
+      return '<button class="pay-badge" data-action="payment-details">پرداخت مستقیم</button>';
+    }
+
+    function shopHero() {
+      return `<section class="shop-hero">
+        <div class="shop-line"><div class="avatar">ن</div><div><h1>نخل استودیو</h1><p class="muted">پوشاک روزمره، دوخته‌شده در شیراز</p></div></div>
+        ${paymentBadge()}
+        ${state.paymentDetails ? '<div class="details">پرداخت شما مستقیم به فروشگاه انجام می‌شود. سوو درخواست مشکل را ثبت و پیگیری می‌کند؛ بازگشت وجه بر اساس شرایط فروشگاه انجام می‌شود.</div>' : ''}
+      </section>`;
+    }
+
+    function basketDock() {
+      if (variant !== 'C') return '';
+      return `<button class="basket-dock" data-action="cart"><span>سبد شما</span><span>${state.qty || 0} کالا · ${money(state.qty * 1280000)}</span></button>`;
+    }
+
+    function storeScreen() {
+      return `${header()}${basketDock()}${shopHero()}
+        ${variant === 'B' ? '<section class="surface"><strong>از کارگاه کوچک ما</strong><p class="muted">هر لباس با پارچه سبک و در تعداد محدود دوخته می‌شود. سفارش‌ها تا دو روز کاری آماده ارسال می‌شوند.</p></section>' : ''}
+        <section class="section"><div class="section-head"><h2>${variant === 'C' ? 'برای افزودن سریع' : 'تازه‌های فروشگاه'}</h2><button class="link">دیدن همه</button></div>
+          <div class="grid">
+            <button class="product" data-action="product"><div class="product-art"></div><div class="product-body"><div class="product-name">پیراهن لینن آویسا</div><div class="price">${money(1280000)}</div><div class="muted">سه رنگ · موجود</div></div></button>
+            <button class="product" data-action="product"><div class="product-art"></div><div class="product-body"><div class="product-name">مانتوی سبک ماهور</div><div class="price">${money(1640000)}</div><div class="muted">دو رنگ · موجود</div></div></button>
+          </div>
+        </section>`;
+    }
+
+    function productScreen() {
+      return `${header(true)}${basketDock()}
+        <div class="hero-art"></div>
+        <section class="surface"><div class="muted">نخل استودیو</div><h1>پیراهن لینن آویسا</h1><div class="price">${money(1280000)}</div>
+          <p class="muted">خنک و سبک، مناسب استفاده روزمره. آماده‌سازی تا دو روز کاری.</p>
+          <strong>رنگ</strong><div class="chips" style="margin:10px 0 18px"><button class="chip active">زیتونی</button><button class="chip">کرم</button><button class="chip">آبی</button></div>
+          <strong>اندازه</strong><div class="chips" style="margin-top:10px"><button class="chip">۳۶</button><button class="chip active">۳۸</button><button class="chip">۴۰</button></div>
+        </section>
+        <section class="surface">${paymentBadge()}${state.paymentDetails ? '<div class="details">پرداخت شما مستقیم به فروشگاه انجام می‌شود. شرایط بازگشت کالا پیش از پرداخت در دسترس است.</div>' : ''}</section>
+        <div class="sticky-action"><button class="primary" data-action="add">افزودن به سبد · ${money(1280000)}</button></div>`;
+    }
+
+    function cartScreen() {
+      return `${header(true)}<section class="section"><h1>سبد خرید</h1><p class="muted">این سفارش فقط از نخل استودیو است.</p></section>
+        <section class="surface"><div class="cart-row"><div class="thumb"></div><div><strong>پیراهن لینن آویسا</strong><div class="muted">زیتونی · اندازه ۳۸</div></div><div class="qty"><button data-action="minus">−</button><strong>${state.qty}</strong><button data-action="plus">+</button></div></div>
+          <div class="totals"><div class="total-line"><span>جمع کالا</span><strong>${money(state.qty * 1280000)}</strong></div><div class="total-line"><span>ارسال</span><span class="muted">در مرحله بعد</span></div><div class="total-line final"><span>جمع فعلی</span><span>${money(state.qty * 1280000)}</span></div></div>
+        </section>
+        <section class="surface notice">برای ادامه فقط شماره موبایل شما را تأیید می‌کنیم؛ سبدتان حفظ می‌شود.</section>
+        <div class="sticky-action"><button class="primary" data-action="continue">ادامه برای ثبت سفارش</button></div>`;
+    }
+
+    function loginScreen() {
+      return `${header(true)}<section class="section"><div style="padding-top:32px"><span class="brand-mark" style="width:54px;height:54px;font-size:22px">س</span></div>
+        <h1 style="margin-top:24px">${state.otpSent ? 'کد تأیید را وارد کنید' : 'برای ادامه، شماره موبایل'}</h1>
+        <p class="muted">${state.otpSent ? 'کد شش‌رقمی برای ۰۹۱۲•••۴۵۶۷ فرستاده شد. سبد شما همین‌جا می‌ماند.' : 'برای ثبت و پیگیری سفارش به حساب خریدار نیاز دارید.'}</p>
+        <div class="field"><label>${state.otpSent ? 'کد تأیید' : 'شماره موبایل'}</label><input class="${state.otpSent ? 'otp' : ''}" value="${state.otpSent ? '۱۲۳۴۵۶' : '۰۹۱۲۱۲۳۴۵۶۷'}" inputmode="numeric"></div>
+        <button class="primary" data-action="auth">${state.otpSent ? 'تأیید و ادامه' : 'دریافت کد'}</button>
+        ${state.otpSent ? '<button class="link" style="width:100%;margin-top:18px">ارسال دوباره کد</button>' : ''}
+      </section>`;
+    }
+
+    function step(title, number, done, body, key) {
+      return `<article class="checkout-step ${!done ? 'current' : ''}"><button class="checkout-title"><span>${title}</span><span class="step-number">${done ? '✓' : number}</span></button><div class="checkout-body">${body}</div></article>`;
+    }
+
+    function checkoutScreen() {
+      const address = state.addressDone
+        ? '<div class="notice">شیراز، بلوار چمران، کوچه ۱۲ <button class="link">تغییر</button></div>'
+        : '<div class="field"><label>نشانی تحویل</label><input value="شیراز، بلوار چمران، کوچه ۱۲"></div><button class="secondary" data-action="address">ثبت این نشانی</button>';
+      const shipping = !state.addressDone ? '<p class="muted">پس از ثبت نشانی نمایش داده می‌شود.</p>'
+        : state.shippingDone ? '<div class="notice">پست پیشتاز · تحویل حدود ۳ تا ۵ روز کاری <button class="link">تغییر</button></div>'
+        : '<button class="choice active" data-action="shipping"><span><strong>پست پیشتاز</strong><br><span class="muted">حدود ۳ تا ۵ روز کاری</span></span><strong>۸۵٬۰۰۰ تومان</strong></button><button class="choice"><span>ارسال اقتصادی</span><strong>۵۵٬۰۰۰ تومان</strong></button>';
+      const payment = !state.shippingDone ? '<p class="muted">پس از انتخاب ارسال نمایش داده می‌شود.</p>'
+        : `<div class="notice"><strong>پرداخت مستقیم به فروشگاه</strong><br>پرداخت شما مستقیم به نخل استودیو انجام می‌شود.</div><button class="link" data-action="payment-details" style="margin-top:10px">شرایط بازگشت و پیگیری</button>${state.paymentDetails ? '<div class="details">سوو درخواست مشکل را ثبت و پیگیری می‌کند. بازگشت وجه بر اساس شرایط فروشگاه انجام می‌شود.</div>' : ''}`;
+      return `${header(true)}${basketDock()}<section class="section"><h1>ثبت سفارش</h1><p class="muted">یک صفحه، سه قدم کوتاه</p>
+        <div class="step-list">
+          ${step('نشانی تحویل', 1, state.addressDone, address)}
+          ${step('روش ارسال', 2, state.shippingDone, shipping)}
+          ${step('مرور و پرداخت', 3, false, payment)}
+        </div></section>
+        <section class="surface"><div class="total-line"><span>کالا و ارسال</span><strong>${money(state.qty * 1280000 + (state.shippingDone ? 85000 : 0))}</strong></div></section>
+        ${state.shippingDone ? '<div class="sticky-action"><button class="primary" data-action="pay">ثبت و پرداخت سفارش</button></div>' : ''}`;
+    }
+
+    function trackingScreen() {
+      return `${header()}<section class="success"><div class="success-mark">✓</div><h1>سفارش ثبت شد</h1><p class="muted">لینک پیگیری برای شما پیامک شد.</p></section>
+        <section class="status-card"><div class="muted">وضعیت اکنون</div><h2 style="margin:8px 0">فروشگاه در حال آماده‌کردن سفارش است</h2><p class="muted" style="margin:0">نخل استودیو تا دو روز آینده کد رهگیری را ثبت می‌کند.</p></section>
+        <section class="surface"><div class="section-head"><h2>پیگیری سفارش</h2><span class="muted">#سوو-۲۸۴۱</span></div>
+          <div class="timeline"><div class="event done"><strong>سفارش ثبت شد</strong><span class="muted">امروز، ۱۱:۲۴</span></div><div class="event done"><strong>پرداخت انجام شد</strong><span class="muted">مستقیم به نخل استودیو</span></div><div class="event"><strong>آماده‌سازی سفارش</strong><span class="muted">قدم بعدی با فروشگاه است</span></div><div class="event"><strong>ارسال و کد رهگیری</strong></div></div>
+          <button class="secondary">گفت‌وگو با فروشگاه</button>
+        </section>
+        <button class="problem-link" data-action="problem">برای این سفارش مشکلی پیش آمده؟</button>
+        ${state.issueOpen ? issuePanel() : ''}`;
+    }
+
+    function issuePanel() {
+      return `<section class="issue-panel"><h2>چه مشکلی پیش آمده؟</h2><p class="muted">انتخاب شما به همین سفارش متصل می‌شود.</p><div class="issue-options">
+        ${['سفارش دیر رسیده', 'کالا آسیب دیده', 'کالا با توضیحات متفاوت است'].map(item => `<button class="issue-option ${state.issueType === item ? 'active' : ''}" data-action="issue" data-value="${item}">${item}</button>`).join('')}
+      </div>${state.issueType ? '<div class="notice" style="margin-top:12px">می‌توانید ابتدا با فروشگاه گفت‌وگو کنید یا همین حالا موضوع را برای پیگیری سوو ثبت کنید.</div><div style="display:grid;gap:8px;margin-top:10px"><button class="secondary">گفت‌وگو با فروشگاه</button><button class="primary">ثبت برای پیگیری سوو</button></div>' : ''}</section>`;
+    }
+
+    function currentScreen() {
+      return ({ store: storeScreen, product: productScreen, cart: cartScreen, login: loginScreen, checkout: checkoutScreen, tracking: trackingScreen })[state.screen]();
+    }
+
+    function switcher() {
+      const prototypeVisible = ['localhost', '127.0.0.1', ''].includes(location.hostname) || new URLSearchParams(location.search).get('prototype') === '1';
+      if (!prototypeVisible) return '';
+      return `<aside class="prototype-bar"><div class="switch-row"><button data-action="previous">←</button><div class="variant-name">${variant} — ${variants[variant]}</div><button data-action="next">→</button></div><div class="state-line">screen=${state.screen} · auth=${state.authenticated} · cart=${state.qty} · payment=direct</div></aside>`;
+    }
+
+    function render() {
+      document.getElementById('app').innerHTML = `<div class="variant-${variant}"><div class="phone">${currentScreen()}</div>${switcher()}</div>`;
+      document.title = `${variant} — ${variants[variant]} | سوو`;
+    }
+
+    function setVariant(next) {
+      variant = next;
+      const params = new URLSearchParams(location.search);
+      params.set('variant', variant);
+      history.replaceState({}, '', `${location.pathname}?${params}`);
+      render();
+    }
+
+    function cycle(direction) {
+      const keys = Object.keys(variants);
+      const index = keys.indexOf(variant);
+      setVariant(keys[(index + direction + keys.length) % keys.length]);
+    }
+
+    document.addEventListener('click', event => {
+      const target = event.target.closest('[data-action]');
+      if (!target) return;
+      const action = target.dataset.action;
+      if (action === 'product') state.screen = 'product';
+      if (action === 'add') { state.qty = Math.max(1, state.qty + 1); state.screen = 'cart'; }
+      if (action === 'cart' && state.qty) state.screen = 'cart';
+      if (action === 'plus') state.qty += 1;
+      if (action === 'minus') state.qty = Math.max(1, state.qty - 1);
+      if (action === 'continue') state.screen = state.authenticated ? 'checkout' : 'login';
+      if (action === 'auth' && !state.otpSent) state.otpSent = true;
+      else if (action === 'auth' && state.otpSent) { state.authenticated = true; state.screen = 'checkout'; }
+      if (action === 'address') state.addressDone = true;
+      if (action === 'shipping') state.shippingDone = true;
+      if (action === 'payment-details') state.paymentDetails = !state.paymentDetails;
+      if (action === 'pay') state.screen = 'tracking';
+      if (action === 'problem') state.issueOpen = !state.issueOpen;
+      if (action === 'issue') state.issueType = target.dataset.value;
+      if (action === 'previous') cycle(-1);
+      if (action === 'next') cycle(1);
+      if (action === 'back') {
+        state.screen = ({ product: 'store', cart: 'product', login: 'cart', checkout: 'cart' })[state.screen] || 'store';
+      }
+      render();
+    });
+
+    document.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      if (event.target.matches('input, textarea, [contenteditable]')) return;
+      cycle(event.key === 'ArrowLeft' ? -1 : 1);
+    });
+
+    render();
+  </script>
+</body>
+</html>
