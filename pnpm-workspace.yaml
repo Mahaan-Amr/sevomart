@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+overrides:
+  js-yaml: 5.2.2
 allowBuilds:
   "@prisma/engines": true
   "@scarf/scarf": false
