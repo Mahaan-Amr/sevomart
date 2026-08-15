@@ -25,12 +25,13 @@
 | `pnpm typecheck` | TypeScript strict و Prisma schema |
 | `pnpm test:unit` | قراردادهای کوچک بدون I/O |
 | `pnpm test:contract` | fake آداپترها و compatibility قرارداد |
-| `pnpm test:integration` | API و سپس هر ماژول روی PostgreSQL واقعی |
+| `pnpm test:integration` | API و سپس هر ماژول روی PostgreSQL واقعی؛ در محیط محلی پایگاه داده را خودکار بالا می‌آورد |
 | `pnpm test:e2e` | مسیر موبایل و RTL در Chromium |
 | `pnpm quality` | کنترل سریع پیش از commit |
 | `pnpm test` | همه سطح‌های آزمون |
 
-CI همین فرمان‌ها را با نصب قفل‌شده و PostgreSQL واقعی اجرا می‌کند. imageهای web، API و
+تست integration یک query واقعی روی PostgreSQL اجرا می‌کند و بدون اتصال سالم پاس نمی‌شود.
+در CI، `DATABASE_URL` به سرویس PostgreSQL همان job اشاره می‌کند. CI همین فرمان‌ها را با نصب قفل‌شده و `pnpm audit --prod` اجرا می‌کند. imageهای web، API و
 worker از Dockerfileهای مستقل ولی با context ریشه ساخته می‌شوند.
 
 ## افزودن ماژول

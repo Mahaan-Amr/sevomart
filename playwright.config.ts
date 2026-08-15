@@ -15,6 +15,15 @@ export default defineConfig({
       use: {
         ...devices["Pixel 7"],
         channel: process.env.CI ? undefined : "chrome",
+        reducedMotion: "reduce",
+      },
+    },
+    {
+      name: "desktop-chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        channel: process.env.CI ? undefined : "chrome",
+        reducedMotion: "reduce",
       },
     },
   ],

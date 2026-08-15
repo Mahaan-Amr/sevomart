@@ -5,7 +5,7 @@
   --color-surface: #faf8f8;
   --color-background: #f4f0f1;
   --color-text: #2f2528;
-  --color-muted: #81767a;
+  --color-muted: #6f6468;
   font-family: "Yekan Bakh", Tahoma, sans-serif;
 }
 
@@ -41,6 +41,7 @@ h1 {
   margin: 0 0 8px;
   color: var(--color-primary-dark);
   font-size: clamp(20px, 5vw, 24px);
+  font-weight: 600;
   line-height: 1.6;
 }
 
@@ -58,4 +59,19 @@ p {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+@font-face {
+  font-family: "Yekan Bakh";
+  src: url("/fonts/YekanBakh-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Yekan Bakh";
+  src: url("/fonts/YekanBakh-SemiBold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
 }

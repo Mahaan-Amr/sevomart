@@ -21,6 +21,12 @@ async function run(): Promise<void> {
 }
 
 void run().catch((error: unknown) => {
-  console.error(error);
+  console.error(
+    JSON.stringify({
+      level: "error",
+      message: "worker_start_failed",
+      error: error instanceof Error ? error.message : "unknown_error",
+    }),
+  );
   process.exitCode = 1;
 });

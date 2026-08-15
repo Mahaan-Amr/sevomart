@@ -14,5 +14,6 @@
     "media",
     "notifications",
     "reporting-analytics"
-  ]
+  ],
+  "tables": {}
 }

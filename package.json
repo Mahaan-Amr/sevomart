@@ -22,8 +22,8 @@
     "lint": "eslint . && pnpm check:architecture",
     "test": "pnpm test:unit && pnpm test:contract && pnpm test:integration && pnpm test:e2e",
     "test:unit": "vitest run --config vitest.config.ts",
-    "test:contract": "vitest run --config vitest.contract.config.ts",
-    "test:integration": "pnpm build:packages && vitest run --config vitest.integration.config.ts",
+    "test:contract": "pnpm build:packages && vitest run --config vitest.contract.config.ts",
+    "test:integration": "pnpm build:packages && node scripts/run-integration-tests.mjs",
     "test:e2e": "playwright test",
     "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",
     "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm test:integration"
@@ -35,6 +35,7 @@
     "@sevo/contracts": "workspace:*",
     "eslint": "10.8.1",
     "globals": "16.4.0",
+    "postgres": "3.4.7",
     "prettier": "3.9.6",
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0",

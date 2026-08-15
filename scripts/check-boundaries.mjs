@@ -3,7 +3,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const sourceExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
-const importPattern = /(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g;
+const importPattern =
+  /(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g;
 
 function toPosix(value) {
   return value.replaceAll("\\", "/");
@@ -17,7 +18,7 @@ export function findBoundaryViolations(files) {
     const sourceModule = sourcePath.match(/apps\/api\/src\/modules\/([^/]+)\//)?.[1];
 
     for (const match of file.source.matchAll(importPattern)) {
-      const specifier = match[1];
+      const specifier = match[1] ?? match[2];
       if (!specifier) continue;
 
       const resolved = toPosix(
@@ -61,6 +62,58 @@ export function findBoundaryViolations(files) {
   return violations;
 }
 
+export function findMigrationOwnershipViolations(paths, registeredModules) {
+  const violations = [];
+  const convention =
+    /^packages\/database\/prisma\/migrations\/\d{14}__([a-z][a-z0-9-]*)__[a-z0-9]+(?:-[a-z0-9]+)*\/migration\.sql$/;
+
+  for (const migrationPath of paths.map(toPosix)) {
+    const match = migrationPath.match(convention);
+    if (!match) {
+      violations.push({
+        path: migrationPath,
+        rule: "migration-directory-convention",
+      });
+      continue;
+    }
+
+    const owner = match[1];
+    if (!owner || !registeredModules.has(owner)) {
+      violations.push({
+        path: migrationPath,
+        rule: "registered-migration-owner",
+      });
+    }
+  }
+
+  return violations;
+}
+
+export function findTableOwnershipViolations(schema, tableOwners, registeredModules) {
+  const violations = [];
+  const modelPattern = /model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{([\s\S]*?)\}/g;
+
+  for (const match of schema.matchAll(modelPattern)) {
+    const modelName = match[1];
+    const body = match[2] ?? "";
+    const mappedName = body.match(/@@map\(\s*["']([^"']+)["']\s*\)/)?.[1];
+    const tableName = mappedName ?? modelName;
+    const owner = tableOwners[tableName];
+
+    if (!owner) {
+      violations.push({ table: tableName, rule: "registered-table-owner" });
+    } else if (!registeredModules.has(owner)) {
+      violations.push({
+        table: tableName,
+        owner,
+        rule: "registered-table-owner-module",
+      });
+    }
+  }
+
+  return violations;
+}
+
 async function collectSources(root) {
   const files = [];
 
@@ -93,13 +146,57 @@ async function collectSources(root) {
   return files;
 }
 
+async function collectMigrationPaths(root) {
+  const migrationRoot = path.join(root, "packages", "database", "prisma", "migrations");
+  const paths = [];
+
+  async function visit(directory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(absolutePath);
+      } else if (entry.name === "migration.sql") {
+        paths.push(toPosix(path.relative(root, absolutePath)));
+      }
+    }
+  }
+
+  await visit(migrationRoot);
+  return paths;
+}
+
 async function main() {
   const root = process.cwd();
-  const violations = findBoundaryViolations(await collectSources(root));
+  const ownership = JSON.parse(
+    await readFile(
+      path.join(root, "docs", "architecture", "module-ownership.json"),
+      "utf8",
+    ),
+  );
+  const registeredModules = new Set(ownership.modules);
+  const databaseSchema = await readFile(
+    path.join(root, "packages", "database", "prisma", "schema.prisma"),
+    "utf8",
+  );
+  const violations = [
+    ...findBoundaryViolations(await collectSources(root)),
+    ...findMigrationOwnershipViolations(
+      await collectMigrationPaths(root),
+      registeredModules,
+    ),
+    ...findTableOwnershipViolations(
+      databaseSchema,
+      ownership.tables,
+      registeredModules,
+    ),
+  ];
 
   if (violations.length > 0) {
     for (const violation of violations) {
-      console.error(`${violation.path}: ${violation.rule} (${violation.import})`);
+      console.error(
+        `${violation.path ?? violation.table}: ${violation.rule}${violation.import ? ` (${violation.import})` : ""}`,
+      );
     }
     process.exitCode = 1;
     return;

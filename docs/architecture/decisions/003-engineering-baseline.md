@@ -23,6 +23,9 @@
 را اجرا می‌کند. TypeScript strict، ESLint، Prettier، Vitest، Playwright و Prisma validate در
 CI اجرا می‌شوند.
 
+دلیل، نگهداری، مجوز و اثر امنیتی dependencyهای این baseline در
+[دفتر وابستگی‌ها](../dependency-register.md) ثبت می‌شود.
+
 قرارداد REST نسخه‌دار و OpenAPI است. architecture check فقط import از `public.ts` ماژول
 دیگر را می‌پذیرد و دو route group خریدار و فروشنده را مستقل نگه می‌دارد. migration نام مالک
 ماژول را دارد. fake آداپتر خارجی باید همان contract suite آداپتر واقعی را پاس کند.
