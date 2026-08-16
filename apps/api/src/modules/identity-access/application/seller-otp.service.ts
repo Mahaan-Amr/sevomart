@@ -97,11 +97,17 @@ export class SellerOtpService {
   }
 
   async readSession(token: string): Promise<SellerSession> {
+    const session = await this.readActiveSellerSession(token);
+    if (!session) throw new InvalidSellerSessionError();
+    return session;
+  }
+
+  async readActiveSellerSession(token: string): Promise<SellerSession | undefined> {
     const activeSession = await this.repository.findActiveSession(
       hashToken(token),
       this.now(),
     );
-    if (!activeSession) throw new InvalidSellerSessionError();
+    if (!activeSession) return undefined;
     return {
       seller: activeSession.seller,
       expiresAt: activeSession.expiresAt.toISOString(),

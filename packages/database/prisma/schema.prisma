@@ -12,8 +12,43 @@ model Seller {
   mobile    String   @unique @db.VarChar(11)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   sessions SellerSession[]
+  store    Store?
 
   @@map("identity_sellers")
+}
+
+model Store {
+  id                   String                @id @db.Uuid
+  sellerId             String                @unique @map("seller_id") @db.Uuid
+  name                 String?               @db.VarChar(80)
+  slug                 String?               @unique @db.VarChar(48)
+  bio                  String?               @db.VarChar(240)
+  returnPolicy         String?               @map("return_policy") @db.VarChar(1000)
+  settlementKind       String?               @map("settlement_kind") @db.VarChar(16)
+  settlementStatus     String?               @map("settlement_status") @db.VarChar(24)
+  settlementVerifiedAt DateTime?             @map("settlement_verified_at") @db.Timestamptz(3)
+  logoMediaId          String?               @map("logo_media_id") @db.Uuid
+  coverMediaId         String?               @map("cover_media_id") @db.Uuid
+  themeColor           String?               @map("theme_color") @db.Char(7)
+  status               String                @default("DRAFT") @db.VarChar(16)
+  publishedAt          DateTime?             @map("published_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  seller               Seller                @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  shippingMethods      StoreShippingMethod[]
+
+  @@map("store_stores")
+}
+
+model StoreShippingMethod {
+  id       String @id @db.Uuid
+  storeId  String @map("store_id") @db.Uuid
+  position Int
+  code     String @db.VarChar(32)
+  label    String @db.VarChar(60)
+  store    Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, position])
+  @@map("store_shipping_methods")
 }
 
 model OtpChallenge {

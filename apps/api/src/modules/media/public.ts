@@ -1,8 +1,10 @@
 export type StoredMedia = {
   key: string;
-  contentType: string;
+  contentType: "image/jpeg" | "image/png" | "image/webp";
   bytes: Uint8Array;
 };
+
+export const MEDIA_STORAGE = Symbol("MEDIA_STORAGE");
 
 export interface MediaStorage {
   put(object: StoredMedia): Promise<void>;
