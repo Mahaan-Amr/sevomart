@@ -1,6 +1,6 @@
 ---
 title: انتخاب پشته فنی و شکل استقرار نسخه اول
-status: open
+status: closed
 type: research
 label: wayfinder:research
 claimed_by:
@@ -14,3 +14,7 @@ blocked_by: []
 ## خروجی مورد انتظار
 
 مقایسه مستند وب واکنش‌گرا/PWA و برنامه بومی، frontend، backend، پایگاه داده، realtime، ذخیره‌سازی، جست‌وجو، صف، استقرار و observability؛ همراه با محدودیت سرویس‌دهی در ایران، هزینه، تجربه تیم و یک ADR پیشنهادی. این تیکت scaffold محصول را انجام نمی‌دهد.
+
+## نتیجه
+
+نسخه اول یک PWA در monorepo تایپ‌اسکریپت است: Next.js برای web، یک modular monolith با NestJS/Fastify برای API و worker مشترک. PostgreSQL منبع حقیقت، جست‌وجو و صف نسخه اول است؛ رسانه پشت adapter سازگار با S3 می‌ماند و استقرار با Docker قابل انتقال است. microservice، Kubernetes، Redis، موتور جست‌وجوی جدا و برنامه بومی از خط پایه خارج‌اند.
