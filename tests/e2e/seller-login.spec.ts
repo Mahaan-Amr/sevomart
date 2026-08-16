@@ -16,6 +16,8 @@ test("seller signs in with the visible development OTP and keeps the session", a
   });
 
   await page.goto("/seller/login");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.locator("html")).toHaveAttribute("lang", "fa");
   await expect(
     page.getByRole("heading", { name: "ورود به فضای فروشنده" }),
   ).toBeVisible();
@@ -81,6 +83,8 @@ test("a forged session cookie is rejected against PostgreSQL", async ({
 test("server failure stays human and the login honors visual accessibility", async ({
   page,
 }) => {
+  const longServerMessage =
+    "ارتباط با سرور برقرار نشد. چند لحظه صبر کنید و دوباره برای ورود به فضای فروشنده تلاش کنید.";
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.route("**/api/auth/otp/requests", (route) =>
     route.fulfill({
@@ -88,7 +92,7 @@ test("server failure stays human and the login honors visual accessibility", asy
       contentType: "application/json",
       body: JSON.stringify({
         code: "INTERNAL_SERVER_ERROR",
-        message: "ارتباط با سرور برقرار نشد. دوباره تلاش کنید.",
+        message: longServerMessage,
         correlationId: "e2e-server-error",
       }),
     }),
@@ -99,9 +103,11 @@ test("server failure stays human and the login honors visual accessibility", asy
   const button = page.getByRole("button", { name: "دریافت کد" });
   await input.fill("09123456789");
   await button.click();
-  await expect(
-    page.getByText("ارتباط با سرور برقرار نشد. دوباره تلاش کنید."),
-  ).toBeVisible();
+  await expect(page.getByText(longServerMessage)).toBeVisible();
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
 
   const inputTransitionSeconds = Number.parseFloat(
     await input.evaluate((element) => getComputedStyle(element).transitionDuration),

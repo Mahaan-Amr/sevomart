@@ -24,12 +24,12 @@ export type VerifiedSellerSession = {
 };
 
 export class SellerOtpService {
-  readonly #allowedMobiles?: ReadonlySet<string>;
+  readonly #allowedMobiles?: ReadonlySet<IranianMobile>;
 
   constructor(
     private readonly provider: OtpProvider,
     private readonly repository: IdentityAccessRepository,
-    allowedMobiles: readonly string[] | undefined,
+    allowedMobiles: readonly IranianMobile[] | undefined,
     private readonly now: () => Date = () => new Date(),
     private readonly createOtpCode: () => OtpCode = () => DEV_OTP_CODE,
   ) {

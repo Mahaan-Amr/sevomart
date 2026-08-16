@@ -4,7 +4,16 @@ const iranianTestMobileList = z
   .string()
   .default("09123456789")
   .transform((value) => value.split(",").map((mobile) => mobile.trim()))
-  .pipe(z.array(z.string().regex(/^09\d{9}$/)).min(1));
+  .pipe(
+    z
+      .array(
+        z
+          .string()
+          .regex(/^09\d{9}$/)
+          .brand<"IranianMobile">(),
+      )
+      .min(1),
+  );
 
 const runtimeEnvironmentContract = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
