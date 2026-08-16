@@ -3,7 +3,7 @@ title: تعیین مرز ماژول‌ها و قراردادهای کار موا
 status: closed
 type: grilling
 label: wayfinder:grilling
-claimed_by:
+claimed_by: Mahaan-Amr
 blocked_by:
   - انتخاب پشته فنی و شکل استقرار نسخه اول
 ---
@@ -18,4 +18,6 @@ blocked_by:
 
 ## نتیجه
 
-سیستم modular monolith قابلیت‌محور با مرزهای service-grade است. هر جدول، migration و interface یک مالک ماژولی و Issueمحور دارد؛ دسترسی مستقیم به داده ماژول دیگر ممنوع است. پاسخ ضروری از interface هم‌زمان و پیامد پس از ثبت واقعیت از رخداد outbox و مصرف‌کننده idempotent می‌گذرد. قراردادها نسخه‌دارند و مرزها با architecture، integration و compatibility test محافظت می‌شوند.
+سیستم یک modular monolith قابلیت‌محور با مرزهای service-grade است. هر جدول، migration و interface یک مالک ماژولی و Issueمحور دارد؛ دسترسی مستقیم به داده ماژول دیگر ممنوع است. پاسخ ضروری از interface هم‌زمان و پیامد پس از ثبت واقعیت از رخداد outbox و مصرف‌کننده idempotent می‌گذرد. قراردادها نسخه‌دارند و مرزها با architecture، integration و compatibility test محافظت می‌شوند. مسیرهای خریدار و فروشنده دو ناحیه مستقل در یک برنامه وب‌اند و مالکیت ماژول‌ها موقت و وابسته به Issue است.
+
+جزئیات نقشه ماژول‌ها، جهت وابستگی، گردش کار سفارش، قواعد قرارداد و کنترل‌های CI در [ADR-002: مرز ماژول‌ها و قراردادهای کار موازی](../../architecture/decisions/002-module-boundaries-and-parallel-contracts.md) ثبت شده است.
