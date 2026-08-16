@@ -45,13 +45,15 @@ export class MediaController {
     let bytes: Buffer;
     try {
       bytes = decodeBase64(parsed.data.contentBase64);
-      const metadata = await sharp(bytes, {
+      const image = sharp(bytes, {
         failOn: "warning",
         limitInputPixels: 16_000_000,
-      }).metadata();
+      });
+      const metadata = await image.metadata();
       if (metadata.format !== formatFor(parsed.data.contentType)) {
         throw new Error("Media type does not match its bytes");
       }
+      await image.clone().raw().toBuffer();
     } catch {
       throw invalidMedia(request.id);
     }

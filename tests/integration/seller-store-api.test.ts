@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApiApp } from "../../apps/api/src/create-app";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
+const validPngBase64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
 describe("seller store HTTP API with PostgreSQL", () => {
   const apps: Awaited<ReturnType<typeof createApiApp>>[] = [];
 
@@ -112,8 +115,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
       payload: {
         fileName: "logo.png",
         contentType: "image/png",
-        contentBase64:
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        contentBase64: validPngBase64,
       },
     });
     expect(upload.statusCode).toBe(201);
@@ -198,5 +200,26 @@ describe("seller store HTTP API with PostgreSQL", () => {
       code: "VALIDATION_ERROR",
       message: "تصویر انتخاب‌شده معتبر نیست.",
     });
+  });
+
+  it("rejects a recognizable but truncated image", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const truncated = Buffer.from(validPngBase64, "base64").subarray(0, -20);
+
+    const upload = await server.inject({
+      method: "POST",
+      url: "/v1/seller/media",
+      headers: { cookie },
+      payload: {
+        fileName: "truncated.png",
+        contentType: "image/png",
+        contentBase64: truncated.toString("base64"),
+      },
+    });
+
+    expect(upload.statusCode).toBe(422);
+    expect(upload.json()).toMatchObject({ code: "VALIDATION_ERROR" });
   });
 });
