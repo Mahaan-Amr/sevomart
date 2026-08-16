@@ -133,6 +133,16 @@ export function findTableOwnershipViolations(schema, tableOwners, registeredModu
   return violations;
 }
 
+export function findContractOwnershipViolations(contractOwners, registeredModules) {
+  return Object.entries(contractOwners)
+    .filter(([, owner]) => !registeredModules.has(owner))
+    .map(([contract, owner]) => ({
+      contract,
+      owner,
+      rule: "registered-contract-owner-module",
+    }));
+}
+
 async function collectSources(root) {
   const files = [];
 
@@ -209,12 +219,13 @@ async function main() {
       ownership.tables,
       registeredModules,
     ),
+    ...findContractOwnershipViolations(ownership.contracts ?? {}, registeredModules),
   ];
 
   if (violations.length > 0) {
     for (const violation of violations) {
       console.error(
-        `${violation.path ?? violation.table}: ${violation.rule}${violation.import ? ` (${violation.import})` : ""}`,
+        `${violation.path ?? violation.table ?? violation.contract}: ${violation.rule}${violation.import ? ` (${violation.import})` : ""}`,
       );
     }
     process.exitCode = 1;

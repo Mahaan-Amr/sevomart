@@ -15,5 +15,10 @@
     "notifications",
     "reporting-analytics"
   ],
-  "tables": {}
+  "tables": {},
+  "contracts": {
+    "@sevo/contracts/identity-access/v1": "identity-access",
+    "@sevo/contracts/store/v1": "store",
+    "@sevo/contracts/media/v1": "media"
+  }
 }

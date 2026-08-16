@@ -1,6 +1,5 @@
 export type SettlementDestination = {
   kind: "TEST";
-  reference: string;
 };
 
 export type VerifiedSettlementDestination = SettlementDestination & {

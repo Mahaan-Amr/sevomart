@@ -1,14 +1,30 @@
+import { apiErrorV1Examples, apiErrorV1Schemas } from "@sevo/contracts/api-errors/v1";
 import {
-  identityStoreContractExamples,
-  identityStoreContractSchemas,
-} from "@sevo/contracts";
+  identityAccessV1Examples,
+  identityAccessV1Schemas,
+} from "@sevo/contracts/identity-access/v1";
+import { mediaV1Examples, mediaV1Schemas } from "@sevo/contracts/media/v1";
+import { storeV1Examples, storeV1Schemas } from "@sevo/contracts/store/v1";
 import { describe, expect, it } from "vitest";
+
+const contractSchemas = {
+  ...identityAccessV1Schemas,
+  ...storeV1Schemas,
+  ...mediaV1Schemas,
+  ...apiErrorV1Schemas,
+};
+const contractExamples = {
+  ...identityAccessV1Examples,
+  ...storeV1Examples,
+  ...mediaV1Examples,
+  ...apiErrorV1Examples,
+};
 
 describe("identity and store shared schemas", () => {
   it("accepts every published Persian request and response example", () => {
-    for (const [schemaName, example] of Object.entries(identityStoreContractExamples)) {
+    for (const [schemaName, example] of Object.entries(contractExamples)) {
       expect(
-        identityStoreContractSchemas[schemaName].safeParse(example),
+        contractSchemas[schemaName].safeParse(example),
         `${schemaName} example must satisfy its shared schema`,
       ).toMatchObject({ success: true });
     }
@@ -16,12 +32,31 @@ describe("identity and store shared schemas", () => {
 
   it("rejects a non-Iranian mobile number and malformed store slug", () => {
     expect(
-      identityStoreContractSchemas.OtpRequest.safeParse({ mobile: "12345" }).success,
+      identityAccessV1Schemas.OtpRequest.safeParse({ mobile: "12345" }).success,
     ).toBe(false);
     expect(
-      identityStoreContractSchemas.StoreDraftInput.safeParse({
-        ...identityStoreContractExamples.StoreDraftInput,
+      storeV1Schemas.StoreDraftInput.safeParse({
+        ...storeV1Examples.StoreDraftInput,
         slug: "فروشگاه من",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("allows an incomplete draft and omitted visual customization", () => {
+    expect(
+      storeV1Schemas.StoreDraftInput.safeParse({
+        name: "خانه سفال ماه",
+      }),
+    ).toMatchObject({ success: true });
+  });
+
+  it("rejects an incomplete store once its status is published", () => {
+    expect(
+      storeV1Schemas.StoreDraft.safeParse({
+        id: "5f683499-e223-4b79-b353-0a75c7261b71",
+        name: "خانه سفال ماه",
+        status: "PUBLISHED",
+        updatedAt: "2026-08-16T09:00:00.000Z",
       }).success,
     ).toBe(false);
   });

@@ -1,18 +1,16 @@
-export type OtpDestination = {
-  mobile: string;
-};
+import type { IranianMobile, OtpCode } from "@sevo/contracts/identity-access/v1";
 
-export type OtpChallenge = {
-  challengeId: string;
+export type OtpDelivery = {
+  mobile: IranianMobile;
+  code: OtpCode;
   expiresAt: Date;
+  correlationId: string;
 };
 
-export type OtpVerification = {
-  challengeId: string;
-  code: string;
+export type OtpDeliveryReceipt = {
+  providerReference: string;
 };
 
 export interface OtpProvider {
-  requestChallenge(destination: OtpDestination): Promise<OtpChallenge>;
-  verifyChallenge(verification: OtpVerification): Promise<boolean>;
+  deliverOtp(delivery: OtpDelivery): Promise<OtpDeliveryReceipt>;
 }
