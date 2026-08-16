@@ -100,4 +100,77 @@ describe("seller store HTTP API with PostgreSQL", () => {
       store: { activeProductCount: 0, status: "PUBLISHED" },
     });
   });
+
+  it("keeps uploaded media private until its store is published", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const upload = await server.inject({
+      method: "POST",
+      url: "/v1/seller/media",
+      headers: { cookie },
+      payload: {
+        fileName: "logo.png",
+        contentType: "image/png",
+        contentBase64: "iVBORw==",
+      },
+    });
+    expect(upload.statusCode).toBe(201);
+    const media = upload.json<{ id: string; url: string }>();
+
+    const privateRead = await server.inject({ method: "GET", url: media.url });
+    expect(privateRead.statusCode).toBe(401);
+
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+      payload: {
+        name: "خانه رسانه",
+        slug: "integration-media-store",
+        bio: "فروشگاه آزمایشی با نشان اختصاصی",
+        shippingMethods: [{ code: "NATIONAL_POST", label: "پست پیشتاز" }],
+        returnPolicy: "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
+        settlementDestination: { kind: "TEST" },
+        logoMediaId: media.id,
+        coverMediaId: null,
+        themeColor: "#A41439",
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const publication = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: { cookie },
+    });
+    expect(publication.statusCode).toBe(200);
+
+    const publicRead = await server.inject({ method: "GET", url: media.url });
+    expect(publicRead.statusCode).toBe(200);
+    expect(publicRead.headers["content-type"]).toContain("image/png");
+
+    const publicStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/integration-media-store",
+    });
+    expect(publicStore.statusCode).toBe(200);
+    expect(publicStore.json()).toMatchObject({
+      logo: { id: media.id, contentType: "image/png" },
+      status: "PUBLISHED",
+    });
+
+    const edited = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+      payload: { name: "خانه رسانه تازه" },
+    });
+    expect(edited.json()).toMatchObject({ status: "DRAFT" });
+    const noLongerPublic = await server.inject({
+      method: "GET",
+      url: "/v1/stores/integration-media-store",
+    });
+    expect(noLongerPublic.statusCode).toBe(404);
+  });
 });

@@ -18,9 +18,11 @@ import {
 } from "../identity-access/public";
 import { storeDraftInputContract, storeSlugContract } from "@sevo/contracts/store/v1";
 import type { FastifyRequest } from "fastify";
+import { requireSeller } from "../../http/seller-session";
 
 import {
   IncompleteStoreError,
+  InvalidStoreMediaError,
   StoreNotFoundError,
   StoreService,
   StoreSlugConflictError,
@@ -38,13 +40,13 @@ export class StoreController {
 
   @Get("seller/store/draft")
   async readDraft(@Req() request: FastifyRequest) {
-    const sellerId = await this.requireSeller(request);
+    const sellerId = await requireSeller(request, this.sessions);
     return this.handle(request, () => this.service.readDraft(sellerId));
   }
 
   @Put("seller/store/draft")
   async saveDraft(@Body() body: unknown, @Req() request: FastifyRequest) {
-    const sellerId = await this.requireSeller(request);
+    const sellerId = await requireSeller(request, this.sessions);
     const parsed = storeDraftInputContract.safeParse(body);
     if (!parsed.success) {
       throw validationError(
@@ -61,7 +63,7 @@ export class StoreController {
 
   @Get("store-slugs/:slug/availability")
   async checkSlug(@Param("slug") value: string, @Req() request: FastifyRequest) {
-    const sellerId = await this.requireSeller(request);
+    const sellerId = await requireSeller(request, this.sessions);
     const parsed = storeSlugContract.safeParse(value);
     if (!parsed.success) {
       throw validationError(request.id, "شناسه لینک معتبر نیست.", [
@@ -73,14 +75,14 @@ export class StoreController {
 
   @Get("seller/store/preview")
   async preview(@Req() request: FastifyRequest) {
-    const sellerId = await this.requireSeller(request);
+    const sellerId = await requireSeller(request, this.sessions);
     return this.handle(request, () => this.service.preview(sellerId));
   }
 
   @Post("seller/store/publication")
   @HttpCode(HttpStatus.OK)
   async publish(@Req() request: FastifyRequest) {
-    const sellerId = await this.requireSeller(request);
+    const sellerId = await requireSeller(request, this.sessions);
     return this.handle(request, () => this.service.publish(sellerId));
   }
 
@@ -89,22 +91,6 @@ export class StoreController {
     const parsed = storeSlugContract.safeParse(value);
     if (!parsed.success) return this.notFound(request.id);
     return this.handle(request, () => this.service.readPublished(parsed.data));
-  }
-
-  private async requireSeller(request: FastifyRequest) {
-    const token = readCookie(request.headers.cookie, "sevo_seller_session") ?? "";
-    const session = await this.sessions.readActiveSellerSession(token);
-    if (!session) {
-      throw new HttpException(
-        {
-          code: "UNAUTHORIZED",
-          message: "برای ادامه دوباره وارد شوید.",
-          correlationId: request.id,
-        },
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
-    return session.seller.id;
   }
 
   private async handle<T>(request: FastifyRequest, operation: () => Promise<T>) {
@@ -133,6 +119,11 @@ export class StoreController {
           })),
         );
       }
+      if (error instanceof InvalidStoreMediaError) {
+        throw validationError(request.id, "تصویر فروشگاه معتبر نیست.", [
+          { field: "media", code: "INVALID_FORMAT" },
+        ]);
+      }
       throw error;
     }
   }
@@ -147,15 +138,6 @@ export class StoreController {
       HttpStatus.NOT_FOUND,
     );
   }
-}
-
-function readCookie(header: string | undefined, name: string): string | undefined {
-  return header
-    ?.split(";")
-    .map((part) => part.trim().split("="))
-    .find(([key]) => key === name)
-    ?.slice(1)
-    .join("=");
 }
 
 function validationError(

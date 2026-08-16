@@ -20,6 +20,11 @@ export type MissingStoreField =
   StorePreview["publicationReadiness"]["missingFields"][number];
 
 export class StoreNotFoundError extends Error {}
+export class InvalidStoreMediaError extends Error {
+  constructor(readonly mediaId: string) {
+    super("Store media is missing or belongs to another seller");
+  }
+}
 export class StoreSlugConflictError extends Error {
   constructor(readonly slug: string) {
     super("Store slug is already in use");
@@ -34,9 +39,14 @@ export class IncompleteStoreError extends Error {
 type VerifySettlement = (
   destination: SettlementDestination,
 ) => Promise<VerifiedSettlementDestination>;
-type ResolveMedia = (
-  id: string,
-) => Promise<{ contentType: "image/jpeg" | "image/png" | "image/webp" } | undefined>;
+type ResolveMedia = (id: string) => Promise<
+  | {
+      contentType: "image/jpeg" | "image/png" | "image/webp";
+      ownerSellerId: string;
+    }
+  | undefined
+>;
+type PublishMedia = (id: string, sellerId: string) => Promise<void>;
 
 export class StoreService {
   constructor(
@@ -44,6 +54,7 @@ export class StoreService {
     private readonly verifySettlement: VerifySettlement,
     private readonly now: () => Date = () => new Date(),
     private readonly resolveMedia: ResolveMedia = async () => undefined,
+    private readonly publishMedia: PublishMedia = async () => undefined,
   ) {}
 
   async readDraft(sellerId: string): Promise<StoreDraft> {
@@ -53,6 +64,7 @@ export class StoreService {
   }
 
   async saveDraft(sellerId: string, input: StoreDraftInput): Promise<StoreDraft> {
+    await this.assertOwnedMedia(sellerId, [input.logoMediaId, input.coverMediaId]);
     const current = await this.repository.findBySellerId(sellerId);
     if (input.slug) {
       const owner = await this.repository.findBySlug(input.slug);
@@ -83,8 +95,8 @@ export class StoreService {
           ? input.coverMediaId
           : (current?.coverMediaId ?? null),
       themeColor: input.themeColor ?? current?.themeColor ?? "#A41439",
-      status: current?.status ?? "DRAFT",
-      publishedAt: current?.publishedAt,
+      status: "DRAFT",
+      publishedAt: undefined,
       updatedAt,
     });
     return toDraft(saved);
@@ -114,7 +126,13 @@ export class StoreService {
     if (conflicting && conflicting.sellerId !== sellerId) {
       throw new StoreSlugConflictError(row.slug!);
     }
+    await this.assertOwnedMedia(sellerId, [row.logoMediaId, row.coverMediaId]);
     const published = await this.repository.publish(row.id, this.now());
+    await Promise.all(
+      [published.logoMediaId, published.coverMediaId]
+        .filter((id): id is string => Boolean(id))
+        .map((id) => this.publishMedia(id, sellerId)),
+    );
     return {
       store: await this.toPublicStore(published),
       publicUrl: `/s/${published.slug!}`,
@@ -133,6 +151,22 @@ export class StoreService {
       row.coverMediaId ? this.resolveMedia(row.coverMediaId) : undefined,
     ]);
     return toPublicStore(row, logo?.contentType, cover?.contentType);
+  }
+
+  private async assertOwnedMedia(
+    sellerId: string,
+    mediaIds: Array<string | null | undefined>,
+  ): Promise<void> {
+    await Promise.all(
+      mediaIds
+        .filter((id): id is string => Boolean(id))
+        .map(async (id) => {
+          const media = await this.resolveMedia(id);
+          if (!media || media.ownerSellerId !== sellerId) {
+            throw new InvalidStoreMediaError(id);
+          }
+        }),
+    );
   }
 }
 

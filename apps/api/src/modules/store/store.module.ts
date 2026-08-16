@@ -51,6 +51,7 @@ export class StoreModule {
               (destination) => verifier.verify(destination),
               undefined,
               (id) => mediaStorage.get(id),
+              (id, sellerId) => mediaStorage.makePublic(id, sellerId),
             ),
         },
       ],

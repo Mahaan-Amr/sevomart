@@ -8,12 +8,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
-  await sql`
-    delete from store_stores
-    where seller_id in (
-      select id from identity_sellers where mobile = '09111111111'
-    )
-  `;
+  await sql`delete from store_stores`;
   await sql.end();
 
   await page.goto("/seller/login");
@@ -33,6 +28,12 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page
     .getByLabel("سیاست مرجوعی")
     .fill("تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.");
+  await page.getByText("ظاهر فروشگاه (اختیاری)").click();
+  await page.getByLabel("لوگو").setInputFiles({
+    name: "logo.png",
+    mimeType: "image/png",
+    buffer: Buffer.from([137, 80, 78, 71]),
+  });
   await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
 
   await expect(page.getByRole("heading", { name: "پیش‌نمایش فروشگاه" })).toBeVisible();
@@ -45,5 +46,5 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "انتشار فروشگاه" }).click();
 
   await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "/s/e2e-khane-mah" })).toBeVisible();
+  await expect(page.getByText("/s/e2e-khane-mah", { exact: true })).toBeVisible();
 });

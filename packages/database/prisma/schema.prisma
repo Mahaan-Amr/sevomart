@@ -12,14 +12,12 @@ model Seller {
   mobile    String   @unique @db.VarChar(11)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   sessions SellerSession[]
-  store    Store?
 
   @@map("identity_sellers")
 }
 
 model Store {
   id                   String                @id @db.Uuid
-  sellerId             String                @unique @map("seller_id") @db.Uuid
   name                 String?               @db.VarChar(80)
   slug                 String?               @unique @db.VarChar(48)
   bio                  String?               @db.VarChar(240)
@@ -33,10 +31,22 @@ model Store {
   status               String                @default("DRAFT") @db.VarChar(16)
   publishedAt          DateTime?             @map("published_at") @db.Timestamptz(3)
   updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
-  seller               Seller                @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  memberships          StoreMembership[]
   shippingMethods      StoreShippingMethod[]
 
   @@map("store_stores")
+}
+
+model StoreMembership {
+  id       String @id @db.Uuid
+  storeId  String @map("store_id") @db.Uuid
+  sellerId String @map("seller_id") @db.Uuid
+  role     String @default("OWNER") @db.VarChar(16)
+  store    Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, sellerId])
+  @@index([sellerId])
+  @@map("store_memberships")
 }
 
 model StoreShippingMethod {

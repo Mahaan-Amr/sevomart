@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { storeSlugContract } from "@sevo/contracts/store/v1";
 
-import { IncompleteStoreError, StoreService } from "./store.service";
+import {
+  IncompleteStoreError,
+  StoreService,
+  StoreSlugConflictError,
+} from "./store.service";
 import type { StoreRepository, StoreRow } from "../public";
 
 class MemoryStoreRepository implements StoreRepository {
   row?: StoreRow;
+  slugOwner?: StoreRow;
 
   async findBySellerId() {
     return this.row;
   }
 
-  async findBySlug() {
-    return undefined;
+  async findBySlug(slug: string) {
+    return this.row?.slug === slug ? this.row : this.slugOwner;
   }
 
   async saveDraft(row: StoreRow) {
@@ -84,5 +89,49 @@ describe("StoreService publication", () => {
         platformBrandingRequired: true,
       },
     });
+  });
+
+  it("rejects a slug already owned by another seller", async () => {
+    const repository = new MemoryStoreRepository();
+    repository.slugOwner = {
+      id: "store-2",
+      sellerId: "seller-2",
+      slug: "khane-mah",
+      status: "DRAFT",
+      updatedAt: new Date(),
+    };
+    const service = new StoreService(repository, async (destination) => ({
+      ...destination,
+      status: "TEST_VERIFIED",
+      verifiedAt: new Date(),
+    }));
+
+    await expect(
+      service.saveDraft("seller-1", {
+        slug: storeSlugContract.parse("khane-mah"),
+      }),
+    ).rejects.toEqual(new StoreSlugConflictError("khane-mah"));
+  });
+
+  it("returns a published store to draft before applying edits", async () => {
+    const repository = new MemoryStoreRepository();
+    repository.row = {
+      id: "store-1",
+      sellerId: "seller-1",
+      name: "نام قبلی",
+      status: "PUBLISHED",
+      publishedAt: new Date("2026-08-16T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-16T09:00:00.000Z"),
+    };
+    const service = new StoreService(repository, async (destination) => ({
+      ...destination,
+      status: "TEST_VERIFIED",
+      verifiedAt: new Date(),
+    }));
+
+    const draft = await service.saveDraft("seller-1", { name: "نام تازه" });
+
+    expect(draft).toMatchObject({ name: "نام تازه", status: "DRAFT" });
+    expect(repository.row?.publishedAt).toBeUndefined();
   });
 });

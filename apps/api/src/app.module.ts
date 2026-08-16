@@ -27,7 +27,7 @@ export class AppModule {
           ...identityOptions,
           otpProvider,
         }),
-        MediaModule.register(),
+        MediaModule.register(environment),
         StoreModule.register(environment),
       ],
     };

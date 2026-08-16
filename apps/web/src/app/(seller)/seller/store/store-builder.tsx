@@ -193,9 +193,9 @@ export function StoreBuilder() {
           <span className={styles.status}>منتشرشده</span>
           <h1 id="published-title">فروشگاه آماده است</h1>
           <p>{message || "لینک عمومی فروشگاه شما آمادهٔ اشتراک‌گذاری است."}</p>
-          <a className={styles.publicLink} href={publicUrl} dir="ltr">
+          <code className={styles.publicLink} dir="ltr">
             {publicUrl}
-          </a>
+          </code>
           <button className={styles.secondaryButton} onClick={() => setStage("edit")}>
             ویرایش فروشگاه
           </button>

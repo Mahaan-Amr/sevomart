@@ -22,6 +22,7 @@ import {
 } from "@sevo/contracts/media/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
+import { requireSeller } from "../../http/seller-session";
 import { MEDIA_STORAGE, type MediaStorage } from "./public";
 
 @ApiExcludeController()
@@ -35,7 +36,7 @@ export class MediaController {
 
   @Post("seller/media")
   async upload(@Body() body: unknown, @Req() request: FastifyRequest) {
-    await this.requireSeller(request);
+    const sellerId = await requireSeller(request, this.sessions);
     const parsed = mediaUploadInputContract.safeParse(body);
     if (!parsed.success) {
       throw new HttpException(
@@ -53,6 +54,8 @@ export class MediaController {
       key: id,
       contentType: parsed.data.contentType,
       bytes: Buffer.from(parsed.data.contentBase64, "base64"),
+      ownerSellerId: sellerId,
+      visibility: "PRIVATE",
     });
     return {
       id,
@@ -79,29 +82,19 @@ export class MediaController {
         HttpStatus.NOT_FOUND,
       );
     }
+    if (media.visibility === "PRIVATE") {
+      const sellerId = await requireSeller(request, this.sessions);
+      if (media.ownerSellerId !== sellerId) {
+        throw new HttpException(
+          {
+            code: "MEDIA_NOT_FOUND",
+            message: "رسانه پیدا نشد.",
+            correlationId: request.id,
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+    }
     return reply.type(media.contentType).send(Buffer.from(media.bytes));
   }
-
-  private async requireSeller(request: FastifyRequest) {
-    const token = readCookie(request.headers.cookie, "sevo_seller_session") ?? "";
-    if (!(await this.sessions.readActiveSellerSession(token))) {
-      throw new HttpException(
-        {
-          code: "UNAUTHORIZED",
-          message: "برای ادامه دوباره وارد شوید.",
-          correlationId: request.id,
-        },
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
-  }
-}
-
-function readCookie(header: string | undefined, name: string): string | undefined {
-  return header
-    ?.split(";")
-    .map((part) => part.trim().split("="))
-    .find(([key]) => key === name)
-    ?.slice(1)
-    .join("=");
 }

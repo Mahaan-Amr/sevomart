@@ -14,4 +14,12 @@ export class FakeObjectStorage implements ObjectStoragePort {
     const object = this.#objects.get(key);
     return object ? { ...object, bytes: object.bytes.slice() } : undefined;
   }
+
+  async makePublic(key: string, ownerSellerId: string): Promise<void> {
+    const object = this.#objects.get(key);
+    if (!object || object.ownerSellerId !== ownerSellerId) {
+      throw new Error("Media is not owned by the publishing seller");
+    }
+    this.#objects.set(key, { ...object, visibility: "PUBLIC" });
+  }
 }
