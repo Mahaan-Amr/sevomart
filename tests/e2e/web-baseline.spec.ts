@@ -16,7 +16,7 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   await expect(page.locator("html")).toHaveAttribute("lang", "fa");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
-    page.getByRole("heading", { name: "خط پایه توسعه آماده است" }),
+    page.getByRole("heading", { name: "سوو در حال آماده‌شدن است" }),
   ).toBeVisible();
 
   expect(

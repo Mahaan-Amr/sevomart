@@ -6,7 +6,7 @@ import { PwaRegistration } from "./pwa-registration";
 
 export const metadata: Metadata = {
   title: "سوو",
-  description: "خط پایه توسعه پلتفرم فروشگاهی",
+  description: "فروشگاه‌ها و کالاهای تازه در سوو",
   manifest: "/manifest.webmanifest",
 };
 

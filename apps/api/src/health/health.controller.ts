@@ -18,7 +18,7 @@ class HealthResponseDto implements HealthResponse {
 export class HealthController {
   @Get()
   @ApiOkResponse({ type: HealthResponseDto })
-  read(): HealthResponse {
+  getHealthStatus(): HealthResponse {
     return {
       status: "ok",
       service: "api",

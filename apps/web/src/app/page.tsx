@@ -2,11 +2,8 @@ export default function HomePage() {
   return (
     <main>
       <section className="status" aria-labelledby="status-title">
-        <h1 id="status-title">خط پایه توسعه آماده است</h1>
-        <p>
-          مسیرهای خریدار و فروشنده از این نقطه، مستقل و روی قراردادهای مشترک ساخته
-          می‌شوند.
-        </p>
+        <h1 id="status-title">سوو در حال آماده‌شدن است</h1>
+        <p>به‌زودی می‌توانید فروشگاه‌ها و کالاهای تازه را اینجا ببینید.</p>
       </section>
     </main>
   );

@@ -16,7 +16,7 @@
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
     "dev": "pnpm db:up && pnpm build:packages && pnpm dev:apps",
-    "dev:apps": "pnpm -r --parallel --stream --if-present dev",
+    "dev:apps": "node --env-file-if-exists=.env scripts/run-dev-apps.mjs",
     "format": "prettier --write \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
     "lint": "eslint . && pnpm check:architecture",
