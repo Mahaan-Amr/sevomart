@@ -57,7 +57,7 @@ function ErrorStorefront() {
         </span>
         <h1>فروشگاه باز نشد</h1>
         <p>مشکلی از سمت ما پیش آمده است. کمی بعد دوباره تلاش کنید.</p>
-        <a className={styles.retry} href="/s/fixture-short">
+        <a className={styles.retry} href="/s/fixture-error?retry=1">
           دوباره تلاش کنید
         </a>
       </section>
@@ -137,11 +137,15 @@ function ReadyStorefront({ fixture }: { fixture: ReadyFixture }) {
 
 export default async function StorefrontPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ retry?: string | string[] }>;
 }) {
-  const { slug } = await params;
-  const fixture = getStorefrontFixture(slug);
+  const [{ slug }, query] = await Promise.all([params, searchParams]);
+  const fixtureSlug =
+    slug === "fixture-error" && query.retry === "1" ? "fixture-short" : slug;
+  const fixture = getStorefrontFixture(fixtureSlug);
   if (!fixture) {
     notFound();
   }
