@@ -15,7 +15,11 @@
     "notifications",
     "reporting-analytics"
   ],
-  "tables": {},
+  "tables": {
+    "identity_sellers": "identity-access",
+    "identity_otp_challenges": "identity-access",
+    "identity_seller_sessions": "identity-access"
+  },
   "contracts": {
     "@sevo/contracts/identity-access/v1": "identity-access",
     "@sevo/contracts/store/v1": "store",

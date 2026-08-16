@@ -7,5 +7,6 @@ dist/
 node_modules/
 packages/database/generated/
 playwright-report/
+output/playwright-results/
 test-results/
 *.tsbuildinfo

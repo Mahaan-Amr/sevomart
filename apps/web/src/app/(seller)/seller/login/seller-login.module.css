@@ -1,0 +1,142 @@
+.page {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(100%, 500px);
+  padding: 24px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow:
+    8px 8px 20px var(--shadow-neutral),
+    -8px -8px 20px var(--shadow-highlight-strong);
+}
+
+.brand {
+  display: inline-block;
+  margin-block-end: 12px;
+  color: var(--color-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.intro {
+  margin-block-end: 20px;
+}
+
+.form {
+  display: grid;
+  gap: 8px;
+  margin-block-start: 20px;
+}
+
+.form label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  box-shadow: inset 3px 3px 8px var(--shadow-neutral-soft);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-align: left;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.form input:focus-visible,
+.form button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.form button {
+  min-height: 44px;
+  margin-block-start: 8px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  background: var(--color-primary);
+  box-shadow: 3px 3px 8px var(--shadow-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  transition:
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.form button:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+  transform: translateY(-2px);
+}
+
+.form button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.form .secondary {
+  margin-block-start: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-primary-dark);
+}
+
+.message {
+  min-height: 25px;
+  color: var(--color-primary-dark);
+  font-size: 13px;
+}
+
+.devCode {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-size: 13px;
+}
+
+.devCode b {
+  font-size: 16px;
+  letter-spacing: 0.12em;
+}
+
+@media (max-width: 480px) {
+  .page {
+    align-items: start;
+    padding: 16px;
+    padding-block-start: 48px;
+  }
+
+  .panel {
+    padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form input,
+  .form button {
+    transition: none;
+  }
+}

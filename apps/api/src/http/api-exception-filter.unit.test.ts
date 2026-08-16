@@ -40,7 +40,7 @@ describe("ApiExceptionFilter", () => {
 
     expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
     expect(send).toHaveBeenCalledWith({
-      code: "INTERNAL_ERROR",
+      code: "INTERNAL_SERVER_ERROR",
       message: "درخواست انجام نشد. دوباره تلاش کنید.",
       correlationId: "correlation-123",
     });

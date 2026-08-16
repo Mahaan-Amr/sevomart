@@ -18,10 +18,17 @@ export class ApiExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
+    const response =
+      exception instanceof HttpException ? exception.getResponse() : null;
+    if (typeof response === "object" && response !== null && "code" in response) {
+      void reply.status(status).send(response);
+      return;
+    }
+
     void reply.status(status).send({
       code:
         status === HttpStatus.INTERNAL_SERVER_ERROR
-          ? "INTERNAL_ERROR"
+          ? "INTERNAL_SERVER_ERROR"
           : "REQUEST_ERROR",
       message: "درخواست انجام نشد. دوباره تلاش کنید.",
       correlationId: request.id,

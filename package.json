@@ -25,6 +25,7 @@
     "test:contract": "pnpm build:packages && vitest run --config vitest.contract.config.ts",
     "test:integration": "pnpm build:packages && node scripts/run-integration-tests.mjs",
     "test:e2e": "playwright test",
+    "e2e:api": "node scripts/run-e2e-api.mjs",
     "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",
     "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm test:integration"
   },
