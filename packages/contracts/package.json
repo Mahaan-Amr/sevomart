@@ -12,6 +12,10 @@
     "./health": {
       "types": "./dist/health.d.ts",
       "default": "./dist/health.js"
+    },
+    "./identity-store": {
+      "types": "./dist/identity-store.d.ts",
+      "default": "./dist/identity-store.js"
     }
   },
   "scripts": {

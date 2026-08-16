@@ -30,6 +30,25 @@ export function findBoundaryViolations(files) {
         /apps\/api\/src\/modules\/([^/]+)\/(.+)$/,
       );
 
+      const sourceLayer = sourcePath.match(
+        /apps\/api\/src\/modules\/[^/]+\/(application|domain|public(?:\.[cm]?tsx?)?)/,
+      )?.[1];
+      const targetLayer = targetModuleMatch?.[2].split("/")[0];
+
+      if (
+        sourceModule &&
+        sourceLayer &&
+        targetModuleMatch &&
+        targetModuleMatch[1] === sourceModule &&
+        (targetLayer === "infrastructure" || targetLayer === "testing")
+      ) {
+        violations.push({
+          path: sourcePath,
+          import: specifier,
+          rule: "module-core-does-not-import-adapter",
+        });
+      }
+
       if (
         sourceModule &&
         targetModuleMatch &&

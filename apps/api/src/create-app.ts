@@ -7,6 +7,7 @@ import type { RuntimeEnvironment } from "@sevo/config";
 
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./http/api-exception.filter";
+import { addIdentityStoreOpenApiContract } from "./openapi/identity-store.openapi";
 
 export async function createApiApp(
   environment: RuntimeEnvironment,
@@ -34,12 +35,12 @@ export async function createApiApp(
     .setTitle("Sevo API")
     .setVersion("1")
     .build();
-  SwaggerModule.setup(
-    "openapi",
-    app,
+  const openApiDocument = addIdentityStoreOpenApiContract(
     SwaggerModule.createDocument(app, openApiConfig),
-    { jsonDocumentUrl: "openapi.json" },
   );
+  SwaggerModule.setup("openapi", app, openApiDocument, {
+    jsonDocumentUrl: "openapi.json",
+  });
 
   await app.init();
   return app;

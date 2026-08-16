@@ -59,6 +59,21 @@ describe("module boundary checker", () => {
       ]),
     ).toEqual([expect.objectContaining({ rule: "module-public-contract-only" })]);
   });
+
+  it("rejects application code importing an adapter directly", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/api/src/modules/identity-access/application/request-otp.ts",
+          source: 'import { DevOtpProvider } from "../testing/dev-otp-provider";',
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        rule: "module-core-does-not-import-adapter",
+      }),
+    ]);
+  });
 });
 
 describe("table ownership checker", () => {
