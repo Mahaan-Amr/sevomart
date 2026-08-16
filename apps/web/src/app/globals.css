@@ -2,10 +2,23 @@
   color-scheme: light;
   --color-primary: #a41439;
   --color-primary-dark: #760b29;
+  --color-primary-light: #c9345b;
   --color-surface: #faf8f8;
   --color-background: #f4f0f1;
   --color-text: #2f2528;
   --color-muted: #6f6468;
+  --color-on-primary: #fff;
+  --color-cover-start: #f6e3e9;
+  --color-cover-end: #ead5db;
+  --color-highlight-soft: rgb(255 255 255 / 65%);
+  --color-border-primary-soft: rgb(164 20 57 / 10%);
+  --color-border-primary: rgb(164 20 57 / 12%);
+  --color-divider: rgb(129 118 122 / 18%);
+  --shadow-neutral: rgb(96 73 80 / 10%);
+  --shadow-neutral-soft: rgb(96 73 80 / 8%);
+  --shadow-highlight: rgb(255 255 255 / 72%);
+  --shadow-highlight-strong: rgb(255 255 255 / 70%);
+  --shadow-primary: rgb(118 11 41 / 20%);
   font-family: "Yekan Bakh", Tahoma, sans-serif;
 }
 
@@ -29,12 +42,12 @@ main {
 .status {
   width: min(100%, 520px);
   padding: 24px;
-  border: 1px solid rgb(164 20 57 / 12%);
+  border: 1px solid var(--color-border-primary);
   border-radius: 20px;
   background: var(--color-surface);
   box-shadow:
-    8px 8px 20px rgb(96 73 80 / 10%),
-    -8px -8px 20px rgb(255 255 255 / 70%);
+    8px 8px 20px var(--shadow-neutral),
+    -8px -8px 20px var(--shadow-highlight-strong);
 }
 
 h1 {
