@@ -22,4 +22,12 @@ export class FakeObjectStorage implements ObjectStoragePort {
     }
     this.#objects.set(key, { ...object, visibility: "PUBLIC" });
   }
+
+  async makePrivate(key: string, ownerSellerId: string): Promise<void> {
+    const object = this.#objects.get(key);
+    if (!object || object.ownerSellerId !== ownerSellerId) {
+      throw new Error("Media is not owned by the editing seller");
+    }
+    this.#objects.set(key, { ...object, visibility: "PRIVATE" });
+  }
 }

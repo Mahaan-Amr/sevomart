@@ -12,6 +12,7 @@ export interface MediaStorage {
   put(object: StoredMedia): Promise<void>;
   get(key: string): Promise<StoredMedia | undefined>;
   makePublic(key: string, ownerSellerId: string): Promise<void>;
+  makePrivate(key: string, ownerSellerId: string): Promise<void>;
 }
 
 /** @deprecated Use the module-owned MediaStorage port. */

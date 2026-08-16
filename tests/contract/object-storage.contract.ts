@@ -73,5 +73,23 @@ export function runObjectStorageContract(
         visibility: "PRIVATE",
       });
     });
+
+    it("returns public media to private for its owner", async () => {
+      const storage = createStorage();
+      await storage.put({
+        key: "media/unpublished",
+        contentType: "image/png",
+        bytes: new Uint8Array([1]),
+        ownerSellerId: "seller-test",
+        visibility: "PRIVATE",
+      });
+      await storage.makePublic("media/unpublished", "seller-test");
+
+      await storage.makePrivate("media/unpublished", "seller-test");
+
+      expect(await storage.get("media/unpublished")).toMatchObject({
+        visibility: "PRIVATE",
+      });
+    });
   });
 }

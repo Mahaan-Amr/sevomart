@@ -47,6 +47,7 @@ type ResolveMedia = (id: string) => Promise<
   | undefined
 >;
 type PublishMedia = (id: string, sellerId: string) => Promise<void>;
+type UnpublishMedia = (id: string, sellerId: string) => Promise<void>;
 
 export class StoreService {
   constructor(
@@ -55,6 +56,7 @@ export class StoreService {
     private readonly now: () => Date = () => new Date(),
     private readonly resolveMedia: ResolveMedia = async () => undefined,
     private readonly publishMedia: PublishMedia = async () => undefined,
+    private readonly unpublishMedia: UnpublishMedia = async () => undefined,
   ) {}
 
   async readDraft(sellerId: string): Promise<StoreDraft> {
@@ -99,6 +101,19 @@ export class StoreService {
       publishedAt: undefined,
       updatedAt,
     });
+    if (current?.status === "PUBLISHED") {
+      await Promise.all(
+        [
+          current.logoMediaId,
+          current.coverMediaId,
+          saved.logoMediaId,
+          saved.coverMediaId,
+        ]
+          .filter((id): id is string => Boolean(id))
+          .filter((id, index, ids) => ids.indexOf(id) === index)
+          .map((id) => this.unpublishMedia(id, sellerId)),
+      );
+    }
     return toDraft(saved);
   }
 

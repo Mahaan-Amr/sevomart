@@ -112,7 +112,8 @@ describe("seller store HTTP API with PostgreSQL", () => {
       payload: {
         fileName: "logo.png",
         contentType: "image/png",
-        contentBase64: "iVBORw==",
+        contentBase64:
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
       },
     });
     expect(upload.statusCode).toBe(201);
@@ -172,5 +173,30 @@ describe("seller store HTTP API with PostgreSQL", () => {
       url: "/v1/stores/integration-media-store",
     });
     expect(noLongerPublic.statusCode).toBe(404);
+    const privateAgain = await server.inject({ method: "GET", url: media.url });
+    expect(privateAgain.statusCode).toBe(401);
+  });
+
+  it("rejects corrupt bytes that merely claim an image content type", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+
+    const upload = await server.inject({
+      method: "POST",
+      url: "/v1/seller/media",
+      headers: { cookie },
+      payload: {
+        fileName: "broken.png",
+        contentType: "image/png",
+        contentBase64: "bm90IGFuIGltYWdl",
+      },
+    });
+
+    expect(upload.statusCode).toBe(422);
+    expect(upload.json()).toMatchObject({
+      code: "VALIDATION_ERROR",
+      message: "تصویر انتخاب‌شده معتبر نیست.",
+    });
   });
 });

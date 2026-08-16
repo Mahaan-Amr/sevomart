@@ -32,7 +32,10 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByLabel("لوگو").setInputFiles({
     name: "logo.png",
     mimeType: "image/png",
-    buffer: Buffer.from([137, 80, 78, 71]),
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
   });
   await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
 

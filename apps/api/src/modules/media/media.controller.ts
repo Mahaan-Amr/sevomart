@@ -21,6 +21,7 @@ import {
   type MediaReference,
 } from "@sevo/contracts/media/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import sharp from "sharp";
 
 import { requireSeller } from "../../http/seller-session";
 import { MEDIA_STORAGE, type MediaStorage } from "./public";
@@ -39,21 +40,26 @@ export class MediaController {
     const sellerId = await requireSeller(request, this.sessions);
     const parsed = mediaUploadInputContract.safeParse(body);
     if (!parsed.success) {
-      throw new HttpException(
-        {
-          code: "VALIDATION_ERROR",
-          message: "تصویر انتخاب‌شده معتبر نیست.",
-          correlationId: request.id,
-          details: { issues: [{ field: "media", code: "INVALID_FORMAT" }] },
-        },
-        HttpStatus.UNPROCESSABLE_ENTITY,
-      );
+      throw invalidMedia(request.id);
+    }
+    let bytes: Buffer;
+    try {
+      bytes = decodeBase64(parsed.data.contentBase64);
+      const metadata = await sharp(bytes, {
+        failOn: "warning",
+        limitInputPixels: 16_000_000,
+      }).metadata();
+      if (metadata.format !== formatFor(parsed.data.contentType)) {
+        throw new Error("Media type does not match its bytes");
+      }
+    } catch {
+      throw invalidMedia(request.id);
     }
     const id = mediaIdContract.parse(crypto.randomUUID());
     await this.storage.put({
       key: id,
       contentType: parsed.data.contentType,
-      bytes: Buffer.from(parsed.data.contentBase64, "base64"),
+      bytes,
       ownerSellerId: sellerId,
       visibility: "PRIVATE",
     });
@@ -97,4 +103,29 @@ export class MediaController {
     }
     return reply.type(media.contentType).send(Buffer.from(media.bytes));
   }
+}
+
+function decodeBase64(value: string): Buffer {
+  if (!/^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{2}==|[A-Za-z\d+/]{3}=)?$/.test(value)) {
+    throw new Error("Invalid Base64");
+  }
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.length === 0) throw new Error("Empty media");
+  return bytes;
+}
+
+function formatFor(contentType: "image/jpeg" | "image/png" | "image/webp") {
+  return contentType.slice("image/".length);
+}
+
+function invalidMedia(correlationId: string) {
+  return new HttpException(
+    {
+      code: "VALIDATION_ERROR",
+      message: "تصویر انتخاب‌شده معتبر نیست.",
+      correlationId,
+      details: { issues: [{ field: "media", code: "INVALID_FORMAT" }] },
+    },
+    HttpStatus.UNPROCESSABLE_ENTITY,
+  );
 }

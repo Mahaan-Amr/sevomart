@@ -52,6 +52,7 @@ export class StoreModule {
               undefined,
               (id) => mediaStorage.get(id),
               (id, sellerId) => mediaStorage.makePublic(id, sellerId),
+              (id, sellerId) => mediaStorage.makePrivate(id, sellerId),
             ),
         },
       ],

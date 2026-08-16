@@ -16,6 +16,7 @@ import {
 import { useEffect, useState, type FormEvent } from "react";
 
 import styles from "./store-builder.module.css";
+import { readableStoreForeground } from "./store-color";
 
 type Stage = "edit" | "preview" | "published";
 type FieldErrors = Partial<Record<"name" | "slug" | "bio" | "returnPolicy", string>>;
@@ -206,6 +207,7 @@ export function StoreBuilder() {
 
   if (stage === "preview" && preview) {
     const draft = preview.store;
+    const themeColor = draft.themeColor ?? "#A41439";
     return (
       <main className={styles.page}>
         <section className={styles.workspace} aria-labelledby="preview-title">
@@ -220,7 +222,12 @@ export function StoreBuilder() {
           </header>
           <article
             className={styles.preview}
-            style={{ "--store-color": draft.themeColor } as React.CSSProperties}
+            style={
+              {
+                "--store-color": themeColor,
+                "--store-foreground": readableStoreForeground(themeColor),
+              } as React.CSSProperties
+            }
           >
             <div className={styles.cover}>
               {draft.coverMediaId ? (
