@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+overrides:
+  js-yaml: 5.2.2
+allowBuilds:
+  "@prisma/engines": true
+  "@scarf/scarf": false
+  esbuild: true
+  prisma: true
+  protobufjs: true
+minimumReleaseAgeExclude:
+  - "@nestjs/common@11.2.1"
+  - "@nestjs/core@11.2.1"
+  - "@nestjs/platform-fastify@11.2.1"

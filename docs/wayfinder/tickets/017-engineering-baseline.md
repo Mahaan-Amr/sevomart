@@ -3,7 +3,7 @@ title: آماده‌سازی خط پایه توسعه، تست و CI
 status: closed
 type: task
 label: wayfinder:task
-claimed_by:
+claimed_by: Mahaan-Amr
 blocked_by:
   - انتخاب پشته فنی و شکل استقرار نسخه اول
   - تعیین مرز ماژول‌ها و قراردادهای کار موازی
@@ -19,4 +19,4 @@ blocked_by:
 
 ## نتیجه
 
-خط پایه شامل pnpm workspace برای web، API و worker، PostgreSQL محلی، اجرای یک‌فرمانی، CI برای format/lint/architecture/typecheck/test/build/E2E/audit، قرارداد OpenAPI، آزمون PostgreSQL واقعی، سیاست مالکیت migration، Dockerfile و محیط نمونه بدون secret است. RTL/PWA، قلم محلی و کنترل‌های دسترس‌پذیری نیز در خط پایه پوشش داده شده‌اند.
+خط پایه شامل pnpm workspace برای web، API و worker، PostgreSQL محلی، اجرای یک‌فرمانی، CI برای format/lint/architecture/typecheck/test/build/E2E/audit، قرارداد OpenAPI، آزمون PostgreSQL واقعی، سیاست مالکیت migration، Dockerfile و محیط نمونه بدون secret است. RTL/PWA، قلم محلی و کنترل‌های دسترس‌پذیری نیز در خط پایه پوشش داده شده‌اند. جزئیات در [ADR-003](../../architecture/decisions/003-engineering-baseline.md) و [راهنمای توسعه](../../delivery/development-baseline.md) ثبت شده‌اند.

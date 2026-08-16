@@ -1,0 +1,19 @@
+{
+  "modules": [
+    "identity-access",
+    "store",
+    "catalog",
+    "inventory",
+    "orders",
+    "payments",
+    "fulfillment",
+    "conversations",
+    "problem-follow-up",
+    "content",
+    "feeds-following",
+    "media",
+    "notifications",
+    "reporting-analytics"
+  ],
+  "tables": {}
+}

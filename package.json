@@ -1,0 +1,44 @@
+{
+  "name": "sevo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "build:packages": "pnpm --filter @sevo/config --filter @sevo/contracts --filter @sevo/observability --filter @sevo/database -r --if-present build",
+    "check:architecture": "node scripts/check-boundaries.mjs",
+    "db:generate": "pnpm --filter @sevo/database generate",
+    "db:migrate": "pnpm --filter @sevo/database migrate",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "dev": "pnpm db:up && pnpm build:packages && pnpm dev:apps",
+    "dev:apps": "node --env-file-if-exists=.env scripts/run-dev-apps.mjs",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
+    "lint": "eslint . && pnpm check:architecture",
+    "test": "pnpm test:unit && pnpm test:contract && pnpm test:integration && pnpm test:e2e",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:contract": "pnpm build:packages && vitest run --config vitest.contract.config.ts",
+    "test:integration": "pnpm build:packages && node scripts/run-integration-tests.mjs",
+    "test:e2e": "playwright test",
+    "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",
+    "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm test:integration"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.62.1",
+    "@types/node": "26.2.0",
+    "@sevo/contracts": "workspace:*",
+    "eslint": "10.8.1",
+    "globals": "16.4.0",
+    "postgres": "3.4.7",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.10"
+  }
+}
