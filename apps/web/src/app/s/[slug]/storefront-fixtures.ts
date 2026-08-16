@@ -6,7 +6,7 @@ export type StorefrontFixture =
       identity: {
         name: string;
         description: string;
-        mark: string;
+        logoMonogram: string;
         accent: string;
         coverStart: string;
         coverEnd: string;
@@ -18,7 +18,7 @@ export type StorefrontFixture =
 const defaultIdentity = {
   name: "فروشگاه سپیدار",
   description: "انتخاب‌های ساده برای خانه‌ای آرام‌تر.",
-  mark: "س",
+  logoMonogram: "س",
   accent: "#A41439",
   coverStart: "#F6E3E9",
   coverEnd: "#EAD5DB",
@@ -63,7 +63,7 @@ const storefrontFixtures: Record<string, StorefrontFixture> = {
     identity: {
       name: "استودیو زرشک",
       description: "ساخته‌های پارچه‌ای با رنگ‌های گرم و جزئیات دست‌دوز.",
-      mark: "ز",
+      logoMonogram: "ز",
       accent: "#760B29",
       coverStart: "#EEC8D3",
       coverEnd: "#B75B75",
@@ -72,6 +72,6 @@ const storefrontFixtures: Record<string, StorefrontFixture> = {
   },
 };
 
-export function getStorefrontFixture(slug: string): StorefrontFixture {
-  return storefrontFixtures[slug] ?? errorFixture;
+export function getStorefrontFixture(slug: string): StorefrontFixture | undefined {
+  return storefrontFixtures[slug];
 }

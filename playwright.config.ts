@@ -34,7 +34,6 @@ export default defineConfig({
   projects: visualViewports.map(({ name, width, height }) => ({
     name,
     use: {
-      channel: process.env.CI ? undefined : "chrome",
       viewport: { width, height },
     },
   })),

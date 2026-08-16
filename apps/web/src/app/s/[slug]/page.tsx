@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 
 import { getStorefrontFixture, type StorefrontFixture } from "./storefront-fixtures";
@@ -32,12 +33,16 @@ function LoadingStorefront() {
           س
         </span>
         <h1>در حال آماده‌کردن فروشگاه</h1>
-        <p>اطلاعات فروشگاه تا چند لحظه دیگر نمایش داده می‌شود.</p>
+        <p>در حال دریافت اطلاعات این فروشگاه هستیم.</p>
         <div className={styles.skeleton} aria-hidden="true">
           <span />
           <span />
           <span />
         </div>
+      </section>
+      <section className={styles.trustUnavailable} aria-label="اطلاعات اعتماد">
+        <strong>اطلاعات خرید در حال دریافت است</strong>
+        <p>پیش از سفارش، روش ارسال، مرجوعی و پرداخت اینجا نمایش داده می‌شود.</p>
       </section>
     </StorefrontFrame>
   );
@@ -52,7 +57,7 @@ function ErrorStorefront() {
         </span>
         <h1>فروشگاه باز نشد</h1>
         <p>مشکلی از سمت ما پیش آمده است. کمی بعد دوباره تلاش کنید.</p>
-        <a className={styles.retry} href="/s/fixture-error">
+        <a className={styles.retry} href="/s/fixture-short">
           دوباره تلاش کنید
         </a>
       </section>
@@ -85,8 +90,11 @@ function TrustDetails({ fixture }: { fixture: ReadyFixture }) {
       </div>
       <div className={styles.trustItem}>
         <span>روش پرداخت</span>
-        <strong>تسویه آزمایشی</strong>
-        <p>این وضعیت فقط برای نمایش محیط آزمایشی است و تأیید واقعی محسوب نمی‌شود.</p>
+        <strong>تسویه مستقیم</strong>
+        <p>
+          مقصد تسویه «تأیید آزمایشی» دارد؛ این وضعیت تأیید واقعی یا تضمین بازپرداخت
+          نیست.
+        </p>
       </div>
     </section>
   );
@@ -105,7 +113,7 @@ function ReadyStorefront({ fixture }: { fixture: ReadyFixture }) {
         <div className={styles.cover} aria-hidden="true" />
         <div className={styles.identityBody}>
           <div className={styles.logo} aria-hidden="true">
-            {fixture.identity.mark}
+            {fixture.identity.logoMonogram}
           </div>
           <div className={styles.identityText}>
             <h1>{fixture.identity.name}</h1>
@@ -134,6 +142,9 @@ export default async function StorefrontPage({
 }) {
   const { slug } = await params;
   const fixture = getStorefrontFixture(slug);
+  if (!fixture) {
+    notFound();
+  }
 
   return (
     <>

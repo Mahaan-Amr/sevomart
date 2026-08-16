@@ -1,13 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-function luminance(rgb: string): number {
-  const channels = rgb.match(/\d+/g)?.slice(0, 3).map(Number) ?? [];
-  const linear = channels.map((channel) => {
-    const value = channel / 255;
-    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-}
+import { contrastRatio } from "../helpers/color-contrast";
 
 test("the web baseline is Persian, accessible, and right-to-left", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -41,11 +34,8 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
       const background = getComputedStyle(element.closest(".status")!).backgroundColor;
       return { foreground, background };
     });
-    const lighter = Math.max(
-      luminance(colors.foreground),
-      luminance(colors.background),
+    expect(contrastRatio(colors.foreground, colors.background)).toBeGreaterThanOrEqual(
+      4.5,
     );
-    const darker = Math.min(luminance(colors.foreground), luminance(colors.background));
-    expect((lighter + 0.05) / (darker + 0.05)).toBeGreaterThanOrEqual(4.5);
   }
 });
