@@ -28,6 +28,18 @@ export type SellerIdentity = {
   mobile: IranianMobile;
 };
 
+export type StoredSellerSession = {
+  id: string;
+  tokenHash: string;
+  sellerId: string;
+  expiresAt: Date;
+};
+
+export type ActiveSellerSession = {
+  seller: SellerIdentity;
+  expiresAt: Date;
+};
+
 export interface IdentityAccessRepository {
   saveChallenge(challenge: StoredOtpChallenge): Promise<void>;
   consumeValidChallenge(
@@ -36,10 +48,9 @@ export interface IdentityAccessRepository {
     now: Date,
   ): Promise<IranianMobile | undefined>;
   findOrCreateSeller(mobile: IranianMobile): Promise<SellerIdentity>;
-  saveSession(session: {
-    id: string;
-    tokenHash: string;
-    sellerId: string;
-    expiresAt: Date;
-  }): Promise<void>;
+  saveSession(session: StoredSellerSession): Promise<void>;
+  findActiveSession(
+    tokenHash: string,
+    now: Date,
+  ): Promise<ActiveSellerSession | undefined>;
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpException,
   HttpStatus,
@@ -18,6 +19,7 @@ import {
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import {
+  InvalidSellerSessionError,
   OtpRejectedError,
   SellerOtpService,
   TestMobileNotAllowedError,
@@ -25,14 +27,14 @@ import {
 import { RUNTIME_ENVIRONMENT, SELLER_OTP_SERVICE } from "./identity-access.tokens";
 
 @ApiExcludeController()
-@Controller("v1/auth/otp")
+@Controller("v1/auth")
 export class IdentityAccessController {
   constructor(
     @Inject(SELLER_OTP_SERVICE) private readonly service: SellerOtpService,
     @Inject(RUNTIME_ENVIRONMENT) private readonly environment: RuntimeEnvironment,
   ) {}
 
-  @Post("requests")
+  @Post("otp/requests")
   @HttpCode(HttpStatus.ACCEPTED)
   async requestOtp(@Body() body: unknown, @Req() request: FastifyRequest) {
     const parsed = otpRequestContract.safeParse(body);
@@ -58,7 +60,7 @@ export class IdentityAccessController {
     }
   }
 
-  @Post("verifications")
+  @Post("otp/verifications")
   @HttpCode(HttpStatus.OK)
   async verifyOtp(
     @Body() body: unknown,
@@ -100,6 +102,35 @@ export class IdentityAccessController {
       throw error;
     }
   }
+
+  @Get("session")
+  async readSession(@Req() request: FastifyRequest) {
+    const token = readCookie(request.headers.cookie, "sevo_seller_session");
+    try {
+      return await this.service.readSession(token ?? "");
+    } catch (error) {
+      if (error instanceof InvalidSellerSessionError) {
+        throw new HttpException(
+          {
+            code: "UNAUTHORIZED",
+            message: "نشست فروشنده معتبر نیست.",
+            correlationId: request.id,
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      throw error;
+    }
+  }
+}
+
+function readCookie(header: string | undefined, name: string): string | undefined {
+  return header
+    ?.split(";")
+    .map((part) => part.trim().split("="))
+    .find(([key]) => key === name)
+    ?.slice(1)
+    .join("=");
 }
 
 function validationError(

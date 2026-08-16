@@ -1,3 +1,5 @@
+import { identityAccessV1Paths } from "@sevo/contracts/identity-access/v1";
+
 export type IdentityStoreSchemaName =
   | "OtpRequest"
   | "OtpChallenge"
@@ -38,7 +40,7 @@ export const identityStoreApiOperations = [
   {
     operationId: "requestSellerOtp",
     method: "post",
-    path: "/v1/auth/otp/requests",
+    path: identityAccessV1Paths.requestOtp,
     auth: "none",
     request: "OtpRequest",
     responses: [
@@ -50,13 +52,24 @@ export const identityStoreApiOperations = [
   {
     operationId: "verifySellerOtp",
     method: "post",
-    path: "/v1/auth/otp/verifications",
+    path: identityAccessV1Paths.verifyOtp,
     auth: "none",
     request: "OtpVerification",
     responses: [
       { status: 200, schema: "SellerSession" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "readSellerSession",
+    method: "get",
+    path: identityAccessV1Paths.readSession,
+    auth: "seller-session",
+    responses: [
+      { status: 200, schema: "SellerSession" },
+      { status: 401, schema: "UnauthorizedError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },

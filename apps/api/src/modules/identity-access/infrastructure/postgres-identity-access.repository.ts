@@ -4,6 +4,7 @@ import postgres, { type Sql } from "postgres";
 import type {
   IdentityAccessRepository,
   SellerIdentity,
+  StoredSellerSession,
   StoredOtpChallenge,
 } from "../public";
 
@@ -53,18 +54,33 @@ export class PostgresIdentityAccessRepository implements IdentityAccessRepositor
     return seller;
   }
 
-  async saveSession(session: {
-    id: string;
-    tokenHash: string;
-    sellerId: string;
-    expiresAt: Date;
-  }): Promise<void> {
+  async saveSession(session: StoredSellerSession): Promise<void> {
     await this.#sql`
       insert into identity_seller_sessions
         (id, token_hash, seller_id, expires_at)
       values
         (${session.id}, ${session.tokenHash}, ${session.sellerId}, ${session.expiresAt})
     `;
+  }
+
+  async findActiveSession(tokenHash: string, now: Date) {
+    const rows = await this.#sql<
+      Array<{ id: string; mobile: IranianMobile; expiresAt: Date }>
+    >`
+      select s.id, s.mobile, ss.expires_at as "expiresAt"
+      from identity_seller_sessions ss
+      join identity_sellers s on s.id = ss.seller_id
+      where ss.token_hash = ${tokenHash}
+        and ss.expires_at > ${now}
+      limit 1
+    `;
+    const session = rows[0];
+    return session
+      ? {
+          seller: { id: session.id, mobile: session.mobile },
+          expiresAt: session.expiresAt,
+        }
+      : undefined;
   }
 
   async onModuleDestroy(): Promise<void> {

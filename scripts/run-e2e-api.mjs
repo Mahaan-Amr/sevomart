@@ -1,24 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
 
-import postgres from "postgres";
+import { databaseIsReady } from "./database-readiness.mjs";
 
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
 const pnpmEntryPoint = process.env.npm_execpath;
 
 if (!pnpmEntryPoint) throw new Error("pnpm entry point is unavailable");
-
-async function databaseIsReady() {
-  const sql = postgres(databaseUrl, { connect_timeout: 2, max: 1 });
-  try {
-    await sql`select 1`;
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await sql.end({ timeout: 1 });
-  }
-}
 
 function runPnpm(args) {
   const result = spawnSync(process.execPath, [pnpmEntryPoint, ...args], {
@@ -29,7 +17,7 @@ function runPnpm(args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-if (!(await databaseIsReady())) runPnpm(["db:up"]);
+if (!(await databaseIsReady(databaseUrl))) runPnpm(["db:up"]);
 runPnpm(["--filter", "@sevo/database", "exec", "prisma", "migrate", "deploy"]);
 runPnpm(["build:packages"]);
 

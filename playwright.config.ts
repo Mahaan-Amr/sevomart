@@ -47,9 +47,12 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: "pnpm --filter @sevo/web dev --port 3110",
+      command: "pnpm e2e:web",
       url: "http://127.0.0.1:3110",
-      env: { API_BASE_URL: "http://127.0.0.1:3109" },
+      env: {
+        API_BASE_URL: "http://127.0.0.1:3109",
+        SEVO_RUNTIME_ENV: "test",
+      },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

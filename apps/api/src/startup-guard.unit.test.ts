@@ -10,7 +10,7 @@ const productionWithDevOtp: RuntimeEnvironment = {
   DATABASE_URL: "postgresql://sevo:secret@database:5432/sevo",
   OTEL_EXPORTER_OTLP_ENDPOINT: "",
   OTP_PROVIDER: "dev",
-  DEV_OTP_TEST_MOBILES: "09123456789",
+  DEV_OTP_TEST_MOBILES: ["09123456789"],
 };
 
 describe("API startup guard", () => {

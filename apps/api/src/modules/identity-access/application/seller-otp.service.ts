@@ -16,6 +16,7 @@ const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export class TestMobileNotAllowedError extends Error {}
 export class OtpRejectedError extends Error {}
+export class InvalidSellerSessionError extends Error {}
 
 export type VerifiedSellerSession = {
   session: SellerSession;
@@ -92,6 +93,18 @@ export class SellerOtpService {
         seller,
         expiresAt: expiresAt.toISOString(),
       },
+    };
+  }
+
+  async readSession(token: string): Promise<SellerSession> {
+    const activeSession = await this.repository.findActiveSession(
+      hashToken(token),
+      this.now(),
+    );
+    if (!activeSession) throw new InvalidSellerSessionError();
+    return {
+      seller: activeSession.seller,
+      expiresAt: activeSession.expiresAt.toISOString(),
     };
   }
 }

@@ -12,7 +12,6 @@ import {
   RUNTIME_ENVIRONMENT,
   SELLER_OTP_SERVICE,
 } from "./identity-access.tokens";
-import { DevOtpProvider } from "./infrastructure/dev-otp-provider";
 import { PostgresIdentityAccessRepository } from "./infrastructure/postgres-identity-access.repository";
 import type { IdentityAccessRepository, OtpProvider } from "./public";
 
@@ -27,9 +26,7 @@ export class IdentityAccessModule {
     environment: RuntimeEnvironment,
     options: IdentityAccessModuleOptions = {},
   ): DynamicModule {
-    const otpProvider =
-      options.otpProvider ??
-      (environment.OTP_PROVIDER === "dev" ? new DevOtpProvider() : undefined);
+    const otpProvider = options.otpProvider;
     if (!otpProvider) {
       throw new Error("The selected OTP provider is not configured");
     }
@@ -55,9 +52,7 @@ export class IdentityAccessModule {
               repository,
               environment.NODE_ENV === "production"
                 ? undefined
-                : environment.DEV_OTP_TEST_MOBILES.split(",").map((value) =>
-                    value.trim(),
-                  ),
+                : environment.DEV_OTP_TEST_MOBILES,
               undefined,
               environment.NODE_ENV === "production"
                 ? createProductionOtpCode

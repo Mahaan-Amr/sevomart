@@ -85,5 +85,31 @@ describe("seller OTP HTTP API with PostgreSQL", () => {
     expect(verifyResponse.headers["set-cookie"]).toContain("sevo_seller_session=");
     expect(verifyResponse.headers["set-cookie"]).toContain("HttpOnly");
     expect(verifyResponse.headers["set-cookie"]).toContain("SameSite=Lax");
+
+    const sessionCookie = verifyResponse.headers["set-cookie"];
+    await verifyingApp.close();
+    apps.splice(apps.indexOf(verifyingApp), 1);
+
+    const refreshedApp = await startApp();
+    const sessionResponse = await refreshedApp
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie: sessionCookie },
+      });
+    expect(sessionResponse.statusCode).toBe(200);
+    expect(sessionResponse.json()).toEqual(verifyResponse.json());
+
+    const forgedSessionResponse = await refreshedApp
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie: "sevo_seller_session=forged" },
+      });
+    expect(forgedSessionResponse.statusCode).toBe(401);
   });
 });
