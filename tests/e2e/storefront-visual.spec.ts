@@ -157,7 +157,8 @@ test("essential text and actions meet minimum contrast", async ({ page }) => {
   await page.goto("/s/fixture-error");
 
   const samples = await page
-    .locator('section[role="alert"] h1, a[href="/s/fixture-short"]')
+    .getByRole("heading", { name: "فروشگاه باز نشد" })
+    .or(page.getByRole("link", { name: "دوباره تلاش کنید" }))
     .evaluateAll((elements) =>
       elements.map((element) => {
         const style = getComputedStyle(element);
