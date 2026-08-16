@@ -25,6 +25,7 @@ const contractSchemas = {
 const frozenConsumerOperations = [
   ["post", "/v1/auth/otp/requests", "none", [202, 422, 500]],
   ["post", "/v1/auth/otp/verifications", "none", [200, 401, 422, 500]],
+  ["get", "/v1/auth/session", "seller", [200, 401, 500]],
   ["get", "/v1/seller/store/draft", "seller", [200, 401, 404, 500]],
   ["put", "/v1/seller/store/draft", "seller", [200, 401, 409, 422, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "seller", [200, 401, 422, 500]],
@@ -86,7 +87,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "a0b2b099f1d22b17d726ad04916432e07d29ba4be8eace969c792a30d190ff02",
+      "51daa05a94ebfd528cd7dc62bde7a22b47ff23d1dfdcee91f168b7ee4e42d783",
     );
   });
 

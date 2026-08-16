@@ -13,7 +13,8 @@
 | Prisma | schema و migration قابل‌مرور PostgreSQL | فعال؛ Apache-2.0 | دسترسی داده و code generation؛ SQL review، مالکیت جدول/migration و نسخه دقیق |
 | OpenTelemetry Node | trace قابل‌انتقال بدون قفل‌شدن به provider | فعال؛ Apache-2.0 | exporter فقط با endpoint صریح فعال و payload حساس ممنوع |
 | TypeScript، ESLint، Prettier و type packages | strict typecheck و کنترل قالب/قواعد CI | فعال؛ MIT یا Apache-2.0 | فقط build-time؛ lockfile و اجرای CI روی PR |
-| Vitest، Playwright و Postgres.js | unit/contract، E2E و integration واقعی PostgreSQL | فعال؛ MIT، Apache-2.0 و Unlicense | فقط test-time؛ credential محلی غیرحساس و مرورگر ایزوله CI |
+| Vitest و Playwright | unit/contract و E2E | فعال؛ MIT و Apache-2.0 | فقط test-time؛ مرورگر ایزوله CI |
+| Postgres.js | persistence نشست ماژول هویت و integration واقعی PostgreSQL | فعال؛ Unlicense | runtime دسترسی داده؛ query پارامتری، credential محیطی، connection pool محدود و audit وابستگی |
 | tsx | اجرای watch در توسعه | فعال؛ MIT | فقط development؛ در image تولید نصب نمی‌شود |
 | `js-yaml` override | بستن advisory زنجیره Swagger | فعال؛ MIT | نسخه patch‌شده `5.2.2` در کل workspace تحمیل شده است |
 

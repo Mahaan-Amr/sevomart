@@ -12,14 +12,20 @@ import { addIdentityStoreOpenApiContract } from "./openapi/identity-store.openap
 export async function createApiApp(
   environment: RuntimeEnvironment,
 ): Promise<NestFastifyApplication> {
+  if (environment.NODE_ENV === "production" && environment.OTP_PROVIDER === "dev") {
+    throw new Error("DevOtpProvider cannot run in production");
+  }
+
   const adapter = new FastifyAdapter({
     logger: environment.NODE_ENV === "test" ? false : { level: "info" },
     requestIdHeader: "x-correlation-id",
     genReqId: () => randomUUID(),
   });
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
-    bufferLogs: true,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule.register(environment),
+    adapter,
+    { bufferLogs: true },
+  );
 
   app.enableCors({ origin: environment.WEB_ORIGIN });
   app.useGlobalFilters(new ApiExceptionFilter());

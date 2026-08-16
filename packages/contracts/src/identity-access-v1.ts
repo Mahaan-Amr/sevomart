@@ -12,6 +12,12 @@ export const otpCodeContract = z
   .brand<"OtpCode">();
 export const otpChallengeIdContract = z.string().uuid().brand<"OtpChallengeId">();
 
+export const identityAccessV1Paths = {
+  requestOtp: "/v1/auth/otp/requests",
+  verifyOtp: "/v1/auth/otp/verifications",
+  readSession: "/v1/auth/session",
+} as const;
+
 export const otpRequestContract = z.object({
   mobile: iranianMobileContract,
 });

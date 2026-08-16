@@ -14,3 +14,43 @@ export type OtpDeliveryReceipt = {
 export interface OtpProvider {
   deliverOtp(delivery: OtpDelivery): Promise<OtpDeliveryReceipt>;
 }
+
+export type StoredOtpChallenge = {
+  id: string;
+  mobile: IranianMobile;
+  codeHash: string;
+  providerReference: string;
+  expiresAt: Date;
+};
+
+export type SellerIdentity = {
+  id: string;
+  mobile: IranianMobile;
+};
+
+export type StoredSellerSession = {
+  id: string;
+  tokenHash: string;
+  sellerId: string;
+  expiresAt: Date;
+};
+
+export type ActiveSellerSession = {
+  seller: SellerIdentity;
+  expiresAt: Date;
+};
+
+export interface IdentityAccessRepository {
+  saveChallenge(challenge: StoredOtpChallenge): Promise<void>;
+  consumeValidChallenge(
+    challengeId: string,
+    codeHash: string,
+    now: Date,
+  ): Promise<IranianMobile | undefined>;
+  findOrCreateSeller(mobile: IranianMobile): Promise<SellerIdentity>;
+  saveSession(session: StoredSellerSession): Promise<void>;
+  findActiveSession(
+    tokenHash: string,
+    now: Date,
+  ): Promise<ActiveSellerSession | undefined>;
+}
