@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   findBoundaryViolations,
+  findContractOwnershipViolations,
   findMigrationOwnershipViolations,
   findTableOwnershipViolations,
 } from "../../scripts/check-boundaries.mjs";
@@ -58,6 +59,36 @@ describe("module boundary checker", () => {
         },
       ]),
     ).toEqual([expect.objectContaining({ rule: "module-public-contract-only" })]);
+  });
+
+  it("rejects application code importing an adapter directly", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/api/src/modules/identity-access/application/request-otp.ts",
+          source: 'import { DevOtpProvider } from "../testing/dev-otp-provider";',
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        rule: "module-core-does-not-import-adapter",
+      }),
+    ]);
+  });
+});
+
+describe("contract ownership checker", () => {
+  it("rejects a contract assigned to an unknown module", () => {
+    expect(
+      findContractOwnershipViolations(
+        { "@sevo/contracts/store/v1": "unknown" },
+        new Set(["store"]),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        rule: "registered-contract-owner-module",
+      }),
+    ]);
   });
 });
 

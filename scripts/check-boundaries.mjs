@@ -30,6 +30,25 @@ export function findBoundaryViolations(files) {
         /apps\/api\/src\/modules\/([^/]+)\/(.+)$/,
       );
 
+      const sourceLayer = sourcePath.match(
+        /apps\/api\/src\/modules\/[^/]+\/(application|domain|public(?:\.[cm]?tsx?)?)/,
+      )?.[1];
+      const targetLayer = targetModuleMatch?.[2].split("/")[0];
+
+      if (
+        sourceModule &&
+        sourceLayer &&
+        targetModuleMatch &&
+        targetModuleMatch[1] === sourceModule &&
+        (targetLayer === "infrastructure" || targetLayer === "testing")
+      ) {
+        violations.push({
+          path: sourcePath,
+          import: specifier,
+          rule: "module-core-does-not-import-adapter",
+        });
+      }
+
       if (
         sourceModule &&
         targetModuleMatch &&
@@ -114,6 +133,16 @@ export function findTableOwnershipViolations(schema, tableOwners, registeredModu
   return violations;
 }
 
+export function findContractOwnershipViolations(contractOwners, registeredModules) {
+  return Object.entries(contractOwners)
+    .filter(([, owner]) => !registeredModules.has(owner))
+    .map(([contract, owner]) => ({
+      contract,
+      owner,
+      rule: "registered-contract-owner-module",
+    }));
+}
+
 async function collectSources(root) {
   const files = [];
 
@@ -190,12 +219,13 @@ async function main() {
       ownership.tables,
       registeredModules,
     ),
+    ...findContractOwnershipViolations(ownership.contracts ?? {}, registeredModules),
   ];
 
   if (violations.length > 0) {
     for (const violation of violations) {
       console.error(
-        `${violation.path ?? violation.table}: ${violation.rule}${violation.import ? ` (${violation.import})` : ""}`,
+        `${violation.path ?? violation.table ?? violation.contract}: ${violation.rule}${violation.import ? ` (${violation.import})` : ""}`,
       );
     }
     process.exitCode = 1;
