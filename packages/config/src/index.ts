@@ -36,6 +36,7 @@ const runtimeEnvironmentContract = z.object({
   MINIO_ACCESS_KEY: z.string().min(1).default("sevo_local"),
   MINIO_SECRET_KEY: z.string().min(8).default("sevo_local_password"),
   MINIO_BUCKET: z.string().min(3).default("sevo-media"),
+  API_READINESS_URL: z.url().optional(),
 });
 
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentContract>;
@@ -49,9 +50,16 @@ export function readRuntimeEnvironment(
       environment.OTP_PROVIDER === "dev" ||
       environment.MINIO_ACCESS_KEY === "sevo_local" ||
       environment.MINIO_SECRET_KEY === "sevo_local_password" ||
+      ["127.0.0.1", "localhost", "minio"].includes(
+        environment.MINIO_ENDPOINT.toLowerCase(),
+      ) ||
+      !environment.MINIO_USE_SSL ||
+      environment.MINIO_BUCKET === "sevo-media" ||
       environment.DATABASE_URL.includes("sevo_local");
     if (unsafe) {
-      throw new Error("Production trust requires external OTP and non-default secrets");
+      throw new Error(
+        "Production trust requires external OTP, non-default secrets, and persistent TLS object storage",
+      );
     }
   }
   return environment;

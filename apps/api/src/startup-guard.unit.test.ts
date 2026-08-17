@@ -30,6 +30,42 @@ describe("runtime trust guard", () => {
         DATABASE_URL: "postgresql://sevo:sevo_local@database:5432/sevo",
         OTP_PROVIDER: "dev",
       }),
-    ).toThrow("Production trust requires external OTP and non-default secrets");
+    ).toThrow("Production trust requires external OTP");
+  });
+
+  it("rejects local or non-TLS object storage at production trust", () => {
+    expect(() =>
+      readRuntimeEnvironment({
+        ...common,
+        NODE_ENV: "production",
+        SEVO_RUNTIME_ENV: "production",
+        DATABASE_URL: "postgresql://sevo:strong-password@database.example:5432/sevo",
+        OTP_PROVIDER: "external",
+        MINIO_ENDPOINT: "127.0.0.1",
+        MINIO_PORT: "9000",
+        MINIO_USE_SSL: "false",
+        MINIO_ACCESS_KEY: "production-access",
+        MINIO_SECRET_KEY: "production-secret-value",
+        MINIO_BUCKET: "production-media",
+      }),
+    ).toThrow("persistent TLS object storage");
+  });
+
+  it("accepts explicitly external production services", () => {
+    expect(
+      readRuntimeEnvironment({
+        ...common,
+        NODE_ENV: "production",
+        SEVO_RUNTIME_ENV: "production",
+        DATABASE_URL: "postgresql://sevo:strong-password@database.example:5432/sevo",
+        OTP_PROVIDER: "external",
+        MINIO_ENDPOINT: "objects.example.com",
+        MINIO_PORT: "443",
+        MINIO_USE_SSL: "true",
+        MINIO_ACCESS_KEY: "production-access",
+        MINIO_SECRET_KEY: "production-secret-value",
+        MINIO_BUCKET: "production-media",
+      }),
+    ).toMatchObject({ SEVO_RUNTIME_ENV: "production", MINIO_USE_SSL: true });
   });
 });

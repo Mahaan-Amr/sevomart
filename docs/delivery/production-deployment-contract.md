@@ -16,6 +16,7 @@ manager افزوده می‌شود.
 - secretهای ازپیش‌تأمین‌شده فقط هنگام deploy تزریق می‌شوند.
 - `SEVO_RUNTIME_ENV=production` مقدار محلی شناخته‌شده، OTP توسعه، secret خالی و object storage
   ناپایدار را رد می‌کند.
+- object storage تولید باید endpoint خارجی، TLS، bucket غیراستاندارد محلی و credential صریح داشته باشد.
 - log، health و error هیچ credential یا connection string را نمایش نمی‌دهند.
 
 ## ترتیب استقرار و بازیابی

@@ -5,6 +5,7 @@ import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import type { RuntimeEnvironment } from "@sevo/config";
+import { MEDIA_UPLOAD_MAX_BYTES } from "@sevo/contracts/media/v1";
 
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./http/api-exception.filter";
@@ -29,7 +30,7 @@ export async function createApiApp(
   await fastify.register(
     multipart as unknown as Parameters<typeof fastify.register>[0],
     {
-      limits: { files: 1, fields: 1, fileSize: 10 * 1024 * 1024 },
+      limits: { files: 1, fields: 1, fileSize: MEDIA_UPLOAD_MAX_BYTES },
     },
   );
   const app = await NestFactory.create<NestFastifyApplication>(

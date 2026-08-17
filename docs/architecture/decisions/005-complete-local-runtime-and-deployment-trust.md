@@ -2,7 +2,8 @@
 
 - وضعیت: پذیرفته‌شده
 - تاریخ: ۱۴۰۵-۰۵-۲۶
-- Issue: تصمیم تأییدشدهٔ مالک محصول در جلسهٔ طراحی محیط کامل محلی
+- مبنای کار: [مشخصات محیط کامل محلی و رسانهٔ فروشگاه](../../specs/complete-local-runtime-and-media.md)، با تأیید صریح مالک محصول در جلسهٔ تصمیم‌گیری
+- استثنای فرایندی: Issue مستقل پیش از ساخت ایجاد نشد و این بدهی پیگیری باید در کار بعدی بسته شود.
 
 ## زمینه
 
@@ -27,6 +28,7 @@ worker و web است. API و worker پس از موفقیت migration شروع م
 بهینه با `NODE_ENV=production` و `SEVO_RUNTIME_ENV=development` دارد. تمام guardهای امنیتی از
 `SEVO_RUNTIME_ENV` استفاده می‌کنند. production، OTP خارجی، secretهای غیرپیش‌فرض و object storage
 پایدار می‌خواهد و مقدارهای محلی شناخته‌شده را رد می‌کند.
+endpoint محلی، bucket پیش‌فرض و object storage بدون TLS نیز در سطح اعتماد production رد می‌شوند.
 
 پورت‌های container ثابت و پیش‌فرض میزبان قابل override هستند: web `3100→3000`، API `3101→3001`،
 PostgreSQL `127.0.0.1:6432→5432`، MinIO API `127.0.0.1:9100→9000` و console
@@ -38,6 +40,7 @@ PostgreSQL `127.0.0.1:6432→5432`، MinIO API `127.0.0.1:9100→9000` و consol
 - onboarding کامل یک فرمان دارد و hot reload همچنان سریع می‌ماند.
 - تست‌ها از database و volume جدا و disposable استفاده می‌کنند.
 - health شامل liveness و readiness واقعی dependencyهاست؛ موفقیت process به‌تنهایی سلامت نیست.
+- readiness وب و worker به readiness API و در نتیجه PostgreSQL و MinIO وابسته است.
 - Dockerfileهای چندمرحله‌ای، lockfile frozen، کاربر non-root، init کوچک و artifact حداقلی دارند.
 
 ## بازنگری

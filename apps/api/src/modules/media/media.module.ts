@@ -3,14 +3,22 @@ import type { RuntimeEnvironment } from "@sevo/config";
 
 import { FakeObjectStorage } from "./testing/fake-object-storage";
 import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media-storage";
-import { MEDIA_STORAGE, type MediaStorage } from "./public";
+import {
+  MEDIA_STORAGE,
+  PUBLISHED_MEDIA_ACCESS,
+  SELLER_UPLOAD_RATE_LIMITER,
+  type MediaStorage,
+  type PublishedMediaAccess,
+} from "./public";
 import { MediaController } from "./media.controller";
+import { SellerUploadRateLimiter } from "./seller-upload-rate-limiter";
 
 @Module({})
 export class MediaModule {
   static register(
     environment: RuntimeEnvironment,
     storage?: MediaStorage,
+    publishedMediaAccess: PublishedMediaAccess = async () => false,
   ): DynamicModule {
     const configuredStorage =
       storage ??
@@ -21,7 +29,14 @@ export class MediaModule {
       module: MediaModule,
       global: true,
       controllers: [MediaController],
-      providers: [{ provide: MEDIA_STORAGE, useValue: configuredStorage }],
+      providers: [
+        { provide: MEDIA_STORAGE, useValue: configuredStorage },
+        { provide: PUBLISHED_MEDIA_ACCESS, useValue: publishedMediaAccess },
+        {
+          provide: SELLER_UPLOAD_RATE_LIMITER,
+          useValue: new SellerUploadRateLimiter(),
+        },
+      ],
       exports: [MEDIA_STORAGE],
     };
   }

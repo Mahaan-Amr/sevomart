@@ -7,7 +7,13 @@ import {
   createIdentityAccessV1JsonSchemas,
   identityAccessV1Examples,
 } from "@sevo/contracts/identity-access/v1";
-import { createMediaV1JsonSchemas, mediaV1Examples } from "@sevo/contracts/media/v1";
+import {
+  createMediaV1JsonSchemas,
+  MEDIA_UPLOAD_ACCEPTED_TYPES,
+  MEDIA_UPLOAD_MAX_BYTES,
+  MEDIA_UPLOAD_MAX_PIXELS,
+  mediaV1Examples,
+} from "@sevo/contracts/media/v1";
 import { createStoreV1JsonSchemas, storeV1Examples } from "@sevo/contracts/store/v1";
 
 import {
@@ -116,7 +122,15 @@ export function addIdentityStoreOpenApiContract(
     properties?: Record<string, Record<string, unknown>>;
   };
   if (mediaUploadSchema.properties?.file) {
-    mediaUploadSchema.properties.file = { type: "string", format: "binary" };
+    mediaUploadSchema.properties.file = {
+      type: "string",
+      format: "binary",
+      description:
+        "JPEG, PNG, or WebP; maximum 10 MB and 24 megapixels; animated images are rejected.",
+      "x-maxBytes": MEDIA_UPLOAD_MAX_BYTES,
+      "x-maxPixels": MEDIA_UPLOAD_MAX_PIXELS,
+      "x-acceptedMediaTypes": [...MEDIA_UPLOAD_ACCEPTED_TYPES],
+    };
   }
   document.components.securitySchemes ??= {};
   document.components.securitySchemes.sellerSession = {

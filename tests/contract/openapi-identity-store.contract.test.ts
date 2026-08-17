@@ -74,6 +74,9 @@ describe("OpenAPI identity and store compatibility", () => {
     expect(document.components.schemas.MediaUploadInput.properties.file).toMatchObject({
       type: "string",
       format: "binary",
+      "x-maxBytes": 10 * 1024 * 1024,
+      "x-maxPixels": 24_000_000,
+      "x-acceptedMediaTypes": ["image/jpeg", "image/png", "image/webp"],
     });
     expect(document.components.schemas.PublicStore.required).toEqual(
       expect.arrayContaining([
@@ -95,7 +98,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "10350c5d297c8d3f8927402cbf6e51f6523aced0efbab332fab0f31106ab5df4",
+      "bedd40d812a5592c080f9dac04cfcff65fd5b64520a66eeccba46273028cc82b",
     );
   });
 

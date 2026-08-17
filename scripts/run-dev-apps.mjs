@@ -8,6 +8,8 @@ const developmentEnvironment = {
   PORT: process.env.PORT ?? "3200",
   WEB_ORIGIN: process.env.WEB_ORIGIN ?? "http://localhost:3200",
   API_BASE_URL: process.env.API_BASE_URL ?? "http://127.0.0.1:3201",
+  API_READINESS_URL:
+    process.env.API_READINESS_URL ?? "http://127.0.0.1:3201/health/ready",
 };
 
 if (!pnpmEntryPoint) {

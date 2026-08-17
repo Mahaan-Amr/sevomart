@@ -29,6 +29,10 @@ export type ReadableMedia = Omit<StoredMedia, "bytes" | "variants"> & {
 };
 
 export const MEDIA_STORAGE = Symbol("MEDIA_STORAGE");
+export const PUBLISHED_MEDIA_ACCESS = Symbol("PUBLISHED_MEDIA_ACCESS");
+export const SELLER_UPLOAD_RATE_LIMITER = Symbol("SELLER_UPLOAD_RATE_LIMITER");
+
+export type PublishedMediaAccess = (mediaId: string) => Promise<boolean>;
 
 export interface MediaStorage {
   put(object: StoredMedia): Promise<void>;

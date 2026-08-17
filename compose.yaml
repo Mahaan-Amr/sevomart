@@ -82,7 +82,7 @@ services:
         ]
       interval: 3s
       timeout: 3s
-      retries: 30
+      retries: 3
     ports:
       - "127.0.0.1:${API_HOST_PORT:-3101}:3001"
 
@@ -93,7 +93,10 @@ services:
     environment:
       <<: *app-environment
       WORKER_PORT: 3002
+      API_READINESS_URL: http://api:3001/health/ready
     depends_on:
+      api:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       minio:
@@ -108,7 +111,7 @@ services:
         ]
       interval: 3s
       timeout: 3s
-      retries: 30
+      retries: 3
 
   web:
     build:
@@ -132,7 +135,7 @@ services:
         ]
       interval: 3s
       timeout: 3s
-      retries: 30
+      retries: 3
     ports:
       - "127.0.0.1:${WEB_HOST_PORT:-3100}:3000"
 

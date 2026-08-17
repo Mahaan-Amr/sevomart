@@ -8,6 +8,7 @@ import {
 } from "./modules/identity-access/identity-access.module";
 import { DevOtpProvider } from "./modules/notifications/testing/dev-otp-provider";
 import { MediaModule } from "./modules/media/media.module";
+import { PostgresStoreRepository } from "./modules/store/infrastructure/postgres-store.repository";
 import { StoreModule } from "./modules/store/store.module";
 
 @Module({})
@@ -19,6 +20,7 @@ export class AppModule {
     const otpProvider =
       identityOptions.otpProvider ??
       (environment.OTP_PROVIDER === "dev" ? new DevOtpProvider() : undefined);
+    const storeRepository = new PostgresStoreRepository(environment.DATABASE_URL);
     return {
       module: AppModule,
       controllers: [HealthController],
@@ -28,8 +30,10 @@ export class AppModule {
           ...identityOptions,
           otpProvider,
         }),
-        MediaModule.register(environment),
-        StoreModule.register(environment),
+        MediaModule.register(environment, undefined, (mediaId) =>
+          storeRepository.isMediaPublished(mediaId),
+        ),
+        StoreModule.register(environment, { repository: storeRepository }),
       ],
     };
   }

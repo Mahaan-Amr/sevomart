@@ -3,13 +3,27 @@ import { createServer } from "node:http";
 import { readRuntimeEnvironment } from "@sevo/config";
 import { startTelemetry } from "@sevo/observability";
 
+import { dependencyIsReady } from "./readiness";
+
 async function run(): Promise<void> {
   const environment = readRuntimeEnvironment();
   const telemetry = startTelemetry("sevo-worker");
-  const server = createServer((request, response) => {
-    if (request.url === "/health/live" || request.url === "/health/ready") {
+  const server = createServer(async (request, response) => {
+    if (request.url === "/health/live") {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ status: "ok", service: "worker", version: 1 }));
+      return;
+    }
+    if (request.url === "/health/ready") {
+      const ready = await dependencyIsReady(environment.API_READINESS_URL);
+      response.writeHead(ready ? 200 : 503, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          status: ready ? "ok" : "unavailable",
+          service: "worker",
+          version: 1,
+        }),
+      );
       return;
     }
     response.writeHead(404).end();

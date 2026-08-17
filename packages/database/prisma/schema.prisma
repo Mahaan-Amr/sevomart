@@ -12,7 +12,6 @@ model Seller {
   mobile    String          @unique @db.VarChar(11)
   createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   sessions  SellerSession[]
-  media     MediaAsset[]
 
   @@map("identity_sellers")
 }
@@ -29,7 +28,6 @@ model MediaAsset {
   height            Int
   visibility        String         @default("PRIVATE") @db.VarChar(16)
   createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  owner             Seller         @relation(fields: [ownerSellerId], references: [id], onDelete: Cascade)
   variants          MediaVariant[]
 
   @@index([ownerSellerId, createdAt])

@@ -29,7 +29,15 @@ import {
   SELLER_SESSION_READER,
   type SellerSessionReader,
 } from "../identity-access/public";
-import { MEDIA_STORAGE, type MediaStorage, type StoredMediaVariant } from "./public";
+import {
+  MEDIA_STORAGE,
+  PUBLISHED_MEDIA_ACCESS,
+  SELLER_UPLOAD_RATE_LIMITER,
+  type MediaStorage,
+  type PublishedMediaAccess,
+  type StoredMediaVariant,
+} from "./public";
+import { SellerUploadRateLimiter } from "./seller-upload-rate-limiter";
 
 type AcceptedContentType = (typeof MEDIA_UPLOAD_ACCEPTED_TYPES)[number];
 type MediaIssueCode =
@@ -42,8 +50,6 @@ type MediaIssueCode =
   | "MIME_MISMATCH"
   | "RATE_LIMITED";
 
-const uploadWindows = new Map<string, number[]>();
-
 @ApiExcludeController()
 @Controller("v1")
 export class MediaController {
@@ -51,12 +57,18 @@ export class MediaController {
     @Inject(MEDIA_STORAGE) private readonly storage: MediaStorage,
     @Inject(SELLER_SESSION_READER)
     private readonly sessions: SellerSessionReader,
+    @Inject(PUBLISHED_MEDIA_ACCESS)
+    private readonly isPublishedMedia: PublishedMediaAccess,
+    @Inject(SELLER_UPLOAD_RATE_LIMITER)
+    private readonly uploadRateLimiter: SellerUploadRateLimiter,
   ) {}
 
   @Post("seller/media")
   async upload(@Req() request: FastifyRequest) {
     const sellerId = await requireSeller(request, this.sessions);
-    enforceUploadRate(sellerId, request.id);
+    if (!this.uploadRateLimiter.accept(sellerId)) {
+      throw mediaError(request.id, "RATE_LIMITED");
+    }
     let purpose: MediaUploadPurpose | undefined;
     let fileName = "";
     let declaredContentType = "";
@@ -119,7 +131,9 @@ export class MediaController {
     const parsed = mediaIdContract.safeParse(value);
     const media = parsed.success ? await this.storage.get(parsed.data) : undefined;
     if (!media) throw mediaNotFound(request.id);
-    if (media.visibility === "PRIVATE") {
+    const publiclyReadable =
+      media.visibility === "PUBLIC" && (await this.isPublishedMedia(media.key));
+    if (!publiclyReadable) {
       const sellerId = await requireSeller(request, this.sessions);
       if (media.ownerSellerId !== sellerId) throw mediaNotFound(request.id);
     }
@@ -191,16 +205,6 @@ async function createVariants(
       };
     }),
   );
-}
-
-function enforceUploadRate(sellerId: string, correlationId: string) {
-  const now = Date.now();
-  const recent = (uploadWindows.get(sellerId) ?? []).filter(
-    (value) => now - value < 60_000,
-  );
-  if (recent.length >= 12) throw mediaError(correlationId, "RATE_LIMITED");
-  recent.push(now);
-  uploadWindows.set(sellerId, recent);
 }
 
 function formatFor(contentType: AcceptedContentType) {

@@ -356,14 +356,14 @@ export function StoreBuilder() {
             <Field label="لوگو">
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/webp"
+                accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
                 onChange={(e) => setLogo(e.target.files?.[0])}
               />
             </Field>
             <Field label="تصویر روی جلد">
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/webp"
+                accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
                 onChange={(e) => setCover(e.target.files?.[0])}
               />
             </Field>
