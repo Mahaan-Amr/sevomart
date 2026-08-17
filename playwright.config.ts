@@ -7,6 +7,11 @@ const visualViewports = [
   { name: "chromium-1440x900", width: 1440, height: 900 },
 ] as const;
 
+const storefrontTestMobiles = Array.from(
+  { length: 8 },
+  (_, index) => `09111111${String(20 + index).padStart(3, "0")}`,
+);
+
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: true,
@@ -44,7 +49,11 @@ export default defineConfig({
       url: "http://127.0.0.1:3109/v1/health",
       env: {
         API_PORT: "3109",
-        DEV_OTP_TEST_MOBILES: "09123456789,09111111111",
+        DEV_OTP_TEST_MOBILES: [
+          "09123456789",
+          "09111111111",
+          ...storefrontTestMobiles,
+        ].join(","),
       },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
