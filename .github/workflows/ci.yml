@@ -38,6 +38,21 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      - name: Start MinIO integration service
+        run: |
+          docker run --detach --name sevo-ci-minio \
+            --publish 9100:9000 \
+            --env MINIO_ROOT_USER=sevo_local \
+            --env MINIO_ROOT_PASSWORD=sevo_local_password \
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:9100/minio/health/live; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs sevo-ci-minio
+          exit 1
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --prod
       - run: pnpm quality
