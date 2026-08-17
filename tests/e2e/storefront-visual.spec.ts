@@ -1,5 +1,6 @@
 import { expect, request as createRequest, test } from "@playwright/test";
 import postgres from "postgres";
+import sharp from "sharp";
 
 import { contrastRatio } from "../helpers/color-contrast";
 
@@ -12,9 +13,6 @@ const projectIndexes: Record<string, number> = {
   "chromium-768x1024": 2,
   "chromium-1440x900": 3,
 };
-const imageBase64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-
 type ProjectStores = {
   defaultSlug: string;
   customSlug: string;
@@ -25,7 +23,10 @@ let stores: ProjectStores;
 
 test.describe.configure({ mode: "serial" });
 
-test.beforeAll(async ({}, testInfo) => {
+test.beforeAll(async ({ browserName }, testInfo) => {
+  if (browserName !== "chromium") {
+    throw new Error(`Unsupported browser ${browserName}`);
+  }
   const index = projectIndexes[testInfo.project.name];
   if (index === undefined) throw new Error(`Unknown project ${testInfo.project.name}`);
 
@@ -97,7 +98,9 @@ test("custom media, theme and long Persian content render with API media", async
       name: "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران",
     }),
   ).toBeVisible();
-  await expect(page.getByRole("img", { name: /نشان فروشگاه دست‌سازه‌ها/ })).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: /نشان فروشگاه دست‌سازه‌ها/ }),
+  ).toBeVisible();
   await expect(page.locator("header img")).toHaveCount(2);
   await expect(
     page.getByText("تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد."),
@@ -105,7 +108,9 @@ test("custom media, theme and long Persian content render with API media", async
   await expect(page.getByText("ساخته‌شده با سوو")).toBeVisible();
   await expect(page.locator("header")).toHaveCSS("--store-accent", "#760B29");
   expect(
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
   ).toBe(true);
 });
 
@@ -146,8 +151,14 @@ test("keyboard order, focus, and interactive targets stay usable", async ({ page
     }),
   );
   for (const target of targets) {
-    expect(target.height, `${target.name} must be at least 40px tall`).toBeGreaterThanOrEqual(40);
-    expect(target.width, `${target.name} must be at least 40px wide`).toBeGreaterThanOrEqual(40);
+    expect(
+      target.height,
+      `${target.name} must be at least 40px tall`,
+    ).toBeGreaterThanOrEqual(40);
+    expect(
+      target.width,
+      `${target.name} must be at least 40px wide`,
+    ).toBeGreaterThanOrEqual(40);
   }
 });
 
@@ -165,7 +176,9 @@ test("the storefront reflows without clipping at an effective 200% zoom", async 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("region", { name: "پیش از سفارش بدانید" })).toBeVisible();
   expect(
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
   ).toBe(true);
 });
 
@@ -187,7 +200,9 @@ test("essential text and actions meet minimum contrast", async ({ page }) => {
       }),
     );
   for (const sample of samples) {
-    expect(contrastRatio(sample.foreground, sample.background)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(sample.foreground, sample.background)).toBeGreaterThanOrEqual(
+      4.5,
+    );
   }
 });
 
@@ -244,8 +259,8 @@ async function createStore(mobile: string, slug: string, customized: boolean) {
   let logoMediaId: string | null = null;
   let coverMediaId: string | null = null;
   if (customized) {
-    logoMediaId = (await uploadImage(context, "logo.png")).id;
-    coverMediaId = (await uploadImage(context, "cover.png")).id;
+    logoMediaId = (await uploadImage(context, "logo.png", "STORE_LOGO")).id;
+    coverMediaId = (await uploadImage(context, "cover.png", "STORE_COVER")).id;
   }
 
   const draft = await context.put("/v1/seller/store/draft", {
@@ -277,9 +292,25 @@ async function createStore(mobile: string, slug: string, customized: boolean) {
 async function uploadImage(
   context: Awaited<ReturnType<typeof createRequest.newContext>>,
   fileName: string,
+  purpose: "STORE_LOGO" | "STORE_COVER",
 ) {
+  const image = await sharp({
+    create:
+      purpose === "STORE_LOGO"
+        ? { width: 256, height: 256, channels: 4, background: "#760B29" }
+        : { width: 1200, height: 400, channels: 4, background: "#EEC8D3" },
+  })
+    .png()
+    .toBuffer();
   const response = await context.post("/v1/seller/media", {
-    data: { fileName, contentType: "image/png", contentBase64: imageBase64 },
+    multipart: {
+      purpose,
+      file: {
+        name: fileName,
+        mimeType: "image/png",
+        buffer: image,
+      },
+    },
   });
   expect(response.ok()).toBe(true);
   return (await response.json()) as { id: string };

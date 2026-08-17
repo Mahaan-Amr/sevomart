@@ -1,5 +1,6 @@
 import { storeDraftContract, storePublicationContract } from "@sevo/contracts/store/v1";
 import postgres from "postgres";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
@@ -104,20 +105,28 @@ describe("seller store HTTP API with PostgreSQL", () => {
     });
   });
 
-  it("keeps uploaded media private until its store is published", async () => {
+  it("accepts multipart media above the former JSON body limit and keeps it private until publication", async () => {
     const app = await startApp();
     const cookie = await signIn(app);
     const server = app.getHttpAdapter().getInstance();
+    const source = await sharp({
+      create: { width: 900, height: 900, channels: 4, background: "#A41439" },
+    })
+      .png({ compressionLevel: 0 })
+      .toBuffer();
     const upload = await server.inject({
       method: "POST",
       url: "/v1/seller/media",
-      headers: { cookie },
-      payload: {
-        fileName: "logo.png",
-        contentType: "image/png",
-        contentBase64: validPngBase64,
-      },
+      headers: { cookie, ...multipartHeaders("sevo-boundary") },
+      payload: multipartBody(
+        "sevo-boundary",
+        "STORE_LOGO",
+        "logo.png",
+        "image/png",
+        source,
+      ),
     });
+    expect(source.byteLength).toBeGreaterThan(1_048_576);
     expect(upload.statusCode).toBe(201);
     const media = upload.json<{ id: string; url: string }>();
 
@@ -151,7 +160,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
 
     const publicRead = await server.inject({ method: "GET", url: media.url });
     expect(publicRead.statusCode).toBe(200);
-    expect(publicRead.headers["content-type"]).toContain("image/png");
+    expect(publicRead.headers["content-type"]).toContain("image/webp");
 
     const publicStore = await server.inject({
       method: "GET",
@@ -159,7 +168,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
     });
     expect(publicStore.statusCode).toBe(200);
     expect(publicStore.json()).toMatchObject({
-      logo: { id: media.id, contentType: "image/png" },
+      logo: { id: media.id, contentType: "image/webp" },
       status: "PUBLISHED",
     });
 
@@ -187,18 +196,20 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const upload = await server.inject({
       method: "POST",
       url: "/v1/seller/media",
-      headers: { cookie },
-      payload: {
-        fileName: "broken.png",
-        contentType: "image/png",
-        contentBase64: "bm90IGFuIGltYWdl",
-      },
+      headers: { cookie, ...multipartHeaders("broken-boundary") },
+      payload: multipartBody(
+        "broken-boundary",
+        "STORE_LOGO",
+        "broken.png",
+        "image/png",
+        Buffer.from("not an image"),
+      ),
     });
 
     expect(upload.statusCode).toBe(422);
     expect(upload.json()).toMatchObject({
       code: "VALIDATION_ERROR",
-      message: "تصویر انتخاب‌شده معتبر نیست.",
+      message: "فایل تصویر خراب است یا کامل خوانده نمی‌شود.",
     });
   });
 
@@ -211,15 +222,125 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const upload = await server.inject({
       method: "POST",
       url: "/v1/seller/media",
-      headers: { cookie },
-      payload: {
-        fileName: "truncated.png",
-        contentType: "image/png",
-        contentBase64: truncated.toString("base64"),
-      },
+      headers: { cookie, ...multipartHeaders("truncated-boundary") },
+      payload: multipartBody(
+        "truncated-boundary",
+        "STORE_COVER",
+        "truncated.png",
+        "image/png",
+        truncated,
+      ),
     });
 
     expect(upload.statusCode).toBe(422);
     expect(upload.json()).toMatchObject({ code: "VALIDATION_ERROR" });
   });
+
+  it("returns precise errors for oversized, over-dimensioned, mismatched and animated images", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const cases: Array<{
+      name: string;
+      contentType: string;
+      bytes: Buffer;
+      status: number;
+      issue: string;
+      message: string;
+    }> = [
+      {
+        name: "too-large.png",
+        contentType: "image/png",
+        bytes: Buffer.alloc(10 * 1024 * 1024 + 1),
+        status: 413,
+        issue: "FILE_TOO_LARGE",
+        message: "حجم تصویر باید حداکثر ۱۰ مگابایت باشد.",
+      },
+      {
+        name: "too-wide.png",
+        contentType: "image/png",
+        bytes: await sharp({
+          create: { width: 5_000, height: 5_000, channels: 3, background: "white" },
+        })
+          .png()
+          .toBuffer(),
+        status: 422,
+        issue: "IMAGE_TOO_LARGE",
+        message: "ابعاد تصویر باید حداکثر ۲۴ مگاپیکسل باشد.",
+      },
+      {
+        name: "mismatch.jpg",
+        contentType: "image/jpeg",
+        bytes: Buffer.from(validPngBase64, "base64"),
+        status: 422,
+        issue: "MIME_MISMATCH",
+        message: "نوع فایل با محتوای واقعی تصویر هماهنگ نیست.",
+      },
+      {
+        name: "animated.webp",
+        contentType: "image/webp",
+        bytes: await animatedWebp(),
+        status: 422,
+        issue: "ANIMATED_IMAGE",
+        message: "تصویر متحرک پذیرفته نمی‌شود.",
+      },
+    ];
+
+    for (const [index, testCase] of cases.entries()) {
+      const boundary = `invalid-media-${index}`;
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/seller/media",
+        headers: { cookie, ...multipartHeaders(boundary) },
+        payload: multipartBody(
+          boundary,
+          "STORE_LOGO",
+          testCase.name,
+          testCase.contentType,
+          testCase.bytes,
+        ),
+      });
+      expect(response.json()).toMatchObject({
+        code: "VALIDATION_ERROR",
+        message: testCase.message,
+        details: { issues: [{ field: "media", code: testCase.issue }] },
+      });
+      expect(response.statusCode, testCase.name).toBe(testCase.status);
+    }
+  });
 });
+
+async function animatedWebp() {
+  return sharp(
+    [
+      { create: { width: 2, height: 2, channels: 4, background: "red" } },
+      { create: { width: 2, height: 2, channels: 4, background: "blue" } },
+    ],
+    { join: { animated: true } },
+  )
+    .webp({ loop: 0, delay: [100, 100] })
+    .toBuffer();
+}
+
+function multipartHeaders(boundary: string) {
+  return { "content-type": `multipart/form-data; boundary=${boundary}` };
+}
+
+function multipartBody(
+  boundary: string,
+  purpose: "STORE_LOGO" | "STORE_COVER",
+  fileName: string,
+  contentType: string,
+  bytes: Buffer,
+) {
+  return Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="purpose"\r\n\r\n${purpose}\r\n`,
+    ),
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+    ),
+    bytes,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+}

@@ -82,7 +82,8 @@ export class IdentityAccessController {
       const maxAge = Math.floor(
         (Date.parse(verified.session.expiresAt) - Date.now()) / 1_000,
       );
-      const secure = this.environment.NODE_ENV === "production" ? "; Secure" : "";
+      const secure =
+        this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
       void reply.header(
         "Set-Cookie",
         `sevo_seller_session=${verified.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`,

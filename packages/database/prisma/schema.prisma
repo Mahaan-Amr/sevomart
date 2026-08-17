@@ -8,12 +8,45 @@ datasource db {
 }
 
 model Seller {
-  id        String   @id @db.Uuid
-  mobile    String   @unique @db.VarChar(11)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  sessions SellerSession[]
+  id        String          @id @db.Uuid
+  mobile    String          @unique @db.VarChar(11)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  sessions  SellerSession[]
 
   @@map("identity_sellers")
+}
+
+model MediaAsset {
+  id                String         @id @db.Uuid
+  ownerSellerId     String         @map("owner_seller_id") @db.Uuid
+  purpose           String         @db.VarChar(24)
+  originalObjectKey String         @map("original_object_key") @db.VarChar(255)
+  originalMimeType  String         @map("original_mime_type") @db.VarChar(32)
+  originalSize      Int            @map("original_size")
+  originalChecksum  String         @map("original_checksum") @db.Char(64)
+  width             Int
+  height            Int
+  visibility        String         @default("PRIVATE") @db.VarChar(16)
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  variants          MediaVariant[]
+
+  @@index([ownerSellerId, createdAt])
+  @@map("media_assets")
+}
+
+model MediaVariant {
+  id        String     @id @db.Uuid
+  mediaId   String     @map("media_id") @db.Uuid
+  name      String     @db.VarChar(32)
+  objectKey String     @map("object_key") @db.VarChar(255)
+  mimeType  String     @map("mime_type") @db.VarChar(32)
+  size      Int
+  width     Int
+  height    Int
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, name])
+  @@map("media_variants")
 }
 
 model Store {

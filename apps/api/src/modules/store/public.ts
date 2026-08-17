@@ -38,6 +38,7 @@ export type StoreRow = {
 export interface StoreRepository {
   findBySellerId(sellerId: string): Promise<StoreRow | undefined>;
   findBySlug(slug: string): Promise<StoreRow | undefined>;
+  isMediaPublished(mediaId: string): Promise<boolean>;
   saveDraft(row: StoreRow): Promise<StoreRow>;
   publish(id: string, publishedAt: Date): Promise<StoreRow>;
 }

@@ -1,3 +1,4 @@
+import type { MediaVariant } from "@sevo/contracts/media/v1";
 import type { ObjectStoragePort, StoredMedia } from "../public";
 
 export class FakeObjectStorage implements ObjectStoragePort {
@@ -7,12 +8,28 @@ export class FakeObjectStorage implements ObjectStoragePort {
     this.#objects.set(object.key, {
       ...object,
       bytes: object.bytes.slice(),
+      variants: object.variants.map((variant) => ({
+        ...variant,
+        bytes: variant.bytes.slice(),
+      })),
     });
   }
 
-  async get(key: string): Promise<StoredMedia | undefined> {
+  async get(key: string, requestedVariant?: MediaVariant) {
     const object = this.#objects.get(key);
-    return object ? { ...object, bytes: object.bytes.slice() } : undefined;
+    if (!object) return undefined;
+    const canonical = object.purpose === "STORE_LOGO" ? "logo-large" : "cover-desktop";
+    const variant = object.variants.find(
+      (candidate) => candidate.name === (requestedVariant ?? canonical),
+    );
+    if (!variant) return undefined;
+    return {
+      ...object,
+      contentType: variant.contentType,
+      bytes: variant.bytes.slice(),
+      variant: variant.name,
+      variants: undefined,
+    };
   }
 
   async makePublic(key: string, ownerSellerId: string): Promise<void> {

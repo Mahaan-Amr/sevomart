@@ -2,24 +2,40 @@ import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
 import { FakeObjectStorage } from "./testing/fake-object-storage";
-import { MEDIA_STORAGE, type MediaStorage } from "./public";
+import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media-storage";
+import {
+  MEDIA_STORAGE,
+  PUBLISHED_MEDIA_ACCESS,
+  SELLER_UPLOAD_RATE_LIMITER,
+  type MediaStorage,
+  type PublishedMediaAccess,
+} from "./public";
 import { MediaController } from "./media.controller";
+import { SellerUploadRateLimiter } from "./seller-upload-rate-limiter";
 
 @Module({})
 export class MediaModule {
   static register(
     environment: RuntimeEnvironment,
     storage?: MediaStorage,
+    publishedMediaAccess: PublishedMediaAccess = async () => false,
   ): DynamicModule {
-    if (!storage && environment.NODE_ENV === "production") {
-      throw new Error("Media storage adapter is not configured for production");
-    }
+    const configuredStorage =
+      storage ??
+      (environment.SEVO_RUNTIME_ENV === "test"
+        ? new FakeObjectStorage()
+        : new PostgresMinioMediaStorage(environment));
     return {
       module: MediaModule,
       global: true,
       controllers: [MediaController],
       providers: [
-        { provide: MEDIA_STORAGE, useValue: storage ?? new FakeObjectStorage() },
+        { provide: MEDIA_STORAGE, useValue: configuredStorage },
+        { provide: PUBLISHED_MEDIA_ACCESS, useValue: publishedMediaAccess },
+        {
+          provide: SELLER_UPLOAD_RATE_LIMITER,
+          useValue: new SellerUploadRateLimiter(),
+        },
       ],
       exports: [MEDIA_STORAGE],
     };

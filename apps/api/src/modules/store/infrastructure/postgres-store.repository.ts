@@ -24,6 +24,17 @@ export class PostgresStoreRepository implements StoreRepository {
     return this.#find({ slug });
   }
 
+  async isMediaPublished(mediaId: string): Promise<boolean> {
+    const rows = await this.#sql<Array<{ published: boolean }>>`
+      select exists (
+        select 1 from store_stores
+        where status = 'PUBLISHED'
+          and (logo_media_id = ${mediaId}::uuid or cover_media_id = ${mediaId}::uuid)
+      ) as published
+    `;
+    return rows[0]?.published ?? false;
+  }
+
   async #find(criteria: { sellerId?: string; slug?: string }) {
     const sellerId = criteria.sellerId ?? null;
     const slug = criteria.slug ?? null;

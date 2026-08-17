@@ -8,17 +8,23 @@
 
 پشته فنی، مرز ماژول‌ها و خط پایه مهندسی نسخه اول پذیرفته شده‌اند. مخزن یک pnpm workspace با web، API، worker، PostgreSQL محلی و کنترل‌های تست و CI دارد؛ قابلیت‌های محصول فقط از Issue ساخت افزوده می‌شوند.
 
-## اجرای محلی
+## اجرای محلی کامل (مسیر رسمی)
 
 با Node.js `22.13+`، Corepack و Docker:
 
 ```bash
 corepack enable
 pnpm install
-pnpm dev
+pnpm compose:up
 ```
 
-این فرمان PostgreSQL محلی، web روی پورت `3000`، API روی پورت `3001` و worker را اجرا می‌کند. قرارداد API در `/openapi` دیده می‌شود. فرمان `pnpm quality` کنترل سریع پیش از commit و `pnpm test` مجموعه کامل آزمون‌هاست. جزئیات در [راهنمای خط پایه توسعه](docs/delivery/development-baseline.md) ثبت شده است.
+این فرمان PostgreSQL، MinIO، migration، API، worker و web را build می‌کند و تا سلامت کامل منتظر
+می‌ماند. web در `http://localhost:3100`، API در `http://localhost:3101` و OpenAPI در
+`http://localhost:3101/openapi` است. توقف با `pnpm compose:down` داده‌ها را حفظ می‌کند.
+
+برای حلقهٔ سریع hot reload، `pnpm dev` زیرساخت را در Docker و برنامه‌ها را بومی اجرا می‌کند؛ web روی
+`3200` و API روی `3201` خواهد بود تا هم‌زمان با Compose یا پروژه‌های رایج دیگر تداخل نداشته باشد. `pnpm quality` کنترل سریع و `pnpm test` کل آزمون‌هاست. جزئیات در
+[راهنمای خط پایه توسعه](docs/delivery/development-baseline.md) ثبت شده است.
 
 ## از کجا شروع کنیم؟
 

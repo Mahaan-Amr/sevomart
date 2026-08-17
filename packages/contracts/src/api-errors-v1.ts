@@ -14,7 +14,19 @@ export const validationErrorContract = z.object({
     issues: z.array(
       z.object({
         field: z.string().min(1),
-        code: z.enum(["REQUIRED", "INVALID_FORMAT", "TOO_SHORT", "TOO_LONG"]),
+        code: z.enum([
+          "REQUIRED",
+          "INVALID_FORMAT",
+          "TOO_SHORT",
+          "TOO_LONG",
+          "FILE_TOO_LARGE",
+          "IMAGE_TOO_LARGE",
+          "CORRUPT_IMAGE",
+          "UNSUPPORTED_FORMAT",
+          "ANIMATED_IMAGE",
+          "MIME_MISMATCH",
+          "RATE_LIMITED",
+        ]),
       }),
     ),
   }),

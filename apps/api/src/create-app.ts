@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import multipart from "@fastify/multipart";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import type { RuntimeEnvironment } from "@sevo/config";
+import { MEDIA_UPLOAD_MAX_BYTES } from "@sevo/contracts/media/v1";
 
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./http/api-exception.filter";
@@ -12,7 +14,10 @@ import { addIdentityStoreOpenApiContract } from "./openapi/identity-store.openap
 export async function createApiApp(
   environment: RuntimeEnvironment,
 ): Promise<NestFastifyApplication> {
-  if (environment.NODE_ENV === "production" && environment.OTP_PROVIDER === "dev") {
+  if (
+    environment.SEVO_RUNTIME_ENV === "production" &&
+    environment.OTP_PROVIDER === "dev"
+  ) {
     throw new Error("DevOtpProvider cannot run in production");
   }
 
@@ -21,6 +26,13 @@ export async function createApiApp(
     requestIdHeader: "x-correlation-id",
     genReqId: () => randomUUID(),
   });
+  const fastify = adapter.getInstance();
+  await fastify.register(
+    multipart as unknown as Parameters<typeof fastify.register>[0],
+    {
+      limits: { files: 1, fields: 1, fileSize: MEDIA_UPLOAD_MAX_BYTES },
+    },
+  );
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.register(environment),
     adapter,

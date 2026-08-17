@@ -7,7 +7,13 @@ import {
   createIdentityAccessV1JsonSchemas,
   identityAccessV1Examples,
 } from "@sevo/contracts/identity-access/v1";
-import { createMediaV1JsonSchemas, mediaV1Examples } from "@sevo/contracts/media/v1";
+import {
+  createMediaV1JsonSchemas,
+  MEDIA_UPLOAD_ACCEPTED_TYPES,
+  MEDIA_UPLOAD_MAX_BYTES,
+  MEDIA_UPLOAD_MAX_PIXELS,
+  mediaV1Examples,
+} from "@sevo/contracts/media/v1";
 import { createStoreV1JsonSchemas, storeV1Examples } from "@sevo/contracts/store/v1";
 
 import {
@@ -30,7 +36,9 @@ const responseDescriptions: Record<number, string> = {
   401: "Seller session is missing or invalid",
   404: "Store was not found",
   409: "Store slug conflicts with an existing store",
+  413: "Uploaded file exceeds the accepted limit",
   422: "Request validation failed",
+  429: "Seller upload rate limit exceeded",
   500: "Unexpected server error",
 };
 
@@ -57,7 +65,7 @@ type ContractOperation = {
   }>;
   requestBody?: {
     required: true;
-    content: Record<"application/json", { schema: SchemaReference; example?: unknown }>;
+    content: Record<string, { schema: SchemaReference; example?: unknown }>;
   };
   responses: Record<string, ContractResponse>;
 };
@@ -110,6 +118,20 @@ export function addIdentityStoreOpenApiContract(
     createMediaV1JsonSchemas(),
     createApiErrorV1JsonSchemas(),
   );
+  const mediaUploadSchema = document.components.schemas.MediaUploadInput as {
+    properties?: Record<string, Record<string, unknown>>;
+  };
+  if (mediaUploadSchema.properties?.file) {
+    mediaUploadSchema.properties.file = {
+      type: "string",
+      format: "binary",
+      description:
+        "JPEG, PNG, or WebP; maximum 10 MB and 24 megapixels; animated images are rejected.",
+      "x-maxBytes": MEDIA_UPLOAD_MAX_BYTES,
+      "x-maxPixels": MEDIA_UPLOAD_MAX_PIXELS,
+      "x-acceptedMediaTypes": [...MEDIA_UPLOAD_ACCEPTED_TYPES],
+    };
+  }
   document.components.securitySchemes ??= {};
   document.components.securitySchemes.sellerSession = {
     type: "apiKey",
@@ -151,10 +173,14 @@ export function addIdentityStoreOpenApiContract(
     }
 
     if ("request" in contract && contract.request) {
+      const contentType =
+        contract.path === "/v1/seller/media"
+          ? "multipart/form-data"
+          : "application/json";
       operation.requestBody = {
         required: true,
         content: {
-          "application/json": {
+          [contentType]: {
             schema: schemaReference(contract.request),
             example: contractExamples[contract.request],
           },
@@ -182,7 +208,8 @@ function compatibilitySignature(operation: Partial<ContractOperation>): string {
     security: operation.security ?? [],
     parameterRefs:
       operation.parameters?.map(({ name, schema }) => [name, schema.$ref]) ?? [],
-    requestRef: operation.requestBody?.content["application/json"].schema.$ref ?? null,
+    requestRef:
+      Object.values(operation.requestBody?.content ?? {})[0]?.schema.$ref ?? null,
     responses: Object.fromEntries(
       Object.entries(operation.responses ?? {}).map(([status, value]) => [
         status,

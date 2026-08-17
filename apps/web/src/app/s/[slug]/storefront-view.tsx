@@ -41,10 +41,16 @@ export function LoadingStorefront() {
   return (
     <StorefrontFrame>
       <section className={styles.loading} role="status" aria-busy="true">
-        <span className={styles.loadingMark} aria-hidden="true">س</span>
+        <span className={styles.loadingMark} aria-hidden="true">
+          س
+        </span>
         <h1>در حال آماده‌کردن فروشگاه</h1>
         <p>در حال دریافت اطلاعات این فروشگاه هستیم.</p>
-        <div className={styles.skeleton} aria-hidden="true"><span /><span /><span /></div>
+        <div className={styles.skeleton} aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
       </section>
       <section className={styles.trustUnavailable} aria-label="اطلاعات اعتماد">
         <strong>اطلاعات خرید در حال دریافت است</strong>
@@ -58,10 +64,14 @@ export function ErrorStorefront({ retryHref }: { retryHref: string }) {
   return (
     <StorefrontFrame>
       <section className={styles.errorState} role="alert">
-        <span className={styles.errorMark} aria-hidden="true">!</span>
+        <span className={styles.errorMark} aria-hidden="true">
+          !
+        </span>
         <h1>فروشگاه باز نشد</h1>
         <p>مشکلی از سمت ما پیش آمده است. کمی بعد دوباره تلاش کنید.</p>
-        <a className={styles.retry} href={retryHref}>دوباره تلاش کنید</a>
+        <a className={styles.retry} href={retryHref}>
+          دوباره تلاش کنید
+        </a>
       </section>
       <section className={styles.trustUnavailable} aria-label="اطلاعات اعتماد">
         <strong>اطلاعات اعتماد فعلاً در دسترس نیست</strong>
@@ -91,7 +101,10 @@ function TrustDetails({ store }: { store: PublicStore }) {
       <div className={styles.trustItem}>
         <span>روش پرداخت</span>
         <strong>تسویه مستقیم</strong>
-        <p>مقصد تسویه «تأیید آزمایشی» دارد؛ این وضعیت تأیید واقعی یا تضمین بازپرداخت نیست.</p>
+        <p>
+          مقصد تسویه «تأیید آزمایشی» دارد؛ این وضعیت تأیید واقعی یا تضمین بازپرداخت
+          نیست.
+        </p>
       </div>
     </section>
   );
@@ -105,12 +118,22 @@ export function ReadyStorefront({ store }: { store: PublicStore }) {
     <StorefrontFrame>
       <header className={styles.identity} style={identityStyle}>
         <div className={styles.cover} aria-hidden="true">
-          {store.cover ? <img src={`/api/store/media/${store.cover.id}`} alt="" /> : null}
+          {store.cover ? (
+            <img
+              className={styles.coverImage}
+              src={store.cover.url.replace(/^\/v1/, "/api/store")}
+              alt=""
+            />
+          ) : null}
         </div>
         <div className={styles.identityBody}>
           <div className={styles.logo}>
             {store.logo ? (
-              <img src={`/api/store/media/${store.logo.id}`} alt={`نشان ${store.name}`} />
+              <img
+                className={styles.logoImage}
+                src={store.logo.url.replace(/^\/v1/, "/api/store")}
+                alt={`نشان ${store.name}`}
+              />
             ) : (
               <span aria-hidden="true">{monogram}</span>
             )}
@@ -123,7 +146,9 @@ export function ReadyStorefront({ store }: { store: PublicStore }) {
       </header>
       {store.activeProductCount === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">
-          <span className={styles.emptyMark} aria-hidden="true">✦</span>
+          <span className={styles.emptyMark} aria-hidden="true">
+            ✦
+          </span>
           <h2 id="empty-title">هنوز کالایی منتشر نشده</h2>
           <p>فروشنده در حال آماده‌کردن اولین کالاهاست.</p>
         </section>

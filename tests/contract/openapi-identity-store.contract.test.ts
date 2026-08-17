@@ -29,7 +29,7 @@ const frozenConsumerOperations = [
   ["get", "/v1/seller/store/draft", "seller", [200, 401, 404, 500]],
   ["put", "/v1/seller/store/draft", "seller", [200, 401, 409, 422, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "seller", [200, 401, 422, 500]],
-  ["post", "/v1/seller/media", "seller", [201, 401, 422, 500]],
+  ["post", "/v1/seller/media", "seller", [201, 401, 413, 422, 429, 500]],
   ["get", "/v1/media/{mediaId}", "none", [200, 404, 500]],
   ["get", "/v1/seller/store/preview", "seller", [200, 401, 404, 500]],
   ["post", "/v1/seller/store/publication", "seller", [200, 401, 404, 409, 422, 500]],
@@ -67,6 +67,17 @@ describe("OpenAPI identity and store compatibility", () => {
     }
 
     expect(document.components.schemas.StoreDraftInput.required ?? []).toEqual([]);
+    expect(
+      document.paths["/v1/seller/media"].post.requestBody.content["multipart/form-data"]
+        .schema,
+    ).toEqual({ $ref: "#/components/schemas/MediaUploadInput" });
+    expect(document.components.schemas.MediaUploadInput.properties.file).toMatchObject({
+      type: "string",
+      format: "binary",
+      "x-maxBytes": 10 * 1024 * 1024,
+      "x-maxPixels": 24_000_000,
+      "x-acceptedMediaTypes": ["image/jpeg", "image/png", "image/webp"],
+    });
     expect(document.components.schemas.PublicStore.required).toEqual(
       expect.arrayContaining([
         "name",
@@ -87,7 +98,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "51daa05a94ebfd528cd7dc62bde7a22b47ff23d1dfdcee91f168b7ee4e42d783",
+      "bedd40d812a5592c080f9dac04cfcff65fd5b64520a66eeccba46273028cc82b",
     );
   });
 

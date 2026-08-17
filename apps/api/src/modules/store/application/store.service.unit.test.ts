@@ -20,6 +20,13 @@ class MemoryStoreRepository implements StoreRepository {
     return this.row?.slug === slug ? this.row : this.slugOwner;
   }
 
+  async isMediaPublished(mediaId: string) {
+    return (
+      this.row?.status === "PUBLISHED" &&
+      (this.row.logoMediaId === mediaId || this.row.coverMediaId === mediaId)
+    );
+  }
+
   async saveDraft(row: StoreRow) {
     this.row = row;
     return row;
@@ -133,5 +140,41 @@ describe("StoreService publication", () => {
 
     expect(draft).toMatchObject({ name: "نام تازه", status: "DRAFT" });
     expect(repository.row?.publishedAt).toBeUndefined();
+  });
+
+  it("makes media eligible before the store becomes publicly readable", async () => {
+    const events: string[] = [];
+    const repository = new MemoryStoreRepository();
+    const originalPublish = repository.publish.bind(repository);
+    repository.publish = async (id, publishedAt) => {
+      events.push("store-published");
+      return originalPublish(id, publishedAt);
+    };
+    const service = new StoreService(
+      repository,
+      async (destination) => ({
+        ...destination,
+        status: "TEST_VERIFIED",
+        verifiedAt: new Date(),
+      }),
+      undefined,
+      async () => ({ contentType: "image/webp", ownerSellerId: "seller-1" }),
+      async () => {
+        events.push("media-public");
+      },
+    );
+    await service.saveDraft("seller-1", {
+      name: "خانه ماه",
+      slug: storeSlugContract.parse("khane-mah"),
+      bio: "سفال دست‌ساز برای خانه",
+      shippingMethods: [{ code: "NATIONAL_POST", label: "پست پیشتاز" }],
+      returnPolicy: "تا هفت روز امکان درخواست مرجوعی وجود دارد.",
+      settlementDestination: { kind: "TEST" },
+      logoMediaId: "media-1" as never,
+    });
+
+    await service.publish("seller-1");
+
+    expect(events).toEqual(["media-public", "store-published"]);
   });
 });

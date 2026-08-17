@@ -41,7 +41,7 @@ type VerifySettlement = (
 ) => Promise<VerifiedSettlementDestination>;
 type ResolveMedia = (id: string) => Promise<
   | {
-      contentType: "image/jpeg" | "image/png" | "image/webp";
+      contentType: "image/webp";
       ownerSellerId: string;
     }
   | undefined
@@ -142,12 +142,22 @@ export class StoreService {
       throw new StoreSlugConflictError(row.slug!);
     }
     await this.assertOwnedMedia(sellerId, [row.logoMediaId, row.coverMediaId]);
-    const published = await this.repository.publish(row.id, this.now());
-    await Promise.all(
-      [published.logoMediaId, published.coverMediaId]
-        .filter((id): id is string => Boolean(id))
-        .map((id) => this.publishMedia(id, sellerId)),
+    const mediaIds = [row.logoMediaId, row.coverMediaId].filter((id): id is string =>
+      Boolean(id),
     );
+    try {
+      await Promise.all(mediaIds.map((id) => this.publishMedia(id, sellerId)));
+    } catch (error) {
+      await Promise.allSettled(mediaIds.map((id) => this.unpublishMedia(id, sellerId)));
+      throw error;
+    }
+    let published: StoreRow;
+    try {
+      published = await this.repository.publish(row.id, this.now());
+    } catch (error) {
+      await Promise.allSettled(mediaIds.map((id) => this.unpublishMedia(id, sellerId)));
+      throw error;
+    }
     return {
       store: await this.toPublicStore(published),
       publicUrl: `/s/${published.slug!}`,
@@ -217,8 +227,8 @@ function toDraft(row: StoreRow): StoreDraft {
 
 function toPublicStore(
   row: StoreRow,
-  logoContentType?: "image/jpeg" | "image/png" | "image/webp",
-  coverContentType?: "image/jpeg" | "image/png" | "image/webp",
+  logoContentType?: "image/webp",
+  coverContentType?: "image/webp",
 ): PublicStore {
   return {
     id: row.id,

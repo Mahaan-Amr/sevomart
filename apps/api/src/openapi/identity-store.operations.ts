@@ -121,7 +121,9 @@ export const identityStoreApiOperations = [
     responses: [
       { status: 201, schema: "MediaReference" },
       { status: 401, schema: "UnauthorizedError" },
+      { status: 413, schema: "ValidationError" },
       { status: 422, schema: "ValidationError" },
+      { status: 429, schema: "ValidationError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },

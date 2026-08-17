@@ -8,27 +8,29 @@
 - Node.js `22.13+`، Corepack و Docker Desktop؛
 - Chrome محلی برای E2E توسعه؛ CI از Chromium ایزوله Playwright استفاده می‌کند؛
 - اجرای `corepack enable` و سپس `pnpm install`؛
-- اجرای `pnpm dev` برای بالا آوردن PostgreSQL، ساخت بسته‌های مشترک و اجرای هم‌زمان web، API و worker؛
-- web در `http://localhost:3000`، API در `http://localhost:3001` و OpenAPI در
-  `http://localhost:3001/openapi` است.
+- اجرای `pnpm compose:up` برای محیط رسمی کامل شامل PostgreSQL، MinIO، migration، API، worker و web؛
+- اجرای `pnpm dev` برای همان زیرساخت با web، API و worker بومی و hot reload؛
+- web در `http://localhost:3200`، API در `http://localhost:3201` و OpenAPI در
+  `http://localhost:3201/openapi` است؛ همهٔ این پورت‌ها از `.env` قابل تغییرند.
 
-مقادیر محلی امن در `.env.example` ثبت شده‌اند. secret واقعی فقط در محیط اجرا نگهداری
-می‌شود و فایل `.env` وارد Git نیست. `pnpm db:down` سرویس محلی را متوقف می‌کند و volume
-داده را حذف نمی‌کند.
+مقادیر محلی غیرحساس در `.env.example` ثبت شده‌اند. secret واقعی فقط در محیط اجرا نگهداری
+می‌شود و فایل `.env` وارد Git نیست. `pnpm infra:down` و `pnpm compose:down` volume را حذف
+نمی‌کنند. `pnpm local:reset` تنها فرمان حذف صریح دادهٔ PostgreSQL و MinIO است و پیش از حذف
+نام دقیق volumeها را نمایش می‌دهد و تأیید می‌خواهد.
 
 ## فرمان‌های کیفیت
 
-| فرمان | مرز بررسی |
-|---|---|
-| `pnpm format:check` | قالب فایل‌ها |
-| `pnpm lint` | ESLint و جهت importهای معماری |
-| `pnpm typecheck` | TypeScript strict و Prisma schema |
-| `pnpm test:unit` | قراردادهای کوچک بدون I/O |
-| `pnpm test:contract` | fake آداپترها و compatibility قرارداد |
+| فرمان                   | مرز بررسی                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| `pnpm format:check`     | قالب فایل‌ها                                                                             |
+| `pnpm lint`             | ESLint و جهت importهای معماری                                                            |
+| `pnpm typecheck`        | TypeScript strict و Prisma schema                                                        |
+| `pnpm test:unit`        | قراردادهای کوچک بدون I/O                                                                 |
+| `pnpm test:contract`    | fake آداپترها و compatibility قرارداد                                                    |
 | `pnpm test:integration` | API و سپس هر ماژول روی PostgreSQL واقعی؛ در محیط محلی پایگاه داده را خودکار بالا می‌آورد |
-| `pnpm test:e2e` | مسیر موبایل و RTL در Chromium |
-| `pnpm quality` | کنترل سریع پیش از commit |
-| `pnpm test` | همه سطح‌های آزمون |
+| `pnpm test:e2e`         | مسیر موبایل و RTL در Chromium                                                            |
+| `pnpm quality`          | کنترل سریع پیش از commit                                                                 |
+| `pnpm test`             | همه سطح‌های آزمون                                                                        |
 
 تست integration یک query واقعی روی PostgreSQL اجرا می‌کند و بدون اتصال سالم پاس نمی‌شود.
 در CI، `DATABASE_URL` به سرویس PostgreSQL همان job اشاره می‌کند. CI همین فرمان‌ها را با نصب قفل‌شده و `pnpm audit --prod` اجرا می‌کند. imageهای web، API و
