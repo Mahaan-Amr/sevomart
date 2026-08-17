@@ -55,11 +55,11 @@ export class IdentityAccessModule {
             new SellerOtpService(
               provider,
               repository,
-              environment.NODE_ENV === "production"
+              environment.SEVO_RUNTIME_ENV === "production"
                 ? undefined
                 : environment.DEV_OTP_TEST_MOBILES,
               undefined,
-              environment.NODE_ENV === "production"
+              environment.SEVO_RUNTIME_ENV === "production"
                 ? createProductionOtpCode
                 : undefined,
             ),

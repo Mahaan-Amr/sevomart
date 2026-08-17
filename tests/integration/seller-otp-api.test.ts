@@ -11,11 +11,43 @@ describe("seller OTP HTTP API with PostgreSQL", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  async function startApp() {
-    const app = await createApiApp(apiTestEnvironment);
+  async function startApp(environment = apiTestEnvironment) {
+    const app = await createApiApp(environment);
     apps.push(app);
     return app;
   }
+
+  it("keeps the development OTP adapter in optimized local images", async () => {
+    const app = await startApp({
+      ...apiTestEnvironment,
+      NODE_ENV: "production",
+      SEVO_RUNTIME_ENV: "development",
+    });
+    const requestResponse = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+
+    expect(requestResponse.statusCode).toBe(202);
+    const verifyResponse = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: {
+          challengeId: requestResponse.json<{ challengeId: string }>().challengeId,
+          code: "111111",
+        },
+      });
+
+    expect(verifyResponse.statusCode).toBe(200);
+    expect(verifyResponse.headers["set-cookie"]).not.toContain("; Secure");
+  });
 
   it("rejects a mobile that is not an allowed Iranian test number", async () => {
     const app = await startApp();
