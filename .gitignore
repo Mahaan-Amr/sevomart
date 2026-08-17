@@ -10,3 +10,4 @@ playwright-report/
 output/playwright-results/
 test-results/
 *.tsbuildinfo
+.scratch-*

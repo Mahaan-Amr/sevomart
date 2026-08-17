@@ -29,7 +29,7 @@ const frozenConsumerOperations = [
   ["get", "/v1/seller/store/draft", "seller", [200, 401, 404, 500]],
   ["put", "/v1/seller/store/draft", "seller", [200, 401, 409, 422, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "seller", [200, 401, 422, 500]],
-  ["post", "/v1/seller/media", "seller", [201, 401, 422, 500]],
+  ["post", "/v1/seller/media", "seller", [201, 401, 413, 422, 429, 500]],
   ["get", "/v1/media/{mediaId}", "none", [200, 404, 500]],
   ["get", "/v1/seller/store/preview", "seller", [200, 401, 404, 500]],
   ["post", "/v1/seller/store/publication", "seller", [200, 401, 404, 409, 422, 500]],
@@ -67,6 +67,14 @@ describe("OpenAPI identity and store compatibility", () => {
     }
 
     expect(document.components.schemas.StoreDraftInput.required ?? []).toEqual([]);
+    expect(
+      document.paths["/v1/seller/media"].post.requestBody.content["multipart/form-data"]
+        .schema,
+    ).toEqual({ $ref: "#/components/schemas/MediaUploadInput" });
+    expect(document.components.schemas.MediaUploadInput.properties.file).toMatchObject({
+      type: "string",
+      format: "binary",
+    });
     expect(document.components.schemas.PublicStore.required).toEqual(
       expect.arrayContaining([
         "name",
@@ -87,7 +95,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "51daa05a94ebfd528cd7dc62bde7a22b47ff23d1dfdcee91f168b7ee4e42d783",
+      "10350c5d297c8d3f8927402cbf6e51f6523aced0efbab332fab0f31106ab5df4",
     );
   });
 

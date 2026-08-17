@@ -8,7 +8,7 @@
     "migrate": "prisma migrate dev",
     "typecheck": "prisma validate"
   },
-  "devDependencies": {
+  "dependencies": {
     "prisma": "7.9.1"
   }
 }

@@ -2,6 +2,7 @@ import { readRuntimeEnvironment } from "../../packages/config/src/index";
 
 export const apiTestEnvironment = readRuntimeEnvironment({
   NODE_ENV: "test",
+  SEVO_RUNTIME_ENV: "test",
   API_PORT: "3001",
   WEB_ORIGIN: "http://localhost:3000",
   DATABASE_URL:

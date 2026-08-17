@@ -1,29 +1,35 @@
 import { readRuntimeEnvironment } from "@sevo/config";
 import { describe, expect, it } from "vitest";
 
-import { createApiApp } from "./create-app";
-import { MediaModule } from "./modules/media/media.module";
-
-const productionWithDevOtp = readRuntimeEnvironment({
-  NODE_ENV: "production",
+const common = {
   API_PORT: "3001",
   WEB_ORIGIN: "https://sevo.example",
-  DATABASE_URL: "postgresql://sevo:secret@database:5432/sevo",
   OTEL_EXPORTER_OTLP_ENDPOINT: "",
-  OTP_PROVIDER: "dev",
   DEV_OTP_TEST_MOBILES: "09123456789",
-});
+};
 
-describe("API startup guard", () => {
-  it("stops startup when DevOtpProvider is selected in production", async () => {
-    await expect(createApiApp(productionWithDevOtp)).rejects.toThrow(
-      "DevOtpProvider cannot run in production",
-    );
+describe("runtime trust guard", () => {
+  it("allows optimized JavaScript images to use development-only adapters", () => {
+    expect(
+      readRuntimeEnvironment({
+        ...common,
+        NODE_ENV: "production",
+        SEVO_RUNTIME_ENV: "development",
+        DATABASE_URL: "postgresql://sevo:sevo_local@database:5432/sevo",
+        OTP_PROVIDER: "dev",
+      }),
+    ).toMatchObject({ NODE_ENV: "production", SEVO_RUNTIME_ENV: "development" });
   });
 
-  it("refuses process-local media storage in production", () => {
-    expect(() => MediaModule.register(productionWithDevOtp)).toThrow(
-      "Media storage adapter is not configured for production",
-    );
+  it("rejects local credentials and development OTP at production trust", () => {
+    expect(() =>
+      readRuntimeEnvironment({
+        ...common,
+        NODE_ENV: "production",
+        SEVO_RUNTIME_ENV: "production",
+        DATABASE_URL: "postgresql://sevo:sevo_local@database:5432/sevo",
+        OTP_PROVIDER: "dev",
+      }),
+    ).toThrow("Production trust requires external OTP and non-default secrets");
   });
 });

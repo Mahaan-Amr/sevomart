@@ -41,7 +41,7 @@ type VerifySettlement = (
 ) => Promise<VerifiedSettlementDestination>;
 type ResolveMedia = (id: string) => Promise<
   | {
-      contentType: "image/jpeg" | "image/png" | "image/webp";
+      contentType: "image/webp";
       ownerSellerId: string;
     }
   | undefined
@@ -217,8 +217,8 @@ function toDraft(row: StoreRow): StoreDraft {
 
 function toPublicStore(
   row: StoreRow,
-  logoContentType?: "image/jpeg" | "image/png" | "image/webp",
-  coverContentType?: "image/jpeg" | "image/png" | "image/webp",
+  logoContentType?: "image/webp",
+  coverContentType?: "image/webp",
 ): PublicStore {
   return {
     id: row.id,

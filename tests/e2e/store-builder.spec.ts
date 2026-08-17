@@ -50,4 +50,12 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
 
   await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
   await expect(page.getByText("/s/e2e-khane-mah", { exact: true })).toBeVisible();
+
+  await page.goto("/s/e2e-khane-mah");
+  await expect(page.getByRole("heading", { name: "خانه سفال ماه" })).toBeVisible();
+  await expect(page.getByText("سفال دست‌ساز برای خانه‌های گرم و ساده")).toBeVisible();
+  await expect(page.getByText(/تا هفت روز پس از تحویل/)).toBeVisible();
+  await expect(page.getByText("ساخته‌شده با سوو")).toBeVisible();
+  await expect(page.locator("img")).toHaveCount(1);
+  await expect(page.locator("img")).toHaveJSProperty("complete", true);
 });

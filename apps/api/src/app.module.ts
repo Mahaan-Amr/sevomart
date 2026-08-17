@@ -1,7 +1,7 @@
 import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
-import { HealthController } from "./health/health.controller";
+import { HealthController, RUNTIME_ENVIRONMENT } from "./health/health.controller";
 import {
   IdentityAccessModule,
   type IdentityAccessModuleOptions,
@@ -22,6 +22,7 @@ export class AppModule {
     return {
       module: AppModule,
       controllers: [HealthController],
+      providers: [{ provide: RUNTIME_ENVIRONMENT, useValue: environment }],
       imports: [
         IdentityAccessModule.register(environment, {
           ...identityOptions,

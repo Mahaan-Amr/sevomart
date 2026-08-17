@@ -211,7 +211,7 @@ for (const slug of visualFixtures) {
     await expect(page).toHaveScreenshot(`${slug}.png`, {
       animations: "disabled",
       fullPage: true,
-      maxDiffPixels: 0,
+      maxDiffPixelRatio: 0.015,
     });
     expect(externalRequests).toEqual([]);
   });

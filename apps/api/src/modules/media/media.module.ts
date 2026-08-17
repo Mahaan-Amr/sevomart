@@ -2,6 +2,7 @@ import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
 import { FakeObjectStorage } from "./testing/fake-object-storage";
+import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media-storage";
 import { MEDIA_STORAGE, type MediaStorage } from "./public";
 import { MediaController } from "./media.controller";
 
@@ -11,16 +12,16 @@ export class MediaModule {
     environment: RuntimeEnvironment,
     storage?: MediaStorage,
   ): DynamicModule {
-    if (!storage && environment.NODE_ENV === "production") {
-      throw new Error("Media storage adapter is not configured for production");
-    }
+    const configuredStorage =
+      storage ??
+      (environment.SEVO_RUNTIME_ENV === "test"
+        ? new FakeObjectStorage()
+        : new PostgresMinioMediaStorage(environment));
     return {
       module: MediaModule,
       global: true,
       controllers: [MediaController],
-      providers: [
-        { provide: MEDIA_STORAGE, useValue: storage ?? new FakeObjectStorage() },
-      ],
+      providers: [{ provide: MEDIA_STORAGE, useValue: configuredStorage }],
       exports: [MEDIA_STORAGE],
     };
   }

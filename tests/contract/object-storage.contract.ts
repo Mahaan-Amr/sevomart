@@ -11,15 +11,35 @@ export function runObjectStorageContract(
       const storage = createStorage();
       const expected = {
         key: "media/example",
+        purpose: "STORE_LOGO" as const,
         contentType: "image/webp",
         bytes: new Uint8Array([1, 2, 3]),
+        checksum: "original-checksum",
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: "media/example/logo-large.webp",
+            name: "logo-large" as const,
+            contentType: "image/webp" as const,
+            bytes: new Uint8Array([4, 5, 6]),
+            width: 1,
+            height: 1,
+          },
+        ],
         ownerSellerId: "seller-test",
         visibility: "PRIVATE" as const,
       };
 
       await storage.put(expected);
 
-      expect(await storage.get(expected.key)).toEqual(expected);
+      expect(await storage.get(expected.key)).toMatchObject({
+        key: expected.key,
+        bytes: new Uint8Array([4, 5, 6]),
+        contentType: "image/webp",
+        variant: "logo-large",
+        checksum: "original-checksum",
+      });
     });
 
     it("does not expose mutable stored bytes", async () => {
@@ -27,8 +47,22 @@ export function runObjectStorageContract(
       const bytes = new Uint8Array([7]);
       await storage.put({
         key: "media/isolated",
+        purpose: "STORE_LOGO",
         contentType: "image/webp",
         bytes,
+        checksum: "checksum",
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: "media/isolated/logo-large.webp",
+            name: "logo-large",
+            contentType: "image/webp",
+            bytes: new Uint8Array([7]),
+            width: 1,
+            height: 1,
+          },
+        ],
         ownerSellerId: "seller-test",
         visibility: "PRIVATE",
       });
@@ -42,8 +76,22 @@ export function runObjectStorageContract(
       const storage = createStorage();
       await storage.put({
         key: "media/publication",
+        purpose: "STORE_LOGO",
         contentType: "image/png",
         bytes: new Uint8Array([1]),
+        checksum: "checksum",
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: "media/publication/logo-large.webp",
+            name: "logo-large",
+            contentType: "image/webp",
+            bytes: new Uint8Array([1]),
+            width: 1,
+            height: 1,
+          },
+        ],
         ownerSellerId: "seller-test",
         visibility: "PRIVATE",
       });
@@ -60,8 +108,22 @@ export function runObjectStorageContract(
       const storage = createStorage();
       await storage.put({
         key: "media/private-owner",
+        purpose: "STORE_LOGO",
         contentType: "image/png",
         bytes: new Uint8Array([1]),
+        checksum: "checksum",
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: "media/private-owner/logo-large.webp",
+            name: "logo-large",
+            contentType: "image/webp",
+            bytes: new Uint8Array([1]),
+            width: 1,
+            height: 1,
+          },
+        ],
         ownerSellerId: "seller-test",
         visibility: "PRIVATE",
       });
@@ -78,8 +140,22 @@ export function runObjectStorageContract(
       const storage = createStorage();
       await storage.put({
         key: "media/unpublished",
+        purpose: "STORE_LOGO",
         contentType: "image/png",
         bytes: new Uint8Array([1]),
+        checksum: "checksum",
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: "media/unpublished/logo-large.webp",
+            name: "logo-large",
+            contentType: "image/webp",
+            bytes: new Uint8Array([1]),
+            width: 1,
+            height: 1,
+          },
+        ],
         ownerSellerId: "seller-test",
         visibility: "PRIVATE",
       });

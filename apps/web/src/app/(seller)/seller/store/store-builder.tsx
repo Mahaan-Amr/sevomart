@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  MEDIA_UPLOAD_ACCEPTED_TYPES,
+  MEDIA_UPLOAD_MAX_BYTES,
+  MEDIA_UPLOAD_MAX_PIXELS,
   mediaReferenceContract,
   type MediaId,
   type MediaReference,
@@ -106,9 +109,11 @@ export function StoreBuilder() {
     setPending(true);
     setMessage("");
     try {
-      const logoMediaId = logo ? (await uploadMedia(logo)).id : storedMedia.logoMediaId;
+      const logoMediaId = logo
+        ? (await uploadMedia(logo, "STORE_LOGO")).id
+        : storedMedia.logoMediaId;
       const coverMediaId = cover
-        ? (await uploadMedia(cover)).id
+        ? (await uploadMedia(cover, "STORE_COVER")).id
         : storedMedia.coverMediaId;
       const input: StoreDraftInput = {
         name: form.name.trim(),
@@ -147,8 +152,12 @@ export function StoreBuilder() {
       setPreview(parsedPreview.data);
       setStage("preview");
       setMessage("پیش‌نویس ذخیره شد. حالا پیش‌نمایش را بررسی کنید.");
-    } catch {
-      setMessage("ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.");
+    } catch (error) {
+      setMessage(
+        error instanceof MediaUploadError
+          ? error.message
+          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+      );
     } finally {
       setPending(false);
     }
@@ -415,32 +424,38 @@ function shippingMethod(code: typeof emptyForm.shippingCode) {
   };
 }
 
-async function uploadMedia(file: File): Promise<MediaReference> {
-  if (file.size > 5_500_000) throw new Error("media too large");
-  const contentBase64 = await fileToBase64(file);
+async function uploadMedia(
+  file: File,
+  purpose: "STORE_LOGO" | "STORE_COVER",
+): Promise<MediaReference> {
+  if (file.size > MEDIA_UPLOAD_MAX_BYTES) {
+    throw new MediaUploadError("حجم تصویر باید حداکثر ۱۰ مگابایت باشد.");
+  }
+  if (!(MEDIA_UPLOAD_ACCEPTED_TYPES as readonly string[]).includes(file.type)) {
+    throw new MediaUploadError("فقط تصویر JPEG، PNG یا WebP پذیرفته می‌شود.");
+  }
+  const bitmap = await createImageBitmap(file).catch(() => undefined);
+  if (!bitmap)
+    throw new MediaUploadError("فایل تصویر خراب است یا کامل خوانده نمی‌شود.");
+  const pixels = bitmap.width * bitmap.height;
+  bitmap.close();
+  if (pixels > MEDIA_UPLOAD_MAX_PIXELS) {
+    throw new MediaUploadError("ابعاد تصویر باید حداکثر ۲۴ مگاپیکسل باشد.");
+  }
+  const form = new FormData();
+  form.set("purpose", purpose);
+  form.set("file", file, file.name);
   const response = await fetch("/api/store/seller/media", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      fileName: file.name,
-      contentType: file.type,
-      contentBase64,
-    }),
+    body: form,
   });
   const body: unknown = await response.json();
   const parsed = mediaReferenceContract.safeParse(body);
-  if (!response.ok || !parsed.success) throw new Error("media upload failed");
+  if (!response.ok || !parsed.success) throw new MediaUploadError(humanError(body));
   return parsed.data;
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-    reader.readAsDataURL(file);
-  });
-}
+class MediaUploadError extends Error {}
 
 function humanError(body: unknown) {
   return typeof body === "object" &&

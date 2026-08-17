@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
+import { publicStoreContract, type PublicStore } from "@sevo/contracts/store/v1";
 
 import { getStorefrontFixture, type StorefrontFixture } from "./storefront-fixtures";
 import styles from "./storefront.module.css";
@@ -70,8 +71,12 @@ function ErrorStorefront() {
 }
 
 type ReadyFixture = Extract<StorefrontFixture, { state: "ready" }>;
+type ReadyStorefrontModel = ReadyFixture & {
+  logoUrl?: string;
+  coverUrl?: string;
+};
 
-function TrustDetails({ fixture }: { fixture: ReadyFixture }) {
+function TrustDetails({ fixture }: { fixture: ReadyStorefrontModel }) {
   return (
     <section className={styles.trust} id="trust" aria-labelledby="trust-title">
       <div className={styles.trustHeading}>
@@ -100,7 +105,7 @@ function TrustDetails({ fixture }: { fixture: ReadyFixture }) {
   );
 }
 
-function ReadyStorefront({ fixture }: { fixture: ReadyFixture }) {
+function ReadyStorefront({ fixture }: { fixture: ReadyStorefrontModel }) {
   const identityStyle = {
     "--store-accent": fixture.identity.accent,
     "--cover-start": fixture.identity.coverStart,
@@ -110,10 +115,18 @@ function ReadyStorefront({ fixture }: { fixture: ReadyFixture }) {
   return (
     <StorefrontFrame>
       <header className={styles.identity} style={identityStyle}>
-        <div className={styles.cover} aria-hidden="true" />
+        <div className={styles.cover} aria-hidden="true">
+          {fixture.coverUrl ? (
+            <img className={styles.coverImage} src={fixture.coverUrl} alt="" />
+          ) : null}
+        </div>
         <div className={styles.identityBody}>
           <div className={styles.logo} aria-hidden="true">
-            {fixture.identity.logoMonogram}
+            {fixture.logoUrl ? (
+              <img className={styles.logoImage} src={fixture.logoUrl} alt="" />
+            ) : (
+              fixture.identity.logoMonogram
+            )}
           </div>
           <div className={styles.identityText}>
             <h1>{fixture.identity.name}</h1>
@@ -145,10 +158,9 @@ export default async function StorefrontPage({
   const [{ slug }, query] = await Promise.all([params, searchParams]);
   const fixtureSlug =
     slug === "fixture-error" && query.retry === "1" ? "fixture-short" : slug;
-  const fixture = getStorefrontFixture(fixtureSlug);
-  if (!fixture) {
-    notFound();
-  }
+  const fixture =
+    getStorefrontFixture(fixtureSlug) ?? (await getPublishedStorefront(fixtureSlug));
+  if (!fixture) notFound();
 
   return (
     <>
@@ -166,4 +178,36 @@ export default async function StorefrontPage({
       </main>
     </>
   );
+}
+
+async function getPublishedStorefront(
+  slug: string,
+): Promise<StorefrontFixture | ReadyStorefrontModel | undefined> {
+  const response = await fetch(
+    `${process.env.API_BASE_URL ?? "http://127.0.0.1:3001"}/v1/stores/${encodeURIComponent(slug)}`,
+    { cache: "no-store" },
+  );
+  if (response.status === 404) return undefined;
+  if (!response.ok) return { state: "error" };
+  const parsed = publicStoreContract.safeParse(await response.json());
+  if (!parsed.success) return { state: "error" };
+  return publicStoreToModel(parsed.data);
+}
+
+function publicStoreToModel(store: PublicStore): ReadyStorefrontModel {
+  return {
+    state: "ready",
+    identity: {
+      name: store.name,
+      description: store.bio,
+      logoMonogram: store.name.trim().slice(0, 1),
+      accent: store.themeColor,
+      coverStart: "#F6E3E9",
+      coverEnd: "#EAD5DB",
+    },
+    shipping: store.shippingMethods.map((method) => method.label).join("، "),
+    returns: store.returnPolicy,
+    logoUrl: store.logo ? store.logo.url.replace(/^\/v1/, "/api/store") : undefined,
+    coverUrl: store.cover ? store.cover.url.replace(/^\/v1/, "/api/store") : undefined,
+  };
 }
