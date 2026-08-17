@@ -24,6 +24,23 @@
   font-weight: 600;
 }
 
+.continueLink {
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  margin-block-start: 20px;
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.continueLink:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
 .intro {
   margin-block-end: 20px;
 }

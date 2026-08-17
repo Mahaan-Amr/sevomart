@@ -13,7 +13,11 @@ import {
   SELLER_OTP_SERVICE,
 } from "./identity-access.tokens";
 import { PostgresIdentityAccessRepository } from "./infrastructure/postgres-identity-access.repository";
-import type { IdentityAccessRepository, OtpProvider } from "./public";
+import {
+  SELLER_SESSION_READER,
+  type IdentityAccessRepository,
+  type OtpProvider,
+} from "./public";
 
 export type IdentityAccessModuleOptions = {
   otpProvider?: OtpProvider;
@@ -33,6 +37,7 @@ export class IdentityAccessModule {
 
     return {
       module: IdentityAccessModule,
+      global: true,
       controllers: [IdentityAccessController],
       providers: [
         { provide: RUNTIME_ENVIRONMENT, useValue: environment },
@@ -59,7 +64,9 @@ export class IdentityAccessModule {
                 : undefined,
             ),
         },
+        { provide: SELLER_SESSION_READER, useExisting: SELLER_OTP_SERVICE },
       ],
+      exports: [SELLER_SESSION_READER],
     };
   }
 }

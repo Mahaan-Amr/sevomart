@@ -2,6 +2,7 @@ import { readRuntimeEnvironment } from "@sevo/config";
 import { describe, expect, it } from "vitest";
 
 import { createApiApp } from "./create-app";
+import { MediaModule } from "./modules/media/media.module";
 
 const productionWithDevOtp = readRuntimeEnvironment({
   NODE_ENV: "production",
@@ -17,6 +18,12 @@ describe("API startup guard", () => {
   it("stops startup when DevOtpProvider is selected in production", async () => {
     await expect(createApiApp(productionWithDevOtp)).rejects.toThrow(
       "DevOtpProvider cannot run in production",
+    );
+  });
+
+  it("refuses process-local media storage in production", () => {
+    expect(() => MediaModule.register(productionWithDevOtp)).toThrow(
+      "Media storage adapter is not configured for production",
     );
   });
 });

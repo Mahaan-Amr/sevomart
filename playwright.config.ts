@@ -42,7 +42,10 @@ export default defineConfig({
     {
       command: "pnpm e2e:api",
       url: "http://127.0.0.1:3109/v1/health",
-      env: { API_PORT: "3109" },
+      env: {
+        API_PORT: "3109",
+        DEV_OTP_TEST_MOBILES: "09123456789,09111111111",
+      },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

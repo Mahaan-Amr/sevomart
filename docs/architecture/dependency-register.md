@@ -5,18 +5,19 @@
 انجام شده است. همهٔ نسخه‌ها دقیق و lockfile تحت کنترل supply-chain policy است؛
 `pnpm audit --prod` در خط تحویل اجرا می‌شود و advisory با شدت بالا پیش از ادغام رفع می‌شود.
 
-| گروه | دلیل ورود | نگهداری و مجوز | اثر امنیتی و کنترل |
-|---|---|---|---|
-| Next.js، React و typeهای React | PWA واکنش‌گرا طبق ADR-001 | پروژه‌های فعال؛ MIT | سطح HTTP مرورگر؛ نسخه دقیق، CSP و patch هفتگی در ادامه |
-| NestJS، Fastify، Swagger، RxJS و reflect-metadata | API modular monolith و OpenAPI طبق ADR-001 | پروژه‌های فعال؛ MIT یا Apache-2.0 | ورودی شبکه؛ validation، نسخه دقیق و audit الزامی |
-| Zod | قرارداد runtime مشترک و محیط type-safe | فعال؛ MIT | پردازش دادهٔ ورودی؛ schemaهای محدود و نسخه دقیق |
-| Prisma | schema و migration قابل‌مرور PostgreSQL | فعال؛ Apache-2.0 | دسترسی داده و code generation؛ SQL review، مالکیت جدول/migration و نسخه دقیق |
-| OpenTelemetry Node | trace قابل‌انتقال بدون قفل‌شدن به provider | فعال؛ Apache-2.0 | exporter فقط با endpoint صریح فعال و payload حساس ممنوع |
-| TypeScript، ESLint، Prettier و type packages | strict typecheck و کنترل قالب/قواعد CI | فعال؛ MIT یا Apache-2.0 | فقط build-time؛ lockfile و اجرای CI روی PR |
-| Vitest و Playwright | unit/contract و E2E | فعال؛ MIT و Apache-2.0 | فقط test-time؛ مرورگر ایزوله CI |
-| Postgres.js | persistence نشست ماژول هویت و integration واقعی PostgreSQL | فعال؛ Unlicense | runtime دسترسی داده؛ query پارامتری، credential محیطی، connection pool محدود و audit وابستگی |
-| tsx | اجرای watch در توسعه | فعال؛ MIT | فقط development؛ در image تولید نصب نمی‌شود |
-| `js-yaml` override | بستن advisory زنجیره Swagger | فعال؛ MIT | نسخه patch‌شده `5.2.2` در کل workspace تحمیل شده است |
+| گروه                                              | دلیل ورود                                                  | نگهداری و مجوز                                          | اثر امنیتی و کنترل                                                                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Next.js، React و typeهای React                    | PWA واکنش‌گرا طبق ADR-001                                  | پروژه‌های فعال؛ MIT                                     | سطح HTTP مرورگر؛ نسخه دقیق، CSP و patch هفتگی در ادامه                                                                                                    |
+| NestJS، Fastify، Swagger، RxJS و reflect-metadata | API modular monolith و OpenAPI طبق ADR-001                 | پروژه‌های فعال؛ MIT یا Apache-2.0                       | ورودی شبکه؛ validation، نسخه دقیق و audit الزامی                                                                                                          |
+| Zod                                               | قرارداد runtime مشترک و محیط type-safe                     | فعال؛ MIT                                               | پردازش دادهٔ ورودی؛ schemaهای محدود و نسخه دقیق                                                                                                           |
+| Prisma                                            | schema و migration قابل‌مرور PostgreSQL                    | فعال؛ Apache-2.0                                        | دسترسی داده و code generation؛ SQL review، مالکیت جدول/migration و نسخه دقیق                                                                              |
+| OpenTelemetry Node                                | trace قابل‌انتقال بدون قفل‌شدن به provider                 | فعال؛ Apache-2.0                                        | exporter فقط با endpoint صریح فعال و payload حساس ممنوع                                                                                                   |
+| TypeScript، ESLint، Prettier و type packages      | strict typecheck و کنترل قالب/قواعد CI                     | فعال؛ MIT یا Apache-2.0                                 | فقط build-time؛ lockfile و اجرای CI روی PR                                                                                                                |
+| Vitest و Playwright                               | unit/contract و E2E                                        | فعال؛ MIT و Apache-2.0                                  | فقط test-time؛ مرورگر ایزوله CI                                                                                                                           |
+| Postgres.js                                       | persistence نشست ماژول هویت و integration واقعی PostgreSQL | فعال؛ Unlicense                                         | runtime دسترسی داده؛ query پارامتری، credential محیطی، connection pool محدود و audit وابستگی                                                              |
+| Sharp و libvips                                   | تشخیص واقعی و قابل‌خواندن بودن لوگو و جلد پیش از ذخیره     | Sharp فعال؛ Apache-2.0، libvips فعال؛ LGPL-2.1-or-later | پردازش بایت ورودی و binary بومی؛ نسخه دقیق، build مجاز صریح، سقف ۱۶ میلیون پیکسل، توقف روی هشدار decode، تطبیق format با MIME، audit و به‌روزرسانی امنیتی |
+| tsx                                               | اجرای watch در توسعه                                       | فعال؛ MIT                                               | فقط development؛ در image تولید نصب نمی‌شود                                                                                                               |
+| `js-yaml` override                                | بستن advisory زنجیره Swagger                               | فعال؛ MIT                                               | نسخه patch‌شده `5.2.2` در کل workspace تحمیل شده است                                                                                                      |
 
 وابستگی‌های `@sevo/*` داخلی و private هستند و مجوز خارجی ندارند. افزودن گروه یا package
 جدید باید دلیل، وضعیت نگهداری، مجوز، سطح حمله و کنترل آن را پیش از merge به همین سند بیفزاید.

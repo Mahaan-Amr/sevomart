@@ -1,4 +1,14 @@
-import type { IranianMobile, OtpCode } from "@sevo/contracts/identity-access/v1";
+import type {
+  IranianMobile,
+  OtpCode,
+  SellerSession,
+} from "@sevo/contracts/identity-access/v1";
+
+export const SELLER_SESSION_READER = Symbol("SELLER_SESSION_READER");
+
+export interface SellerSessionReader {
+  readActiveSellerSession(token: string): Promise<SellerSession | undefined>;
+}
 
 export type OtpDelivery = {
   mobile: IranianMobile;

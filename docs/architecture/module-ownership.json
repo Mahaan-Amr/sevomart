@@ -18,7 +18,10 @@
   "tables": {
     "identity_sellers": "identity-access",
     "identity_otp_challenges": "identity-access",
-    "identity_seller_sessions": "identity-access"
+    "identity_seller_sessions": "identity-access",
+    "store_stores": "store",
+    "store_memberships": "store",
+    "store_shipping_methods": "store"
   },
   "contracts": {
     "@sevo/contracts/identity-access/v1": "identity-access",

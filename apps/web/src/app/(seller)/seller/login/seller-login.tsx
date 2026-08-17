@@ -89,6 +89,9 @@ export function SellerLogin({
           <span className={styles.brand}>سوو</span>
           <h1 id="signed-in-title">وارد شدید</h1>
           <p>نشست شما حفظ شده و می‌توانید ساخت فروشگاه را ادامه دهید.</p>
+          <a href="/seller/store" className={styles.continueLink}>
+            ساخت فروشگاه
+          </a>
         </section>
       </main>
     );

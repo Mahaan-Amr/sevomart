@@ -7,6 +7,8 @@ import {
   type IdentityAccessModuleOptions,
 } from "./modules/identity-access/identity-access.module";
 import { DevOtpProvider } from "./modules/notifications/testing/dev-otp-provider";
+import { MediaModule } from "./modules/media/media.module";
+import { StoreModule } from "./modules/store/store.module";
 
 @Module({})
 export class AppModule {
@@ -25,6 +27,8 @@ export class AppModule {
           ...identityOptions,
           otpProvider,
         }),
+        MediaModule.register(environment),
+        StoreModule.register(environment),
       ],
     };
   }
