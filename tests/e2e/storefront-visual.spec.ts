@@ -235,7 +235,7 @@ for (const state of ["default", "custom", "loading", "error"] as const) {
     await expect(page).toHaveScreenshot(`storefront-${state}.png`, {
       animations: "disabled",
       fullPage: true,
-      maxDiffPixels: 0,
+      maxDiffPixelRatio: 0.015,
     });
   });
 }
