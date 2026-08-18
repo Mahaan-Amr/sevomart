@@ -8,7 +8,15 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
-  await sql`delete from store_stores`;
+  await sql`
+    delete from store_stores
+    where id in (
+      select membership.store_id
+      from store_memberships membership
+      join identity_sellers seller on seller.id = membership.seller_id
+      where seller.mobile = ${"09111111111"}
+    )
+  `;
   await sql.end();
 
   await page.goto("/seller/login");
