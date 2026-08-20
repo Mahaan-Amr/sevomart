@@ -22,7 +22,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:3110",
     browserName: "chromium",
-    channel: process.env.CI ? undefined : "chrome",
+    channel: "chrome",
     locale: "fa-IR",
     timezoneId: "Asia/Tehran",
     colorScheme: "light",
