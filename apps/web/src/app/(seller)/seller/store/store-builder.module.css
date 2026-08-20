@@ -64,8 +64,48 @@
   width: 64px;
   padding: 5px;
 }
-.field input[type="file"] {
-  padding-block: 9px;
+.filePicker {
+  position: relative;
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  box-shadow: inset 3px 3px 8px var(--shadow-neutral-soft);
+  font-weight: 400;
+}
+.field .filePickerInput {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  min-height: 44px;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+.filePickerButton {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-inline: 12px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 9px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+.filePickerName {
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.filePicker:focus-within {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
 }
 .field small {
   color: var(--color-muted);

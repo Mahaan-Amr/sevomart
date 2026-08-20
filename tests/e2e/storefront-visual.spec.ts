@@ -2,17 +2,20 @@ import { expect, request as createRequest, test } from "@playwright/test";
 import postgres from "postgres";
 import sharp from "sharp";
 
-import { contrastRatio } from "../helpers/color-contrast";
+import {
+  assertInteractiveTargets,
+  assertMinimumContrast,
+  assertNoHorizontalOverflow,
+} from "../helpers/visual-assertions";
+import {
+  deterministicScreenshotOptions,
+  storefrontTestMobiles,
+  visualProjectIndex,
+} from "../helpers/visual-projects";
 
 const apiBaseUrl = "http://127.0.0.1:3109";
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
-const projectIndexes: Record<string, number> = {
-  "chromium-360x800": 0,
-  "chromium-390x844": 1,
-  "chromium-768x1024": 2,
-  "chromium-1440x900": 3,
-};
 type ProjectStores = {
   defaultSlug: string;
   customSlug: string;
@@ -27,15 +30,19 @@ test.beforeAll(async ({ browserName }, testInfo) => {
   if (browserName !== "chromium") {
     throw new Error(`Unsupported browser ${browserName}`);
   }
-  const index = projectIndexes[testInfo.project.name];
-  if (index === undefined) throw new Error(`Unknown project ${testInfo.project.name}`);
+  const index = visualProjectIndex(testInfo.project.name);
 
   stores = {
     defaultSlug: `e2e-${index}-default`,
     customSlug: `e2e-${index}-custom`,
     draftSlug: `e2e-${index}-draft`,
   };
-  const mobiles = [mobileFor(index * 2), mobileFor(index * 2 + 1)];
+  const mobiles = [
+    storefrontTestMobiles[index * 2],
+    storefrontTestMobiles[index * 2 + 1],
+  ];
+  if (!mobiles[0] || !mobiles[1])
+    throw new Error(`Missing storefront mobiles for ${index}`);
   const sql = postgres(databaseUrl, { max: 1 });
   await sql`
     delete from store_stores
@@ -107,11 +114,7 @@ test("custom media, theme and long Persian content render with API media", async
   ).toBeVisible();
   await expect(page.getByText("ساخته‌شده با سوو")).toBeVisible();
   await expect(page.locator("header")).toHaveCSS("--store-accent", "#760B29");
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+  await assertNoHorizontalOverflow(page);
 });
 
 test("refresh reads the published store from the API again", async ({ page }) => {
@@ -144,22 +147,7 @@ test("keyboard order, focus, and interactive targets stay usable", async ({ page
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "رفتن به صفحه اصلی سوو" })).toBeFocused();
 
-  const targets = await page.locator("a").evaluateAll((links) =>
-    links.map((link) => {
-      const rect = link.getBoundingClientRect();
-      return { name: link.textContent?.trim(), height: rect.height, width: rect.width };
-    }),
-  );
-  for (const target of targets) {
-    expect(
-      target.height,
-      `${target.name} must be at least 40px tall`,
-    ).toBeGreaterThanOrEqual(40);
-    expect(
-      target.width,
-      `${target.name} must be at least 40px wide`,
-    ).toBeGreaterThanOrEqual(40);
-  }
+  await assertInteractiveTargets(page, "a");
 });
 
 test("the storefront reflows without clipping at an effective 200% zoom", async ({
@@ -175,35 +163,16 @@ test("the storefront reflows without clipping at an effective 200% zoom", async 
 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("region", { name: "پیش از سفارش بدانید" })).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+  await assertNoHorizontalOverflow(page);
 });
 
 test("essential text and actions meet minimum contrast", async ({ page }) => {
   await page.goto("/s/test-error");
-  const samples = await page
-    .getByRole("heading", { name: "فروشگاه باز نشد" })
-    .or(page.getByRole("link", { name: "دوباره تلاش کنید" }))
-    .evaluateAll((elements) =>
-      elements.map((element) => {
-        const style = getComputedStyle(element);
-        let background = style.backgroundColor;
-        let ancestor = element.parentElement;
-        while (background === "rgba(0, 0, 0, 0)" && ancestor) {
-          background = getComputedStyle(ancestor).backgroundColor;
-          ancestor = ancestor.parentElement;
-        }
-        return { foreground: style.color, background };
-      }),
-    );
-  for (const sample of samples) {
-    expect(contrastRatio(sample.foreground, sample.background)).toBeGreaterThanOrEqual(
-      4.5,
-    );
-  }
+  await assertMinimumContrast(
+    page
+      .getByRole("heading", { name: "فروشگاه باز نشد" })
+      .or(page.getByRole("link", { name: "دوباره تلاش کنید" })),
+  );
 });
 
 test("motion is useful when allowed and removed when reduced", async ({ page }) => {
@@ -232,16 +201,11 @@ for (const state of ["default", "custom", "loading", "error"] as const) {
           : `/s/test-${state}`;
     await page.goto(path);
     await expect(page.locator("main")).toBeVisible();
-    await expect(page).toHaveScreenshot(`storefront-${state}.png`, {
-      animations: "disabled",
-      fullPage: true,
-      maxDiffPixelRatio: 0.015,
-    });
+    await expect(page).toHaveScreenshot(
+      `storefront-${state}.png`,
+      deterministicScreenshotOptions,
+    );
   });
-}
-
-function mobileFor(offset: number) {
-  return `09111111${String(20 + offset).padStart(3, "0")}`;
 }
 
 async function createStore(mobile: string, slug: string, customized: boolean) {

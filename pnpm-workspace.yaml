@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
 overrides:
+  deepmerge-ts: 8.0.0
   js-yaml: 5.2.2
 allowBuilds:
   "@prisma/engines": true
