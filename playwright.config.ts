@@ -11,6 +11,10 @@ const storefrontTestMobiles = Array.from(
   { length: 8 },
   (_, index) => `09111111${String(20 + index).padStart(3, "0")}`,
 );
+const acceptanceTestMobiles = Array.from(
+  { length: 4 },
+  (_, index) => `09111111${String(30 + index).padStart(3, "0")}`,
+);
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -53,6 +57,7 @@ export default defineConfig({
           "09123456789",
           "09111111111",
           ...storefrontTestMobiles,
+          ...acceptanceTestMobiles,
         ].join(","),
       },
       reuseExistingServer: !process.env.CI,
