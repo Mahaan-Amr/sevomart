@@ -101,6 +101,19 @@ export function StoreBuilder() {
     }
   }
 
+  function updateFormField<K extends keyof typeof emptyForm>(
+    field: K,
+    value: (typeof emptyForm)[K],
+  ) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => {
+      if (!(field in current)) return current;
+      const next = { ...current };
+      delete next[field as keyof FieldErrors];
+      return next;
+    });
+  }
+
   async function saveAndPreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const localErrors = validateForm(form);
@@ -295,7 +308,7 @@ export function StoreBuilder() {
           <Field label="نام فروشگاه" error={errors.name}>
             <input
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => updateFormField("name", e.target.value)}
             />
           </Field>
           <Field
@@ -308,24 +321,24 @@ export function StoreBuilder() {
               <input
                 dir="ltr"
                 value={form.slug}
-                onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                onChange={(e) => updateFormField("slug", e.target.value)}
               />
             </div>
           </Field>
           <Field label="معرفی کوتاه" error={errors.bio}>
             <textarea
               value={form.bio}
-              onChange={(e) => setForm({ ...form, bio: e.target.value })}
+              onChange={(e) => updateFormField("bio", e.target.value)}
             />
           </Field>
           <Field label="روش ارسال">
             <select
               value={form.shippingCode}
               onChange={(e) =>
-                setForm({
-                  ...form,
-                  shippingCode: e.target.value as typeof form.shippingCode,
-                })
+                updateFormField(
+                  "shippingCode",
+                  e.target.value as typeof form.shippingCode,
+                )
               }
             >
               <option value="NATIONAL_POST">پست پیشتاز</option>
@@ -336,7 +349,7 @@ export function StoreBuilder() {
           <Field label="سیاست مرجوعی" error={errors.returnPolicy}>
             <textarea
               value={form.returnPolicy}
-              onChange={(e) => setForm({ ...form, returnPolicy: e.target.value })}
+              onChange={(e) => updateFormField("returnPolicy", e.target.value)}
             />
           </Field>
           <div className={styles.settlement}>
@@ -350,22 +363,14 @@ export function StoreBuilder() {
               <input
                 type="color"
                 value={form.themeColor}
-                onChange={(e) => setForm({ ...form, themeColor: e.target.value })}
+                onChange={(e) => updateFormField("themeColor", e.target.value)}
               />
             </Field>
             <Field label="لوگو">
-              <input
-                type="file"
-                accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
-                onChange={(e) => setLogo(e.target.files?.[0])}
-              />
+              <FilePicker label="لوگو" file={logo} onChange={setLogo} />
             </Field>
             <Field label="تصویر روی جلد">
-              <input
-                type="file"
-                accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
-                onChange={(e) => setCover(e.target.files?.[0])}
-              />
+              <FilePicker label="تصویر روی جلد" file={cover} onChange={setCover} />
             </Field>
           </details>
           <p className={styles.message} role="alert" aria-live="polite">
@@ -377,6 +382,32 @@ export function StoreBuilder() {
         </form>
       </section>
     </main>
+  );
+}
+
+function FilePicker({
+  label,
+  file,
+  onChange,
+}: {
+  label: string;
+  file?: File;
+  onChange: (file?: File) => void;
+}) {
+  return (
+    <span className={styles.filePicker}>
+      <input
+        className={styles.filePickerInput}
+        type="file"
+        aria-label={label}
+        accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
+        onChange={(event) => onChange(event.target.files?.[0])}
+      />
+      <span className={styles.filePickerButton}>انتخاب فایل</span>
+      <span className={styles.filePickerName}>
+        {file?.name ?? "فایلی انتخاب نشده است"}
+      </span>
+    </span>
   );
 }
 

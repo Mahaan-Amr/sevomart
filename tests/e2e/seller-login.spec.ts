@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { contrastRatio } from "../helpers/color-contrast";
+import {
+  assertMinimumContrast,
+  assertNoHorizontalOverflow,
+} from "../helpers/visual-assertions";
 
 test.describe.configure({ mode: "serial" });
 
@@ -104,21 +107,12 @@ test("server failure stays human and the login honors visual accessibility", asy
   await input.fill("09123456789");
   await button.click();
   await expect(page.getByText(longServerMessage)).toBeVisible();
-  const hasHorizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > window.innerWidth,
-  );
-  expect(hasHorizontalOverflow).toBe(false);
+  await assertNoHorizontalOverflow(page);
 
   const inputTransitionSeconds = Number.parseFloat(
     await input.evaluate((element) => getComputedStyle(element).transitionDuration),
   );
   expect(inputTransitionSeconds).toBeLessThan(0.001);
 
-  const colors = await button.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { foreground: style.color, background: style.backgroundColor };
-  });
-  expect(contrastRatio(colors.foreground, colors.background)).toBeGreaterThanOrEqual(
-    4.5,
-  );
+  await assertMinimumContrast(button);
 });

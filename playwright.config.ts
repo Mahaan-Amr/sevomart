@@ -1,20 +1,10 @@
 import { defineConfig } from "@playwright/test";
 
-const visualViewports = [
-  { name: "chromium-360x800", width: 360, height: 800 },
-  { name: "chromium-390x844", width: 390, height: 844 },
-  { name: "chromium-768x1024", width: 768, height: 1024 },
-  { name: "chromium-1440x900", width: 1440, height: 900 },
-] as const;
-
-const storefrontTestMobiles = Array.from(
-  { length: 8 },
-  (_, index) => `09111111${String(20 + index).padStart(3, "0")}`,
-);
-const acceptanceTestMobiles = Array.from(
-  { length: 4 },
-  (_, index) => `09111111${String(30 + index).padStart(3, "0")}`,
-);
+import {
+  acceptanceTestMobiles,
+  storefrontTestMobiles,
+  visualViewports,
+} from "./tests/helpers/visual-projects";
 
 export default defineConfig({
   testDir: "tests/e2e",
