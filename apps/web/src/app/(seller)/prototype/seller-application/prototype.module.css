@@ -168,17 +168,19 @@
 }
 
 .applicantA {
-  width: min(100%, 520px);
+  width: min(100%, 480px);
   margin: 0 auto;
   padding-block-start: 36px;
 }
 
 .linearForm {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  padding: 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow:
+    4px 4px 12px var(--shadow-neutral-soft),
+    -4px -4px 12px var(--shadow-highlight);
 }
 
 .facts {
@@ -231,12 +233,14 @@
 }
 
 .applicantA .applicantDecision {
-  margin-block-start: 22px;
-  padding: 22px 0 0;
-  border: 0;
-  border-block-start: 1px solid var(--color-divider);
-  border-radius: 0;
-  background: transparent;
+  margin-block-start: 14px;
+  padding: 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow:
+    4px 4px 12px var(--shadow-neutral-soft),
+    -4px -4px 12px var(--shadow-highlight);
 }
 
 .statusLead {
@@ -396,9 +400,9 @@
 .queueRail {
   align-self: start;
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: rgb(250 248 248 / 55%);
 }
 
 .queueTitle {
@@ -406,7 +410,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 0 14px;
+  padding: 12px;
   border-block-end: 1px solid var(--color-divider);
 }
 
@@ -463,15 +467,17 @@
 
 .agentA .caseContent,
 .agentA .decisionPanel {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  padding: 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow:
+    4px 4px 12px var(--shadow-neutral-soft),
+    -4px -4px 12px var(--shadow-highlight);
 }
 
 .agentA .decisionPanel {
-  padding-block-start: 20px;
-  border-block-start: 1px solid var(--color-divider);
+  padding-block-start: 16px;
 }
 
 .agentA .caseTitleRow h1 {
