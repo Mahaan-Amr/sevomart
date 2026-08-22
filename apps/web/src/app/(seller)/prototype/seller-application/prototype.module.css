@@ -168,14 +168,14 @@
 }
 
 .applicantA {
-  width: min(100%, 620px);
+  width: min(100%, 560px);
   margin: 0 auto;
-  padding-block-start: 54px;
+  padding-block-start: 42px;
 }
 
 .linearForm {
-  padding: 24px;
-  border-radius: 20px;
+  padding: 20px;
+  border-radius: 18px;
   box-shadow:
     8px 8px 20px var(--shadow-neutral-soft),
     -8px -8px 20px var(--shadow-highlight);
@@ -225,9 +225,9 @@
 }
 
 .applicantDecision {
-  margin-block-start: 20px;
-  padding: 24px;
-  border-radius: 20px;
+  margin-block-start: 16px;
+  padding: 20px;
+  border-radius: 18px;
 }
 
 .statusLead {
@@ -325,12 +325,17 @@
 }
 
 .agentA {
+  direction: ltr;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 24px;
-  width: min(100%, 1200px);
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  width: min(100%, 1060px);
   margin: 0 auto;
-  padding-block-start: 32px;
+  padding-block-start: 24px;
+}
+
+.agentA > * {
+  direction: rtl;
 }
 
 .queueRail {
@@ -346,7 +351,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px;
+  padding: 14px;
   border-block-end: 1px solid var(--color-divider);
 }
 
@@ -374,7 +379,7 @@
   display: grid;
   gap: 3px;
   width: 100%;
-  padding: 16px 18px;
+  padding: 12px 14px;
   border: 0;
   border-block-end: 1px solid var(--color-divider);
   background: transparent;
@@ -384,7 +389,7 @@
 }
 
 .queueRail > button span {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -401,13 +406,43 @@
 
 .reviewColumn {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .caseContent,
 .decisionPanel {
-  padding: clamp(20px, 4vw, 30px);
-  border-radius: 20px;
+  padding: clamp(18px, 3vw, 22px);
+  border-radius: 18px;
+}
+
+.agentA .caseTitleRow h1 {
+  font-size: 20px;
+}
+
+.agentA .caseTitleRow p,
+.agentA .evidence p {
+  font-size: 12px;
+}
+
+.agentA .facts > div {
+  padding-block: 10px;
+}
+
+.agentA .facts dt {
+  font-size: 11px;
+}
+
+.agentA .facts dd {
+  font-size: 12px;
+}
+
+.agentA .evidence {
+  margin-block-start: 18px;
+}
+
+.agentA .evidence h2,
+.agentA .decisionHeading h2 {
+  font-size: 14px;
 }
 
 .caseTitleRow,
