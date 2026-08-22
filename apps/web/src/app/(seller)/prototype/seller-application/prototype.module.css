@@ -230,6 +230,13 @@
   margin-block-start: 10px;
 }
 
+.applicantA .linearForm > .textButton {
+  min-height: 40px;
+  margin-block-start: 4px;
+  padding: 6px 0;
+  font-size: 12px;
+}
+
 .applicantDecision {
   margin-block-start: 16px;
   padding: 20px;
