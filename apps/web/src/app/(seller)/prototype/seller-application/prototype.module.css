@@ -451,15 +451,20 @@
   min-height: 60px;
   padding: 10px 12px;
   border: 0;
-  border-block-end: 1px solid var(--color-divider);
   background: transparent;
+  box-shadow:
+    inset 0 1px 0 var(--shadow-highlight),
+    inset 0 -1px 0 var(--shadow-neutral-soft);
   color: inherit;
   cursor: pointer;
   text-align: start;
+  transition:
+    background-color 180ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    box-shadow 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
 }
 
 .queueRail > button:last-child {
-  border-block-end: 0;
+  box-shadow: inset 0 1px 0 var(--shadow-highlight);
 }
 
 .queueRail > button span {
@@ -476,6 +481,16 @@
 .queueRail > .activeCase {
   border-inline-start: 3px solid var(--color-primary);
   background: var(--color-cover-start);
+  box-shadow:
+    inset 3px 3px 8px var(--shadow-neutral-soft),
+    inset -3px -3px 8px var(--shadow-highlight);
+}
+
+.queueRail > button:not(.activeCase):hover {
+  background: rgb(246 227 233 / 35%);
+  box-shadow:
+    inset 2px 2px 6px var(--shadow-neutral-soft),
+    inset -2px -2px 6px var(--shadow-highlight);
 }
 
 .reviewColumn {
