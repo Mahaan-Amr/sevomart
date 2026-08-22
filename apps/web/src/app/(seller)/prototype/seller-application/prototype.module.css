@@ -168,9 +168,13 @@
 }
 
 .applicantA {
-  width: min(100%, 480px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+  width: min(100%, 760px);
   margin: 0 auto;
-  padding-block-start: 36px;
+  padding-block-start: 24px;
 }
 
 .linearForm {
@@ -233,7 +237,7 @@
 }
 
 .applicantA .applicantDecision {
-  margin-block-start: 14px;
+  margin-block-start: 0;
   padding: 16px;
   border: 1px solid var(--color-divider);
   border-radius: 14px;
@@ -262,7 +266,8 @@
 }
 
 .applicantA .pageIntro {
-  margin-block-end: 22px;
+  grid-column: 1 / -1;
+  margin-block-end: 4px;
 }
 
 .applicantA .pageIntro h1 {
@@ -508,6 +513,30 @@
 .agentA .evidence h2,
 .agentA .decisionHeading h2 {
   font-size: 14px;
+}
+
+.agentA .reasonField textarea {
+  min-height: 72px;
+  max-height: 96px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.agentA .decisionActions {
+  gap: 8px;
+  margin-block-start: 12px;
+}
+
+.agentA .decisionActions button {
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.agentA .scenarioToggle,
+.agentA .reasonField small {
+  font-size: 10px;
 }
 
 .caseTitleRow,
@@ -957,6 +986,20 @@
 
   .stateReader {
     display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .applicantA {
+    grid-template-columns: 1fr;
+  }
+
+  .applicantA .pageIntro {
+    grid-column: 1;
+  }
+
+  .applicantA .applicantDecision {
+    margin-block-start: 2px;
   }
 }
 
