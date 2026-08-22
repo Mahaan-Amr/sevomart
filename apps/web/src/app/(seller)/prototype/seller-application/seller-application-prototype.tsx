@@ -180,7 +180,6 @@ function ApplicantDecision({
       aria-labelledby="applicant-status-title"
     >
       <div className={styles.statusLead}>
-        <StatusPill status={status} />
         <h2 id="applicant-status-title">{statusCopy[status].label}</h2>
         <p>{statusCopy[status].hint}</p>
       </div>
@@ -341,9 +340,6 @@ function QueueRail({ status }: { status: ApplicationStatus }) {
           <strong>درخواست‌های فروشندگی</strong>
           <small>۳ مورد نیازمند اقدام</small>
         </div>
-        <button type="button" aria-label="فیلتر درخواست‌ها">
-          فیلتر
-        </button>
       </div>
       <button type="button" className={styles.activeCase}>
         <span>خانه نارون</span>

@@ -168,17 +168,17 @@
 }
 
 .applicantA {
-  width: min(100%, 560px);
+  width: min(100%, 520px);
   margin: 0 auto;
-  padding-block-start: 42px;
+  padding-block-start: 36px;
 }
 
 .linearForm {
-  padding: 20px;
-  border-radius: 18px;
-  box-shadow:
-    8px 8px 20px var(--shadow-neutral-soft),
-    -8px -8px 20px var(--shadow-highlight);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .facts {
@@ -230,6 +230,15 @@
   border-radius: 18px;
 }
 
+.applicantA .applicantDecision {
+  margin-block-start: 22px;
+  padding: 22px 0 0;
+  border: 0;
+  border-block-start: 1px solid var(--color-divider);
+  border-radius: 0;
+  background: transparent;
+}
+
 .statusLead {
   margin-block-end: 18px;
 }
@@ -237,6 +246,52 @@
 .statusLead h2 {
   margin: 12px 0 2px;
   font-size: 18px;
+}
+
+.applicantA .statusLead {
+  margin-block-end: 14px;
+}
+
+.applicantA .statusLead h2 {
+  margin-block-start: 0;
+  font-size: 16px;
+}
+
+.applicantA .pageIntro {
+  margin-block-end: 22px;
+}
+
+.applicantA .pageIntro h1 {
+  font-size: 20px;
+}
+
+.applicantA .pageIntro p,
+.applicantA .statusLead p {
+  font-size: 12px;
+}
+
+.applicantA .facts > div {
+  padding-block: 10px;
+}
+
+.applicantA .facts dt {
+  font-size: 11px;
+}
+
+.applicantA .facts dd {
+  font-size: 12px;
+}
+
+.applicantA .auditTrail {
+  margin-block-start: 18px;
+}
+
+.applicantA .auditTrail strong {
+  font-size: 12px;
+}
+
+.applicantA .auditTrail p {
+  font-size: 11px;
 }
 
 .primaryButton,
@@ -341,9 +396,9 @@
 .queueRail {
   align-self: start;
   overflow: hidden;
-  border: 1px solid var(--color-divider);
-  border-radius: 18px;
-  background: rgb(250 248 248 / 55%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .queueTitle {
@@ -351,7 +406,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px;
+  padding: 4px 0 14px;
   border-block-end: 1px solid var(--color-divider);
 }
 
@@ -366,20 +421,11 @@
   font-size: 10px;
 }
 
-.queueTitle button {
-  min-height: 40px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-divider);
-  border-radius: 10px;
-  background: transparent;
-  cursor: pointer;
-}
-
 .queueRail > button {
   display: grid;
   gap: 3px;
   width: 100%;
-  padding: 12px 14px;
+  padding: 12px 10px;
   border: 0;
   border-block-end: 1px solid var(--color-divider);
   background: transparent;
@@ -413,6 +459,19 @@
 .decisionPanel {
   padding: clamp(18px, 3vw, 22px);
   border-radius: 18px;
+}
+
+.agentA .caseContent,
+.agentA .decisionPanel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.agentA .decisionPanel {
+  padding-block-start: 20px;
+  border-block-start: 1px solid var(--color-divider);
 }
 
 .agentA .caseTitleRow h1 {
