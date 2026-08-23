@@ -1,1 +1,11 @@
 // Tables in this file are owned by the reporting-analytics module.
+
+model ReportingStorePublication {
+  storeId            String   @id @map("store_id") @db.Uuid
+  lastEventId        String   @unique @map("last_event_id") @db.Uuid
+  publicationVersion Int      @map("publication_version")
+  publishedAt        DateTime @map("published_at") @db.Timestamptz(3)
+  projectedAt        DateTime @default(now()) @map("projected_at") @db.Timestamptz(3)
+
+  @@map("reporting_store_publications")
+}

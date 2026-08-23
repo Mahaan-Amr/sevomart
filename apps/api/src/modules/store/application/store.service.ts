@@ -132,9 +132,18 @@ export class StoreService {
     };
   }
 
-  async publish(sellerId: string): Promise<StorePublication> {
+  async publish(
+    sellerId: string,
+    context: { correlationId: string },
+  ): Promise<StorePublication> {
     const row = await this.repository.findBySellerId(sellerId);
     if (!row) throw new StoreNotFoundError();
+    if (row.status === "PUBLISHED") {
+      return {
+        store: await this.toPublicStore(row),
+        publicUrl: `/s/${row.slug!}`,
+      };
+    }
     const missingFields = publicationReadiness(row);
     if (missingFields.length > 0) throw new IncompleteStoreError(missingFields);
     const conflicting = await this.repository.findBySlug(row.slug!);
@@ -153,7 +162,10 @@ export class StoreService {
     }
     let published: StoreRow;
     try {
-      published = await this.repository.publish(row.id, this.now());
+      published = await this.repository.publish(row.id, this.now(), {
+        correlationId: context.correlationId,
+        actorId: sellerId,
+      });
     } catch (error) {
       await Promise.allSettled(mediaIds.map((id) => this.unpublishMedia(id, sellerId)));
       throw error;

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "build:packages": "pnpm --filter @sevo/config --filter @sevo/contracts --filter @sevo/observability --filter @sevo/database -r --if-present build",
+    "build:packages": "pnpm --filter @sevo/config --filter @sevo/contracts --filter @sevo/observability --filter @sevo/outbox --filter @sevo/database -r --if-present build",
     "check:architecture": "node scripts/check-boundaries.mjs",
     "db:generate": "pnpm --filter @sevo/database generate",
     "db:migrate": "pnpm --filter @sevo/database migrate",
@@ -40,6 +40,7 @@
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.62.1",
     "@sevo/contracts": "workspace:*",
+    "@sevo/outbox": "workspace:*",
     "@types/node": "26.2.0",
     "eslint": "10.8.1",
     "globals": "16.4.0",

@@ -32,7 +32,12 @@ class MemoryStoreRepository implements StoreRepository {
     return row;
   }
 
-  async publish(_id: string, publishedAt: Date) {
+  async publish(
+    _id: string,
+    publishedAt: Date,
+    context: { correlationId: string; actorId: string },
+  ) {
+    void context;
     if (!this.row) throw new Error("missing store");
     this.row = { ...this.row, status: "PUBLISHED", publishedAt };
     return this.row;
@@ -50,7 +55,9 @@ describe("StoreService publication", () => {
 
     await service.saveDraft("seller-1", { name: "خانه ماه" });
 
-    await expect(service.publish("seller-1")).rejects.toEqual(
+    await expect(
+      service.publish("seller-1", { correlationId: crypto.randomUUID() }),
+    ).rejects.toEqual(
       new IncompleteStoreError([
         "SLUG",
         "BIO",
@@ -85,7 +92,9 @@ describe("StoreService publication", () => {
       themeColor: "#A41439",
     });
 
-    const publication = await service.publish("seller-1");
+    const publication = await service.publish("seller-1", {
+      correlationId: crypto.randomUUID(),
+    });
 
     expect(publication.publicUrl).toBe("/s/khane-mah");
     expect(publication.store).toMatchObject({
@@ -146,9 +155,9 @@ describe("StoreService publication", () => {
     const events: string[] = [];
     const repository = new MemoryStoreRepository();
     const originalPublish = repository.publish.bind(repository);
-    repository.publish = async (id, publishedAt) => {
+    repository.publish = async (id, publishedAt, context) => {
       events.push("store-published");
-      return originalPublish(id, publishedAt);
+      return originalPublish(id, publishedAt, context);
     };
     const service = new StoreService(
       repository,
@@ -173,8 +182,12 @@ describe("StoreService publication", () => {
       logoMediaId: "media-1" as never,
     });
 
-    await service.publish("seller-1");
+    await service.publish("seller-1", { correlationId: crypto.randomUUID() });
+    const repeated = await service.publish("seller-1", {
+      correlationId: crypto.randomUUID(),
+    });
 
     expect(events).toEqual(["media-public", "store-published"]);
+    expect(repeated.store.status).toBe("PUBLISHED");
   });
 });

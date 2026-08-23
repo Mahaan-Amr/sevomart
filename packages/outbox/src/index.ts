@@ -1,0 +1,283 @@
+import { randomUUID } from "node:crypto";
+
+import {
+  eventActorV1Contract,
+  type EventEnvelopeV1,
+} from "@sevo/contracts/platform/v1";
+import postgres from "postgres";
+import type { JSONValue, Sql } from "postgres";
+
+export type OutboxEventV1<TPayload extends JSONValue> = EventEnvelopeV1 & {
+  payload: TPayload;
+};
+
+export async function enqueueOutboxEvent<TPayload extends JSONValue>(
+  sql: Sql,
+  event: OutboxEventV1<TPayload>,
+): Promise<void> {
+  await sql`
+    insert into platform_outbox_events
+      (event_id, event_type, aggregate_id, aggregate_version, occurred_at,
+       correlation_id, causation_id, actor_type, actor_id, payload, available_at)
+    values
+      (${event.eventId}, ${event.eventType}, ${event.aggregateId},
+       ${event.aggregateVersion}, ${event.occurredAt}, ${event.correlationId},
+       ${event.causationId ?? null}, ${event.actor.type},
+       ${event.actor.type === "IDENTITY" ? event.actor.id : null},
+       ${sql.json(event.payload)}, ${event.occurredAt})
+  `;
+}
+
+export type StoredOutboxEvent = EventEnvelopeV1 & { payload: JSONValue };
+export type OutboxEventHandler = (event: StoredOutboxEvent, sql: Sql) => Promise<void>;
+export type OutboxRunResult = "idle" | "processed" | "retry" | "failed";
+
+export type ClaimedOutboxEvent = {
+  event: StoredOutboxEvent;
+  attemptCount: number;
+  leaseOwner: string;
+};
+
+type DurableOutboxWorkerOptions = {
+  consumerName: string;
+  handlers: Readonly<Record<string, OutboxEventHandler>>;
+  now?: () => Date;
+  workerId?: string;
+  leaseDurationMs?: number;
+  retryDelaysMs?: readonly number[];
+  maxAttempts?: number;
+  pollIntervalMs?: number;
+  log?: (record: Readonly<Record<string, unknown>>) => void;
+};
+
+type OutboxDatabaseRow = {
+  eventId: string;
+  eventType: string;
+  aggregateId: string;
+  aggregateVersion: number;
+  occurredAt: Date;
+  correlationId: string;
+  causationId: string | null;
+  actorType: "IDENTITY" | "SYSTEM";
+  actorId: string | null;
+  payload: JSONValue;
+  attemptCount: number;
+};
+
+export class DurableOutboxWorker {
+  readonly #sql: Sql;
+  readonly #consumerName: string;
+  readonly #handlers: Readonly<Record<string, OutboxEventHandler>>;
+  readonly #eventTypes: readonly string[];
+  readonly #now: () => Date;
+  readonly #workerId: string;
+  readonly #leaseDurationMs: number;
+  readonly #retryDelaysMs: readonly number[];
+  readonly #maxAttempts: number;
+  readonly #pollIntervalMs: number;
+  readonly #log: (record: Readonly<Record<string, unknown>>) => void;
+  #loop?: Promise<void>;
+  #stopping = false;
+  #closed = false;
+  #wake?: () => void;
+
+  constructor(databaseUrl: string, options: DurableOutboxWorkerOptions) {
+    if (Object.keys(options.handlers).length === 0) {
+      throw new Error("A durable outbox worker requires at least one event handler");
+    }
+    if ((options.maxAttempts ?? 5) < 1) {
+      throw new Error("A durable outbox worker requires at least one attempt");
+    }
+    if (options.retryDelaysMs?.length === 0) {
+      throw new Error("A durable outbox worker requires at least one retry delay");
+    }
+    this.#sql = postgres(databaseUrl, { max: 2 });
+    this.#consumerName = options.consumerName;
+    this.#handlers = options.handlers;
+    this.#eventTypes = Object.keys(options.handlers);
+    this.#now = options.now ?? (() => new Date());
+    this.#workerId = options.workerId ?? randomUUID();
+    this.#leaseDurationMs = options.leaseDurationMs ?? 30_000;
+    this.#retryDelaysMs = options.retryDelaysMs ?? [1_000, 5_000, 30_000, 120_000];
+    this.#maxAttempts = options.maxAttempts ?? 5;
+    this.#pollIntervalMs = options.pollIntervalMs ?? 250;
+    this.#log =
+      options.log ??
+      ((record) => {
+        console.log(JSON.stringify(record));
+      });
+  }
+
+  async start(): Promise<void> {
+    if (this.#closed) throw new Error("The durable outbox worker is closed");
+    if (this.#loop) return;
+    this.#stopping = false;
+    await this.runOnce();
+    this.#loop = this.#runLoop();
+  }
+
+  async runOnce(): Promise<OutboxRunResult> {
+    const claimed = await this.claimNext();
+    if (!claimed) return "idle";
+    return this.processClaim(claimed);
+  }
+
+  async claimNext(): Promise<ClaimedOutboxEvent | undefined> {
+    const now = this.#now();
+    const leaseExpiresAt = new Date(now.getTime() + this.#leaseDurationMs);
+    const rows = await this.#sql.begin(
+      (sql) => sql<OutboxDatabaseRow[]>`
+      with candidate as (
+        select event_id
+        from platform_outbox_events
+        where event_type in ${sql(this.#eventTypes)}
+          and (
+            (status = 'READY' and available_at <= ${now})
+            or (status = 'LEASED' and lease_expires_at <= ${now})
+          )
+        order by available_at, created_at
+        for update skip locked
+        limit 1
+      )
+      update platform_outbox_events event
+      set status = 'LEASED', lease_owner = ${this.#workerId},
+        lease_expires_at = ${leaseExpiresAt}, attempt_count = attempt_count + 1
+      from candidate
+      where event.event_id = candidate.event_id
+      returning event.event_id as "eventId", event.event_type as "eventType",
+        event.aggregate_id as "aggregateId",
+        event.aggregate_version as "aggregateVersion",
+        event.occurred_at as "occurredAt",
+        event.correlation_id as "correlationId",
+        event.causation_id as "causationId", event.actor_type as "actorType",
+        event.actor_id as "actorId", event.payload,
+        event.attempt_count as "attemptCount"
+    `,
+    );
+    const row = rows[0];
+    if (!row) return undefined;
+    return {
+      event: {
+        version: 1,
+        eventId: row.eventId,
+        eventType: row.eventType,
+        aggregateId: row.aggregateId,
+        aggregateVersion: row.aggregateVersion,
+        occurredAt: row.occurredAt.toISOString(),
+        correlationId: row.correlationId,
+        ...(row.causationId ? { causationId: row.causationId } : {}),
+        actor: eventActorV1Contract.parse(
+          row.actorType === "IDENTITY"
+            ? { type: "IDENTITY", id: row.actorId }
+            : { type: "SYSTEM" },
+        ),
+        payload: row.payload,
+      },
+      attemptCount: row.attemptCount,
+      leaseOwner: this.#workerId,
+    };
+  }
+
+  async consumeClaim(claimed: ClaimedOutboxEvent): Promise<boolean> {
+    const handler = this.#handlers[claimed.event.eventType];
+    if (!handler) throw new Error("Outbox handler is not registered");
+    return this.#sql.begin(async (sql) => {
+      const receipt = await sql<Array<{ eventId: string }>>`
+        insert into platform_outbox_consumptions (consumer_name, event_id, consumed_at)
+        values (${this.#consumerName}, ${claimed.event.eventId}, ${this.#now()})
+        on conflict (consumer_name, event_id) do nothing
+        returning event_id as "eventId"
+      `;
+      if (!receipt[0]) return false;
+      await handler(claimed.event, sql);
+      return true;
+    });
+  }
+
+  async acknowledgeClaim(claimed: ClaimedOutboxEvent): Promise<void> {
+    await this.#sql`
+      update platform_outbox_events
+      set status = 'PROCESSED', processed_at = ${this.#now()},
+        lease_owner = null, lease_expires_at = null, last_error = null
+      where event_id = ${claimed.event.eventId}
+        and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+    `;
+  }
+
+  async processClaim(claimed: ClaimedOutboxEvent): Promise<OutboxRunResult> {
+    try {
+      await this.consumeClaim(claimed);
+      await this.acknowledgeClaim(claimed);
+      return "processed";
+    } catch (error) {
+      const permanent = claimed.attemptCount >= this.#maxAttempts;
+      const delayIndex = Math.min(
+        claimed.attemptCount - 1,
+        this.#retryDelaysMs.length - 1,
+      );
+      const delay = this.#retryDelaysMs[delayIndex] ?? 0;
+      const availableAt = new Date(this.#now().getTime() + delay);
+      const errorKind = error instanceof Error ? error.name : "UnknownError";
+      await this.#sql`
+        update platform_outbox_events
+        set status = ${permanent ? "FAILED" : "READY"},
+          available_at = ${availableAt}, lease_owner = null, lease_expires_at = null,
+          last_error = ${errorKind}, failed_at = ${permanent ? this.#now() : null}
+        where event_id = ${claimed.event.eventId}
+          and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+      `;
+      this.#log({
+        level: permanent ? "error" : "warn",
+        message: permanent
+          ? "outbox_delivery_failed_permanently"
+          : "outbox_delivery_retry",
+        eventId: claimed.event.eventId,
+        eventType: claimed.event.eventType,
+        correlationId: claimed.event.correlationId,
+        attemptCount: claimed.attemptCount,
+        errorKind,
+      });
+      return permanent ? "failed" : "retry";
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.#closed) return;
+    this.#stopping = true;
+    this.#wake?.();
+    try {
+      await this.#loop;
+    } finally {
+      await this.#sql.end();
+      this.#closed = true;
+    }
+  }
+
+  async #runLoop(): Promise<void> {
+    while (!this.#stopping) {
+      let result: OutboxRunResult = "idle";
+      try {
+        result = await this.runOnce();
+      } catch (error) {
+        this.#log({
+          level: "error",
+          message: "outbox_worker_cycle_failed",
+          consumerName: this.#consumerName,
+          errorKind: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
+      if (result === "idle" && !this.#stopping) await this.#waitForPoll();
+    }
+  }
+
+  async #waitForPoll(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, this.#pollIntervalMs);
+      this.#wake = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    this.#wake = undefined;
+  }
+}

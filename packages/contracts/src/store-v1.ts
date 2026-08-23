@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { createJsonSchemaMap } from "./json-schema";
 import { mediaIdContract, mediaReferenceContract } from "./media-v1";
+import { eventEnvelopeV1Contract, storeIdContract } from "./platform/v1/index";
 
 export const storeSlugContract = z
   .string()
@@ -146,6 +147,16 @@ export const storePublicationContract = z.object({
   publicUrl: z.string().regex(/^\/s\/[a-z0-9]+(?:-[a-z0-9]+)*$/),
 });
 
+export const storePublishedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("StorePublished.v1"),
+  payload: z
+    .object({
+      storeId: storeIdContract,
+      publicationStatus: z.literal("PUBLISHED"),
+    })
+    .strict(),
+});
+
 export const storeV1Schemas = {
   StoreSlug: storeSlugContract,
   StoreDraftInput: storeDraftInputContract,
@@ -241,3 +252,4 @@ export type SlugAvailability = z.infer<typeof slugAvailabilityContract>;
 export type StorePreview = z.infer<typeof storePreviewContract>;
 export type PublicStore = z.infer<typeof publicStoreContract>;
 export type StorePublication = z.infer<typeof storePublicationContract>;
+export type StorePublishedV1 = z.infer<typeof storePublishedV1Contract>;

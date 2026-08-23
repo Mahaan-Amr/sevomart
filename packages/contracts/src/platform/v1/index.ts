@@ -28,6 +28,11 @@ export const errorEnvelopeV1Contract = z
   })
   .strict();
 
+export const eventActorV1Contract = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("IDENTITY"), id: identityIdContract }).strict(),
+  z.object({ type: z.literal("SYSTEM") }).strict(),
+]);
+
 export const eventEnvelopeV1Contract = z
   .object({
     version: z.literal(1),
@@ -38,10 +43,12 @@ export const eventEnvelopeV1Contract = z
     occurredAt: timestampV1Contract,
     correlationId: z.uuid(),
     causationId: z.uuid().optional(),
+    actor: eventActorV1Contract,
   })
   .strict();
 
 export type TimestampV1 = z.infer<typeof timestampV1Contract>;
 export type MoneyV1 = z.infer<typeof moneyV1Contract>;
 export type ErrorEnvelopeV1 = z.infer<typeof errorEnvelopeV1Contract>;
+export type EventActorV1 = z.infer<typeof eventActorV1Contract>;
 export type EventEnvelopeV1 = z.infer<typeof eventEnvelopeV1Contract>;

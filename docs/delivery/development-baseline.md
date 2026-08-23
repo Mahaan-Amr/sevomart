@@ -66,3 +66,20 @@ Fastify لاگ JSON و `x-correlation-id` تولید یا عبور می‌دهد
 `OTEL_EXPORTER_OTLP_ENDPOINT` تنظیم شود، API و worker traceهای OpenTelemetry را به collector
 می‌فرستند؛ خالی‌بودن آن در توسعه محلی معتبر است. هیچ داده حساس یا payload کاربر نباید در
 log، trace، fixture یا Issue ثبت شود.
+
+## outbox و Worker پایدار
+
+تغییر دامنه‌ای مهم، رخداد نسخه‌دار و بدون PII را با `@sevo/outbox` در همان
+transaction PostgreSQL ثبت می‌کند. Worker در هر دو مسیر `pnpm dev` و
+`pnpm compose:up` اجرا می‌شود و رکوردهای آماده را با lease claim می‌کند. تحویل
+حداقل یک‌بار است؛ consumer باید اثر دامنه و receipt را در یک transaction بنویسد.
+
+retry با backoff محدود انجام می‌شود. پس از پایان تلاش‌ها، رکورد با وضعیت `FAILED`،
+تعداد تلاش، زمان شکست و دسته خطا در `platform_outbox_events` باقی می‌ماند؛ payload
+و داده حساس وارد log یا متن خطا نمی‌شود. shutdown عادی منتظر پردازش جاری می‌ماند و
+پس از crash، Worker تازه پیام `LEASED` با lease منقضی را دوباره claim می‌کند.
+
+tracer فعلی `StorePublished.v1` است: انتشار فروشگاه و outbox اتمیک‌اند و consumer
+`reporting-store-publications-v1` projection خصوصی گزارش/آمار را با receipt
+idempotent به‌روز می‌کند. این projection آمار عمومی یا داده تازه‌ای به رابط اضافه
+نمی‌کند.

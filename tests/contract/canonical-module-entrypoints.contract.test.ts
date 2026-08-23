@@ -69,7 +69,36 @@ describe("canonical v1 contract entrypoints", () => {
         aggregateVersion: 2,
         occurredAt: "2026-08-23T12:00:00+03:30",
         correlationId: "d47ac10b-58cc-4372-a567-0e02b2c3d479",
+        actor: {
+          type: "IDENTITY",
+          id: "e47ac10b-58cc-4372-a567-0e02b2c3d479",
+        },
       }),
     ).toMatchObject({ eventType: "ProductPublished.v1", aggregateVersion: 2 });
+  });
+
+  it("keeps StorePublished.v1 PII-free and versioned", () => {
+    expect(
+      storeV1.storePublishedV1Contract.parse({
+        version: 1,
+        eventId: "b47ac10b-58cc-4372-a567-0e02b2c3d479",
+        eventType: "StorePublished.v1",
+        aggregateId: "c47ac10b-58cc-4372-a567-0e02b2c3d479",
+        aggregateVersion: 1,
+        occurredAt: "2026-08-23T12:00:00+03:30",
+        correlationId: "d47ac10b-58cc-4372-a567-0e02b2c3d479",
+        actor: {
+          type: "IDENTITY",
+          id: "e47ac10b-58cc-4372-a567-0e02b2c3d479",
+        },
+        payload: {
+          storeId: "c47ac10b-58cc-4372-a567-0e02b2c3d479",
+          publicationStatus: "PUBLISHED",
+        },
+      }),
+    ).toMatchObject({
+      eventType: "StorePublished.v1",
+      payload: { publicationStatus: "PUBLISHED" },
+    });
   });
 });

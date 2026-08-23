@@ -14,6 +14,7 @@ model Store {
   themeColor           String?               @map("theme_color") @db.Char(7)
   status               String                @default("DRAFT") @db.VarChar(16)
   publishedAt          DateTime?             @map("published_at") @db.Timestamptz(3)
+  publicationVersion   Int                   @default(0) @map("publication_version")
   updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
   memberships          StoreMembership[]
   shippingMethods      StoreShippingMethod[]

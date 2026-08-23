@@ -32,6 +32,7 @@ export type StoreRow = {
   themeColor?: string;
   status: StoreStatus;
   publishedAt?: Date;
+  publicationVersion?: number;
   updatedAt: Date;
 };
 
@@ -40,5 +41,9 @@ export interface StoreRepository {
   findBySlug(slug: string): Promise<StoreRow | undefined>;
   isMediaPublished(mediaId: string): Promise<boolean>;
   saveDraft(row: StoreRow): Promise<StoreRow>;
-  publish(id: string, publishedAt: Date): Promise<StoreRow>;
+  publish(
+    id: string,
+    publishedAt: Date,
+    context: { correlationId: string; actorId: string },
+  ): Promise<StoreRow>;
 }

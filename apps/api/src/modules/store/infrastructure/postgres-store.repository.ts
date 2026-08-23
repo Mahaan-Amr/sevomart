@@ -1,4 +1,7 @@
 import postgres, { type Sql } from "postgres";
+import { randomUUID } from "node:crypto";
+import { storePublishedV1Contract } from "@sevo/contracts/store/v1";
+import { enqueueOutboxEvent } from "@sevo/outbox";
 
 import type { StoreRepository, StoreRow, StoreShippingMethod } from "../public";
 
@@ -11,9 +14,11 @@ type StoreDatabaseRow = Omit<StoreRow, "shippingMethods" | "settlementDestinatio
 
 export class PostgresStoreRepository implements StoreRepository {
   readonly #sql: Sql;
+  readonly #createEventId: () => string;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, createEventId: () => string = randomUUID) {
     this.#sql = postgres(databaseUrl, { max: 5 });
+    this.#createEventId = createEventId;
   }
 
   async findBySellerId(sellerId: string) {
@@ -45,6 +50,7 @@ export class PostgresStoreRepository implements StoreRepository {
         s.settlement_verified_at as "settlementVerifiedAt",
         s.logo_media_id as "logoMediaId", s.cover_media_id as "coverMediaId",
         s.theme_color as "themeColor", s.status, s.published_at as "publishedAt",
+        s.publication_version as "publicationVersion",
         s.updated_at as "updatedAt", m.seller_id as "sellerId",
         coalesce(json_agg(json_build_object('code', sm.code, 'label', sm.label)
           order by sm.position) filter (where sm.id is not null), '[]') as "shippingMethods"
@@ -108,20 +114,33 @@ export class PostgresStoreRepository implements StoreRepository {
     return (await this.findBySellerId(row.sellerId))!;
   }
 
-  async publish(id: string, publishedAt: Date): Promise<StoreRow> {
-    const rows = await this.#sql<Array<{ sellerId: string }>>`
-      with published as (
+  async publish(
+    id: string,
+    publishedAt: Date,
+    context: { correlationId: string; actorId: string },
+  ): Promise<StoreRow> {
+    const rows = await this.#sql.begin(async (sql) => {
+      const published = await sql<Array<{ id: string; publicationVersion: number }>>`
         update store_stores set status = 'PUBLISHED', published_at = ${publishedAt},
-          updated_at = ${publishedAt}
+          updated_at = ${publishedAt}, publication_version = publication_version + 1
         where id = ${id}
-        returning id
-      )
-      select m.seller_id as "sellerId"
-      from store_memberships m
-      join published p on p.id = m.store_id
-      where m.role = 'OWNER'
-      limit 1
-    `;
+        returning id, publication_version as "publicationVersion"
+      `;
+      const publication = published[0]!;
+      const event = storePublishedV1Contract.parse({
+        version: 1,
+        eventId: this.#createEventId(),
+        eventType: "StorePublished.v1",
+        aggregateId: publication.id,
+        aggregateVersion: publication.publicationVersion,
+        occurredAt: publishedAt.toISOString(),
+        correlationId: context.correlationId,
+        actor: { type: "IDENTITY", id: context.actorId },
+        payload: { storeId: publication.id, publicationStatus: "PUBLISHED" },
+      });
+      await enqueueOutboxEvent(sql, event);
+      return [{ sellerId: context.actorId }];
+    });
     return (await this.findBySellerId(rows[0]!.sellerId))!;
   }
 

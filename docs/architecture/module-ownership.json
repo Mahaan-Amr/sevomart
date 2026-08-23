@@ -16,14 +16,18 @@
     "reporting-analytics"
   ],
   "tables": {
-    "identity_sellers": "identity-access",
+    "identity_identities": "identity-access",
+    "identity_login_methods": "identity-access",
     "identity_otp_challenges": "identity-access",
-    "identity_seller_sessions": "identity-access",
+    "identity_sessions": "identity-access",
     "store_stores": "store",
     "store_memberships": "store",
     "store_shipping_methods": "store",
     "media_assets": "media",
-    "media_variants": "media"
+    "media_variants": "media",
+    "platform_outbox_events": "platform",
+    "platform_outbox_consumptions": "platform",
+    "reporting_store_publications": "reporting-analytics"
   },
   "contracts": {
     "@sevo/contracts/platform/v1": "platform",

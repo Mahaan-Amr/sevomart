@@ -1,0 +1,36 @@
+// Shared delivery infrastructure owned by platform.
+
+model PlatformOutboxEvent {
+  eventId          String    @id @map("event_id") @db.Uuid
+  eventType        String    @map("event_type") @db.VarChar(120)
+  aggregateId      String    @map("aggregate_id") @db.Uuid
+  aggregateVersion Int       @map("aggregate_version")
+  occurredAt       DateTime  @map("occurred_at") @db.Timestamptz(3)
+  correlationId    String    @map("correlation_id") @db.Uuid
+  causationId      String?   @map("causation_id") @db.Uuid
+  actorType        String    @map("actor_type") @db.VarChar(16)
+  actorId          String?   @map("actor_id") @db.Uuid
+  payload          Json      @db.JsonB
+  status           String    @default("READY") @db.VarChar(24)
+  availableAt      DateTime  @default(now()) @map("available_at") @db.Timestamptz(3)
+  leaseOwner       String?   @map("lease_owner") @db.Uuid
+  leaseExpiresAt   DateTime? @map("lease_expires_at") @db.Timestamptz(3)
+  attemptCount     Int       @default(0) @map("attempt_count")
+  lastError        String?   @map("last_error") @db.VarChar(500)
+  failedAt         DateTime? @map("failed_at") @db.Timestamptz(3)
+  processedAt      DateTime? @map("processed_at") @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([status, availableAt])
+  @@index([leaseExpiresAt])
+  @@map("platform_outbox_events")
+}
+
+model PlatformOutboxConsumption {
+  consumerName String   @map("consumer_name") @db.VarChar(120)
+  eventId      String   @map("event_id") @db.Uuid
+  consumedAt   DateTime @default(now()) @map("consumed_at") @db.Timestamptz(3)
+
+  @@id([consumerName, eventId])
+  @@map("platform_outbox_consumptions")
+}

@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@sevo/config": "workspace:*",
-    "@sevo/observability": "workspace:*"
+    "@sevo/contracts": "workspace:*",
+    "@sevo/observability": "workspace:*",
+    "@sevo/outbox": "workspace:*"
   },
   "devDependencies": {
     "tsx": "4.23.12"

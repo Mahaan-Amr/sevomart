@@ -21,6 +21,9 @@ importers:
       '@sevo/contracts':
         specifier: workspace:*
         version: link:packages/contracts
+      '@sevo/outbox':
+        specifier: workspace:*
+        version: link:packages/outbox
       '@types/node':
         specifier: 26.2.0
         version: 26.2.0
@@ -78,6 +81,9 @@ importers:
       '@sevo/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sevo/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
       fastify:
         specifier: 5.12.0
         version: 5.12.0
@@ -128,9 +134,15 @@ importers:
       '@sevo/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@sevo/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@sevo/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sevo/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
     devDependencies:
       tsx:
         specifier: 4.23.12
@@ -165,6 +177,15 @@ importers:
       '@opentelemetry/sdk-node':
         specifier: 0.221.0
         version: 0.221.0(@opentelemetry/api@1.9.1)
+
+  packages/outbox:
+    dependencies:
+      '@sevo/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      postgres:
+        specifier: 3.4.7
+        version: 3.4.7
 
 packages:
 

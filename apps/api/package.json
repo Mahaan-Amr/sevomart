@@ -19,6 +19,7 @@
     "@sevo/config": "workspace:*",
     "@sevo/contracts": "workspace:*",
     "@sevo/observability": "workspace:*",
+    "@sevo/outbox": "workspace:*",
     "fastify": "5.12.0",
     "minio": "8.0.7",
     "postgres": "3.4.7",

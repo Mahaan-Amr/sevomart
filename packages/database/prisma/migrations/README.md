@@ -5,5 +5,8 @@ module named in the directory. One open Issue may change a module's schema at a 
 Cross-module foreign keys and direct reads are not allowed; identifiers from another
 module are stored as scalar references and resolved through its public contract.
 
+`platform` owns shared infrastructure migrations such as the outbox and consumer
+receipts. This owner does not introduce another product-domain module.
+
 Every pull request that adds a migration must state the owning module, rollback or
 forward-fix plan, and whether a compatibility window is required.
