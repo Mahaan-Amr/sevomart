@@ -68,7 +68,7 @@ export function StoreBuilder() {
       });
       if (response.status === 404) return;
       if (response.status === 401) {
-        window.location.assign("/seller/login");
+        window.location.assign("/seller/login?returnTo=%2Fseller%2Fstore");
         return;
       }
       const body: unknown = await response.json();

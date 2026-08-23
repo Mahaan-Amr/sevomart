@@ -12,7 +12,7 @@ const operations = [
     method: "get",
     path: "/v1/seller/store/draft",
     tag: "store",
-    auth: "seller-session",
+    auth: "identity-session",
     responses: [
       { status: 200, schema: "StoreDraft" },
       { status: 401, schema: "UnauthorizedError" },
@@ -25,7 +25,7 @@ const operations = [
     method: "put",
     path: "/v1/seller/store/draft",
     tag: "store",
-    auth: "seller-session",
+    auth: "identity-session",
     request: {
       schema: "StoreDraftInput",
       example: storeV1Examples.StoreDraftInput,
@@ -43,7 +43,7 @@ const operations = [
     method: "get",
     path: "/v1/store-slugs/{slug}/availability",
     tag: "store",
-    auth: "seller-session",
+    auth: "identity-session",
     pathParameter: {
       name: "slug",
       schema: "StoreSlug",
@@ -61,7 +61,7 @@ const operations = [
     method: "get",
     path: "/v1/seller/store/preview",
     tag: "store",
-    auth: "seller-session",
+    auth: "identity-session",
     responses: [
       { status: 200, schema: "StorePreview" },
       { status: 401, schema: "UnauthorizedError" },
@@ -74,7 +74,7 @@ const operations = [
     method: "post",
     path: "/v1/seller/store/publication",
     tag: "store",
-    auth: "seller-session",
+    auth: "identity-session",
     responses: [
       { status: 200, schema: "StorePublication" },
       { status: 401, schema: "UnauthorizedError" },
@@ -106,7 +106,7 @@ const operations = [
 const responseMetadata = {
   descriptions: {
     200: "Successful response",
-    401: "Seller session is missing or invalid",
+    401: "Identity session is missing or invalid",
     404: "Store was not found",
     409: "Store slug conflicts with an existing store",
     422: "Request validation failed",

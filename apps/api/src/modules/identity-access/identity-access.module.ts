@@ -3,18 +3,18 @@ import type { RuntimeEnvironment } from "@sevo/config";
 
 import {
   createProductionOtpCode,
-  SellerOtpService,
-} from "./application/seller-otp.service";
+  IdentityOtpService,
+} from "./application/identity-otp.service";
 import { IdentityAccessController } from "./identity-access.controller";
 import {
   IDENTITY_ACCESS_REPOSITORY,
   OTP_PROVIDER,
   RUNTIME_ENVIRONMENT,
-  SELLER_OTP_SERVICE,
+  IDENTITY_OTP_SERVICE,
 } from "./identity-access.tokens";
 import { PostgresIdentityAccessRepository } from "./infrastructure/postgres-identity-access.repository";
 import {
-  SELLER_SESSION_READER,
+  IDENTITY_SESSION_READER,
   type IdentityAccessRepository,
   type OtpProvider,
 } from "./public";
@@ -49,10 +49,10 @@ export class IdentityAccessModule {
             new PostgresIdentityAccessRepository(environment.DATABASE_URL),
         },
         {
-          provide: SELLER_OTP_SERVICE,
+          provide: IDENTITY_OTP_SERVICE,
           inject: [OTP_PROVIDER, IDENTITY_ACCESS_REPOSITORY],
           useFactory: (provider: OtpProvider, repository: IdentityAccessRepository) =>
-            new SellerOtpService(
+            new IdentityOtpService(
               provider,
               repository,
               environment.SEVO_RUNTIME_ENV === "production"
@@ -64,9 +64,9 @@ export class IdentityAccessModule {
                 : undefined,
             ),
         },
-        { provide: SELLER_SESSION_READER, useExisting: SELLER_OTP_SERVICE },
+        { provide: IDENTITY_SESSION_READER, useExisting: IDENTITY_OTP_SERVICE },
       ],
-      exports: [SELLER_SESSION_READER],
+      exports: [IDENTITY_SESSION_READER],
     };
   }
 }

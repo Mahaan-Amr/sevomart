@@ -1,12 +1,26 @@
 // Tables in this file are owned by the identity-access module.
 
-model Seller {
-  id        String          @id @db.Uuid
-  mobile    String          @unique @db.VarChar(11)
-  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  sessions  SellerSession[]
+model Identity {
+  id           String          @id @db.Uuid
+  status       String          @default("ACTIVE") @db.VarChar(16)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  loginMethods LoginMethod[]
+  sessions     IdentitySession[]
 
-  @@map("identity_sellers")
+  @@map("identity_identities")
+}
+
+model LoginMethod {
+  id         String   @id @db.Uuid
+  identityId String   @map("identity_id") @db.Uuid
+  kind       String   @default("MOBILE") @db.VarChar(16)
+  mobile     String   @unique @db.VarChar(11)
+  verifiedAt DateTime @map("verified_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  identity   Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@unique([identityId, kind])
+  @@map("identity_login_methods")
 }
 
 model OtpChallenge {
@@ -16,20 +30,23 @@ model OtpChallenge {
   providerReference String    @map("provider_reference") @db.VarChar(128)
   expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
   consumedAt        DateTime? @map("consumed_at") @db.Timestamptz(3)
+  verificationAttempts Int    @default(0) @map("verification_attempts") @db.SmallInt
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([mobile, createdAt])
   @@map("identity_otp_challenges")
 }
 
-model SellerSession {
-  id        String   @id @db.Uuid
-  tokenHash String   @unique @map("token_hash") @db.VarChar(64)
-  sellerId  String   @map("seller_id") @db.Uuid
-  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+model IdentitySession {
+  id         String    @id @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  identityId String    @map("identity_id") @db.Uuid
+  audience   String    @default("PUBLIC") @db.VarChar(16)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  identity   Identity  @relation(fields: [identityId], references: [id], onDelete: Cascade)
 
-  @@index([sellerId, expiresAt])
-  @@map("identity_seller_sessions")
+  @@index([identityId, expiresAt])
+  @@map("identity_sessions")
 }

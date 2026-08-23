@@ -1,13 +1,13 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
-import type { SellerSessionReader } from "../modules/identity-access/public";
+import type { IdentitySessionReader } from "../modules/identity-access/public";
 import type { FastifyRequest } from "fastify";
 
-export async function requireSeller(
+export async function requireIdentity(
   request: FastifyRequest,
-  sessions: SellerSessionReader,
+  sessions: IdentitySessionReader,
 ): Promise<string> {
-  const token = readCookie(request.headers.cookie, "sevo_seller_session") ?? "";
-  const session = await sessions.readActiveSellerSession(token);
+  const token = readIdentitySessionToken(request) ?? "";
+  const session = await sessions.readActiveIdentitySession(token);
   if (!session) {
     throw new HttpException(
       {
@@ -18,7 +18,11 @@ export async function requireSeller(
       HttpStatus.UNAUTHORIZED,
     );
   }
-  return session.seller.id;
+  return session.actor.identityId;
+}
+
+export function readIdentitySessionToken(request: FastifyRequest): string | undefined {
+  return readCookie(request.headers.cookie, "sevo_session");
 }
 
 function readCookie(header: string | undefined, name: string): string | undefined {

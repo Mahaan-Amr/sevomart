@@ -7,7 +7,7 @@ import {
 
 test.describe.configure({ mode: "serial" });
 
-test("seller signs in with the visible development OTP and keeps the session", async ({
+test("guest signs in with the visible development OTP, returns to the prior action and can sign out", async ({
   page,
 }) => {
   const externalRequests: string[] = [];
@@ -18,20 +18,12 @@ test("seller signs in with the visible development OTP and keeps the session", a
     }
   });
 
-  await page.goto("/seller/login");
+  await page.goto("/seller/login?returnTo=%2Fseller%2Fstore%3Fstep%3Dshipping");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.locator("html")).toHaveAttribute("lang", "fa");
-  await expect(
-    page.getByRole("heading", { name: "ورود به فضای فروشنده" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
 
   const mobile = page.getByLabel("شماره موبایل");
-  await mobile.fill("09120000000");
-  await page.getByRole("button", { name: "دریافت کد" }).click();
-  await expect(
-    page.getByText("این شماره برای ورود آزمایشی در دسترس نیست."),
-  ).toBeVisible();
-
   await mobile.fill("09123456789");
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await expect(page.getByText("کد آزمایشی", { exact: true })).toBeVisible();
@@ -53,6 +45,14 @@ test("seller signs in with the visible development OTP and keeps the session", a
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "وارد شدید" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "ادامه کار" })).toHaveAttribute(
+    "href",
+    "/seller/store?step=shipping",
+  );
+  await page.getByRole("button", { name: "خروج" }).click();
+  await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
   expect(externalRequests).toEqual([]);
 });
 
@@ -71,16 +71,14 @@ test("a forged session cookie is rejected against PostgreSQL", async ({
 }) => {
   await context.addCookies([
     {
-      name: "sevo_seller_session",
+      name: "sevo_session",
       value: "forged",
       domain: "127.0.0.1",
       path: "/",
     },
   ]);
   await page.goto("/seller/login");
-  await expect(
-    page.getByRole("heading", { name: "ورود به فضای فروشنده" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
 });
 
 test("server failure stays human and the login honors visual accessibility", async ({

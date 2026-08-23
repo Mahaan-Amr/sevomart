@@ -23,16 +23,17 @@ const contractSchemas = {
 };
 
 const frozenConsumerOperations = [
-  ["post", "/v1/auth/otp/requests", "none", [202, 422, 500]],
+  ["post", "/v1/auth/otp/requests", "none", [202, 422, 429, 500]],
   ["post", "/v1/auth/otp/verifications", "none", [200, 401, 422, 500]],
-  ["get", "/v1/auth/session", "seller", [200, 401, 500]],
-  ["get", "/v1/seller/store/draft", "seller", [200, 401, 404, 500]],
-  ["put", "/v1/seller/store/draft", "seller", [200, 401, 409, 422, 500]],
-  ["get", "/v1/store-slugs/{slug}/availability", "seller", [200, 401, 422, 500]],
-  ["post", "/v1/seller/media", "seller", [201, 401, 413, 422, 429, 500]],
+  ["get", "/v1/auth/session", "identity", [200, 401, 500]],
+  ["delete", "/v1/auth/session", "none", [204, 500]],
+  ["get", "/v1/seller/store/draft", "identity", [200, 401, 404, 500]],
+  ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 500]],
+  ["get", "/v1/store-slugs/{slug}/availability", "identity", [200, 401, 422, 500]],
+  ["post", "/v1/seller/media", "identity", [201, 401, 413, 422, 429, 500]],
   ["get", "/v1/media/{mediaId}", "none", [200, 404, 500]],
-  ["get", "/v1/seller/store/preview", "seller", [200, 401, 404, 500]],
-  ["post", "/v1/seller/store/publication", "seller", [200, 401, 404, 409, 422, 500]],
+  ["get", "/v1/seller/store/preview", "identity", [200, 401, 404, 500]],
+  ["post", "/v1/seller/store/publication", "identity", [200, 401, 404, 409, 422, 500]],
   ["get", "/v1/stores/{slug}", "none", [200, 404, 500]],
 ] as const;
 
@@ -50,7 +51,7 @@ describe("OpenAPI identity and store compatibility", () => {
     });
     const document = response.json();
 
-    expect(document.components.securitySchemes.sellerSession).toMatchObject({
+    expect(document.components.securitySchemes.identitySession).toMatchObject({
       type: "apiKey",
       in: "cookie",
     });
@@ -59,7 +60,7 @@ describe("OpenAPI identity and store compatibility", () => {
       const operation = document.paths[path]?.[method] as OpenApiOperation | undefined;
       expect(operation, `${method.toUpperCase()} ${path}`).toBeDefined();
       expect(operation?.security).toEqual(
-        auth === "seller" ? [{ sellerSession: [] }] : [],
+        auth === "identity" ? [{ identitySession: [] }] : [],
       );
       expect(Object.keys(operation?.responses ?? {}).sort()).toEqual(
         statuses.map(String).sort(),
@@ -98,7 +99,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "00fa25232f4811ae3f1d8469725b2ef135e08dc5c8d8b31102efe6c83cee7283",
+      "7ddafc1492be9fbe0f7f5e542ffc8dab4de19ac12d6cb1542462397df67efc2b",
     );
   });
 

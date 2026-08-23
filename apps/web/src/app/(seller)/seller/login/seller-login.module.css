@@ -41,6 +41,24 @@
   outline-offset: 2px;
 }
 
+.signOut {
+  width: 100%;
+  min-height: 44px;
+  margin-block-start: 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.signOut:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
 .intro {
   margin-block-end: 20px;
 }

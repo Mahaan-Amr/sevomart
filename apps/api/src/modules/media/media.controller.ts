@@ -24,10 +24,10 @@ import {
 import type { FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
 
-import { requireSeller } from "../../http/seller-session";
+import { requireIdentity } from "../../http/identity-session";
 import {
-  SELLER_SESSION_READER,
-  type SellerSessionReader,
+  IDENTITY_SESSION_READER,
+  type IdentitySessionReader,
 } from "../identity-access/public";
 import {
   MEDIA_STORAGE,
@@ -55,8 +55,8 @@ type MediaIssueCode =
 export class MediaController {
   constructor(
     @Inject(MEDIA_STORAGE) private readonly storage: MediaStorage,
-    @Inject(SELLER_SESSION_READER)
-    private readonly sessions: SellerSessionReader,
+    @Inject(IDENTITY_SESSION_READER)
+    private readonly sessions: IdentitySessionReader,
     @Inject(PUBLISHED_MEDIA_ACCESS)
     private readonly isPublishedMedia: PublishedMediaAccess,
     @Inject(SELLER_UPLOAD_RATE_LIMITER)
@@ -65,8 +65,8 @@ export class MediaController {
 
   @Post("seller/media")
   async upload(@Req() request: FastifyRequest) {
-    const sellerId = await requireSeller(request, this.sessions);
-    if (!this.uploadRateLimiter.accept(sellerId)) {
+    const identityId = await requireIdentity(request, this.sessions);
+    if (!this.uploadRateLimiter.accept(identityId)) {
       throw mediaError(request.id, "RATE_LIMITED");
     }
     let purpose: MediaUploadPurpose | undefined;
@@ -112,7 +112,7 @@ export class MediaController {
       width: inspected.width,
       height: inspected.height,
       variants,
-      ownerSellerId: sellerId,
+      ownerSellerId: identityId,
       visibility: "PRIVATE",
     });
     return {
@@ -134,8 +134,8 @@ export class MediaController {
     const publiclyReadable =
       media.visibility === "PUBLIC" && (await this.isPublishedMedia(media.key));
     if (!publiclyReadable) {
-      const sellerId = await requireSeller(request, this.sessions);
-      if (media.ownerSellerId !== sellerId) throw mediaNotFound(request.id);
+      const identityId = await requireIdentity(request, this.sessions);
+      if (media.ownerSellerId !== identityId) throw mediaNotFound(request.id);
     }
     return reply.type(media.contentType).send(Buffer.from(media.bytes));
   }

@@ -16,6 +16,7 @@ export const identityAccessV1Paths = {
   requestOtp: "/v1/auth/otp/requests",
   verifyOtp: "/v1/auth/otp/verifications",
   readSession: "/v1/auth/session",
+  endSession: "/v1/auth/session",
 } as const;
 
 export const otpRequestContract = z.object({
@@ -32,11 +33,13 @@ export const otpVerificationContract = z.object({
   code: otpCodeContract,
 });
 
-export const sellerSessionContract = z.object({
-  seller: z.object({
-    id: z.string().uuid(),
-    mobile: iranianMobileContract,
-  }),
+export const actorContextContract = z.object({
+  identityId: z.string().uuid(),
+  audience: z.literal("PUBLIC"),
+});
+
+export const identitySessionContract = z.object({
+  actor: actorContextContract,
   expiresAt: z.string().datetime({ offset: true }),
 });
 
@@ -46,12 +49,20 @@ export const unauthorizedErrorContract = z.object({
   correlationId: z.string().min(1),
 });
 
+export const rateLimitErrorContract = z.object({
+  code: z.literal("RATE_LIMITED"),
+  message: z.string().min(1),
+  correlationId: z.string().min(1),
+});
+
 export const identityAccessV1Schemas = {
   OtpRequest: otpRequestContract,
   OtpChallenge: otpChallengeContract,
   OtpVerification: otpVerificationContract,
-  SellerSession: sellerSessionContract,
+  ActorContext: actorContextContract,
+  IdentitySession: identitySessionContract,
   UnauthorizedError: unauthorizedErrorContract,
+  RateLimitError: rateLimitErrorContract,
 } as const;
 
 export function createIdentityAccessV1JsonSchemas() {
@@ -68,16 +79,25 @@ export const identityAccessV1Examples = {
     challengeId: "5efea92d-e15f-454e-bc29-0368f667a21d",
     code: "111111",
   },
-  SellerSession: {
-    seller: {
-      id: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
-      mobile: "09123456789",
+  ActorContext: {
+    identityId: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
+    audience: "PUBLIC",
+  },
+  IdentitySession: {
+    actor: {
+      identityId: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
+      audience: "PUBLIC",
     },
     expiresAt: "2026-08-23T09:00:00.000Z",
   },
   UnauthorizedError: {
     code: "UNAUTHORIZED",
-    message: "نشست فروشنده معتبر نیست",
+    message: "نشست شما معتبر نیست. دوباره وارد شوید.",
+    correlationId: "01J5H8CZHJ2QX0M5MEQ7M6H1P4",
+  },
+  RateLimitError: {
+    code: "RATE_LIMITED",
+    message: "درخواست‌ها زیاد شده است؛ کمی بعد دوباره تلاش کنید.",
     correlationId: "01J5H8CZHJ2QX0M5MEQ7M6H1P4",
   },
 } as const;
@@ -88,4 +108,5 @@ export type OtpChallengeId = z.infer<typeof otpChallengeIdContract>;
 export type OtpRequest = z.infer<typeof otpRequestContract>;
 export type OtpChallenge = z.infer<typeof otpChallengeContract>;
 export type OtpVerification = z.infer<typeof otpVerificationContract>;
-export type SellerSession = z.infer<typeof sellerSessionContract>;
+export type ActorContext = z.infer<typeof actorContextContract>;
+export type IdentitySession = z.infer<typeof identitySessionContract>;

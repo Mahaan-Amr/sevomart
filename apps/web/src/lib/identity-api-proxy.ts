@@ -1,7 +1,7 @@
 import {
   identityAccessV1Paths,
-  sellerSessionContract,
-  type SellerSession,
+  identitySessionContract,
+  type IdentitySession,
 } from "@sevo/contracts/identity-access/v1";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
@@ -13,13 +13,21 @@ export async function proxyIdentityRequest(
 ): Promise<Response> {
   try {
     const upstream = await fetch(`${API_BASE_URL}${path}`, {
-      method: "POST",
+      method: request.method,
       headers: {
-        "content-type": "application/json",
+        ...(request.headers.get("content-type")
+          ? { "content-type": request.headers.get("content-type")! }
+          : {}),
+        ...(request.headers.get("cookie")
+          ? { cookie: request.headers.get("cookie")! }
+          : {}),
         "x-correlation-id":
           request.headers.get("x-correlation-id") ?? crypto.randomUUID(),
       },
-      body: await request.text(),
+      body:
+        request.method === "GET" || request.method === "HEAD"
+          ? undefined
+          : await request.text(),
       cache: "no-store",
     });
     const headers = new Headers({ "content-type": "application/json" });
@@ -27,7 +35,8 @@ export async function proxyIdentityRequest(
     if (forwardSessionCookie && sessionCookie) {
       headers.set("set-cookie", sessionCookie);
     }
-    return new Response(await upstream.text(), {
+    const body = upstream.status === 204 ? null : await upstream.text();
+    return new Response(body, {
       status: upstream.status,
       headers,
     });
@@ -43,9 +52,9 @@ export async function proxyIdentityRequest(
   }
 }
 
-export async function readSellerSession(
+export async function readIdentitySession(
   cookieHeader: string,
-): Promise<SellerSession | undefined> {
+): Promise<IdentitySession | undefined> {
   try {
     const response = await fetch(
       `${API_BASE_URL}${identityAccessV1Paths.readSession}`,
@@ -55,7 +64,7 @@ export async function readSellerSession(
       },
     );
     if (!response.ok) return undefined;
-    const parsed = sellerSessionContract.safeParse(await response.json());
+    const parsed = identitySessionContract.safeParse(await response.json());
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;

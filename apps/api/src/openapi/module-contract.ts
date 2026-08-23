@@ -1,7 +1,9 @@
 import type { OpenAPIObject } from "@nestjs/swagger";
 
 export type ApiResponseContract =
-  { status: number; schema: string } | { status: number; binaryMedia: true };
+  | { status: number; schema: string }
+  | { status: number; binaryMedia: true }
+  | { status: number; noContent: true };
 
 export type ApiResponseMetadata = {
   descriptions: Readonly<Record<number, string>>;
@@ -12,10 +14,10 @@ export type ApiResponseMetadata = {
 
 export type ApiOperationContract = {
   operationId: string;
-  method: "get" | "post" | "put";
+  method: "delete" | "get" | "post" | "put";
   path: string;
   tag: string;
-  auth: "none" | "seller-session";
+  auth: "identity-session" | "none";
   pathParameter?: {
     name: string;
     schema: string;
@@ -33,7 +35,7 @@ type SchemaReference = { $ref: string };
 type ContractResponse = {
   description: string;
   headers?: Record<string, { description: string; schema: { type: "string" } }>;
-  content: Record<
+  content?: Record<
     string,
     { schema: SchemaReference | Record<string, string>; example?: unknown }
   >;
@@ -69,6 +71,9 @@ function response(
   const description = metadata.descriptions[contract.status];
   if (!description) {
     throw new Error(`OpenAPI response ${contract.status} requires a description`);
+  }
+  if ("noContent" in contract) {
+    return { description };
   }
   if ("binaryMedia" in contract) {
     return {
@@ -106,7 +111,7 @@ export function addModuleOpenApiContract(
     const operation: ContractOperation = {
       operationId: contract.operationId,
       tags: [contract.tag],
-      security: contract.auth === "seller-session" ? [{ sellerSession: [] }] : [],
+      security: contract.auth === "identity-session" ? [{ identitySession: [] }] : [],
       responses: Object.fromEntries(
         contract.responses.map((responseContract) => [
           `${responseContract.status}`,
