@@ -18,7 +18,7 @@ const operations = [
     method: "post",
     path: "/v1/seller/media",
     tag: "media",
-    auth: "seller-session",
+    auth: "identity-session",
     request: {
       schema: "MediaUploadInput",
       example: mediaV1Examples.MediaUploadInput,
@@ -56,7 +56,7 @@ const responseMetadata = {
   descriptions: {
     200: "Successful response",
     201: "Resource created",
-    401: "Seller session is missing or invalid",
+    401: "Identity session is missing or invalid",
     404: "Store was not found",
     413: "Uploaded file exceeds the accepted limit",
     422: "Request validation failed",

@@ -1,13 +1,13 @@
 import type {
   IranianMobile,
   OtpCode,
-  SellerSession,
+  IdentitySession,
 } from "@sevo/contracts/identity-access/v1";
 
-export const SELLER_SESSION_READER = Symbol("SELLER_SESSION_READER");
+export const IDENTITY_SESSION_READER = Symbol("IDENTITY_SESSION_READER");
 
-export interface SellerSessionReader {
-  readActiveSellerSession(token: string): Promise<SellerSession | undefined>;
+export interface IdentitySessionReader {
+  readActiveIdentitySession(token: string): Promise<IdentitySession | undefined>;
 }
 
 export type OtpDelivery = {
@@ -33,34 +33,43 @@ export type StoredOtpChallenge = {
   expiresAt: Date;
 };
 
-export type SellerIdentity = {
+export type SevoIdentity = {
   id: string;
-  mobile: IranianMobile;
 };
 
-export type StoredSellerSession = {
+export type StoredIdentitySession = {
   id: string;
   tokenHash: string;
-  sellerId: string;
+  identityId: string;
+  audience: "PUBLIC";
   expiresAt: Date;
 };
 
-export type ActiveSellerSession = {
-  seller: SellerIdentity;
+export type ActiveIdentitySession = {
+  identityId: string;
   expiresAt: Date;
 };
 
 export interface IdentityAccessRepository {
-  saveChallenge(challenge: StoredOtpChallenge): Promise<void>;
+  saveChallengeIfAllowed(
+    challenge: StoredOtpChallenge,
+    since: Date,
+    limit: number,
+  ): Promise<boolean>;
+  updateChallengeProviderReference(
+    challengeId: string,
+    providerReference: string,
+  ): Promise<void>;
   consumeValidChallenge(
     challengeId: string,
     codeHash: string,
     now: Date,
   ): Promise<IranianMobile | undefined>;
-  findOrCreateSeller(mobile: IranianMobile): Promise<SellerIdentity>;
-  saveSession(session: StoredSellerSession): Promise<void>;
+  findOrCreateIdentity(mobile: IranianMobile): Promise<SevoIdentity>;
+  saveSession(session: StoredIdentitySession): Promise<void>;
   findActiveSession(
     tokenHash: string,
     now: Date,
-  ): Promise<ActiveSellerSession | undefined>;
+  ): Promise<ActiveIdentitySession | undefined>;
+  revokeSession(tokenHash: string, revokedAt: Date): Promise<boolean>;
 }

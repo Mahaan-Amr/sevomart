@@ -21,6 +21,25 @@ const contractExamples = {
 };
 
 describe("identity and store shared schemas", () => {
+  it("publishes a canonical public identity session without mobile or roles", () => {
+    const session = identityAccessV1Schemas.IdentitySession.parse({
+      actor: {
+        identityId: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
+        audience: "PUBLIC",
+      },
+      expiresAt: "2026-08-23T09:00:00.000Z",
+    });
+
+    expect(session).toEqual({
+      actor: {
+        identityId: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
+        audience: "PUBLIC",
+      },
+      expiresAt: "2026-08-23T09:00:00.000Z",
+    });
+    expect(JSON.stringify(session)).not.toMatch(/mobile|role/i);
+  });
+
   it("accepts every published Persian request and response example", () => {
     for (const [schemaName, example] of Object.entries(contractExamples)) {
       expect(

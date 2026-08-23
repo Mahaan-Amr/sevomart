@@ -2,28 +2,30 @@ import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 
 import type {
   IranianMobile,
+  IdentitySession,
   OtpChallenge,
   OtpChallengeId,
   OtpCode,
-  SellerSession,
 } from "@sevo/contracts/identity-access/v1";
 
 import type { IdentityAccessRepository, OtpProvider } from "../public";
 
 const DEV_OTP_CODE = "111111" as OtpCode;
 const CHALLENGE_LIFETIME_MS = 10 * 60 * 1_000;
+const OTP_REQUEST_WINDOW_MS = 10 * 60 * 1_000;
+const OTP_REQUEST_LIMIT = 20;
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1_000;
 
-export class TestMobileNotAllowedError extends Error {}
 export class OtpRejectedError extends Error {}
-export class InvalidSellerSessionError extends Error {}
+export class OtpRequestRateLimitedError extends Error {}
+export class InvalidIdentitySessionError extends Error {}
 
-export type VerifiedSellerSession = {
-  session: SellerSession;
+export type VerifiedIdentitySession = {
+  session: IdentitySession;
   token: string;
 };
 
-export class SellerOtpService {
+export class IdentityOtpService {
   readonly #allowedMobiles?: ReadonlySet<IranianMobile>;
 
   constructor(
@@ -40,26 +42,32 @@ export class SellerOtpService {
     mobile: IranianMobile,
     correlationId: string,
   ): Promise<OtpChallenge> {
-    if (this.#allowedMobiles && !this.#allowedMobiles.has(mobile)) {
-      throw new TestMobileNotAllowedError();
-    }
-
+    const now = this.now();
     const challengeId = randomUUID() as OtpChallengeId;
-    const expiresAt = new Date(this.now().getTime() + CHALLENGE_LIFETIME_MS);
+    const expiresAt = new Date(now.getTime() + CHALLENGE_LIFETIME_MS);
     const code = this.createOtpCode();
-    const receipt = await this.provider.deliverOtp({
-      mobile,
-      code,
-      expiresAt,
-      correlationId,
-    });
-    await this.repository.saveChallenge({
-      id: challengeId,
-      mobile,
-      codeHash: hashChallengeCode(challengeId, code),
-      providerReference: receipt.providerReference,
-      expiresAt,
-    });
+    const canDeliver = !this.#allowedMobiles || this.#allowedMobiles.has(mobile);
+    const verifiableCode = canDeliver ? code : randomBytes(32).toString("base64url");
+    const accepted = await this.repository.saveChallengeIfAllowed(
+      {
+        id: challengeId,
+        mobile,
+        codeHash: hashChallengeCode(challengeId, verifiableCode),
+        providerReference: "pending",
+        expiresAt,
+      },
+      new Date(now.getTime() - OTP_REQUEST_WINDOW_MS),
+      OTP_REQUEST_LIMIT,
+    );
+    if (!accepted) throw new OtpRequestRateLimitedError();
+
+    const receipt = canDeliver
+      ? await this.provider.deliverOtp({ mobile, code, expiresAt, correlationId })
+      : { providerReference: "suppressed" };
+    await this.repository.updateChallengeProviderReference(
+      challengeId,
+      receipt.providerReference,
+    );
 
     return { challengeId, expiresAt: expiresAt.toISOString() };
   }
@@ -67,7 +75,7 @@ export class SellerOtpService {
   async verifyOtp(
     challengeId: OtpChallengeId,
     code: OtpCode,
-  ): Promise<VerifiedSellerSession> {
+  ): Promise<VerifiedIdentitySession> {
     const mobile = await this.repository.consumeValidChallenge(
       challengeId,
       hashChallengeCode(challengeId, code),
@@ -77,41 +85,47 @@ export class SellerOtpService {
       throw new OtpRejectedError();
     }
 
-    const seller = await this.repository.findOrCreateSeller(mobile);
+    const identity = await this.repository.findOrCreateIdentity(mobile);
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(this.now().getTime() + SESSION_LIFETIME_MS);
     await this.repository.saveSession({
       id: randomUUID(),
       tokenHash: hashToken(token),
-      sellerId: seller.id,
+      identityId: identity.id,
+      audience: "PUBLIC",
       expiresAt,
     });
 
     return {
       token,
       session: {
-        seller,
+        actor: { identityId: identity.id, audience: "PUBLIC" },
         expiresAt: expiresAt.toISOString(),
       },
     };
   }
 
-  async readSession(token: string): Promise<SellerSession> {
-    const session = await this.readActiveSellerSession(token);
-    if (!session) throw new InvalidSellerSessionError();
+  async readSession(token: string): Promise<IdentitySession> {
+    const session = await this.readActiveIdentitySession(token);
+    if (!session) throw new InvalidIdentitySessionError();
     return session;
   }
 
-  async readActiveSellerSession(token: string): Promise<SellerSession | undefined> {
+  async readActiveIdentitySession(token: string): Promise<IdentitySession | undefined> {
     const activeSession = await this.repository.findActiveSession(
       hashToken(token),
       this.now(),
     );
     if (!activeSession) return undefined;
     return {
-      seller: activeSession.seller,
+      actor: { identityId: activeSession.identityId, audience: "PUBLIC" },
       expiresAt: activeSession.expiresAt.toISOString(),
     };
+  }
+
+  async revokeSession(token: string): Promise<boolean> {
+    if (!token) return false;
+    return this.repository.revokeSession(hashToken(token), this.now());
   }
 }
 

@@ -50,8 +50,8 @@ test.beforeAll(async ({ browserName }, testInfo) => {
        or id in (
          select membership.store_id
          from store_memberships membership
-         join identity_sellers seller on seller.id = membership.seller_id
-         where seller.mobile in ${sql(mobiles)}
+         join identity_login_methods method on method.identity_id = membership.seller_id
+         where method.mobile in ${sql(mobiles)}
        )
   `;
   await sql`

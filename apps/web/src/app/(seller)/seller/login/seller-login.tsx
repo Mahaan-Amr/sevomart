@@ -2,7 +2,7 @@
 
 import {
   otpChallengeContract,
-  sellerSessionContract,
+  identitySessionContract,
 } from "@sevo/contracts/identity-access/v1";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -14,9 +14,11 @@ type ApiError = { message?: string };
 export function SellerLogin({
   initiallySignedIn,
   showDevelopmentCode,
+  returnTo,
 }: {
   initiallySignedIn: boolean;
   showDevelopmentCode: boolean;
+  returnTo: string;
 }) {
   const [step, setStep] = useState<Step>(initiallySignedIn ? "signed-in" : "mobile");
   const [mobile, setMobile] = useState("");
@@ -71,10 +73,30 @@ export function SellerLogin({
         setMessage(humanError(body));
         return;
       }
-      if (!sellerSessionContract.safeParse(body).success) {
+      if (!identitySessionContract.safeParse(body).success) {
         throw new Error("invalid session response");
       }
       setStep("signed-in");
+    } catch {
+      setMessage("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function signOut() {
+    setPending(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/auth/session", { method: "DELETE" });
+      if (!response.ok) {
+        setMessage("خروج انجام نشد. دوباره تلاش کنید.");
+        return;
+      }
+      setMobile("");
+      setCode("");
+      setChallengeId("");
+      setStep("mobile");
     } catch {
       setMessage("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
     } finally {
@@ -88,10 +110,19 @@ export function SellerLogin({
         <section className={styles.panel} aria-labelledby="signed-in-title">
           <span className={styles.brand}>سوو</span>
           <h1 id="signed-in-title">وارد شدید</h1>
-          <p>نشست شما حفظ شده و می‌توانید ساخت فروشگاه را ادامه دهید.</p>
-          <a href="/seller/store" className={styles.continueLink}>
-            ساخت فروشگاه
+          <p>نشست شما حفظ شده و می‌توانید کار قبلی را ادامه دهید.</p>
+          <a href={returnTo} className={styles.continueLink}>
+            ادامه کار
           </a>
+          <button
+            type="button"
+            className={styles.signOut}
+            onClick={signOut}
+            disabled={pending}
+          >
+            {pending ? "در حال خروج…" : "خروج"}
+          </button>
+          <StatusMessage message={message} />
         </section>
       </main>
     );
@@ -101,10 +132,10 @@ export function SellerLogin({
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="login-title">
         <span className={styles.brand}>سوو</span>
-        <h1 id="login-title">ورود به فضای فروشنده</h1>
+        <h1 id="login-title">ورود به سوو</h1>
         <p className={styles.intro}>
           {step === "mobile"
-            ? "شماره تست را وارد کنید تا کد ورود آماده شود."
+            ? "شماره موبایل را وارد کنید تا کد ورود برایتان فرستاده شود."
             : `کد شش‌رقمی برای ${mobile} آماده است.`}
         </p>
 

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpException,
@@ -18,19 +19,21 @@ import {
 } from "@sevo/contracts/identity-access/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
+import { readIdentitySessionToken } from "../../http/identity-session";
+
 import {
-  InvalidSellerSessionError,
+  InvalidIdentitySessionError,
   OtpRejectedError,
-  SellerOtpService,
-  TestMobileNotAllowedError,
-} from "./application/seller-otp.service";
-import { RUNTIME_ENVIRONMENT, SELLER_OTP_SERVICE } from "./identity-access.tokens";
+  OtpRequestRateLimitedError,
+  IdentityOtpService,
+} from "./application/identity-otp.service";
+import { IDENTITY_OTP_SERVICE, RUNTIME_ENVIRONMENT } from "./identity-access.tokens";
 
 @ApiExcludeController()
 @Controller("v1/auth")
 export class IdentityAccessController {
   constructor(
-    @Inject(SELLER_OTP_SERVICE) private readonly service: SellerOtpService,
+    @Inject(IDENTITY_OTP_SERVICE) private readonly service: IdentityOtpService,
     @Inject(RUNTIME_ENVIRONMENT) private readonly environment: RuntimeEnvironment,
   ) {}
 
@@ -49,11 +52,14 @@ export class IdentityAccessController {
     try {
       return await this.service.requestOtp(parsed.data.mobile, request.id);
     } catch (error) {
-      if (error instanceof TestMobileNotAllowedError) {
-        throw validationError(
-          request.id,
-          "این شماره برای ورود آزمایشی در دسترس نیست.",
-          [{ field: "mobile", code: "INVALID_FORMAT" }],
+      if (error instanceof OtpRequestRateLimitedError) {
+        throw new HttpException(
+          {
+            code: "RATE_LIMITED",
+            message: "درخواست‌ها زیاد شده است؛ کمی بعد دوباره تلاش کنید.",
+            correlationId: request.id,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
         );
       }
       throw error;
@@ -86,7 +92,7 @@ export class IdentityAccessController {
         this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
       void reply.header(
         "Set-Cookie",
-        `sevo_seller_session=${verified.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`,
+        `sevo_session=${verified.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`,
       );
       return verified.session;
     } catch (error) {
@@ -106,15 +112,15 @@ export class IdentityAccessController {
 
   @Get("session")
   async readSession(@Req() request: FastifyRequest) {
-    const token = readCookie(request.headers.cookie, "sevo_seller_session");
+    const token = readIdentitySessionToken(request);
     try {
       return await this.service.readSession(token ?? "");
     } catch (error) {
-      if (error instanceof InvalidSellerSessionError) {
+      if (error instanceof InvalidIdentitySessionError) {
         throw new HttpException(
           {
             code: "UNAUTHORIZED",
-            message: "نشست فروشنده معتبر نیست.",
+            message: "نشست شما معتبر نیست. دوباره وارد شوید.",
             correlationId: request.id,
           },
           HttpStatus.UNAUTHORIZED,
@@ -123,15 +129,21 @@ export class IdentityAccessController {
       throw error;
     }
   }
-}
 
-function readCookie(header: string | undefined, name: string): string | undefined {
-  return header
-    ?.split(";")
-    .map((part) => part.trim().split("="))
-    .find(([key]) => key === name)
-    ?.slice(1)
-    .join("=");
+  @Delete("session")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async endSession(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const token = readIdentitySessionToken(request) ?? "";
+    await this.service.revokeSession(token);
+    const secure = this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
+    void reply.header(
+      "Set-Cookie",
+      `sevo_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
+    );
+  }
 }
 
 function validationError(

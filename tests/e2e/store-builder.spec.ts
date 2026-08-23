@@ -31,16 +31,14 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     where id in (
       select membership.store_id
       from store_memberships membership
-      join identity_sellers seller on seller.id = membership.seller_id
-      where seller.mobile = ${mobile}
+      join identity_login_methods method on method.identity_id = membership.seller_id
+      where method.mobile = ${mobile}
     )
   `;
   await sql.end();
 
   await page.goto("/seller/login");
-  await expect(
-    page.getByRole("heading", { name: "ورود به فضای فروشنده" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
   await expect(page).toHaveScreenshot(
     "seller-login.png",
     deterministicScreenshotOptions,
@@ -57,7 +55,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "ورود" })).toBeFocused();
   await page.keyboard.press("Enter");
-  const builderLink = page.getByRole("link", { name: "ساخت فروشگاه" });
+  const builderLink = page.getByRole("link", { name: "ادامه کار" });
   await builderLink.focus();
   await page.keyboard.press("Enter");
 
