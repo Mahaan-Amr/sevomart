@@ -3,6 +3,7 @@
 - وضعیت: پذیرفته‌شده
 - تاریخ: ۱۴۰۵-۰۵-۲۴
 - Issue: [آماده‌سازی خط پایه توسعه، تست و CI](https://github.com/Mahaan-Amr/sevomart/issues/18)
+- تکمیل زیرساخت رخداد: [outbox پایدار و Worker قابل‌بازیابی](https://github.com/Mahaan-Amr/sevomart/issues/76)
 
 ## زمینه
 
@@ -19,7 +20,9 @@
 ## تصمیم
 
 گزینه سوم انتخاب شد. workspace شامل `web`، `api` و `worker` و بسته‌های محدود قرارداد،
-پیکربندی، مشاهده‌پذیری و database است. `pnpm dev` PostgreSQL محلی را بالا می‌آورد و سه process
+پیکربندی، مشاهده‌پذیری، database و `outbox` است. بستهٔ `outbox` فقط enqueue تراکنشی، اجاره،
+backoff و رسید idempotent مبتنی بر PostgreSQL را فراهم می‌کند و قاعده یا قرارداد دامنه‌ای ندارد؛
+وابستگی runtime خارجی تازه‌ای نیز اضافه نمی‌کند. `pnpm dev` PostgreSQL محلی را بالا می‌آورد و سه process
 را اجرا می‌کند. TypeScript strict، ESLint، Prettier، Vitest، Playwright و Prisma validate در
 CI اجرا می‌شوند.
 

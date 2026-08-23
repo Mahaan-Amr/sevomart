@@ -123,10 +123,19 @@ export class PostgresStoreRepository implements StoreRepository {
       const published = await sql<Array<{ id: string; publicationVersion: number }>>`
         update store_stores set status = 'PUBLISHED', published_at = ${publishedAt},
           updated_at = ${publishedAt}, publication_version = publication_version + 1
-        where id = ${id}
+        where id = ${id} and status = 'DRAFT'
         returning id, publication_version as "publicationVersion"
       `;
-      const publication = published[0]!;
+      const publication = published[0];
+      if (!publication) {
+        const existing = await sql<Array<{ status: string }>>`
+          select status from store_stores where id = ${id}
+        `;
+        if (existing[0]?.status !== "PUBLISHED") {
+          throw new Error("Store publication transition failed");
+        }
+        return [{ sellerId: context.actorId }];
+      }
       const event = storePublishedV1Contract.parse({
         version: 1,
         eventId: this.#createEventId(),

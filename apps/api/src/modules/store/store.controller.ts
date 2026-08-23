@@ -13,12 +13,12 @@ import {
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
-  IDENTITY_SESSION_READER,
-  type IdentitySessionReader,
+  SELLER_SESSION_READER,
+  type SellerSessionReader,
 } from "../identity-access/public";
 import { storeDraftInputContract, storeSlugContract } from "@sevo/contracts/store/v1";
 import type { FastifyRequest } from "fastify";
-import { requireIdentity } from "../../http/identity-session";
+import { requireSeller } from "../../http/seller-session";
 
 import {
   IncompleteStoreError,
@@ -34,19 +34,19 @@ import { STORE_SERVICE } from "./store.tokens";
 export class StoreController {
   constructor(
     @Inject(STORE_SERVICE) private readonly service: StoreService,
-    @Inject(IDENTITY_SESSION_READER)
-    private readonly sessions: IdentitySessionReader,
+    @Inject(SELLER_SESSION_READER)
+    private readonly sessions: SellerSessionReader,
   ) {}
 
   @Get("seller/store/draft")
   async readDraft(@Req() request: FastifyRequest) {
-    const identityId = await requireIdentity(request, this.sessions);
-    return this.handle(request, () => this.service.readDraft(identityId));
+    const sellerId = await requireSeller(request, this.sessions);
+    return this.handle(request, () => this.service.readDraft(sellerId));
   }
 
   @Put("seller/store/draft")
   async saveDraft(@Body() body: unknown, @Req() request: FastifyRequest) {
-    const identityId = await requireIdentity(request, this.sessions);
+    const sellerId = await requireSeller(request, this.sessions);
     const parsed = storeDraftInputContract.safeParse(body);
     if (!parsed.success) {
       throw validationError(
@@ -58,33 +58,33 @@ export class StoreController {
         })),
       );
     }
-    return this.handle(request, () => this.service.saveDraft(identityId, parsed.data));
+    return this.handle(request, () => this.service.saveDraft(sellerId, parsed.data));
   }
 
   @Get("store-slugs/:slug/availability")
   async checkSlug(@Param("slug") value: string, @Req() request: FastifyRequest) {
-    const identityId = await requireIdentity(request, this.sessions);
+    const sellerId = await requireSeller(request, this.sessions);
     const parsed = storeSlugContract.safeParse(value);
     if (!parsed.success) {
       throw validationError(request.id, "شناسه لینک معتبر نیست.", [
         { field: "slug", code: "INVALID_FORMAT" },
       ]);
     }
-    return this.service.checkSlug(parsed.data, identityId);
+    return this.service.checkSlug(parsed.data, sellerId);
   }
 
   @Get("seller/store/preview")
   async preview(@Req() request: FastifyRequest) {
-    const identityId = await requireIdentity(request, this.sessions);
-    return this.handle(request, () => this.service.preview(identityId));
+    const sellerId = await requireSeller(request, this.sessions);
+    return this.handle(request, () => this.service.preview(sellerId));
   }
 
   @Post("seller/store/publication")
   @HttpCode(HttpStatus.OK)
   async publish(@Req() request: FastifyRequest) {
-    const identityId = await requireIdentity(request, this.sessions);
+    const sellerId = await requireSeller(request, this.sessions);
     return this.handle(request, () =>
-      this.service.publish(identityId, { correlationId: request.id }),
+      this.service.publish(sellerId, { correlationId: request.id }),
     );
   }
 

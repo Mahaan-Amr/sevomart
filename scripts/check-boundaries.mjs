@@ -333,7 +333,10 @@ async function main() {
     ),
   );
   const registeredModules = new Set(ownership.modules);
-  const registeredDataOwners = new Set([...registeredModules, "platform"]);
+  const registeredDataOwners = new Set([
+    ...registeredModules,
+    ...(ownership.infrastructureOwners ?? []),
+  ]);
   const schemaFiles = await collectFiles(
     root,
     path.join("packages", "database", "prisma", "schema"),
@@ -363,10 +366,7 @@ async function main() {
       registeredDataOwners,
     ),
     ...findModuleSchemaOwnershipViolations(schemaFiles, ownership.tables),
-    ...findContractOwnershipViolations(
-      ownership.contracts ?? {},
-      new Set([...registeredModules, "platform"]),
-    ),
+    ...findContractOwnershipViolations(ownership.contracts ?? {}, registeredDataOwners),
   ];
 
   if (violations.length > 0) {

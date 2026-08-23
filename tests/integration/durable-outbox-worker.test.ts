@@ -151,6 +151,58 @@ describe("durable outbox worker", () => {
     expect(rows).toEqual([{ status: "DRAFT", publicationVersion: expect.any(Number) }]);
   });
 
+  it("turns concurrent duplicate publication into one transition and one event", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const cookie = await signIn(server);
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+      payload: {
+        name: "خانه هم‌زمان",
+        slug: `concurrent-${randomUUID().slice(0, 8)}`,
+        bio: "فروشگاه آزمایشی برای انتشار هم‌زمان",
+        shippingMethods: [{ code: "NATIONAL_POST", label: "پست پیشتاز" }],
+        returnPolicy: "تا هفت روز امکان درخواست مرجوعی وجود دارد.",
+        settlementDestination: { kind: "TEST" },
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    const storeId = saved.json<{ id: string }>().id;
+    const inspect = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const memberships = await inspect<Array<{ sellerId: string }>>`
+      select seller_id as "sellerId" from store_memberships
+      where store_id = ${storeId}::uuid and role = 'OWNER'
+    `;
+    const actorId = memberships[0]!.sellerId;
+    const correlationIds = [randomUUID(), randomUUID()] as const;
+    const repositories = [
+      new PostgresStoreRepository(apiTestEnvironment.DATABASE_URL),
+      new PostgresStoreRepository(apiTestEnvironment.DATABASE_URL),
+    ];
+
+    const results = await Promise.all(
+      repositories.map((repository, index) =>
+        repository.publish(storeId, new Date(), {
+          correlationId: correlationIds[index]!,
+          actorId,
+        }),
+      ),
+    );
+    await Promise.all(repositories.map((repository) => repository.onModuleDestroy()));
+
+    const events = await inspect<Array<{ count: number }>>`
+      select count(*)::int as count from platform_outbox_events
+      where correlation_id = ${correlationIds[0]}::uuid
+         or correlation_id = ${correlationIds[1]}::uuid
+    `;
+    await inspect.end();
+    expect(results.map((result) => result.status)).toEqual(["PUBLISHED", "PUBLISHED"]);
+    expect(events).toEqual([{ count: 1 }]);
+  });
+
   it("retries a transient failure with backoff and eventually acknowledges it", async () => {
     const event = {
       ...eventEnvelopeV1Contract.parse({

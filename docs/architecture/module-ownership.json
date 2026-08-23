@@ -15,11 +15,11 @@
     "notifications",
     "reporting-analytics"
   ],
+  "infrastructureOwners": ["platform"],
   "tables": {
-    "identity_identities": "identity-access",
-    "identity_login_methods": "identity-access",
+    "identity_sellers": "identity-access",
     "identity_otp_challenges": "identity-access",
-    "identity_sessions": "identity-access",
+    "identity_seller_sessions": "identity-access",
     "store_stores": "store",
     "store_memberships": "store",
     "store_shipping_methods": "store",
