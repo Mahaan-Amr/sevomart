@@ -27,6 +27,7 @@ label: wayfinder:map
 - [انتخاب پشته فنی و شکل استقرار نسخه اول](tickets/015-technical-stack-decision.md) — PWA و modular monolith تایپ‌اسکریپت با PostgreSQL و استقرار Docker قابل‌انتقال انتخاب شد.
 - [تعیین مرز ماژول‌ها و قراردادهای کار موازی](tickets/016-module-boundaries.md) — مالکیت انحصاری داده، interfaceهای نسخه‌دار و رخداد outbox انتخاب شد.
 - [آماده سازی خط پایه توسعه، تست و CI](tickets/017-engineering-baseline.md) — workspace، PostgreSQL محلی، کنترل‌های کیفیت و CI و قرارداد OpenAPI آماده شدند.
+- [نمونه تجربه مشاهده کالا، کشف و دنبال‌کردن](https://github.com/Mahaan-Amr/sevomart/issues/52) — «کشف» کالامحور با شبکه ۳×۳، جزئیات پست‌مانند و هویت قابل‌ورود فروشگاه تأیید شد؛ دنبال‌کردن و گفت‌وگو هنگام اقدام نیازمند ورودند.
 
 ## هنوز مشخص نشده
 
