@@ -24,12 +24,12 @@
 
 ## نقش‌ها و مجوز پایه
 
-| نقش | مجوز نسخه اول |
-|---|---|
-| مهمان | مشاهده فروشگاه، فید، محتوای فروش و کالا؛ انتخاب گونه و نگهداری سبد محلی |
-| خریدار | همه مجوزهای مهمان؛ دنبال‌کردن، گفت‌وگو، ثبت و پیگیری سفارش، ثبت تجربه خرید واجد شرایط و ایجاد پرونده اختلاف |
-| فروشنده | مدیریت فروشگاه خود، کالا، موجودی، محتوای فروش، سفارش، ارسال، خریداران مرتبط با سفارش‌های خود، گفت‌وگو و پاسخ به پرونده اختلاف |
-| عامل پلتفرم | بررسی فروشنده و تخلف، مشاهده پرونده اختلاف در حد نیاز و ثبت اقدام قابل ممیزی؛ بدون تغییر پنهانی سوابق دو طرف |
+| نقش         | مجوز نسخه اول                                                                                                                 |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| مهمان       | مشاهده فروشگاه، فید، محتوای فروش و کالا؛ انتخاب گونه و نگهداری سبد محلی                                                       |
+| خریدار      | همه مجوزهای مهمان؛ دنبال‌کردن، گفت‌وگو، ثبت و پیگیری سفارش، ثبت تجربه خرید واجد شرایط و ایجاد پرونده اختلاف                   |
+| فروشنده     | مدیریت فروشگاه خود، کالا، موجودی، محتوای فروش، سفارش، ارسال، خریداران مرتبط با سفارش‌های خود، گفت‌وگو و پاسخ به پرونده اختلاف |
+| عامل پلتفرم | بررسی فروشنده و تخلف، مشاهده پرونده اختلاف در حد نیاز و ثبت اقدام قابل ممیزی؛ بدون تغییر پنهانی سوابق دو طرف                  |
 
 فروشنده به فروشگاه دیگر و خریدار به سفارش یا گفت‌وگوی شخص دیگر دسترسی ندارد. عامل پلتفرم فقط داده لازم برای وظیفه پشتیبانی یا بررسی را می‌بیند و هر دسترسی حساس ثبت می‌شود.
 
@@ -189,8 +189,8 @@
 - لینک مستقیم فروشگاه برای مهمان باز می‌شود و ورود مزاحم مشاهده نیست.
 - فروشگاه هویت شخصی‌شده را نشان می‌دهد اما جای قیمت، موجودی، اقدام خرید، پرداخت، مرجوعی و پیگیری در همه فروشگاه‌ها ثابت است.
 - شبکه محتوای فروش سه‌ستونه است و آمار عمومی فقط از فهرست مجاز قرارداد سراسری می‌آید.
-- فید «دنبال‌شده‌ها» برای خریدار واردشده عمدتاً زمانی و فید «کشف» تازه، مرتبط و متنوع است.
-- شروع شخصی‌سازی فید اختیاری، تصویری، قابل ردکردن و قابل تکمیل در کمتر از یک دقیقه است.
+- فید «دنبال‌شده‌ها» برای خریدار واردشده عمدتاً زمانی است. فید «کشف» برای مهمان و خریدار عمومی و مشترک می‌ماند و با ترتیب قطعی مبتنی بر تازگی و تنوع فروشگاه، بدون شخصی‌سازی یا سیگنال محبوبیت کار می‌کند.
+- ranking، cursor، snapshot و حالت‌های خالی از [مشخصات کشف و دنبال‌کردن فروشگاه](discovery-and-store-following.md) می‌آیند.
 
 ### ۹. مشاهده کالا و افزودن به سبد
 
@@ -294,29 +294,29 @@
 
 [تصمیم مرز ماژول‌ها](https://github.com/Mahaan-Amr/sevomart/issues/17) مالکیت داده، interface هم‌زمان، outbox و contract test را تثبیت کرده است. این جدول ورودی و خروجی محصولی نسخه `v1` را می‌بندد؛ schema فنی باید همین معنا را بدون افزودن رفتار تازه حمل کند.
 
-| مالک / عملیات عمومی | ورودی حداقلی | خروجی موفق و خطاهای دامنه | رخداد پس از ثبت |
-|---|---|---|---|
-| فروشگاه / `PublishStore.v1` | `sellerId`، هویت فروشگاه، ارسال، سیاست مرجوعی، مقصد تسویه تأییدشده | snapshot فروشگاه؛ `INCOMPLETE_STORE`، `HANDLE_TAKEN`، `SETTLEMENT_UNVERIFIED` | `StorePublished.v1` |
-| فروشگاه / `UpdateStorePolicy.v1` | `storeId`، متن و زمان اثر سیاست | نسخه تازه سیاست؛ `FORBIDDEN`، `INVALID_POLICY` | `StorePolicyChanged.v1` |
-| کالا / `PublishProduct.v1` | `storeId`، `templateId`، اطلاعات مشترک و گونه‌ها | snapshot کالا؛ `INVALID_VARIANT`، `DUPLICATE_COMBINATION` | `ProductPublished.v1` |
-| کالا / `StopProduct.v1` | `storeId`، `productId`، دلیل | وضعیت توقف؛ `FORBIDDEN`، `PRODUCT_NOT_FOUND` | `ProductStopped.v1` |
-| موجودی / `ReserveInventory.v1` | `orderId`، `variantId/quantity[]`، انقضای `۱۵ دقیقه` | `reservationId/expiresAt`؛ `OUT_OF_STOCK`، `ALREADY_RESERVED` | `InventoryReserved.v1` |
-| موجودی / `HoldReservationForPaymentAttempt.v1` | `orderId`، `reservationId` و `paymentAttemptId` پیش از تماس با درگاه | رزرو با `leaseUntil = now + ۲ دقیقه`؛ `RESERVATION_NOT_ACTIVE`، `PAYMENT_ATTEMPT_MISMATCH` | `InventoryReservationHeld.v1` |
-| موجودی / `ResolvePaymentReservation.v1` | `orderId`، `reservationId` و نتیجه قطعی/مبهم پرداخت | در تأیید، مصرف؛ در شکست، فعال‌سازی تا مهلت اولیه یا آزادسازی؛ در ابهام، hold بررسی بدون انقضای خودکار؛ `INVALID_RESERVATION_STATE`، `DUPLICATE_RESULT` | `InventoryReservationCommitted/Reactivated/HeldForReview/Released.v1` |
-| موجودی / `RecoverExpiredPaymentHold.v1` | `paymentAttemptId`، `reservationId` و وضعیت ارسال ثبت‌شده در پایان lease | ارسال‌نشده: فعال/آزاد؛ ارسال‌شده بی‌نتیجه: hold بررسی؛ `HOLD_NOT_EXPIRED`، `DUPLICATE_RECOVERY` | `InventoryReservationReactivated/Released/HeldForReview.v1` |
-| موجودی / `AdjustInventory.v1` | `storeId`، گونه، مقدار جدید، دلیل | مقدار پیشین/جدید؛ `NEGATIVE_STOCK`، `FORBIDDEN` | `InventoryAdjusted.v1` |
-| سفارش / `CreateOrder.v1` | `buyerId`، `storeId`، اقلام، نشانی، ارسال و snapshot سیاست | `orderId`، مبلغ snapshot‌شده و مهلت؛ `CART_CHANGED`، `ADDRESS_INVALID` | `OrderCreated.v1` |
-| سفارش / `ListStoreBuyers.v1` | `sellerId`، `storeId`، جست‌وجو و cursor | خلاصه صفحه‌بندی‌شده و ماسک‌شده خریداران همان فروشگاه؛ `FORBIDDEN` | ندارد؛ query فقط از projection سفارش می‌خواند |
-| پرداخت / `CreateDirectPaymentAttempt.v1` | `orderId`، `reservationId` و شناسه idempotency | `paymentAttemptId/status`؛ `ORDER_NOT_PAYABLE`، `DUPLICATE_ATTEMPT` | `DirectPaymentAttemptCreated.v1` |
-| پرداخت / `MarkPaymentAttemptDispatched.v1` | `paymentAttemptId` پیش از تماس بیرونی | `dispatchedAt`؛ `ATTEMPT_NOT_READY`، `DUPLICATE_DISPATCH` | `DirectPaymentAttemptDispatched.v1` |
-| پرداخت / `RecordDirectPaymentResult.v1` | `orderId`، شناسه تلاش/درگاه، نتیجه و شناسه idempotency | وضعیت مالی قطعی یا در حال بررسی؛ `AMOUNT_MISMATCH`، `DUPLICATE_RESULT` | `DirectPaymentConfirmed/Failed/ReviewRequired.v1` |
-| پرداخت / `RecordDirectRefundResult.v1` | `orderId`، شناسه پرداخت، مبلغ، نتیجه، شناسه/مدرک بازپرداخت و شناسه idempotency | وضعیت بازپرداخت؛ `REFUND_AMOUNT_MISMATCH`، `REFUND_EVIDENCE_REQUIRED`، `DUPLICATE_RESULT` | `DirectRefundPending/Confirmed/Failed.v1` |
-| انجام سفارش / `AdvanceFulfillment.v1` | `orderId`، وضعیت مقصد، روش/رهگیری یا دلیل لغو | وضعیت و خط زمانی؛ `INVALID_TRANSITION`، `REFUND_REQUIRED` | `FulfillmentAdvanced.v1` |
-| گفت‌وگو / `SendMessage.v1` | فرستنده، زمینه مجاز، متن/رسانه و شناسه idempotency | `messageId/status`؛ `FORBIDDEN_CONTEXT`، `MESSAGE_REJECTED` | `MessageSent.v1` |
-| محتوا / `PublishSalesContent.v1` | `storeId`، رسانه و `productId[]` | `contentId`؛ `NO_ACTIVE_PRODUCT`، `FORBIDDEN` | `SalesContentPublished.v1` |
-| محتوا / `PublishPurchaseExperience.v1` | `buyerId`، `orderItemId`، امتیاز و محتوا | `experienceId/status`؛ `NOT_ELIGIBLE`، `ALREADY_SUBMITTED` | `PurchaseExperiencePublished.v1` |
-| اختلاف / `OpenDispute.v1` | `buyerId`، `orderId`، نوع، شرح و مدرک | `disputeId/deadline`؛ `WINDOW_CLOSED`، `FORBIDDEN` | `DisputeOpened.v1` |
-| اختلاف / `RespondOrResolveDispute.v1` | عامل مجاز، `disputeId`، پاسخ/نتیجه، مدرک و دلیل | وضعیت و مهلت بعدی؛ `INVALID_TRANSITION`، `DEADLINE_PASSED` | `DisputeResponded/Resolved/Reopened.v1` |
+| مالک / عملیات عمومی                            | ورودی حداقلی                                                                   | خروجی موفق و خطاهای دامنه                                                                                                                              | رخداد پس از ثبت                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| فروشگاه / `PublishStore.v1`                    | `sellerId`، هویت فروشگاه، ارسال، سیاست مرجوعی، مقصد تسویه تأییدشده             | snapshot فروشگاه؛ `INCOMPLETE_STORE`، `HANDLE_TAKEN`، `SETTLEMENT_UNVERIFIED`                                                                          | `StorePublished.v1`                                                   |
+| فروشگاه / `UpdateStorePolicy.v1`               | `storeId`، متن و زمان اثر سیاست                                                | نسخه تازه سیاست؛ `FORBIDDEN`، `INVALID_POLICY`                                                                                                         | `StorePolicyChanged.v1`                                               |
+| کالا / `PublishProduct.v1`                     | `storeId`، `templateId`، اطلاعات مشترک و گونه‌ها                               | snapshot کالا؛ `INVALID_VARIANT`، `DUPLICATE_COMBINATION`                                                                                              | `ProductPublished.v1`                                                 |
+| کالا / `StopProduct.v1`                        | `storeId`، `productId`، دلیل                                                   | وضعیت توقف؛ `FORBIDDEN`، `PRODUCT_NOT_FOUND`                                                                                                           | `ProductStopped.v1`                                                   |
+| موجودی / `ReserveInventory.v1`                 | `orderId`، `variantId/quantity[]`، انقضای `۱۵ دقیقه`                           | `reservationId/expiresAt`؛ `OUT_OF_STOCK`، `ALREADY_RESERVED`                                                                                          | `InventoryReserved.v1`                                                |
+| موجودی / `HoldReservationForPaymentAttempt.v1` | `orderId`، `reservationId` و `paymentAttemptId` پیش از تماس با درگاه           | رزرو با `leaseUntil = now + ۲ دقیقه`؛ `RESERVATION_NOT_ACTIVE`، `PAYMENT_ATTEMPT_MISMATCH`                                                             | `InventoryReservationHeld.v1`                                         |
+| موجودی / `ResolvePaymentReservation.v1`        | `orderId`، `reservationId` و نتیجه قطعی/مبهم پرداخت                            | در تأیید، مصرف؛ در شکست، فعال‌سازی تا مهلت اولیه یا آزادسازی؛ در ابهام، hold بررسی بدون انقضای خودکار؛ `INVALID_RESERVATION_STATE`، `DUPLICATE_RESULT` | `InventoryReservationCommitted/Reactivated/HeldForReview/Released.v1` |
+| موجودی / `RecoverExpiredPaymentHold.v1`        | `paymentAttemptId`، `reservationId` و وضعیت ارسال ثبت‌شده در پایان lease       | ارسال‌نشده: فعال/آزاد؛ ارسال‌شده بی‌نتیجه: hold بررسی؛ `HOLD_NOT_EXPIRED`، `DUPLICATE_RECOVERY`                                                        | `InventoryReservationReactivated/Released/HeldForReview.v1`           |
+| موجودی / `AdjustInventory.v1`                  | `storeId`، گونه، مقدار جدید، دلیل                                              | مقدار پیشین/جدید؛ `NEGATIVE_STOCK`، `FORBIDDEN`                                                                                                        | `InventoryAdjusted.v1`                                                |
+| سفارش / `CreateOrder.v1`                       | `buyerId`، `storeId`، اقلام، نشانی، ارسال و snapshot سیاست                     | `orderId`، مبلغ snapshot‌شده و مهلت؛ `CART_CHANGED`، `ADDRESS_INVALID`                                                                                 | `OrderCreated.v1`                                                     |
+| سفارش / `ListStoreBuyers.v1`                   | `sellerId`، `storeId`، جست‌وجو و cursor                                        | خلاصه صفحه‌بندی‌شده و ماسک‌شده خریداران همان فروشگاه؛ `FORBIDDEN`                                                                                      | ندارد؛ query فقط از projection سفارش می‌خواند                         |
+| پرداخت / `CreateDirectPaymentAttempt.v1`       | `orderId`، `reservationId` و شناسه idempotency                                 | `paymentAttemptId/status`؛ `ORDER_NOT_PAYABLE`، `DUPLICATE_ATTEMPT`                                                                                    | `DirectPaymentAttemptCreated.v1`                                      |
+| پرداخت / `MarkPaymentAttemptDispatched.v1`     | `paymentAttemptId` پیش از تماس بیرونی                                          | `dispatchedAt`؛ `ATTEMPT_NOT_READY`، `DUPLICATE_DISPATCH`                                                                                              | `DirectPaymentAttemptDispatched.v1`                                   |
+| پرداخت / `RecordDirectPaymentResult.v1`        | `orderId`، شناسه تلاش/درگاه، نتیجه و شناسه idempotency                         | وضعیت مالی قطعی یا در حال بررسی؛ `AMOUNT_MISMATCH`، `DUPLICATE_RESULT`                                                                                 | `DirectPaymentConfirmed/Failed/ReviewRequired.v1`                     |
+| پرداخت / `RecordDirectRefundResult.v1`         | `orderId`، شناسه پرداخت، مبلغ، نتیجه، شناسه/مدرک بازپرداخت و شناسه idempotency | وضعیت بازپرداخت؛ `REFUND_AMOUNT_MISMATCH`، `REFUND_EVIDENCE_REQUIRED`، `DUPLICATE_RESULT`                                                              | `DirectRefundPending/Confirmed/Failed.v1`                             |
+| انجام سفارش / `AdvanceFulfillment.v1`          | `orderId`، وضعیت مقصد، روش/رهگیری یا دلیل لغو                                  | وضعیت و خط زمانی؛ `INVALID_TRANSITION`، `REFUND_REQUIRED`                                                                                              | `FulfillmentAdvanced.v1`                                              |
+| گفت‌وگو / `SendMessage.v1`                     | فرستنده، زمینه مجاز، متن/رسانه و شناسه idempotency                             | `messageId/status`؛ `FORBIDDEN_CONTEXT`، `MESSAGE_REJECTED`                                                                                            | `MessageSent.v1`                                                      |
+| محتوا / `PublishSalesContent.v1`               | `storeId`، رسانه و `productId[]`                                               | `contentId`؛ `NO_ACTIVE_PRODUCT`، `FORBIDDEN`                                                                                                          | `SalesContentPublished.v1`                                            |
+| محتوا / `PublishPurchaseExperience.v1`         | `buyerId`، `orderItemId`، امتیاز و محتوا                                       | `experienceId/status`؛ `NOT_ELIGIBLE`، `ALREADY_SUBMITTED`                                                                                             | `PurchaseExperiencePublished.v1`                                      |
+| اختلاف / `OpenDispute.v1`                      | `buyerId`، `orderId`، نوع، شرح و مدرک                                          | `disputeId/deadline`؛ `WINDOW_CLOSED`، `FORBIDDEN`                                                                                                     | `DisputeOpened.v1`                                                    |
+| اختلاف / `RespondOrResolveDispute.v1`          | عامل مجاز، `disputeId`، پاسخ/نتیجه، مدرک و دلیل                                | وضعیت و مهلت بعدی؛ `INVALID_TRANSITION`، `DEADLINE_PASSED`                                                                                             | `DisputeResponded/Resolved/Reopened.v1`                               |
 
 هر snapshot سفارش، قیمت، اقلام، روش ارسال و سیاست مرجوعی زمان ثبت را حمل می‌کند. همه عملیات تغییردهنده `actorId`، `occurredAt`، `correlationId` و کلید idempotency دارند. خطاها از قالب خطای مشترک و شناسه‌های دامنه بالا استفاده می‌کنند؛ مصرف‌کننده رخداد داده ماژول مالک را مستقیم تغییر نمی‌دهد. رخدادها از outbox حداقل یک‌بار تحویل می‌شوند، نسخه‌دارند و مصرف‌کننده آن‌ها idempotent است.
 
@@ -344,5 +344,4 @@
 ## تصمیم‌هایی که مانع ساخت نیستند
 
 - انتخاب ارائه‌دهنده نهایی پرداخت، پیامک، هویت و ارسال پشت قرارداد adapter انجام می‌شود و تا آن زمان fake قابل‌پیش‌بینی معیار آزمون است.
-- الگوریتم دقیق فید کشف می‌تواند با ترتیب ساده و قابل توضیح شروع شود؛ داده خصوصی یا سیگنال محبوبیت دست‌کاری‌پذیر وارد رتبه‌بندی عمومی نمی‌شود.
 - مرز رایگان و حرفه‌ای و قیمت‌گذاری بعداً تعیین می‌شود؛ نسخه اول فروش واقعی را برای طرح رایگان مسدود نمی‌کند و کیفیت پشتیبانی را طرح‌بندی نمی‌کند.

@@ -88,7 +88,7 @@
 
 ### ۴.۱ ساخت قدم‌به‌قدم
 
-1. فروشنده «ساخت کالا» را آغاز می‌کند. `POST /api/v1/seller/products` یک
+1. فروشنده «ساخت کالا» را آغاز می‌کند. `POST /v1/seller/products` یک
    `productId`، نسخه کاری خالی با `revision: 0` و وضعیت `DRAFT` می‌سازد.
 2. در **مشخصات** نام و توضیح ثبت می‌شود. پرسش «یک کالا» یا «چندگونه» فقط شکل
    ورود داده را تعیین می‌کند؛ هر دو به مدل گونه یکسان می‌رسند.
@@ -218,17 +218,17 @@ PUBLISHED --publish working copy--> PUBLISHED (publicationVersion + 1)
 همه عملیات زیر sync، strong، بدون PII و برای فروشنده مالک‌اند. writeها
 `Idempotency-Key` می‌خواهند؛ تغییر منبع موجود `expectedRevision` نیز می‌خواهد.
 
-| operationId و route                                                                  | ورودی اصلی                                        | خروجی و اثر                                                      |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------------------- |
-| `createSellerProduct` — `POST /api/v1/seller/products`                               | کلید idempotency                                  | `productId`، state و working copy خالی                           |
-| `listSellerProducts` — `GET /api/v1/seller/products`                                 | cursor، limit و فیلتر state اختیاری               | صفحه پایدار از خلاصه خصوصی؛ بدون آمار محبوبیت                    |
-| `getSellerProduct` — `GET /api/v1/seller/products/{productId}`                       | شناسه از path                                     | state، نسخه کاری، نسخه انتشار و revisionها                       |
-| `replaceProductWorkingCopy` — `PUT /api/v1/seller/products/{productId}/working-copy` | snapshot کامل، `expectedRevision`                 | نسخه کاری canonical و mapping هر `clientKey` تازه به `variantId` |
-| `previewSellerProduct` — `GET /api/v1/seller/products/{productId}/preview`           | شناسه                                             | projection خصوصی خریدارنما و `issues[]` readiness                |
-| `publishSellerProduct` — `POST /api/v1/seller/products/{productId}/publications`     | `expectedRevision` و تأیید صریح                   | state، `publicationVersion` و خلاصه عمومی                        |
-| `unpublishSellerProduct` — `POST /api/v1/seller/products/{productId}/unpublication`  | `expectedRevision` و reason code                  | state `UNPUBLISHED`                                              |
-| `discardSellerProductDraft` — `DELETE /api/v1/seller/products/{productId}`           | `expectedRevision`                                | `204` فقط برای draft مجاز                                        |
-| `replaceVariantOffersBatch` — `PUT /api/v1/seller/products/{productId}/offers`       | ردیف‌های `variantId`، price، SKU و offer revision | نتیجه تمام ردیف‌ها یا رد کامل batch                              |
+| operationId و route                                                              | ورودی اصلی                                        | خروجی و اثر                                                      |
+| -------------------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `createSellerProduct` — `POST /v1/seller/products`                               | کلید idempotency                                  | `productId`، state و working copy خالی                           |
+| `listSellerProducts` — `GET /v1/seller/products`                                 | cursor، limit و فیلتر state اختیاری               | صفحه پایدار از خلاصه خصوصی؛ بدون آمار محبوبیت                    |
+| `getSellerProduct` — `GET /v1/seller/products/{productId}`                       | شناسه از path                                     | state، نسخه کاری، نسخه انتشار و revisionها                       |
+| `replaceProductWorkingCopy` — `PUT /v1/seller/products/{productId}/working-copy` | snapshot کامل، `expectedRevision`                 | نسخه کاری canonical و mapping هر `clientKey` تازه به `variantId` |
+| `previewSellerProduct` — `GET /v1/seller/products/{productId}/preview`           | شناسه                                             | projection خصوصی خریدارنما و `issues[]` readiness                |
+| `publishSellerProduct` — `POST /v1/seller/products/{productId}/publications`     | `expectedRevision` و تأیید صریح                   | state، `publicationVersion` و خلاصه عمومی                        |
+| `unpublishSellerProduct` — `POST /v1/seller/products/{productId}/unpublication`  | `expectedRevision` و reason code                  | state `UNPUBLISHED`                                              |
+| `discardSellerProductDraft` — `DELETE /v1/seller/products/{productId}`           | `expectedRevision`                                | `204` فقط برای draft مجاز                                        |
+| `replaceVariantOffersBatch` — `PUT /v1/seller/products/{productId}/offers`       | ردیف‌های `variantId`، price، SKU و offer revision | نتیجه تمام ردیف‌ها یا رد کامل batch                              |
 
 snapshot نسخه کاری شامل `name`، `description`، `orderedMediaIds`، `axes` و
 `variants` است. هر گونه موجود `variantId` و هر گونه تازه `clientKey` پایدار همان
@@ -238,11 +238,11 @@ client دارد. برای گونه تازه، قیمت/SKU اولیه در snaps
 
 ### ۶.۲ `ProductAuthoritativeRead.v1`
 
-| operationId و route/interface                                                      | caller         | تضمین                                                                           |
-| ---------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------- |
-| `listPublishedStoreProducts` — `GET /api/v1/stores/{storeSlug}/products`           | مهمان و خریدار | cursor پایدار، خلاصه آخرین publication و قیمت/availability جاری                 |
-| `getPublishedStoreProduct` — `GET /api/v1/stores/{storeSlug}/products/{productId}` | مهمان و خریدار | جزئیات authoritative، تصویرهای مرتب، محور/مقدار، گونه جاری و offer/availability |
-| `readSellableVariants` — interface درون‌پردازه‌ای نسخه‌دار                         | سبد و سفارش    | قیمت و امکان فروش strong برای `productId/variantIds` در همان لحظه               |
+| operationId و route/interface                                                  | caller         | تضمین                                                                           |
+| ------------------------------------------------------------------------------ | -------------- | ------------------------------------------------------------------------------- |
+| `listPublishedStoreProducts` — `GET /v1/stores/{storeSlug}/products`           | مهمان و خریدار | cursor پایدار، خلاصه آخرین publication و قیمت/availability جاری                 |
+| `getPublishedStoreProduct` — `GET /v1/stores/{storeSlug}/products/{productId}` | مهمان و خریدار | جزئیات authoritative، تصویرهای مرتب، محور/مقدار، گونه جاری و offer/availability |
+| `readSellableVariants` — interface درون‌پردازه‌ای نسخه‌دار                     | سبد و سفارش    | قیمت و امکان فروش strong برای `productId/variantIds` در همان لحظه               |
 
 خلاصه عمومی فقط `productId`، نام، تصویر اصلی، بازه قیمت، availability و
 `publicationVersion` دارد. جزئیات توضیح، مشتق‌های مرتب، محورها و گونه‌های جاری با
@@ -251,12 +251,12 @@ client دارد. برای گونه تازه، قیمت/SKU اولیه در snaps
 
 ### ۶.۳ `InventoryAuthoring.v1` و `InventoryAvailabilityRead.v1`
 
-| operationId و route/interface                            | ورودی                                                    | خروجی و تضمین                                                                   |
-| -------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `listSellerInventory` — `GET /api/v1/seller/inventory`   | cursor، limit، فیلتر availability اختیاری                | گونه، عنوان نمایشی کالا، مقدار دقیق و revision؛ فقط مالک                        |
-| `replaceInventoryBatch` — `PUT /api/v1/seller/inventory` | `variantId`، مقدار مقصد، reason code، `expectedRevision` | نتیجه all-or-nothing و revision تازه                                            |
-| `provisionVariantInventory` — interface درون‌پردازه‌ای   | `variantId/storeId` و transaction context مات            | ردیف صفر idempotent؛ فقط کالا caller است                                        |
-| `readVariantAvailability` — interface درون‌پردازه‌ای     | `variantIds`                                             | مقدار قابل‌فروش و revision strong؛ پاسخ عمومی فقط availability مشتق‌شده می‌گیرد |
+| operationId و route/interface                          | ورودی                                                    | خروجی و تضمین                                                                   |
+| ------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `listSellerInventory` — `GET /v1/seller/inventory`     | cursor، limit، فیلتر availability اختیاری                | گونه، عنوان نمایشی کالا، مقدار دقیق و revision؛ فقط مالک                        |
+| `replaceInventoryBatch` — `PUT /v1/seller/inventory`   | `variantId`، مقدار مقصد، reason code، `expectedRevision` | نتیجه all-or-nothing و revision تازه                                            |
+| `provisionVariantInventory` — interface درون‌پردازه‌ای | `variantId/storeId` و transaction context مات            | ردیف صفر idempotent؛ فقط کالا caller است                                        |
+| `readVariantAvailability` — interface درون‌پردازه‌ای   | `variantIds`                                             | مقدار قابل‌فروش و revision strong؛ پاسخ عمومی فقط availability مشتق‌شده می‌گیرد |
 
 reason codeهای authoring نسخه اول `INITIAL_STOCK`، `MANUAL_COUNT`،
 `DAMAGED`، `RETURNED_TO_STOCK` و `CORRECTION` هستند. توضیح انسانی اختیاری فقط در
@@ -316,9 +316,9 @@ fake لازم را در seam مصرف ثبت می‌کند و قرارداد ر�
 
 - routeهای مصرفی رسانه را مالک رسانه در OpenAPI fragment خودش تعریف می‌کند:
   `createProductImageUpload` روی
-  `POST /api/v1/seller/products/{productId}/images` با `Idempotency-Key`،
+  `POST /v1/seller/products/{productId}/images` با `Idempotency-Key`،
   `getProductImageProcessingStatus` روی
-  `GET /api/v1/seller/products/{productId}/images/{mediaId}` و تحویل مشتق عمومی
+  `GET /v1/seller/products/{productId}/images/{mediaId}` و تحویل مشتق عمومی
   با URL/route کوتاه‌عمر متعلق به همان قرارداد. ترتیب و حذف ارجاع تصویر فقط با
   `replaceProductWorkingCopy` تغییر می‌کند؛ حذف بایت یا metadata عملیات کالا نیست.
 - contract هر ردیف باید پیش از شروع caller تثبیت باشد. fake فقط implementation
