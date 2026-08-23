@@ -2,12 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import {
   eventActorV1Contract,
+  type EventActorV1,
   type EventEnvelopeV1,
 } from "@sevo/contracts/platform/v1";
 import postgres from "postgres";
 import type { JSONValue, Sql } from "postgres";
 
-export type OutboxEventV1<TPayload extends JSONValue> = EventEnvelopeV1 & {
+type DurableEventEnvelopeV1 = Omit<EventEnvelopeV1, "actor"> & {
+  actor: EventActorV1;
+};
+
+export type OutboxEventV1<TPayload extends JSONValue> = DurableEventEnvelopeV1 & {
   payload: TPayload;
 };
 
@@ -17,10 +22,10 @@ export async function enqueueOutboxEvent<TPayload extends JSONValue>(
 ): Promise<void> {
   await sql`
     insert into platform_outbox_events
-      (event_id, event_type, aggregate_id, aggregate_version, occurred_at,
+      (event_id, envelope_version, event_type, aggregate_id, aggregate_version, occurred_at,
        correlation_id, causation_id, actor_type, actor_id, payload, available_at)
     values
-      (${event.eventId}, ${event.eventType}, ${event.aggregateId},
+      (${event.eventId}, ${event.version}, ${event.eventType}, ${event.aggregateId},
        ${event.aggregateVersion}, ${event.occurredAt}, ${event.correlationId},
        ${event.causationId ?? null}, ${event.actor.type},
        ${event.actor.type === "IDENTITY" ? event.actor.id : null},
@@ -28,7 +33,7 @@ export async function enqueueOutboxEvent<TPayload extends JSONValue>(
   `;
 }
 
-export type StoredOutboxEvent = EventEnvelopeV1 & { payload: JSONValue };
+export type StoredOutboxEvent = DurableEventEnvelopeV1 & { payload: JSONValue };
 export type OutboxEventHandler = (event: StoredOutboxEvent, sql: Sql) => Promise<void>;
 export type OutboxRunResult = "idle" | "processed" | "retry" | "failed";
 
@@ -52,6 +57,7 @@ type DurableOutboxWorkerOptions = {
 
 type OutboxDatabaseRow = {
   eventId: string;
+  version: 1;
   eventType: string;
   aggregateId: string;
   aggregateVersion: number;
@@ -144,7 +150,8 @@ export class DurableOutboxWorker {
         lease_expires_at = ${leaseExpiresAt}, attempt_count = attempt_count + 1
       from candidate
       where event.event_id = candidate.event_id
-      returning event.event_id as "eventId", event.event_type as "eventType",
+      returning event.event_id as "eventId", event.envelope_version as version,
+        event.event_type as "eventType",
         event.aggregate_id as "aggregateId",
         event.aggregate_version as "aggregateVersion",
         event.occurred_at as "occurredAt",
@@ -158,7 +165,7 @@ export class DurableOutboxWorker {
     if (!row) return undefined;
     return {
       event: {
-        version: 1,
+        version: row.version,
         eventId: row.eventId,
         eventType: row.eventType,
         aggregateId: row.aggregateId,

@@ -2,6 +2,7 @@
 
 model PlatformOutboxEvent {
   eventId          String    @id @map("event_id") @db.Uuid
+  envelopeVersion  Int       @map("envelope_version")
   eventType        String    @map("event_type") @db.VarChar(120)
   aggregateId      String    @map("aggregate_id") @db.Uuid
   aggregateVersion Int       @map("aggregate_version")

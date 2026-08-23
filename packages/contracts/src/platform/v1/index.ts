@@ -43,7 +43,7 @@ export const eventEnvelopeV1Contract = z
     occurredAt: timestampV1Contract,
     correlationId: z.uuid(),
     causationId: z.uuid().optional(),
-    actor: eventActorV1Contract,
+    actor: eventActorV1Contract.optional(),
   })
   .strict();
 

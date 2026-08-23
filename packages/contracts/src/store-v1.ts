@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import { createJsonSchemaMap } from "./json-schema";
 import { mediaIdContract, mediaReferenceContract } from "./media-v1";
-import { eventEnvelopeV1Contract, storeIdContract } from "./platform/v1/index";
+import {
+  eventActorV1Contract,
+  eventEnvelopeV1Contract,
+  storeIdContract,
+} from "./platform/v1/index";
 
 export const storeSlugContract = z
   .string()
@@ -149,6 +153,7 @@ export const storePublicationContract = z.object({
 
 export const storePublishedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("StorePublished.v1"),
+  actor: eventActorV1Contract,
   payload: z
     .object({
       storeId: storeIdContract,

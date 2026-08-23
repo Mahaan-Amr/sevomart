@@ -1,5 +1,6 @@
 CREATE TABLE "platform_outbox_events" (
   "event_id" UUID NOT NULL,
+  "envelope_version" INTEGER NOT NULL,
   "event_type" VARCHAR(120) NOT NULL,
   "aggregate_id" UUID NOT NULL,
   "aggregate_version" INTEGER NOT NULL,

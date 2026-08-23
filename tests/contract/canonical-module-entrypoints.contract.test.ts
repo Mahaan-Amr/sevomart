@@ -75,6 +75,18 @@ describe("canonical v1 contract entrypoints", () => {
         },
       }),
     ).toMatchObject({ eventType: "ProductPublished.v1", aggregateVersion: 2 });
+
+    expect(
+      eventEnvelopeV1Contract.parse({
+        version: 1,
+        eventId: "b47ac10b-58cc-4372-a567-0e02b2c3d479",
+        eventType: "LegacyEvent.v1",
+        aggregateId: "c47ac10b-58cc-4372-a567-0e02b2c3d479",
+        aggregateVersion: 1,
+        occurredAt: "2026-08-23T12:00:00+03:30",
+        correlationId: "d47ac10b-58cc-4372-a567-0e02b2c3d479",
+      }),
+    ).toMatchObject({ eventType: "LegacyEvent.v1" });
   });
 
   it("keeps StorePublished.v1 PII-free and versioned", () => {
