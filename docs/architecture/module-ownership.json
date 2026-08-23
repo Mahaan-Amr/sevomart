@@ -2,7 +2,7 @@
   "modules": [
     "identity-access",
     "store",
-    "catalog",
+    "product",
     "inventory",
     "orders",
     "payments",
@@ -10,7 +10,7 @@
     "conversations",
     "problem-follow-up",
     "content",
-    "feeds-following",
+    "discovery",
     "media",
     "notifications",
     "reporting-analytics"

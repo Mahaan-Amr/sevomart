@@ -88,9 +88,9 @@ projection داخلی این ماژول را مستقیم نمی‌خواند.
 
 - actor از `IdentitySession.v1` و `ActorContext.v1` می‌آید. `identityId` از body،
   query یا header دلخواه پذیرفته نمی‌شود.
-- `GET /api/v1/feeds/discovery` عمومی است و حضور نشست معتبر ترتیب یا اقلام آن را
+- `GET /v1/feeds/discovery` عمومی است و حضور نشست معتبر ترتیب یا اقلام آن را
   تغییر نمی‌دهد.
-- `GET /api/v1/me/feeds/following` و writeهای `/me` نشست معتبر هویت فعال
+- `GET /v1/me/feeds/following` و writeهای `/me` نشست معتبر هویت فعال
   می‌خواهند. cookie منقضی یا نامعتبر در endpoint عمومی مانند نبود نشست رفتار
   می‌کند، اما در endpoint شخصی `401` است.
 - public store query در صورت نشست معتبر، وضعیت همان viewer را از seam این ماژول
@@ -132,7 +132,7 @@ projection داخلی این ماژول را مستقیم نمی‌خواند.
    می‌شود. لغو یا شکست ورود scroll، cursor و جزئیات جاری را حفظ می‌کند.
 2. پس از ورود، client وضعیت viewer و revision رابطه را از public store composition
    می‌گیرد.
-3. `PUT /api/v1/me/follows/{storeId}` با `Idempotency-Key` و برای رابطه موجود
+3. `PUT /v1/me/follows/{storeId}` با `Idempotency-Key` و برای رابطه موجود
    `If-Match` آن را `ACTIVE` می‌کند. ساخت رابطه نخست بدون `If-Match` مجاز است.
 4. تغییر واقعی، revision رابطه و `followSetRevision` هویت را هرکدام یک واحد زیاد
    و `StoreFollowActivated.v1` را در همان transaction ثبت می‌کند.
@@ -338,10 +338,10 @@ artifactهای مالک از `@sevo/contracts/discovery/v1` منتشر می‌ش
 
 ### ۶.۱ OpenAPI و queryهای فید
 
-| operationId و route                                   | ورودی                     | خروجی موفق                                                           |
-| ----------------------------------------------------- | ------------------------- | -------------------------------------------------------------------- |
-| `getDiscoveryFeed` — `GET /api/v1/feeds/discovery`    | `cursor?`، `limit?`       | `items`، `nextCursor?`، `snapshotAt`، `projectionUpdatedAt`          |
-| `getFollowingFeed` — `GET /api/v1/me/feeds/following` | نشست، `cursor?`، `limit?` | همان صفحه به‌همراه `visibleFollowedStoreCount` و `followSetRevision` |
+| operationId و route                               | ورودی                     | خروجی موفق                                                           |
+| ------------------------------------------------- | ------------------------- | -------------------------------------------------------------------- |
+| `getDiscoveryFeed` — `GET /v1/feeds/discovery`    | `cursor?`، `limit?`       | `items`، `nextCursor?`، `snapshotAt`، `projectionUpdatedAt`          |
+| `getFollowingFeed` — `GET /v1/me/feeds/following` | نشست، `cursor?`، `limit?` | همان صفحه به‌همراه `visibleFollowedStoreCount` و `followSetRevision` |
 
 هر item شامل `productId`، `storeId`، `storeSlug`، خلاصه نام/نشان فروشگاه، نام و
 تصویر اصلی کالا، `priceRange: Money.v1`، `availability` و versionهای projection
@@ -354,11 +354,11 @@ artifactهای مالک از `@sevo/contracts/discovery/v1` منتشر می‌ش
 
 ### ۶.۲ `StoreFollowing.v1`
 
-| operationId و route/interface                                   | precondition                                   | خروجی و اثر                                                        |
-| --------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
-| `activateStoreFollow` — `PUT /api/v1/me/follows/{storeId}`      | `Idempotency-Key`؛ برای رابطه موجود `If-Match` | `storeId`، `ACTIVE`، revision، `followSetRevision` و timestampها   |
-| `deactivateStoreFollow` — `DELETE /api/v1/me/follows/{storeId}` | همان precondition                              | `storeId`، `INACTIVE`، revision، `followSetRevision` و timestampها |
-| `readViewerStoreFollow` — interface درون‌پردازه‌ای              | `storeId` و actor اختیاری                      | فقط برای actor معتبر: `viewerIsFollowing` و revision رابطه         |
+| operationId و route/interface                               | precondition                                   | خروجی و اثر                                                        |
+| ----------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
+| `activateStoreFollow` — `PUT /v1/me/follows/{storeId}`      | `Idempotency-Key`؛ برای رابطه موجود `If-Match` | `storeId`، `ACTIVE`، revision، `followSetRevision` و timestampها   |
+| `deactivateStoreFollow` — `DELETE /v1/me/follows/{storeId}` | همان precondition                              | `storeId`، `INACTIVE`، revision، `followSetRevision` و timestampها |
+| `readViewerStoreFollow` — interface درون‌پردازه‌ای          | `storeId` و actor اختیاری                      | فقط برای actor معتبر: `viewerIsFollowing` و revision رابطه         |
 
 ETag رابطه به شکل opaque از revision ساخته می‌شود و response write و public store
 composition آن را برمی‌گردانند. `identityId`، `storeId` مالک‌شده یا status هویت از
