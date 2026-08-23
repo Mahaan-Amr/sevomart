@@ -26,8 +26,20 @@
     "media_variants": "media"
   },
   "contracts": {
+    "@sevo/contracts/platform/v1": "platform",
     "@sevo/contracts/identity-access/v1": "identity-access",
     "@sevo/contracts/store/v1": "store",
-    "@sevo/contracts/media/v1": "media"
+    "@sevo/contracts/product/v1": "product",
+    "@sevo/contracts/inventory/v1": "inventory",
+    "@sevo/contracts/orders/v1": "orders",
+    "@sevo/contracts/payments/v1": "payments",
+    "@sevo/contracts/fulfillment/v1": "fulfillment",
+    "@sevo/contracts/conversations/v1": "conversations",
+    "@sevo/contracts/problem-follow-up/v1": "problem-follow-up",
+    "@sevo/contracts/content/v1": "content",
+    "@sevo/contracts/discovery/v1": "discovery",
+    "@sevo/contracts/media/v1": "media",
+    "@sevo/contracts/notifications/v1": "notifications",
+    "@sevo/contracts/reporting-analytics/v1": "reporting-analytics"
   }
 }

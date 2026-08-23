@@ -4,10 +4,14 @@ import { readRuntimeEnvironment } from "@sevo/config";
 import { startTelemetry } from "@sevo/observability";
 
 import { dependencyIsReady } from "./readiness";
+import { canonicalWorkerHandlers } from "./modules/registry";
 
 async function run(): Promise<void> {
   const environment = readRuntimeEnvironment();
   const telemetry = startTelemetry("sevo-worker");
+  const stopWorkerHandlers = await Promise.all(
+    canonicalWorkerHandlers.map((handler) => handler.start(environment)),
+  );
   const server = createServer(async (request, response) => {
     if (request.url === "/health/live") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -47,6 +51,7 @@ async function run(): Promise<void> {
   await new Promise<void>((resolve, reject) =>
     server.close((error) => (error ? reject(error) : resolve())),
   );
+  await Promise.all(stopWorkerHandlers.reverse().map((stop) => stop()));
   await telemetry.shutdown();
 }
 

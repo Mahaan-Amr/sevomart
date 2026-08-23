@@ -7,7 +7,7 @@ import { storeV1Schemas } from "@sevo/contracts/store/v1";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
-import { addIdentityStoreOpenApiContract } from "../../apps/api/src/openapi/identity-store.openapi";
+import { contribute_identity_access_openApi } from "../../apps/api/src/openapi/modules/identity-access";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 type OpenApiOperation = {
@@ -98,7 +98,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "bedd40d812a5592c080f9dac04cfcff65fd5b64520a66eeccba46273028cc82b",
+      "00fa25232f4811ae3f1d8469725b2ef135e08dc5c8d8b31102efe6c83cee7283",
     );
   });
 
@@ -120,7 +120,7 @@ describe("OpenAPI identity and store compatibility", () => {
 
   it("rejects a registered API route that disagrees with the contract", () => {
     expect(() =>
-      addIdentityStoreOpenApiContract({
+      contribute_identity_access_openApi({
         openapi: "3.0.0",
         info: { title: "test", version: "1" },
         paths: {

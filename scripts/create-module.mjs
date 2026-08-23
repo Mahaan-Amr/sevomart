@@ -18,14 +18,49 @@ if (!ownership.modules.includes(moduleName)) {
 }
 
 const moduleDirectory = path.join(root, "apps", "api", "src", "modules", moduleName);
+const moduleClassName = `${moduleName
+  .split("-")
+  .map((part) => `${part[0].toUpperCase()}${part.slice(1)}`)
+  .join("")}Module`;
+const exportName = moduleName.replaceAll("-", "_");
+
+async function writeScaffold(relativePath, source) {
+  const absolutePath = path.join(root, relativePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  try {
+    await writeFile(absolutePath, source, { flag: "wx" });
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+  }
+}
+
 await mkdir(path.join(moduleDirectory, "application"), { recursive: true });
 await mkdir(path.join(moduleDirectory, "domain"), { recursive: true });
 await mkdir(path.join(moduleDirectory, "infrastructure"), { recursive: true });
 await mkdir(path.join(moduleDirectory, "testing"), { recursive: true });
-await writeFile(
-  path.join(moduleDirectory, "public.ts"),
-  "// Export only the stable synchronous contracts owned by this module.\n",
-  { flag: "wx" },
+await writeScaffold(
+  path.join("apps", "api", "src", "modules", moduleName, "public.ts"),
+  "// Export only stable synchronous contracts owned by this module.\nexport {};\n",
+);
+await writeScaffold(
+  path.join("apps", "api", "src", "modules", moduleName, "composition.ts"),
+  `import { Module } from "@nestjs/common";\n\n@Module({})\nexport class ${moduleClassName} {}\n`,
+);
+await writeScaffold(
+  path.join("apps", "api", "src", "openapi", "modules", `${moduleName}.ts`),
+  `import type { OpenApiContributor } from "../public";\n\nexport const contribute_${exportName}_openApi: OpenApiContributor = (document) => document;\n`,
+);
+await writeScaffold(
+  path.join("apps", "worker", "src", "modules", moduleName, "index.ts"),
+  `import type { WorkerHandler } from "../public";\n\nexport const ${exportName}_workerHandlers: readonly WorkerHandler[] = [];\n`,
+);
+await writeScaffold(
+  path.join("packages", "contracts", "src", moduleName, "v1", "index.ts"),
+  "// This stable entrypoint is owned by the producer module.\nexport {};\n",
+);
+await writeScaffold(
+  path.join("packages", "database", "prisma", "schema", `${moduleName}.prisma`),
+  `// Tables in this file are owned by the ${moduleName} module.\n`,
 );
 
-console.log(`Created ${path.relative(root, moduleDirectory)}`);
+console.log(`Ensured scaffold for ${path.relative(root, moduleDirectory)}`);

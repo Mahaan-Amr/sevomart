@@ -13,17 +13,9 @@
       "types": "./dist/health.d.ts",
       "default": "./dist/health.js"
     },
-    "./identity-access/v1": {
-      "types": "./dist/identity-access-v1.d.ts",
-      "default": "./dist/identity-access-v1.js"
-    },
-    "./store/v1": {
-      "types": "./dist/store-v1.d.ts",
-      "default": "./dist/store-v1.js"
-    },
-    "./media/v1": {
-      "types": "./dist/media-v1.d.ts",
-      "default": "./dist/media-v1.js"
+    "./*/v1": {
+      "types": "./dist/*/v1/index.d.ts",
+      "default": "./dist/*/v1/index.js"
     },
     "./api-errors/v1": {
       "types": "./dist/api-errors-v1.d.ts",

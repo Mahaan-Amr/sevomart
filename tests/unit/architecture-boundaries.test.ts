@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   findBoundaryViolations,
+  findCanonicalModuleEntrypointViolations,
   findContractOwnershipViolations,
   findMigrationOwnershipViolations,
+  findModuleSchemaOwnershipViolations,
   findTableOwnershipViolations,
 } from "../../scripts/check-boundaries.mjs";
 
@@ -75,6 +77,114 @@ describe("module boundary checker", () => {
       }),
     ]);
   });
+
+  it("keeps composition on module-owned public entrypoints", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/api/src/app.module.ts",
+          source:
+            'import { PostgresStoreRepository } from "./modules/store/infrastructure/postgres-store.repository";',
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        rule: "composition-uses-public-module-entrypoint",
+      }),
+    ]);
+  });
+
+  it("allows composition to import a module composition entrypoint", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/api/src/app.module.ts",
+          source:
+            'import { PostgresStoreRepository } from "./modules/store/composition";',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("rejects a worker importing another worker module's implementation", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/worker/src/modules/discovery/project-product.ts",
+          source: 'import { loadProduct } from "../product/repository";',
+        },
+      ]),
+    ).toEqual([expect.objectContaining({ rule: "module-public-contract-only" })]);
+  });
+
+  it("allows a worker to import another worker module entrypoint", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/worker/src/modules/discovery/project-product.ts",
+          source: 'import { productEvents } from "../product/index";',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps worker composition on module-owned entrypoints", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/worker/src/main.ts",
+          source: 'import { ProductProjector } from "./modules/product/projector";',
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        rule: "composition-uses-public-module-entrypoint",
+      }),
+    ]);
+  });
+
+  it("does not treat a bare workspace import as a relative worker module", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/worker/src/modules/public.ts",
+          source: 'import type { RuntimeEnvironment } from "@sevo/config";',
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("canonical module entrypoint checker", () => {
+  it("reports each missing API, contract, schema, OpenAPI, and worker slot", () => {
+    expect(
+      findCanonicalModuleEntrypointViolations(
+        new Set(["product"]),
+        new Set(["apps/api/src/modules/product/public.ts"]),
+      ),
+    ).toEqual([
+      {
+        path: "apps/api/src/modules/product/composition.ts",
+        rule: "canonical-module-entrypoint",
+      },
+      {
+        path: "apps/api/src/openapi/modules/product.ts",
+        rule: "canonical-module-entrypoint",
+      },
+      {
+        path: "apps/worker/src/modules/product/index.ts",
+        rule: "canonical-module-entrypoint",
+      },
+      {
+        path: "packages/contracts/src/product/v1/index.ts",
+        rule: "canonical-module-entrypoint",
+      },
+      {
+        path: "packages/database/prisma/schema/product.prisma",
+        rule: "canonical-module-entrypoint",
+      },
+    ]);
+  });
 });
 
 describe("contract ownership checker", () => {
@@ -113,6 +223,49 @@ describe("table ownership checker", () => {
         modules,
       ),
     ).toEqual([expect.objectContaining({ rule: "registered-table-owner" })]);
+  });
+
+  it("rejects a table declared in another module's schema file", () => {
+    expect(
+      findModuleSchemaOwnershipViolations(
+        [
+          {
+            path: "packages/database/prisma/schema/inventory.prisma",
+            source: 'model Order {\n id String @id\n @@map("orders")\n}',
+          },
+        ],
+        { orders: "orders" },
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        path: "packages/database/prisma/schema/inventory.prisma",
+        rule: "module-schema-owns-table",
+      }),
+    ]);
+  });
+
+  it("rejects a navigable relation across module schemas", () => {
+    expect(
+      findModuleSchemaOwnershipViolations(
+        [
+          {
+            path: "packages/database/prisma/schema/orders.prisma",
+            source:
+              'model Order {\n id String @id\n inventory Inventory @relation(fields: [inventoryId], references: [id])\n inventoryId String\n @@map("orders")\n}',
+          },
+          {
+            path: "packages/database/prisma/schema/inventory.prisma",
+            source: 'model Inventory {\n id String @id\n @@map("inventories")\n}',
+          },
+        ],
+        { orders: "orders", inventories: "inventory" },
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        path: "packages/database/prisma/schema/orders.prisma",
+        rule: "cross-module-prisma-relation",
+      }),
+    ]);
   });
 });
 

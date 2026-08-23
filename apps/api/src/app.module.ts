@@ -3,14 +3,8 @@ import type { RuntimeEnvironment } from "@sevo/config";
 
 import { HealthController, RUNTIME_READINESS } from "./health/health.controller";
 import { createRuntimeReadinessCheck } from "./health/runtime-readiness";
-import {
-  IdentityAccessModule,
-  type IdentityAccessModuleOptions,
-} from "./modules/identity-access/identity-access.module";
-import { DevOtpProvider } from "./modules/notifications/testing/dev-otp-provider";
-import { MediaModule } from "./modules/media/media.module";
-import { PostgresStoreRepository } from "./modules/store/infrastructure/postgres-store.repository";
-import { StoreModule } from "./modules/store/store.module";
+import { composeCanonicalApiModules } from "./composition/module-registry";
+import type { IdentityAccessModuleOptions } from "./modules/identity-access/composition";
 
 @Module({})
 export class AppModule {
@@ -18,10 +12,6 @@ export class AppModule {
     environment: RuntimeEnvironment,
     identityOptions: IdentityAccessModuleOptions = {},
   ): DynamicModule {
-    const otpProvider =
-      identityOptions.otpProvider ??
-      (environment.OTP_PROVIDER === "dev" ? new DevOtpProvider() : undefined);
-    const storeRepository = new PostgresStoreRepository(environment.DATABASE_URL);
     return {
       module: AppModule,
       controllers: [HealthController],
@@ -31,16 +21,7 @@ export class AppModule {
           useValue: createRuntimeReadinessCheck(environment),
         },
       ],
-      imports: [
-        IdentityAccessModule.register(environment, {
-          ...identityOptions,
-          otpProvider,
-        }),
-        MediaModule.register(environment, undefined, (mediaId) =>
-          storeRepository.isMediaPublished(mediaId),
-        ),
-        StoreModule.register(environment, { repository: storeRepository }),
-      ],
+      imports: composeCanonicalApiModules(environment, identityOptions),
     };
   }
 }

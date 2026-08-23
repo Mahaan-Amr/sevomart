@@ -41,7 +41,10 @@ worker از Dockerfileهای مستقل ولی با context ریشه ساخته 
 1. نام مصوب ADR-002 را از `docs/architecture/module-ownership.json` انتخاب کنید.
 2. مالکیت interface، جدول و migration را در Issue اعلام کنید.
 3. `node scripts/create-module.mjs <module-name>` را اجرا کنید.
-4. فقط contractهای هم‌زمان پایدار را از `public.ts` export کنید. import implementation
+   این فرمان entrypointهای API، worker، قرارداد نسخه‌دار، OpenAPI و schema ماژول را
+   بدون بازنویسی فایل موجود آماده می‌کند.
+4. فقط contractهای هم‌زمان پایدار را از `public.ts` export کنید. adapterهای لازم برای
+   composition فقط از `composition.ts` منتشر می‌شوند. import implementation
    ماژول دیگر با `pnpm check:architecture` رد می‌شود.
 5. migration را با قالب `YYYYMMDDHHMMSS__<module>__<change>` بسازید و برنامه forward-fix
    یا rollback را در PR بنویسید.

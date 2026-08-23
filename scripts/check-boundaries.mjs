@@ -15,11 +15,16 @@ export function findBoundaryViolations(files) {
 
   for (const file of files) {
     const sourcePath = toPosix(file.path);
-    const sourceModule = sourcePath.match(/apps\/api\/src\/modules\/([^/]+)\//)?.[1];
+    const sourceModuleMatch = sourcePath.match(
+      /apps\/(api|worker)\/src\/modules\/([^/]+)\//,
+    );
+    const sourceRuntime = sourceModuleMatch?.[1];
+    const sourceModule = sourceModuleMatch?.[2];
 
     for (const match of file.source.matchAll(importPattern)) {
       const specifier = match[1] ?? match[2];
       if (!specifier) continue;
+      if (!specifier.startsWith(".")) continue;
 
       const resolved = toPosix(
         path.posix.normalize(
@@ -27,19 +32,34 @@ export function findBoundaryViolations(files) {
         ),
       );
       const targetModuleMatch = resolved.match(
-        /apps\/api\/src\/modules\/([^/]+)\/(.+)$/,
+        /apps\/(api|worker)\/src\/modules\/([^/]+)\/(.+)$/,
       );
+
+      if (
+        !sourceModule &&
+        targetModuleMatch &&
+        sourcePath.startsWith(`apps/${targetModuleMatch[1]}/src/`) &&
+        !(targetModuleMatch[1] === "worker"
+          ? /^index(?:\.[cm]?tsx?)?$/.test(targetModuleMatch[3])
+          : /^(?:public|composition)(?:\.[cm]?tsx?)?$/.test(targetModuleMatch[3]))
+      ) {
+        violations.push({
+          path: sourcePath,
+          import: specifier,
+          rule: "composition-uses-public-module-entrypoint",
+        });
+      }
 
       const sourceLayer = sourcePath.match(
         /apps\/api\/src\/modules\/[^/]+\/(application|domain|public(?:\.[cm]?tsx?)?)/,
       )?.[1];
-      const targetLayer = targetModuleMatch?.[2].split("/")[0];
+      const targetLayer = targetModuleMatch?.[3].split("/")[0];
 
       if (
         sourceModule &&
         sourceLayer &&
         targetModuleMatch &&
-        targetModuleMatch[1] === sourceModule &&
+        targetModuleMatch[2] === sourceModule &&
         (targetLayer === "infrastructure" || targetLayer === "testing")
       ) {
         violations.push({
@@ -52,8 +72,11 @@ export function findBoundaryViolations(files) {
       if (
         sourceModule &&
         targetModuleMatch &&
-        targetModuleMatch[1] !== sourceModule &&
-        !/^public(?:\.[cm]?tsx?)?$/.test(targetModuleMatch[2])
+        targetModuleMatch[1] === sourceRuntime &&
+        targetModuleMatch[2] !== sourceModule &&
+        !(sourceRuntime === "worker"
+          ? /^index(?:\.[cm]?tsx?)?$/.test(targetModuleMatch[3])
+          : /^public(?:\.[cm]?tsx?)?$/.test(targetModuleMatch[3]))
       ) {
         violations.push({
           path: sourcePath,
@@ -143,6 +166,83 @@ export function findContractOwnershipViolations(contractOwners, registeredModule
     }));
 }
 
+export function findCanonicalModuleEntrypointViolations(
+  registeredModules,
+  repositoryPaths,
+) {
+  const violations = [];
+  const requiredPaths = (moduleName) => [
+    `apps/api/src/modules/${moduleName}/public.ts`,
+    `apps/api/src/modules/${moduleName}/composition.ts`,
+    `apps/api/src/openapi/modules/${moduleName}.ts`,
+    `apps/worker/src/modules/${moduleName}/index.ts`,
+    `packages/contracts/src/${moduleName}/v1/index.ts`,
+    `packages/database/prisma/schema/${moduleName}.prisma`,
+  ];
+
+  for (const moduleName of [...registeredModules].sort()) {
+    for (const requiredPath of requiredPaths(moduleName)) {
+      if (!repositoryPaths.has(requiredPath)) {
+        violations.push({ path: requiredPath, rule: "canonical-module-entrypoint" });
+      }
+    }
+  }
+
+  return violations;
+}
+
+export function findModuleSchemaOwnershipViolations(schemaFiles, tableOwners) {
+  const violations = [];
+  const modelPattern = /model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{([\s\S]*?)\}/g;
+  const modelOwners = new Map();
+
+  for (const file of schemaFiles) {
+    const declaredOwner = path.posix.basename(toPosix(file.path), ".prisma");
+    for (const match of file.source.matchAll(modelPattern)) {
+      if (match[1]) modelOwners.set(match[1], declaredOwner);
+    }
+  }
+
+  for (const file of schemaFiles) {
+    const declaredOwner = path.posix.basename(toPosix(file.path), ".prisma");
+    if (declaredOwner === "base") continue;
+
+    for (const match of file.source.matchAll(modelPattern)) {
+      const modelName = match[1];
+      const body = match[2] ?? "";
+      const tableName = body.match(/@@map\(\s*["']([^"']+)["']\s*\)/)?.[1] ?? modelName;
+      if (tableOwners[tableName] !== declaredOwner) {
+        violations.push({
+          path: toPosix(file.path),
+          table: tableName,
+          owner: tableOwners[tableName],
+          declaredOwner,
+          rule: "module-schema-owns-table",
+        });
+      }
+
+      for (const field of body.matchAll(
+        /^\s*[A-Za-z][A-Za-z0-9_]*\s+([A-Z][A-Za-z0-9_]*)(?:\[\]|\?)?(?:\s|$)/gm,
+      )) {
+        const targetModel = field[1];
+        const targetOwner = targetModel ? modelOwners.get(targetModel) : undefined;
+        if (targetOwner && targetOwner !== declaredOwner) {
+          violations.push({
+            path: toPosix(file.path),
+            model: modelName,
+            targetModel,
+            owner: declaredOwner,
+            targetOwner,
+            rule: "cross-module-prisma-relation",
+          });
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
 async function collectSources(root) {
   const files = [];
 
@@ -171,6 +271,7 @@ async function collectSources(root) {
   await Promise.all([
     visit(path.join(root, "apps", "api", "src")),
     visit(path.join(root, "apps", "web", "src")),
+    visit(path.join(root, "apps", "worker", "src")),
   ]);
   return files;
 }
@@ -195,6 +296,34 @@ async function collectMigrationPaths(root) {
   return paths;
 }
 
+async function collectFiles(root, directory, predicate = () => true) {
+  const files = [];
+
+  async function visit(currentDirectory) {
+    let entries;
+    try {
+      entries = await readdir(currentDirectory, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === "ENOENT") return;
+      throw error;
+    }
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDirectory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(absolutePath);
+      } else if (predicate(entry.name)) {
+        files.push({
+          path: toPosix(path.relative(root, absolutePath)),
+          source: await readFile(absolutePath, "utf8"),
+        });
+      }
+    }
+  }
+
+  await visit(path.join(root, directory));
+  return files;
+}
+
 async function main() {
   const root = process.cwd();
   const ownership = JSON.parse(
@@ -204,12 +333,25 @@ async function main() {
     ),
   );
   const registeredModules = new Set(ownership.modules);
-  const databaseSchema = await readFile(
-    path.join(root, "packages", "database", "prisma", "schema.prisma"),
-    "utf8",
+  const schemaFiles = await collectFiles(
+    root,
+    path.join("packages", "database", "prisma", "schema"),
+    (name) => name.endsWith(".prisma"),
+  );
+  const databaseSchema = schemaFiles.map(({ source }) => source).join("\n");
+  const entrypointFiles = await Promise.all([
+    collectFiles(root, path.join("apps", "api", "src", "modules")),
+    collectFiles(root, path.join("apps", "api", "src", "openapi", "modules")),
+    collectFiles(root, path.join("apps", "worker", "src", "modules")),
+    collectFiles(root, path.join("packages", "contracts", "src")),
+    collectFiles(root, path.join("packages", "database", "prisma", "schema")),
+  ]);
+  const repositoryPaths = new Set(
+    entrypointFiles.flat().map(({ path: filePath }) => filePath),
   );
   const violations = [
     ...findBoundaryViolations(await collectSources(root)),
+    ...findCanonicalModuleEntrypointViolations(registeredModules, repositoryPaths),
     ...findMigrationOwnershipViolations(
       await collectMigrationPaths(root),
       registeredModules,
@@ -219,7 +361,11 @@ async function main() {
       ownership.tables,
       registeredModules,
     ),
-    ...findContractOwnershipViolations(ownership.contracts ?? {}, registeredModules),
+    ...findModuleSchemaOwnershipViolations(schemaFiles, ownership.tables),
+    ...findContractOwnershipViolations(
+      ownership.contracts ?? {},
+      new Set([...registeredModules, "platform"]),
+    ),
   ];
 
   if (violations.length > 0) {

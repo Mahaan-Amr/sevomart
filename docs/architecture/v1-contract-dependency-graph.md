@@ -178,14 +178,14 @@ SHA مشترک ادغام شود:
 
 ### مالکیت فایل‌های مرکزی
 
-| سطح           | فایل یا خانواده فایل                                                       | مالک تغییر                    | قاعده fan-out                                                                       |
-| ------------- | -------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------- |
-| Prisma مرکزی  | generator/datasource مرکزی؛ فعلاً `packages/database/prisma/schema.prisma` | platform baseline             | پیش از fan-out شکسته و سپس در هر لحظه فقط یک Issue مرکزی آن را تغییر می‌دهد.        |
-| migration     | `packages/database/prisma/migrations/<module>__*`                          | مالک موقت همان ماژول در Issue | دو شاخه migration یا جدول یک ماژول را هم‌زمان تغییر نمی‌دهند.                       |
-| قرارداد مرکزی | `packages/contracts/package.json` و export/barrelهای مشترک                 | platform baseline             | slotهای entrypoint پیشاپیش ساخته می‌شوند؛ Specها barrel مرکزی را ویرایش نمی‌کنند.   |
-| قرارداد دامنه | `@sevo/contracts/<module>/v1`                                              | مالک موقت ماژول producer      | فقط producer schema، خطا و event خودش را تغییر می‌دهد.                              |
-| OpenAPI مرکزی | composer و bootstrap مشترک زیر `apps/api/src/openapi/`                     | platform baseline             | module fragment/operations پیشاپیش slot دارد؛ مصرف‌کننده composer را تغییر نمی‌دهد. |
-| OpenAPI ماژول | fragment و operations همان ماژول                                           | مالک موقت ماژول producer      | تغییر همراه contract/compatibility test همان مالک است.                              |
+| سطح           | فایل یا خانواده فایل                                                  | مالک تغییر                    | قاعده fan-out                                                                                     |
+| ------------- | --------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| Prisma مرکزی  | generator/datasource در `packages/database/prisma/schema/base.prisma` | platform baseline             | schema ماژول‌ها در فایل هم‌نام زیر `prisma/schema/` است و فقط مالک همان ماژول آن را تغییر می‌دهد. |
+| migration     | `packages/database/prisma/migrations/<module>__*`                     | مالک موقت همان ماژول در Issue | دو شاخه migration یا جدول یک ماژول را هم‌زمان تغییر نمی‌دهند.                                     |
+| قرارداد مرکزی | `packages/contracts/package.json` و export/barrelهای مشترک            | platform baseline             | slotهای entrypoint پیشاپیش ساخته می‌شوند؛ Specها barrel مرکزی را ویرایش نمی‌کنند.                 |
+| قرارداد دامنه | `@sevo/contracts/<module>/v1`                                         | مالک موقت ماژول producer      | فقط producer schema، خطا و event خودش را تغییر می‌دهد.                                            |
+| OpenAPI مرکزی | composer و bootstrap مشترک زیر `apps/api/src/openapi/`                | platform baseline             | module fragment/operations پیشاپیش slot دارد؛ مصرف‌کننده composer را تغییر نمی‌دهد.               |
+| OpenAPI ماژول | fragment و operations همان ماژول                                      | مالک موقت ماژول producer      | تغییر همراه contract/compatibility test همان مالک است.                                            |
 
 تغییر runtime، schema، migration، بسته قراردادها یا OpenAPI در این Issue انجام
 نمی‌شود؛ جدول بالا فقط مالکیت و ترتیب اجرای آن تغییرهای آینده را ثبت می‌کند.

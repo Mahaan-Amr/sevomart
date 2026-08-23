@@ -9,7 +9,7 @@ import { MEDIA_UPLOAD_MAX_BYTES } from "@sevo/contracts/media/v1";
 
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./http/api-exception.filter";
-import { addIdentityStoreOpenApiContract } from "./openapi/identity-store.openapi";
+import { composeOpenApi } from "./openapi/compose-openapi";
 
 export async function createApiApp(
   environment: RuntimeEnvironment,
@@ -53,7 +53,7 @@ export async function createApiApp(
     .setTitle("Sevo API")
     .setVersion("1")
     .build();
-  const openApiDocument = addIdentityStoreOpenApiContract(
+  const openApiDocument = composeOpenApi(
     SwaggerModule.createDocument(app, openApiConfig),
   );
   SwaggerModule.setup("openapi", app, openApiDocument, {
