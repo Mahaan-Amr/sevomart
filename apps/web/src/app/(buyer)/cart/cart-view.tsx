@@ -6,6 +6,7 @@ import {
   cartResolutionContract,
   type Cart,
   type CartConflict,
+  type CartReviewChange,
 } from "@sevo/contracts/orders/v1";
 import { useEffect, useState } from "react";
 
@@ -109,7 +110,7 @@ export function CartView() {
       const conflict = cartErrorContract.safeParse(body);
       if (conflict.success && conflict.data.currentCart) {
         setCart(conflict.data.currentCart);
-        setMessage("سبد در tab دیگری تغییر کرده است. نسخه تازه را بررسی کنید.");
+        setMessage("سبد در جای دیگری تغییر کرده است. نسخه تازه را بررسی کنید.");
       } else {
         setMessage("سبد به‌روز نشد. دوباره تلاش کنید.");
       }
@@ -195,6 +196,12 @@ export function CartView() {
                     {item.availability !== "AVAILABLE" ? (
                       <em>موجودی این مورد تغییر کرده است.</em>
                     ) : null}
+                    <ItemReviewChanges
+                      changes={cart.reviewChanges.filter(
+                        (change) =>
+                          "variantId" in change && change.variantId === item.variantId,
+                      )}
+                    />
                     <span className={styles.itemActions}>
                       <button
                         type="button"
@@ -229,7 +236,34 @@ export function CartView() {
             {cart.reviewRequired ? (
               <section className={styles.review} aria-labelledby="review-title">
                 <h2 id="review-title">سبد تغییر کرده است</h2>
-                <p>قیمت، موجودی یا شرایط فروشگاه را دوباره ببینید و تأیید کنید.</p>
+                {cart.reviewChanges
+                  .filter((change) => change.kind === "POLICY_CHANGED")
+                  .map((change) => (
+                    <div key={change.kind}>
+                      <strong>شرایط تازه مرجوعی</strong>
+                      <p>{change.currentPolicyText}</p>
+                    </div>
+                  ))}
+                {cart.reviewChanges
+                  .filter((change) => change.kind === "SHIPPING_METHOD_CHANGED")
+                  .map((change) => (
+                    <div key={change.kind}>
+                      <strong>روش‌های تازه ارسال</strong>
+                      {change.currentMethods.length ? (
+                        <ul>
+                          {change.currentMethods.map((method) => (
+                            <li key={`${method.label}-${method.estimatedDeliveryText}`}>
+                              {method.label}، {formatIrrAsToman(method.fixedFee.amount)}
+                              ، {method.estimatedDeliveryText}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>اکنون روش ارسالی برای این فروشگاه ثبت نشده است.</p>
+                      )}
+                    </div>
+                  ))}
+                <p>تغییرهای بالا را دوباره ببینید و سپس تأیید کنید.</p>
                 <button type="button" disabled={pending} onClick={confirmReview}>
                   تغییرها را دیدم
                 </button>
@@ -237,11 +271,11 @@ export function CartView() {
             ) : null}
             {conflict ? (
               <ConflictChoice conflict={conflict} pending={pending} resolve={resolve} />
-            ) : (
+            ) : !cart.reviewRequired ? (
               <button type="button" onClick={continueCheckout} disabled={pending}>
                 {pending ? "در حال آماده‌سازی…" : "ادامه برای ثبت سفارش"}
               </button>
-            )}
+            ) : null}
           </>
         )}
         {message ? <p role="status">{message}</p> : null}
@@ -269,10 +303,35 @@ function ConflictChoice({
         پیش از ورود سبد «{conflict.guest.storeName}» و در حساب شما سبد «
         {conflict.buyer.storeName}» وجود دارد. تا انتخاب شما چیزی حذف نمی‌شود.
       </p>
+      <p>
+        سبد پیش از ورود {conflict.guest.itemCount.toLocaleString("fa-IR")} کالا و سبد
+        حساب شما {conflict.buyer.itemCount.toLocaleString("fa-IR")} کالا دارد.
+      </p>
       {conflict.kind === "SAME_STORE" ? (
-        <button type="button" disabled={pending} onClick={() => resolve("MERGE")}>
-          ترکیب دو سبد
-        </button>
+        <>
+          <ul className={styles.quantityComparison}>
+            {conflict.combinedQuantities.map((item) => (
+              <li key={item.variantId}>
+                <strong>{item.name}</strong>
+                <span>
+                  پیش از ورود: {item.guestQuantity.toLocaleString("fa-IR")}، حساب من:{" "}
+                  {item.buyerQuantity.toLocaleString("fa-IR")}، پس از ترکیب:{" "}
+                  {item.mergedQuantity.toLocaleString("fa-IR")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {conflict.mergeAllowed ? (
+            <button type="button" disabled={pending} onClick={() => resolve("MERGE")}>
+              ترکیب دو سبد
+            </button>
+          ) : (
+            <p role="status">
+              تعداد یکی از کالاها پس از ترکیب بیشتر از ۹۹ می‌شود. یکی از دو سبد را نگه
+              دارید و سپس تعداد را تغییر دهید.
+            </p>
+          )}
+        </>
       ) : null}
       <button
         className={styles.secondaryAction}
@@ -291,5 +350,22 @@ function ConflictChoice({
         نگه‌داشتن سبد حساب من
       </button>
     </section>
+  );
+}
+
+function ItemReviewChanges({ changes }: { changes: CartReviewChange[] }) {
+  if (!changes.length) return null;
+  return (
+    <ul className={styles.itemChanges}>
+      {changes.map((change) => (
+        <li key={change.kind}>
+          {change.kind === "PRICE_CHANGED"
+            ? `قیمت از ${formatIrrAsToman(change.previousUnitPrice.amount)} به ${formatIrrAsToman(change.currentUnitPrice.amount)} تغییر کرده است.`
+            : change.kind === "PRODUCT_CHANGED"
+              ? "اطلاعات این کالا تغییر کرده است."
+              : "این کالا دیگر با تعداد انتخاب‌شده در دسترس نیست."}
+        </li>
+      ))}
+    </ul>
   );
 }

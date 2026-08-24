@@ -37,11 +37,13 @@ worker to ready state.
 
 Issue 87 additively extends the orders-owned cart snapshot with reviewed product and
 store terms, and adds versioned saved-address, idempotency, and PII-free audit
-tables. Existing carts remain readable through conservative review defaults. No
-compatibility window is required; deployment corrections use a forward fix.
-`docker compose up --build --wait` applied all 25 migrations and brought API, Web,
-and worker to healthy status. Native `pnpm dev` reported no pending migrations and
-brought API, Web, and worker to ready state.
+tables. Follow-up orders migrations add `IN_PROGRESS | COMPLETED` leases to cart and
+saved-address idempotency records. Existing carts remain readable through
+conservative review defaults. No compatibility window is required; deployment
+corrections use a forward fix. `docker compose up --build --wait` found all 27
+migrations, applied the pending cart-lease migration, and brought API, Web, and
+worker to healthy status. Native `pnpm dev` found all 27 migrations with none
+pending and brought API, Web, and worker to ready state.
 
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was

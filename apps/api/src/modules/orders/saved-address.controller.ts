@@ -16,7 +16,6 @@ import {
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
-  cartIdempotencyKeyContract,
   createSavedAddressInputContract,
   deleteSavedAddressInputContract,
   savedAddressIdContract,
@@ -30,9 +29,11 @@ import {
   type IdentitySessionReader,
 } from "../identity-access/public";
 import { SavedAddressService } from "./application/saved-address.service";
+import { requireIdempotencyKey } from "./orders-http";
 import { SAVED_ADDRESS_SERVICE } from "./orders.tokens";
 import {
   SavedAddressIdempotencyConflictError,
+  SavedAddressIdempotencyInProgressError,
   SavedAddressNotFoundError,
   SavedAddressRevisionConflictError,
 } from "./public";
@@ -140,21 +141,6 @@ function noStore(response: FastifyReply) {
   response.header("cache-control", "no-store");
 }
 
-function requireIdempotencyKey(correlationId: string, value: string | undefined) {
-  const key = cartIdempotencyKeyContract.safeParse(value);
-  if (!key.success) {
-    throw new HttpException(
-      {
-        code: "PRECONDITION_REQUIRED",
-        message: "شناسه یکتای درخواست لازم است.",
-        correlationId,
-      },
-      HttpStatus.PRECONDITION_REQUIRED,
-    );
-  }
-  return key.data;
-}
-
 function addressValidationError(
   correlationId: string,
   issues: ReadonlyArray<{ path: PropertyKey[] }>,
@@ -173,6 +159,7 @@ function addressValidationError(
 }
 
 function addressError(error: unknown, correlationId: string): never {
+  correlationId = replayedCorrelationId(error) ?? correlationId;
   if (error instanceof SavedAddressNotFoundError) {
     throw new HttpException(
       { code: "ADDRESS_NOT_FOUND", message: "نشانی پیدا نشد.", correlationId },
@@ -200,5 +187,26 @@ function addressError(error: unknown, correlationId: string): never {
       HttpStatus.CONFLICT,
     );
   }
+  if (error instanceof SavedAddressIdempotencyInProgressError) {
+    throw new HttpException(
+      {
+        code: "IDEMPOTENCY_IN_PROGRESS",
+        message: "این درخواست هنوز در حال انجام است. کمی بعد دوباره تلاش کنید.",
+        correlationId,
+      },
+      HttpStatus.CONFLICT,
+    );
+  }
   throw error;
+}
+
+function replayedCorrelationId(error: unknown): string | undefined {
+  if (
+    error instanceof Error &&
+    "replayedCorrelationId" in error &&
+    typeof error.replayedCorrelationId === "string"
+  ) {
+    return error.replayedCorrelationId;
+  }
+  return undefined;
 }

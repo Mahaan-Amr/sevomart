@@ -65,7 +65,10 @@ model OrderCartIdempotencyRecord {
   scope        String   @db.VarChar(128)
   key          String   @db.VarChar(200)
   requestHash  String   @map("request_hash") @db.Char(64)
-  responseJson Json     @map("response_json") @db.JsonB
+  state        String   @db.VarChar(16)
+  lockedUntil  DateTime @map("locked_until") @db.Timestamptz(3)
+  responseJson Json?    @map("response_json") @db.JsonB
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz(3)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([operation, scope, key])
@@ -106,7 +109,10 @@ model OrderSavedAddressIdempotencyRecord {
   identityId   String   @map("identity_id") @db.Uuid
   key          String   @db.VarChar(200)
   requestHash  String   @map("request_hash") @db.Char(64)
-  responseJson Json     @map("response_json") @db.JsonB
+  state        String   @db.VarChar(16)
+  lockedUntil  DateTime @map("locked_until") @db.Timestamptz(3)
+  responseJson Json?    @map("response_json") @db.JsonB
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz(3)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([operation, identityId, key])

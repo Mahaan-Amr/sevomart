@@ -42,6 +42,10 @@ const runtimeEnvironmentContract = z.object({
     .string()
     .min(32)
     .default("sevo_local_seller_approval_recovery_secret"),
+  CART_TOKEN_DERIVATION_SECRET: z
+    .string()
+    .min(32)
+    .default("sevo_local_cart_token_derivation_secret"),
 });
 
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentContract>;
@@ -62,6 +66,8 @@ export function readRuntimeEnvironment(
       environment.MINIO_BUCKET === "sevo-media" ||
       environment.SELLER_APPROVAL_RECOVERY_SECRET ===
         "sevo_local_seller_approval_recovery_secret" ||
+      environment.CART_TOKEN_DERIVATION_SECRET ===
+        "sevo_local_cart_token_derivation_secret" ||
       environment.DATABASE_URL.includes("sevo_local");
     if (unsafe) {
       throw new Error(

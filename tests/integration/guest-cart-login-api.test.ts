@@ -1,4 +1,9 @@
-import { cartContract, cartResolutionContract } from "@sevo/contracts/orders/v1";
+import {
+  cartContract,
+  cartErrorContract,
+  cartResolutionContract,
+} from "@sevo/contracts/orders/v1";
+import { createHash } from "node:crypto";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -97,10 +102,21 @@ describe("guest cart and login attachment HTTP API", () => {
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
     const key = crypto.randomUUID();
+    const guestScope = crypto.randomUUID();
+    const missingScope = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    });
+    expect(missingScope.statusCode).toBe(422);
+    expect(cartErrorContract.parse(missingScope.json())).toMatchObject({
+      code: "GUEST_SCOPE_REQUIRED",
+    });
     const added = await server.inject({
       method: "PUT",
       url: `/v1/cart/items/${variantId}`,
-      headers: { "idempotency-key": key },
+      headers: { "idempotency-key": key, "x-sevo-guest-scope": guestScope },
       payload: { variantId, quantity: 2, expectedRevision: 0 },
     });
 
@@ -118,11 +134,25 @@ describe("guest cart and login attachment HTTP API", () => {
     const replay = await server.inject({
       method: "PUT",
       url: `/v1/cart/items/${variantId}`,
-      headers: { cookie, "idempotency-key": key },
+      headers: { "idempotency-key": key, "x-sevo-guest-scope": guestScope },
       payload: { variantId, quantity: 2, expectedRevision: 0 },
     });
     expect(replay.statusCode).toBe(200);
-    expect(replay.json().revision).toBe(1);
+    expect(replay.json()).toEqual(added.json());
+    expect(replay.headers["set-cookie"]).toBe(cookie);
+
+    const unrelatedGuest = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: {
+        "idempotency-key": key,
+        "x-sevo-guest-scope": crypto.randomUUID(),
+      },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    });
+    expect(unrelatedGuest.statusCode).toBe(200);
+    expect(unrelatedGuest.json().cartId).not.toBe(added.json().cartId);
+    expect(unrelatedGuest.headers["set-cookie"]).not.toBe(cookie);
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const secrets = await sql<Array<{ tokenHash: string }>>`
@@ -248,8 +278,117 @@ describe("guest cart and login attachment HTTP API", () => {
       select operation, correlation_id as "correlationId" from order_cart_audits
       where operation = 'ATTACH_IDENTITY'
     `;
-    await sql.end();
     expect(audits).toEqual([{ operation: "ATTACH_IDENTITY", correlationId }]);
+
+    await sql`
+      update order_carts set status = 'EXPIRED', identity_id = null
+      where id = ${attached.json().cart.cartId}
+    `;
+    await sql.end();
+    const nextGuest = await add(server, undefined, 1, 0);
+    const reusedForAnotherCart = await server.inject({
+      ...request,
+      headers: {
+        ...request.headers,
+        cookie: `${sessionCookie}; ${nextGuest.headers["set-cookie"]!}`,
+      },
+    });
+    expect(reusedForAnotherCart.statusCode).toBe(409);
+    expect(reusedForAnotherCart.json()).toMatchObject({
+      code: "IDEMPOTENCY_CONFLICT",
+    });
+  });
+
+  it("does not confirm review when an authoritative product disappeared", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`delete from product_products where id = ${productId}`;
+    await sql.end();
+
+    const reviewed = await server.inject({
+      method: "POST",
+      url: "/v1/cart/review",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(reviewed.statusCode).toBe(409);
+    expect(reviewed.json()).toMatchObject({ code: "VARIANT_UNAVAILABLE" });
+    const revisions = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const rows = await revisions<Array<{ revision: number }>>`
+      select revision from order_carts where id = ${first.json().cartId}
+    `;
+    await revisions.end();
+    expect(rows[0]?.revision).toBe(1);
+  });
+
+  it("returns Retry-After while the same cart write is in progress", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+    const guestSecret = /sevo_cart=([^;]+)/.exec(cookie)?.[1];
+    if (!guestSecret) throw new Error("Guest cart cookie was not returned");
+    const scope = createHash("sha256").update(guestSecret).digest("hex");
+    const key = crypto.randomUUID();
+    const lockKey = `cart-idempotency:REMOVE_CART_ITEM:${scope}:${key}`;
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql.begin(async (transaction) => {
+        await transaction`
+          select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+        `;
+        const response = await server.inject({
+          method: "DELETE",
+          url: `/v1/cart/items/${variantId}`,
+          headers: { cookie, "idempotency-key": key },
+          payload: { expectedRevision: 1 },
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.headers["retry-after"]).toBe("1");
+        expect(response.json()).toMatchObject({ code: "IDEMPOTENCY_IN_PROGRESS" });
+      });
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("replays the original stale-write response after the cart changes again", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+    const key = crypto.randomUUID();
+    const staleRequest = {
+      method: "DELETE" as const,
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": key },
+      payload: { expectedRevision: 0 },
+    };
+    const stale = await server.inject(staleRequest);
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({
+      code: "CART_REVISION_CONFLICT",
+      currentCart: { revision: 1 },
+    });
+    const changed = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 2, expectedRevision: 1 },
+    });
+    expect(changed.statusCode).toBe(200);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`update product_offers set amount = 9900000, revision = revision + 1`;
+    await sql.end();
+    const replayed = await server.inject(staleRequest);
+    expect(replayed.statusCode).toBe(409);
+    expect(replayed.json()).toEqual(stale.json());
   });
 
   it("keeps the current store until the guest explicitly confirms replacement", async () => {
@@ -258,16 +397,18 @@ describe("guest cart and login attachment HTTP API", () => {
     const server = app.getHttpAdapter().getInstance();
     const first = await add(server, undefined, 1, 0);
     const cookie = first.headers["set-cookie"]!;
-    const rejected = await server.inject({
+    const rejectedKey = crypto.randomUUID();
+    const rejectedRequest = {
       method: "PUT",
       url: `/v1/cart/items/${other.variantId}`,
-      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      headers: { cookie, "idempotency-key": rejectedKey },
       payload: {
         variantId: other.variantId,
         quantity: 1,
         expectedRevision: 1,
       },
-    });
+    } as const;
+    const rejected = await server.inject(rejectedRequest);
     expect(rejected.statusCode).toBe(409);
     expect(rejected.json()).toMatchObject({
       code: "STORE_REPLACEMENT_CONFIRMATION_REQUIRED",
@@ -303,6 +444,9 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(replayed.statusCode).toBe(200);
     expect(replayed.json()).toEqual(replaced.json());
     expect(replayed.headers["set-cookie"]).toBe(replaced.headers["set-cookie"]);
+    const replayedRejection = await server.inject(rejectedRequest);
+    expect(replayedRejection.statusCode).toBe(409);
+    expect(replayedRejection.json()).toEqual(rejected.json());
   });
 
   it("rejects one of two concurrent mutations from the same revision", async () => {
@@ -405,7 +549,10 @@ describe("guest cart and login attachment HTTP API", () => {
       reviewChanges: expect.arrayContaining([
         expect.objectContaining({ kind: "PRICE_CHANGED", variantId }),
         { kind: "PRODUCT_CHANGED", variantId },
-        { kind: "POLICY_CHANGED" },
+        expect.objectContaining({
+          kind: "POLICY_CHANGED",
+          currentPolicyText: "شرایط مرجوعی تازه فروشگاه",
+        }),
       ]),
     });
 
@@ -440,7 +587,10 @@ async function add(
   return server.inject({
     method: "PUT",
     url: "/v1/cart/items/a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
-    headers: { ...(cookie ? { cookie } : {}), "idempotency-key": crypto.randomUUID() },
+    headers: {
+      ...(cookie ? { cookie } : { "x-sevo-guest-scope": crypto.randomUUID() }),
+      "idempotency-key": crypto.randomUUID(),
+    },
     payload: {
       variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
       quantity,

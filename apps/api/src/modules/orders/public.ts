@@ -62,6 +62,33 @@ export type CartMutationCommand = Readonly<{
 export interface CartRepository {
   readGuest(tokenHash: string): Promise<StoredCart | undefined>;
   readBuyer(identityId: IdentityId): Promise<StoredCart | undefined>;
+  replayFailure?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+  }): Promise<void>;
+  replayResponse?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+  }): Promise<unknown | undefined>;
+  recordResponse?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+    response: unknown;
+  }): Promise<void>;
+  recordFailure?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+    error: unknown;
+  }): Promise<void>;
   mutate(command: CartMutationCommand): Promise<StoredCart>;
   removeItem(command: {
     identityId?: IdentityId;
@@ -145,9 +172,18 @@ export type CartAttachmentResult =
 
 export class CartRevisionConflictError extends Error {
   readonly code = "CART_REVISION_CONFLICT" as const;
+  constructor(
+    readonly current?: StoredCart,
+    readonly currentCart?: Cart | null,
+  ) {
+    super("Cart revision does not match");
+  }
 }
 export class CartIdempotencyConflictError extends Error {
   readonly code = "IDEMPOTENCY_CONFLICT" as const;
+}
+export class CartIdempotencyInProgressError extends Error {
+  readonly code = "IDEMPOTENCY_IN_PROGRESS" as const;
 }
 export class CartStoreReplacementRequiredError extends Error {
   readonly code = "STORE_REPLACEMENT_CONFIRMATION_REQUIRED" as const;
@@ -181,4 +217,7 @@ export class SavedAddressRevisionConflictError extends Error {
 }
 export class SavedAddressIdempotencyConflictError extends Error {
   readonly code = "IDEMPOTENCY_CONFLICT" as const;
+}
+export class SavedAddressIdempotencyInProgressError extends Error {
+  readonly code = "IDEMPOTENCY_IN_PROGRESS" as const;
 }

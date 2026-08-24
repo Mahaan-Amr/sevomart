@@ -11,6 +11,7 @@ import {
 
 export const cartIdContract = z.uuid().brand("CartId");
 export const cartIdempotencyKeyContract = z.string().min(1).max(200);
+export const cartGuestScopeContract = z.uuid();
 
 export const cartMutationInputContract = z
   .object({
@@ -64,8 +65,28 @@ export const cartReviewChangeContract = z.discriminatedUnion("kind", [
   z
     .object({ kind: z.literal("VARIANT_UNAVAILABLE"), variantId: variantIdContract })
     .strict(),
-  z.object({ kind: z.literal("POLICY_CHANGED") }).strict(),
-  z.object({ kind: z.literal("SHIPPING_METHOD_CHANGED") }).strict(),
+  z
+    .object({
+      kind: z.literal("POLICY_CHANGED"),
+      currentPolicyText: z.string().min(1).max(1_000),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("SHIPPING_METHOD_CHANGED"),
+      currentMethods: z
+        .array(
+          z
+            .object({
+              label: z.string().min(1).max(60),
+              fixedFee: moneyV1Contract,
+              estimatedDeliveryText: z.string().min(1).max(120),
+            })
+            .strict(),
+        )
+        .max(5),
+    })
+    .strict(),
 ]);
 
 export const cartContract = z
@@ -100,13 +121,15 @@ export const cartConflictContract = z.discriminatedUnion("kind", [
       kind: z.literal("SAME_STORE"),
       guest: cartSummaryContract,
       buyer: cartSummaryContract,
+      mergeAllowed: z.boolean(),
       combinedQuantities: z.array(
         z
           .object({
             variantId: variantIdContract,
+            name: z.string().min(1).max(120),
             guestQuantity: z.int().nonnegative(),
             buyerQuantity: z.int().nonnegative(),
-            mergedQuantity: z.int().min(1).max(99),
+            mergedQuantity: z.int().min(1).max(198),
           })
           .strict(),
       ),
@@ -163,7 +186,9 @@ export const cartErrorContract = z
       "CART_RESOLUTION_REQUIRED",
       "VARIANT_UNAVAILABLE",
       "IDEMPOTENCY_CONFLICT",
+      "IDEMPOTENCY_IN_PROGRESS",
       "PRECONDITION_REQUIRED",
+      "GUEST_SCOPE_REQUIRED",
     ]),
     message: z.string().min(1),
     correlationId: z.string().min(1),
@@ -185,6 +210,11 @@ export const cartErrorContract = z
       .optional(),
   })
   .strict();
+
+export const cartAttachConflictContract = z.union([
+  cartResolutionContract,
+  cartErrorContract,
+]);
 
 export const savedAddressIdContract = z.uuid().brand("SavedAddressId");
 
@@ -237,6 +267,7 @@ export const savedAddressErrorContract = z
       "ADDRESS_REVISION_CONFLICT",
       "ADDRESS_NOT_FOUND",
       "IDEMPOTENCY_CONFLICT",
+      "IDEMPOTENCY_IN_PROGRESS",
       "PRECONDITION_REQUIRED",
     ]),
     message: z.string().min(1),
@@ -249,6 +280,7 @@ export const ordersV1Schemas = {
   CartId: cartIdContract,
   CartVariantId: variantIdContract,
   CartIdempotencyKey: cartIdempotencyKeyContract,
+  CartGuestScope: cartGuestScopeContract,
   CartMutationInput: cartMutationInputContract,
   CartItemRemovalInput: cartItemRemovalInputContract,
   CartReviewInput: cartReviewInputContract,
@@ -261,6 +293,7 @@ export const ordersV1Schemas = {
   AttachCartInput: attachCartInputContract,
   CartResolution: cartResolutionContract,
   CartError: cartErrorContract,
+  CartAttachConflict: cartAttachConflictContract,
   SavedAddressId: savedAddressIdContract,
   CreateSavedAddressInput: createSavedAddressInputContract,
   UpdateSavedAddressInput: updateSavedAddressInputContract,
@@ -278,6 +311,7 @@ export const ordersV1Examples = {
   CartId: "15e66295-eecd-4a7d-b06c-1d0909ab89c7",
   CartVariantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
   CartIdempotencyKey: "cart-add-01",
+  CartGuestScope: "f85da696-4939-4f54-936e-44f918c75b8d",
   CartMutationInput: {
     variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
     quantity: 2,

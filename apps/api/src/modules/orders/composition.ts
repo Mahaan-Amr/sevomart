@@ -45,7 +45,13 @@ export class OrdersModule {
           provide: CART_SERVICE,
           inject: [CART_REPOSITORY, STORE_AUTHORITATIVE_READ],
           useFactory: (repository: CartRepository, stores: StoreAuthoritativeRead) =>
-            new CartService(repository, options.products, options.inventory, stores),
+            new CartService(
+              repository,
+              options.products,
+              options.inventory,
+              stores,
+              environment.CART_TOKEN_DERIVATION_SECRET,
+            ),
         },
         {
           provide: SAVED_ADDRESS_REPOSITORY,

@@ -51,7 +51,7 @@ export class SavedAddressService {
       input: fields,
       expectedRevision,
       idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
-      requestHash: requestHash(input),
+      requestHash: requestHash({ addressId, ...input }),
       correlationId,
     });
   }

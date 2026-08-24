@@ -27,6 +27,7 @@ export function AddToCart({
         headers: {
           "content-type": "application/json",
           "idempotency-key": crypto.randomUUID(),
+          "x-sevo-guest-scope": guestScope(),
         },
         body: JSON.stringify({
           variantId,
@@ -120,4 +121,13 @@ export function AddToCart({
       ) : null}
     </div>
   );
+}
+
+function guestScope() {
+  const key = "sevo_guest_scope";
+  const existing = sessionStorage.getItem(key);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  sessionStorage.setItem(key, created);
+  return created;
 }

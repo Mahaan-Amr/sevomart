@@ -15,10 +15,27 @@ const idempotencyHeader = [
   },
 ] as const;
 
+const guestCartWriteHeaders = [
+  ...idempotencyHeader,
+  {
+    name: "X-Sevo-Guest-Scope",
+    schema: "CartGuestScope",
+    example: ordersV1Examples.CartGuestScope,
+    required: false,
+  },
+] as const;
+
 const noStoreHeader = {
   "Cache-Control": {
     description: "Sensitive buyer data must not be cached",
     schema: { type: "string" as const },
+  },
+};
+
+const idempotencyRetryHeader = {
+  "Retry-After": {
+    description: "Seconds before retrying an in-progress idempotent request",
+    schema: { type: "string" as const, example: "1" },
   },
 };
 
@@ -45,14 +62,14 @@ const operations = [
       schema: "CartVariantId",
       example: ordersV1Examples.CartVariantId,
     },
-    headerParameters: idempotencyHeader,
+    headerParameters: guestCartWriteHeaders,
     request: {
       schema: "CartMutationInput",
       example: ordersV1Examples.CartMutationInput,
     },
     responses: [
       { status: 200, schema: "Cart" },
-      { status: 409, schema: "CartError" },
+      { status: 409, schema: "CartError", headers: idempotencyRetryHeader },
       { status: 422, schema: "CartError" },
       { status: 428, schema: "CartError" },
       { status: 500, schema: "InternalServerError" },
@@ -76,7 +93,7 @@ const operations = [
     },
     responses: [
       { status: 200, schema: "Cart" },
-      { status: 409, schema: "CartError" },
+      { status: 409, schema: "CartError", headers: idempotencyRetryHeader },
       { status: 422, schema: "CartError" },
       { status: 428, schema: "CartError" },
       { status: 500, schema: "InternalServerError" },
@@ -95,7 +112,7 @@ const operations = [
     },
     responses: [
       { status: 200, schema: "Cart" },
-      { status: 409, schema: "CartError" },
+      { status: 409, schema: "CartError", headers: idempotencyRetryHeader },
       { status: 422, schema: "CartError" },
       { status: 428, schema: "CartError" },
       { status: 500, schema: "InternalServerError" },
@@ -114,7 +131,7 @@ const operations = [
     },
     responses: [
       { status: 200, schema: "Cart" },
-      { status: 409, schema: "CartError" },
+      { status: 409, schema: "CartError", headers: idempotencyRetryHeader },
       { status: 422, schema: "CartError" },
       { status: 428, schema: "CartError" },
       { status: 500, schema: "InternalServerError" },
@@ -130,7 +147,11 @@ const operations = [
     responses: [
       { status: 200, schema: "CartResolution" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 409, schema: "CartResolution" },
+      {
+        status: 409,
+        schema: "CartAttachConflict",
+        headers: idempotencyRetryHeader,
+      },
       { status: 428, schema: "CartError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -149,7 +170,7 @@ const operations = [
     responses: [
       { status: 200, schema: "CartResolution" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 409, schema: "CartError" },
+      { status: 409, schema: "CartError", headers: idempotencyRetryHeader },
       { status: 422, schema: "CartError" },
       { status: 428, schema: "CartError" },
       { status: 500, schema: "InternalServerError" },
@@ -181,7 +202,7 @@ const operations = [
     responses: [
       { status: 201, schema: "SavedAddress", headers: noStoreHeader },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 409, schema: "SavedAddressError" },
+      { status: 409, schema: "SavedAddressError", headers: idempotencyRetryHeader },
       { status: 422, schema: "SavedAddressError" },
       { status: 428, schema: "SavedAddressError" },
       { status: 500, schema: "InternalServerError" },
@@ -207,7 +228,7 @@ const operations = [
       { status: 200, schema: "SavedAddress", headers: noStoreHeader },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "SavedAddressError" },
-      { status: 409, schema: "SavedAddressError" },
+      { status: 409, schema: "SavedAddressError", headers: idempotencyRetryHeader },
       { status: 422, schema: "SavedAddressError" },
       { status: 428, schema: "SavedAddressError" },
       { status: 500, schema: "InternalServerError" },
@@ -233,7 +254,7 @@ const operations = [
       { status: 204, noContent: true, headers: noStoreHeader },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "SavedAddressError" },
-      { status: 409, schema: "SavedAddressError" },
+      { status: 409, schema: "SavedAddressError", headers: idempotencyRetryHeader },
       { status: 422, schema: "SavedAddressError" },
       { status: 428, schema: "SavedAddressError" },
       { status: 500, schema: "InternalServerError" },

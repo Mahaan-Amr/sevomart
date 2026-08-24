@@ -88,6 +88,25 @@
   color: var(--color-primary-dark);
 }
 
+.itemChanges,
+.quantityComparison {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding-inline-start: 20px;
+  color: var(--color-primary-dark);
+  font-size: 14px;
+}
+
+.quantityComparison {
+  margin-block: 12px;
+}
+
+.quantityComparison li {
+  display: grid;
+  gap: 2px;
+}
+
 .panel button {
   width: 100%;
   min-height: 44px;

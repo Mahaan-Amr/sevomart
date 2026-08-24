@@ -81,17 +81,28 @@ describe("versioned saved address HTTP API", () => {
       addressLine: "خیابان آزادی، پلاک ۱۴",
     });
 
-    const stale = await server.inject({
+    const staleKey = crypto.randomUUID();
+    const staleRequest = {
       method: "PUT",
       url: `/v1/addresses/${address.addressId}`,
-      headers: { cookie: session, "idempotency-key": crypto.randomUUID() },
+      headers: { cookie: session, "idempotency-key": staleKey },
       payload: { ...validAddress, expectedRevision: 1 },
-    });
+    } as const;
+    const stale = await server.inject(staleRequest);
     expect(stale.statusCode).toBe(409);
     expect(stale.json()).toMatchObject({
       code: "ADDRESS_REVISION_CONFLICT",
       currentAddress: { revision: 2, addressLine: "خیابان آزادی، پلاک ۱۴" },
     });
+    await server.inject({
+      method: "PUT",
+      url: `/v1/addresses/${address.addressId}`,
+      headers: { cookie: session, "idempotency-key": crypto.randomUUID() },
+      payload: { ...validAddress, expectedRevision: 2 },
+    });
+    const replayedStale = await server.inject(staleRequest);
+    expect(replayedStale.statusCode).toBe(409);
+    expect(replayedStale.json()).toEqual(stale.json());
   });
 
   it("does not reveal or mutate another identity's address", async () => {
@@ -123,6 +134,67 @@ describe("versioned saved address HTTP API", () => {
     });
     expect(forbiddenUpdate.statusCode).toBe(404);
     expect(forbiddenUpdate.json()).toMatchObject({ code: "ADDRESS_NOT_FOUND" });
+  });
+
+  it("rejects reuse of an update key for another address", async () => {
+    const app = await createApiApp(addressTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const session = await signIn(server, "09120000005");
+    const create = () =>
+      server.inject({
+        method: "POST",
+        url: "/v1/addresses",
+        headers: { cookie: session, "idempotency-key": crypto.randomUUID() },
+        payload: validAddress,
+      });
+    const first = savedAddressContract.parse((await create()).json());
+    const second = savedAddressContract.parse((await create()).json());
+    const key = crypto.randomUUID();
+    const update = (addressId: string) =>
+      server.inject({
+        method: "PUT",
+        url: `/v1/addresses/${addressId}`,
+        headers: { cookie: session, "idempotency-key": key },
+        payload: { ...validAddress, expectedRevision: 1 },
+      });
+    expect((await update(first.addressId)).statusCode).toBe(200);
+    const reused = await update(second.addressId);
+    expect(reused.statusCode).toBe(409);
+    expect(reused.json()).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+  });
+
+  it("returns Retry-After while the same address command is in progress", async () => {
+    const app = await createApiApp(addressTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const mobile = "09120000005";
+    const session = await signIn(server, mobile);
+    const key = crypto.randomUUID();
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const identities = await sql<Array<{ identityId: string }>>`
+      select identity_id as "identityId" from identity_login_methods
+      where mobile = ${mobile}
+    `;
+    const lockKey = `saved-address:CREATE:${identities[0]!.identityId}:${key}`;
+    try {
+      await sql.begin(async (transaction) => {
+        await transaction`
+          select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+        `;
+        const response = await server.inject({
+          method: "POST",
+          url: "/v1/addresses",
+          headers: { cookie: session, "idempotency-key": key },
+          payload: validAddress,
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.headers["retry-after"]).toBe("1");
+        expect(response.json()).toMatchObject({ code: "IDEMPOTENCY_IN_PROGRESS" });
+      });
+    } finally {
+      await sql.end();
+    }
   });
 
   it("soft-deletes the current address while preserving history and PII-free audit", async () => {

@@ -18,7 +18,7 @@ import { ApiExcludeController } from "@nestjs/swagger";
 import type { RuntimeEnvironment } from "@sevo/config";
 import {
   attachCartInputContract,
-  cartIdempotencyKeyContract,
+  cartGuestScopeContract,
   cartItemRemovalInputContract,
   cartMutationInputContract,
   cartReviewInputContract,
@@ -33,8 +33,10 @@ import {
   type IdentitySessionReader,
 } from "../identity-access/public";
 import { CartService } from "./application/cart.service";
+import { requireIdempotencyKey } from "./orders-http";
 import {
   CartIdempotencyConflictError,
+  CartIdempotencyInProgressError,
   CartQuantityLimitError,
   CartResolutionRequiredError,
   CartRevisionConflictError,
@@ -65,6 +67,7 @@ export class CartController {
     @Param("variantId") rawVariantId: string,
     @Body() body: unknown,
     @Headers("idempotency-key") rawKey: string | undefined,
+    @Headers("x-sevo-guest-scope") guestScope: string | undefined,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) response: FastifyReply,
   ) {
@@ -75,13 +78,26 @@ export class CartController {
     }
     const key = requireIdempotencyKey(request.id, rawKey);
     const identityId = await this.optionalIdentity(request);
+    const guestSecret = readCookie(request, "sevo_cart");
+    const parsedGuestScope = cartGuestScopeContract.safeParse(guestScope);
+    if (!identityId && !guestSecret && !parsedGuestScope.success) {
+      throw new HttpException(
+        {
+          code: "GUEST_SCOPE_REQUIRED",
+          message: "شناسه مهمان برای ساخت سبد لازم است. صفحه را تازه کنید.",
+          correlationId: request.id,
+        },
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
     try {
       const result = await this.carts.mutate(
         identityId,
-        readCookie(request, "sevo_cart"),
+        guestSecret,
         input.data,
         key,
         request.id,
+        parsedGuestScope.success ? parsedGuestScope.data : undefined,
       );
       if (result.guestSecret) {
         response.header("set-cookie", this.cartCookie(result.guestSecret));
@@ -169,12 +185,18 @@ export class CartController {
   ) {
     const key = requireIdempotencyKey(request.id, rawKey);
     const identityId = await requireIdentity(request, this.sessions);
-    const result = await this.carts.inspectAttachment(
-      identityId,
-      readCookie(request, "sevo_cart"),
-      key,
-      request.id,
-    );
+    const guestSecret = readCookie(request, "sevo_cart");
+    let result: Awaited<ReturnType<CartService["inspectAttachment"]>>;
+    try {
+      result = await this.carts.inspectAttachment(
+        identityId,
+        guestSecret,
+        key,
+        request.id,
+      );
+    } catch (error) {
+      return cartError(error, request.id, this.carts, identityId, guestSecret);
+    }
     if (result.status === "RESOLUTION_REQUIRED") {
       throw new HttpException(
         {
@@ -287,21 +309,6 @@ function readCookie(request: FastifyRequest, name: string) {
     .join("=");
 }
 
-function requireIdempotencyKey(correlationId: string, value: string | undefined) {
-  const key = cartIdempotencyKeyContract.safeParse(value);
-  if (!key.success) {
-    throw new HttpException(
-      {
-        code: "PRECONDITION_REQUIRED",
-        message: "شناسه یکتای درخواست لازم است.",
-        correlationId,
-      },
-      HttpStatus.PRECONDITION_REQUIRED,
-    );
-  }
-  return key.data;
-}
-
 function validationError(correlationId: string) {
   return new HttpException(
     {
@@ -320,19 +327,25 @@ async function cartError(
   identityId: string | undefined,
   guestSecret: string | undefined,
 ): Promise<never> {
+  correlationId = replayedCorrelationId(error) ?? correlationId;
   if (error instanceof CartRevisionConflictError) {
-    const current = await carts.read(identityId, guestSecret);
+    const currentCart =
+      error.currentCart !== undefined
+        ? error.currentCart
+        : error.current
+          ? await carts.present(error.current)
+          : (await carts.read(identityId, guestSecret)).cart;
     throw new HttpException(
       {
         code: "CART_REVISION_CONFLICT",
         message: "سبد در جای دیگری تغییر کرده است. نسخه تازه را ببینید.",
         correlationId,
-        currentCart: current.cart,
-        ...(current.cart
+        currentCart,
+        ...(currentCart
           ? {
               resolution: {
                 action: "REVIEW_AND_RETRY",
-                expectedRevision: current.cart.revision,
+                expectedRevision: currentCart.revision,
               },
             }
           : {}),
@@ -344,6 +357,13 @@ async function cartError(
     throw conflict(
       "IDEMPOTENCY_CONFLICT",
       "این شناسه درخواست قبلاً برای تغییر دیگری استفاده شده است.",
+      correlationId,
+    );
+  }
+  if (error instanceof CartIdempotencyInProgressError) {
+    throw conflict(
+      "IDEMPOTENCY_IN_PROGRESS",
+      "این درخواست هنوز در حال انجام است. کمی بعد دوباره تلاش کنید.",
       correlationId,
     );
   }
@@ -388,6 +408,17 @@ async function cartError(
     );
   }
   throw error;
+}
+
+function replayedCorrelationId(error: unknown): string | undefined {
+  if (
+    error instanceof Error &&
+    "replayedCorrelationId" in error &&
+    typeof error.replayedCorrelationId === "string"
+  ) {
+    return error.replayedCorrelationId;
+  }
+  return undefined;
 }
 
 function conflict(code: string, message: string, correlationId: string) {
