@@ -2,8 +2,11 @@ import { defineConfig } from "@playwright/test";
 
 import {
   acceptanceTestMobiles,
+  differentStoreCartConflictTestMobiles,
   sellerApplicationDraftTestMobiles,
   productTracerTestMobiles,
+  guestCartTestMobiles,
+  sameStoreCartConflictTestMobiles,
   storefrontTestMobiles,
   visualViewports,
 } from "./tests/helpers/visual-projects";
@@ -53,6 +56,9 @@ export default defineConfig({
           ...acceptanceTestMobiles,
           ...sellerApplicationDraftTestMobiles,
           ...productTracerTestMobiles,
+          ...guestCartTestMobiles,
+          ...sameStoreCartConflictTestMobiles,
+          ...differentStoreCartConflictTestMobiles,
         ].join(","),
       },
       reuseExistingServer: !process.env.CI,

@@ -5,6 +5,62 @@
   place-items: center;
 }
 
+.cartAction {
+  display: grid;
+  grid-template-columns: auto minmax(72px, 96px);
+  align-items: center;
+  gap: 8px 12px;
+  margin-block: 16px;
+}
+
+.cartAction select,
+.cartAction button,
+.cartAction a {
+  min-height: 42px;
+  border-radius: 12px;
+  font: inherit;
+}
+
+.cartAction select {
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding-inline: 12px;
+}
+
+.cartAction button {
+  grid-column: 1 / -1;
+  border: 0;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cartAction button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cartAction .replacementAction {
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.cartAction p,
+.cartAction a {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.cartAction a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary-dark);
+}
+
 .product {
   overflow: hidden;
   display: grid;

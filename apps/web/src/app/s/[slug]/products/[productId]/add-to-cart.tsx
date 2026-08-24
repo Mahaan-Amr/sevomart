@@ -1,0 +1,151 @@
+"use client";
+
+import { useState } from "react";
+
+import styles from "./product-public.module.css";
+
+export function AddToCart({
+  variants,
+}: {
+  variants: Array<{ variantId: string; label: string; available: boolean }>;
+}) {
+  const initialVariant = variants.find((variant) => variant.available) ?? variants[0]!;
+  const [variantId, setVariantId] = useState(initialVariant.variantId);
+  const [quantity, setQuantity] = useState(1);
+  const [message, setMessage] = useState("");
+  const [pending, setPending] = useState(false);
+  const [replacementRevision, setReplacementRevision] = useState<number>();
+  const selectedVariant =
+    variants.find((variant) => variant.variantId === variantId) ?? initialVariant;
+
+  async function add() {
+    setPending(true);
+    setMessage("");
+    try {
+      const current = await fetch("/api/cart", { cache: "no-store" });
+      const currentBody = (await current.json()) as { cart?: { revision?: number } };
+      const response = await fetch(`/api/cart/items/${variantId}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          variantId,
+          quantity,
+          expectedRevision: currentBody.cart?.revision ?? 0,
+        }),
+      });
+      const body = (await response.json()) as { code?: string; message?: string };
+      if (!response.ok) {
+        if (
+          body.code === "STORE_REPLACEMENT_CONFIRMATION_REQUIRED" &&
+          typeof currentBody.cart?.revision === "number"
+        ) {
+          setReplacementRevision(currentBody.cart.revision);
+        }
+        setMessage(body.message ?? "افزودن به سبد انجام نشد.");
+        return;
+      }
+      setMessage("به سبد اضافه شد.");
+    } catch {
+      setMessage("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function replaceStore() {
+    if (replacementRevision === undefined) return;
+    setPending(true);
+    try {
+      const response = await fetch("/api/cart/store-replacement", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          variantId,
+          quantity,
+          expectedRevision: replacementRevision,
+          confirmed: true,
+        }),
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setMessage(body.message ?? "تغییر فروشگاه انجام نشد.");
+        return;
+      }
+      setReplacementRevision(undefined);
+      setMessage("سبد فروشگاه قبلی کنار گذاشته شد و کالا به سبد تازه اضافه شد.");
+    } catch {
+      setMessage("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className={styles.cartAction}>
+      {variants.length > 1 ? (
+        <>
+          <label htmlFor="cart-variant">گونه</label>
+          <select
+            id="cart-variant"
+            value={variantId}
+            onChange={(event) => setVariantId(event.target.value)}
+            disabled={pending}
+          >
+            {variants.map((variant) => (
+              <option key={variant.variantId} value={variant.variantId}>
+                {variant.label}
+                {variant.available ? "" : " — ناموجود"}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
+      <label htmlFor="cart-quantity">تعداد</label>
+      <select
+        id="cart-quantity"
+        value={quantity}
+        onChange={(event) => setQuantity(Number(event.target.value))}
+        disabled={!selectedVariant.available || pending}
+      >
+        {[1, 2, 3, 4, 5].map((value) => (
+          <option key={value} value={value}>
+            {value.toLocaleString("fa-IR")}
+          </option>
+        ))}
+      </select>
+      {replacementRevision === undefined ? (
+        <button
+          type="button"
+          onClick={add}
+          disabled={!selectedVariant.available || pending}
+        >
+          {pending
+            ? "در حال افزودن…"
+            : selectedVariant.available
+              ? "افزودن به سبد"
+              : "فعلاً ناموجود"}
+        </button>
+      ) : null}
+      {message ? <p role="status">{message}</p> : null}
+      {replacementRevision !== undefined ? (
+        <button
+          className={styles.replacementAction}
+          type="button"
+          onClick={replaceStore}
+          disabled={pending}
+        >
+          تغییر فروشگاه و افزودن
+        </button>
+      ) : null}
+      {message === "به سبد اضافه شد." || message.includes("سبد تازه") ? (
+        <a href="/cart">دیدن سبد</a>
+      ) : null}
+    </div>
+  );
+}

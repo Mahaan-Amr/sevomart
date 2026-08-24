@@ -518,6 +518,7 @@ export const publishSimpleProductInputContract = z
 export const publicSimpleProductContract = z
   .object({
     productId: productIdContract,
+    variantId: variantIdContract,
     name: z.string().min(2).max(120),
     description: z.string().max(2_000),
     image: z
@@ -534,6 +535,7 @@ export const publicSimpleProductContract = z
 
 export const publicSimpleProductSummaryContract = publicSimpleProductContract.omit({
   description: true,
+  variantId: true,
 });
 
 export const publicSimpleProductListContract = z

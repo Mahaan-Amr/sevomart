@@ -7,6 +7,7 @@ import {
 import { notFound } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
+import { AddToCart } from "./add-to-cart";
 import styles from "./product-public.module.css";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
@@ -53,6 +54,7 @@ export default async function PublicProductPage({
               ))}
             </ul>
           ) : null}
+          <AddToCart variants={cartVariants(product)} />
           <p className={styles.payment}>
             روش پرداخت و شرایط مرجوعی پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
@@ -90,4 +92,21 @@ function formatProductPrice(product: PublicProduct | PublicSimpleProduct) {
   return minimum.amount === maximum.amount
     ? formatIrrAsToman(minimum.amount)
     : `از ${formatIrrAsToman(minimum.amount)} تا ${formatIrrAsToman(maximum.amount)}`;
+}
+
+function cartVariants(product: PublicProduct | PublicSimpleProduct) {
+  if (!("variants" in product)) {
+    return [
+      {
+        variantId: product.variantId,
+        label: product.name,
+        available: product.availability === "AVAILABLE",
+      },
+    ];
+  }
+  return product.variants.map((variant) => ({
+    variantId: variant.variantId,
+    label: variant.combination.map((part) => part.value).join("، ") || product.name,
+    available: variant.availability === "AVAILABLE",
+  }));
 }

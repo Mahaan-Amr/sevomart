@@ -6,7 +6,7 @@ import {
 } from "@sevo/contracts/identity-access/v1";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import styles from "../../../(seller)/seller/login/seller-login.module.css";
+import styles from "../../../login/identity-login.module.css";
 
 type Step = "mobile" | "code" | "signed-in";
 

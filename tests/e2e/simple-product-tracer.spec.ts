@@ -146,7 +146,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await storefrontProduct.click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
   await expect(page.getByText("از ۴۵۵٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
-  await expect(page.getByText("قرمز، بزرگ")).toBeVisible();
+  await expect(page.getByText("قرمز، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
   await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
