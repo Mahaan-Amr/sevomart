@@ -20,7 +20,7 @@ export type ApiOperationContract = {
   method: "delete" | "get" | "post" | "put";
   path: string;
   tag: string;
-  auth: "identity-session" | "none";
+  auth: "identity-session" | "platform-agent-session" | "none";
   pathParameter?: {
     name: string;
     schema: string;
@@ -128,7 +128,12 @@ export function addModuleOpenApiContract(
     const operation: ContractOperation = {
       operationId: contract.operationId,
       tags: [contract.tag],
-      security: contract.auth === "identity-session" ? [{ identitySession: [] }] : [],
+      security:
+        contract.auth === "identity-session"
+          ? [{ identitySession: [] }]
+          : contract.auth === "platform-agent-session"
+            ? [{ platformAgentSession: [] }]
+            : [],
       responses: Object.fromEntries(
         contract.responses.map((responseContract) => [
           `${responseContract.status}`,

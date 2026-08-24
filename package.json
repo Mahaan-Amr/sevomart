@@ -11,6 +11,8 @@
     "build": "pnpm -r --if-present build",
     "build:packages": "pnpm --filter @sevo/config --filter @sevo/contracts --filter @sevo/observability --filter @sevo/outbox --filter @sevo/database -r --if-present build",
     "check:architecture": "node scripts/check-boundaries.mjs",
+    "platform:permission": "node scripts/bootstrap-platform-agent.mjs",
+    "platform:bootstrap-agent": "node scripts/bootstrap-platform-agent.mjs",
     "db:generate": "pnpm --filter @sevo/database generate",
     "db:migrate": "pnpm --filter @sevo/database migrate",
     "db:up": "pnpm infra:up",

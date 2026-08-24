@@ -19,6 +19,12 @@
   --shadow-highlight: rgb(255 255 255 / 72%);
   --shadow-highlight-strong: rgb(255 255 255 / 70%);
   --shadow-primary: rgb(118 11 41 / 20%);
+  --elevation-raised:
+    8px 8px 16px var(--shadow-neutral-soft), -8px -8px 16px var(--shadow-highlight);
+  --elevation-hover:
+    4px 4px 8px var(--shadow-neutral-soft), -4px -4px 8px var(--shadow-highlight);
+  --elevation-pressed: inset 2px 2px 4px var(--shadow-neutral-soft);
+  --elevation-action: 4px 4px 8px var(--shadow-primary);
   font-family: "Yekan Bakh", Tahoma, sans-serif;
 }
 

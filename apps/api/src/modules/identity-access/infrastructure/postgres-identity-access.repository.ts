@@ -51,6 +51,7 @@ export class PostgresIdentityAccessRepository implements IdentityAccessRepositor
       update identity_otp_challenges
       set provider_reference = ${providerReference}
       where id = ${challengeId}
+        and audience = 'PUBLIC'
     `;
   }
 
@@ -66,6 +67,7 @@ export class PostgresIdentityAccessRepository implements IdentityAccessRepositor
       set verification_attempts = verification_attempts + 1,
           consumed_at = case when code_hash = ${codeHash} then ${now} else null end
       where id = ${challengeId}
+        and audience = 'PUBLIC'
         and consumed_at is null
         and expires_at > ${now}
         and verification_attempts < ${MAX_OTP_VERIFICATION_ATTEMPTS}
