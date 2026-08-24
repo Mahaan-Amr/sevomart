@@ -20,3 +20,8 @@ window, and uses a forward fix if deployment must be corrected.
 Issue 79 verification (2026-08-24): Compose built all four application images, applied
 all ten migrations, and reached healthy status; native `pnpm dev` reported no pending
 migrations and brought Web, API, and worker to ready state.
+
+The platform outbox envelope-version migration is a forward compatibility fix for
+databases that applied the original outbox migration before `envelope_version` was
+added. It preserves existing events, backfills envelope version `1`, and is a no-op
+for fresh databases that already contain the required column.
