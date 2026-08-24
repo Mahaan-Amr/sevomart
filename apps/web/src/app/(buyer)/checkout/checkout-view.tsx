@@ -7,6 +7,7 @@ import {
   orderContract,
   type CheckoutOptions,
   type CheckoutPreparation,
+  type CheckoutChange,
   type Order,
 } from "@sevo/contracts/orders/v1";
 import { useEffect, useRef, useState } from "react";
@@ -21,8 +22,11 @@ export function CheckoutView() {
   const [review, setReview] = useState<CheckoutPreparation>();
   const [order, setOrder] = useState<Order>();
   const [message, setMessage] = useState("");
+  const [conflictChanges, setConflictChanges] = useState<CheckoutChange[]>([]);
+  const [errorAction, setErrorAction] = useState<"cart" | "address" | "review">("cart");
   const [pending, setPending] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
+  const orderIdempotencyKey = useRef("");
 
   useEffect(() => {
     void loadOptions();
@@ -70,8 +74,10 @@ export function CheckoutView() {
     });
     const body = await response.json();
     const parsed = checkoutPreparationContract.safeParse(body);
-    if (response.ok && parsed.success) setReview(parsed.data);
-    else showCheckoutError(body);
+    if (response.ok && parsed.success) {
+      orderIdempotencyKey.current = crypto.randomUUID();
+      setReview(parsed.data);
+    } else showCheckoutError(body);
     setPending(false);
   }
 
@@ -82,7 +88,9 @@ export function CheckoutView() {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "idempotency-key": crypto.randomUUID(),
+        "idempotency-key":
+          orderIdempotencyKey.current ||
+          (orderIdempotencyKey.current = crypto.randomUUID()),
       },
       body: JSON.stringify({
         checkoutRevision: review.checkoutRevision,
@@ -102,8 +110,41 @@ export function CheckoutView() {
   function showCheckoutError(body: unknown) {
     const parsed = checkoutRevisionConflictContract.safeParse(body);
     if (parsed.success) {
-      const action = parsed.data.code === "ADDRESS_INVALID" ? "نشانی" : "سبد";
-      showError(`${parsed.data.message} برای اصلاح به ${action} برگردید.`);
+      setConflictChanges(parsed.data.changes ?? []);
+      if (
+        parsed.data.code === "ADDRESS_INVALID" ||
+        parsed.data.changes?.some((change) => change.kind === "ADDRESS_CHANGED")
+      ) {
+        setErrorAction("address");
+        showError(`${parsed.data.message} نشانی را اصلاح و دوباره تأیید کنید.`);
+        return;
+      }
+      if (
+        parsed.data.changes?.some((change) =>
+          [
+            "SHIPPING_METHOD_CHANGED",
+            "SHIPPING_FEE_CHANGED",
+            "POLICY_CHANGED",
+          ].includes(change.kind),
+        )
+      ) {
+        setReview(undefined);
+        setErrorAction("review");
+        void loadOptions();
+        showError(
+          `${parsed.data.message} انتخاب‌ها تازه شد؛ آن‌ها را دوباره مرور کنید.`,
+        );
+        return;
+      }
+      const price = parsed.data.changes?.find(
+        (change) => change.kind === "PRICE_CHANGED",
+      );
+      setErrorAction("cart");
+      showError(
+        price?.kind === "PRICE_CHANGED"
+          ? `قیمت از ${formatIrrAsToman(price.previous.amount)} به ${formatIrrAsToman(price.current.amount)} تغییر کرده است؛ سبد را دوباره تأیید کنید.`
+          : `${parsed.data.message} سبد را اصلاح و دوباره تأیید کنید.`,
+      );
     } else showError("ثبت سفارش انجام نشد. دوباره تلاش کنید.");
   }
 
@@ -194,6 +235,15 @@ export function CheckoutView() {
                 <li key={item.variantId}>
                   <span>
                     {item.name} × {item.quantity.toLocaleString("fa-IR")}
+                    {conflictChanges.find(
+                      (change) =>
+                        change.kind === "PRICE_CHANGED" &&
+                        change.variantId === item.variantId,
+                    ) ? (
+                      <small className={styles.itemConflict}>
+                        قیمت این کالا تغییر کرده است؛ مبلغ تازه را در پیام پایین ببینید.
+                      </small>
+                    ) : null}
                   </span>
                   <strong>{formatIrrAsToman(item.lineTotal.amount)}</strong>
                 </li>
@@ -224,7 +274,7 @@ export function CheckoutView() {
             <button className={styles.primary} disabled={pending} onClick={createOrder}>
               {pending
                 ? "در حال ثبت…"
-                : `ثبت سفارش و پرداخت ${formatIrrAsToman(review.total.amount)}`}
+                : `ثبت سفارش با مبلغ ${formatIrrAsToman(review.total.amount)}`}
             </button>
           </>
         )}
@@ -232,7 +282,13 @@ export function CheckoutView() {
           <div ref={errorRef} tabIndex={-1} role="alert" className={styles.error}>
             {message}
             <div>
-              <a href="/cart">بازگشت به سبد</a> · <a href="/addresses">اصلاح نشانی</a>
+              {errorAction === "address" ? (
+                <a href="/addresses">اصلاح نشانی</a>
+              ) : errorAction === "review" ? (
+                <a href="#checkout-title">مرور دوباره انتخاب‌ها</a>
+              ) : (
+                <a href="/cart">بازگشت به سبد</a>
+              )}
             </div>
           </div>
         ) : null}
