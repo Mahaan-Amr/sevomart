@@ -50,6 +50,14 @@ export interface ProductAuthoritativeRead {
   readAuthoritativeVariant(
     variantId: VariantId,
   ): Promise<ProductAuthoritativeVariant | undefined>;
+  readPublishedProduct(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicProduct | undefined>;
+  readPublished(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicSimpleProduct | undefined>;
 }
 
 export interface ProductRepository extends ProductAuthoritativeRead {
@@ -74,10 +82,6 @@ export interface ProductRepository extends ProductAuthoritativeRead {
     storeId: StoreId,
     context: ProductWriteContext,
   ): Promise<PublicSimpleProduct>;
-  readPublished(
-    productId: ProductId,
-    storeId: StoreId,
-  ): Promise<PublicSimpleProduct | undefined>;
   listPublished(storeId: StoreId): Promise<PublicSimpleProductSummary[]>;
   findPublishedMediaStoreId(mediaId: string): Promise<StoreId | undefined>;
   replaceProductWorkingCopy(
@@ -114,22 +118,7 @@ export interface ProductRepository extends ProductAuthoritativeRead {
     input: UnpublishProductInput,
     context: ProductWriteContext,
   ): Promise<ProductView | SimpleProductView>;
-  readPublishedProduct(
-    productId: ProductId,
-    storeId: StoreId,
-  ): Promise<PublicProduct | undefined>;
   listPublishedProducts(storeId: StoreId): Promise<PublicProductSummary[]>;
-}
-
-export interface ProductAuthoritativeRead {
-  readPublishedProduct(
-    productId: ProductId,
-    storeId: StoreId,
-  ): Promise<PublicProduct | undefined>;
-  readPublished(
-    productId: ProductId,
-    storeId: StoreId,
-  ): Promise<PublicSimpleProduct | undefined>;
 }
 
 export class ProductNotFoundError extends Error {}
