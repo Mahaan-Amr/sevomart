@@ -1,1 +1,12 @@
 // Tables in this file are owned by the inventory module.
+
+model InventoryLevel {
+  variantId String   @id @map("variant_id") @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  onHand    Int      @default(0) @map("on_hand")
+  revision  Int      @default(0)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@index([storeId])
+  @@map("inventory_levels")
+}

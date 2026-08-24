@@ -8,6 +8,7 @@ import type {
   StorePreview,
   StorePublication,
   StoreAuthoritativeSnapshotV1,
+  StoreSlug,
 } from "@sevo/contracts/store/v1";
 import type { MediaId } from "@sevo/contracts/media/v1";
 import type { IdentityId, StoreId } from "@sevo/contracts/platform/v1";
@@ -239,6 +240,20 @@ export class StoreService implements StoreAuthoritativeRead {
   async readStore(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
     const row = await this.repository.findById(storeId);
     return row ? toAuthoritativeStore(row) : undefined;
+  }
+
+  async readOwnedStore(
+    identityId: IdentityId,
+  ): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
+    const row = await this.repository.findBySellerId(identityId);
+    return row ? toAuthoritativeStore(row) : undefined;
+  }
+
+  async readPublishedStoreBySlug(
+    slug: StoreSlug,
+  ): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
+    const row = await this.repository.findBySlug(slug);
+    return row?.status === "PUBLISHED" ? toAuthoritativeStore(row) : undefined;
   }
 
   async requireOwnership(

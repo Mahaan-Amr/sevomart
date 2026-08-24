@@ -185,10 +185,15 @@ async function createVariants(
           ["logo-small", 128, 128, true],
           ["logo-large", 512, 512, true],
         ] as const)
-      : ([
-          ["cover-mobile", 960, undefined, false],
-          ["cover-desktop", 1920, undefined, false],
-        ] as const);
+      : purpose === "STORE_COVER"
+        ? ([
+            ["cover-mobile", 960, undefined, false],
+            ["cover-desktop", 1920, undefined, false],
+          ] as const)
+        : ([
+            ["product-card", 640, 640, false],
+            ["product-detail", 1600, 1600, false],
+          ] as const);
   return Promise.all(
     definitions.map(async ([name, width, height, lossless]) => {
       const result = await sharp(bytes, { limitInputPixels: MEDIA_UPLOAD_MAX_PIXELS })

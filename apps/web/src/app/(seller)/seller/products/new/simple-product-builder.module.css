@@ -1,0 +1,177 @@
+.page {
+  display: grid;
+  min-height: 100dvh;
+  padding: 16px;
+  place-items: center;
+}
+
+.workspace {
+  display: grid;
+  width: min(100%, 540px);
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--color-border-primary-soft);
+  border-radius: 22px;
+  background: var(--color-surface);
+  box-shadow:
+    8px 8px 22px var(--shadow-neutral),
+    -8px -8px 22px var(--shadow-highlight);
+}
+
+.header,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brand,
+.progress,
+.availability {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace h1,
+.workspace h2,
+.workspace p {
+  margin: 0;
+}
+
+.workspace h1 {
+  font-size: 22px;
+}
+
+.field,
+.filePicker {
+  display: grid;
+  gap: 8px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field input,
+.field textarea,
+.filePicker input {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  background: var(--color-background);
+  box-shadow: inset 3px 3px 7px var(--shadow-neutral-soft);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.field textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible,
+.filePicker input:focus-visible,
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.primaryButton,
+.secondaryButton {
+  display: inline-grid;
+  min-height: 44px;
+  padding: 9px 16px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primaryButton {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  box-shadow: 0 6px 14px var(--shadow-primary);
+}
+
+.primaryButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.secondaryButton {
+  background: var(--color-background);
+  color: var(--color-primary-dark);
+}
+
+.preview {
+  overflow: hidden;
+  display: grid;
+  gap: 16px;
+  border-radius: 18px;
+  background: var(--color-background);
+  box-shadow: inset 4px 4px 10px var(--shadow-neutral-soft);
+}
+
+.preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.preview div {
+  display: grid;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.preview h2 {
+  font-size: 18px;
+}
+
+.preview strong {
+  color: var(--color-primary-dark);
+  font-size: 16px;
+}
+
+.message {
+  min-height: 24px;
+  color: var(--color-primary-dark) !important;
+}
+
+@media (min-width: 768px) {
+  .page {
+    padding: 32px;
+  }
+
+  .workspace {
+    padding: 24px;
+  }
+
+  .preview {
+    grid-template-columns: 200px 1fr;
+    align-items: center;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .primaryButton,
+  .secondaryButton {
+    transition:
+      transform 180ms cubic-bezier(0.22, 0.8, 0.28, 1),
+      box-shadow 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
+  }
+
+  .primaryButton:hover,
+  .secondaryButton:hover {
+    transform: translateY(-2px);
+  }
+}

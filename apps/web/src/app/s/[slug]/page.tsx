@@ -1,4 +1,8 @@
 import { publicStoreContract, type PublicStore } from "@sevo/contracts/store/v1";
+import {
+  publicSimpleProductListContract,
+  type PublicSimpleProduct,
+} from "@sevo/contracts/product/v1";
 import { notFound } from "next/navigation";
 
 import {
@@ -11,7 +15,9 @@ import {
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
 
 type StorefrontResult =
-  { state: "ready"; store: PublicStore } | { state: "not-found" } | { state: "error" };
+  | { state: "ready"; store: PublicStore; products: PublicSimpleProduct[] }
+  | { state: "not-found" }
+  | { state: "error" };
 
 async function readPublishedStore(slug: string): Promise<StorefrontResult> {
   try {
@@ -25,7 +31,24 @@ async function readPublishedStore(slug: string): Promise<StorefrontResult> {
     if (response.status === 404) return { state: "not-found" };
     if (!response.ok) return { state: "error" };
     const parsed = publicStoreContract.safeParse(await response.json());
-    return parsed.success ? { state: "ready", store: parsed.data } : { state: "error" };
+    if (!parsed.success) return { state: "error" };
+    const productsResponse = await fetch(
+      `${API_BASE_URL}/v1/stores/${encodeURIComponent(slug)}/products`,
+      {
+        cache: "no-store",
+        headers: { "x-correlation-id": crypto.randomUUID() },
+      },
+    );
+    if (!productsResponse.ok) return { state: "error" };
+    const products = publicSimpleProductListContract.safeParse(
+      await productsResponse.json(),
+    );
+    if (!products.success) return { state: "error" };
+    return {
+      state: "ready",
+      store: parsed.data,
+      products: products.data.products,
+    };
   } catch {
     return { state: "error" };
   }
@@ -61,7 +84,7 @@ export default async function StorefrontPage({
   return (
     <StorefrontPageFrame>
       {result.state === "ready" ? (
-        <ReadyStorefront store={result.store} />
+        <ReadyStorefront store={result.store} products={result.products} />
       ) : (
         <ErrorStorefront retryHref={`/s/${slug}`} />
       )}

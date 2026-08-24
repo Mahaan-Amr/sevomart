@@ -57,7 +57,12 @@ function isAllowedPath(segments: readonly string[]) {
     path === "seller/store/preview" ||
     path === "seller/store/publication" ||
     path === "seller/media" ||
+    path === "seller/products" ||
+    /^seller\/products\/[0-9a-f-]{36}\/(working-copy|preview|publications)$/.test(
+      path,
+    ) ||
     /^stores\/[a-z0-9-]+$/.test(path) ||
+    /^stores\/[a-z0-9-]+\/products(?:\/[0-9a-f-]{36})?$/.test(path) ||
     /^store-slugs\/[a-z0-9-]+\/availability$/.test(path) ||
     /^media\/[0-9a-f-]{36}$/.test(path)
   );

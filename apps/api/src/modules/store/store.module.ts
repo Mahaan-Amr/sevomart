@@ -30,6 +30,7 @@ export class StoreModule {
   ): DynamicModule {
     return {
       module: StoreModule,
+      global: true,
       controllers: [StoreController],
       providers: [
         {

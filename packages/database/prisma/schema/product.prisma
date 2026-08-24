@@ -1,1 +1,66 @@
 // Tables in this file are owned by the product module.
+
+model Product {
+  id                 String               @id @db.Uuid
+  storeId            String               @map("store_id") @db.Uuid
+  state              String               @default("DRAFT") @db.VarChar(16)
+  revision           Int                  @default(0)
+  publicationVersion Int                  @default(0) @map("publication_version")
+  publishedAt        DateTime?            @map("published_at") @db.Timestamptz(3)
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime             @default(now()) @map("updated_at") @db.Timestamptz(3)
+  workingCopy        ProductWorkingCopy?
+  publications       ProductPublication[]
+  offer              ProductOffer?
+
+  @@index([storeId, state])
+  @@map("product_products")
+}
+
+model ProductWorkingCopy {
+  productId   String   @id @map("product_id") @db.Uuid
+  name        String   @db.VarChar(120)
+  description String   @db.VarChar(2000)
+  mediaId     String   @map("media_id") @db.Uuid
+  variantId   String   @unique @map("variant_id") @db.Uuid
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_working_copies")
+}
+
+model ProductPublication {
+  productId          String   @map("product_id") @db.Uuid
+  publicationVersion Int      @map("publication_version")
+  name               String   @db.VarChar(120)
+  description        String   @db.VarChar(2000)
+  mediaId            String   @map("media_id") @db.Uuid
+  variantId          String   @map("variant_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, publicationVersion])
+  @@map("product_publications")
+}
+
+model ProductOffer {
+  productId String  @unique @map("product_id") @db.Uuid
+  variantId String  @id @map("variant_id") @db.Uuid
+  amount    BigInt
+  currency  String  @default("IRR") @db.Char(3)
+  revision  Int     @default(1)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_offers")
+}
+
+model ProductIdempotencyRecord {
+  operation       String   @db.VarChar(48)
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  idempotencyKey  String   @map("idempotency_key") @db.VarChar(200)
+  requestHash     String   @map("request_hash") @db.Char(64)
+  responseJson    Json     @map("response_json") @db.JsonB
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, actorIdentityId, idempotencyKey])
+  @@map("product_idempotency_records")
+}

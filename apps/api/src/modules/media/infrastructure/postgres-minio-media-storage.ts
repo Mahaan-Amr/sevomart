@@ -109,7 +109,11 @@ export class PostgresMinioMediaStorage implements MediaStorage {
       where a.id = ${key}
         and v.name = coalesce(
           ${requestedVariant ?? null},
-          case when a.purpose = 'STORE_LOGO' then 'logo-large' else 'cover-desktop' end
+          case
+            when a.purpose = 'STORE_LOGO' then 'logo-large'
+            when a.purpose = 'STORE_COVER' then 'cover-desktop'
+            else 'product-detail'
+          end
         )
       limit 1
     `;
@@ -131,6 +135,28 @@ export class PostgresMinioMediaStorage implements MediaStorage {
       visibility: row.visibility,
       variant: row.variant,
     };
+  }
+
+  async inspect(key: string) {
+    const rows = await this.#sql<
+      Array<{
+        key: string;
+        purpose: MediaUploadPurpose;
+        contentType: "image/jpeg" | "image/png" | "image/webp";
+        checksum: string;
+        width: number;
+        height: number;
+        ownerSellerId: string;
+        visibility: "PRIVATE" | "PUBLIC";
+      }>
+    >`
+      select id as key, purpose, original_mime_type as "contentType",
+        original_checksum as checksum, width, height,
+        owner_seller_id as "ownerSellerId", visibility
+      from media_assets where id = ${key}::uuid
+      limit 1
+    `;
+    return rows[0];
   }
 
   async makePublic(key: string, ownerSellerId: string): Promise<void> {

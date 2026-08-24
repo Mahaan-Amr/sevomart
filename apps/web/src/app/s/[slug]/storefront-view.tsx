@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { PublicStore } from "@sevo/contracts/store/v1";
+import type { PublicSimpleProduct } from "@sevo/contracts/product/v1";
 import type { CSSProperties, ReactNode } from "react";
 
 import styles from "./storefront.module.css";
@@ -110,7 +111,13 @@ function TrustDetails({ store }: { store: PublicStore }) {
   );
 }
 
-export function ReadyStorefront({ store }: { store: PublicStore }) {
+export function ReadyStorefront({
+  store,
+  products = [],
+}: {
+  store: PublicStore;
+  products?: PublicSimpleProduct[];
+}) {
   const identityStyle = { "--store-accent": store.themeColor } as CSSProperties;
   const monogram = Array.from(store.name.trim())[0] ?? "س";
 
@@ -144,7 +151,7 @@ export function ReadyStorefront({ store }: { store: PublicStore }) {
           </div>
         </div>
       </header>
-      {store.activeProductCount === 0 ? (
+      {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">
           <span className={styles.emptyMark} aria-hidden="true">
             ✦
@@ -152,8 +159,32 @@ export function ReadyStorefront({ store }: { store: PublicStore }) {
           <h2 id="empty-title">هنوز کالایی منتشر نشده</h2>
           <p>فروشنده در حال آماده‌کردن اولین کالاهاست.</p>
         </section>
-      ) : null}
+      ) : (
+        <section className={styles.products} aria-labelledby="products-title">
+          <h2 id="products-title">کالاهای فروشگاه</h2>
+          <div className={styles.productList}>
+            {products.map((product) => (
+              <Link
+                className={styles.product}
+                href={`/s/${store.slug}/products/${product.productId}`}
+                key={product.productId}
+              >
+                <img src={`/api/store/media/${product.image.id}`} alt={product.name} />
+                <span>
+                  <strong>{product.name}</strong>
+                  <small>{formatToman(product.price.amount)}</small>
+                  <em>{product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}</em>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       <TrustDetails store={store} />
     </StorefrontFrame>
   );
+}
+
+function formatToman(amount: number) {
+  return `${new Intl.NumberFormat("fa-IR").format(amount / 10)} تومان`;
 }
