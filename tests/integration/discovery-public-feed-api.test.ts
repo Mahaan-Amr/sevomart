@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+
+import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import { productPublishedV2Contract } from "@sevo/contracts/product/v1";
 import { storePublishedV1Contract } from "@sevo/contracts/store/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
@@ -13,6 +16,8 @@ import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 const storeId = "10000000-0000-4000-8000-000000000001";
 const sellerId = "10000000-0000-4000-8000-000000000002";
+const buyerId = "10000000-0000-4000-8000-000000000003";
+const buyerSessionToken = "discovery-buyer-session-token";
 const products = [1, 2, 3].map((suffix) => ({
   productId: `20000000-0000-4000-9000-${String(suffix).padStart(12, "0")}`,
   variantId: `30000000-0000-4000-a000-${String(suffix).padStart(12, "0")}`,
@@ -37,6 +42,13 @@ describe("public discovery feed HTTP API", () => {
       where projection_name = 'public-feed-v1'
     `;
     await seedAuthoritativeData(sql);
+    await sql`
+      insert into platform_outbox_consumptions (consumer_name, event_id, consumed_at)
+      select 'discovery-public-feed-v1', event_id, now()
+      from platform_outbox_events
+      where event_type in ${sql(discoveryFeedProjectionEventTypes)}
+      on conflict (consumer_name, event_id) do nothing
+    `;
     await projectEvents(sql);
     await sql.end();
   });
@@ -49,7 +61,20 @@ describe("public discovery feed HTTP API", () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
-    const cookie = await signIn(server);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      insert into identity_identities (id, status)
+      values (${buyerId}, 'ACTIVE')
+      on conflict (id) do update set status = 'ACTIVE'
+    `;
+    await sql`
+      insert into identity_sessions (id, token_hash, identity_id, audience, expires_at)
+      values (${crypto.randomUUID()},
+        ${createHash("sha256").update(buyerSessionToken).digest("hex")},
+        ${buyerId}, 'PUBLIC', now() + interval '1 hour')
+    `;
+    await sql.end();
+    const cookie = `sevo_session=${buyerSessionToken}`;
 
     const readAllPages = async (sessionCookie?: string) => {
       const seen: string[] = [];
@@ -230,28 +255,6 @@ async function projectEvents(sql: ReturnType<typeof postgres>) {
     });
     await sql.begin((transaction) => projectDiscoveryProductEvent(event, transaction));
   }
-}
-
-async function signIn(server: {
-  inject(options: Record<string, unknown>): Promise<{
-    json<T>(): T;
-    headers: Record<string, string | string[] | undefined>;
-  }>;
-}) {
-  const requested = await server.inject({
-    method: "POST",
-    url: "/v1/auth/otp/requests",
-    payload: { mobile: "09123456789" },
-  });
-  const verified = await server.inject({
-    method: "POST",
-    url: "/v1/auth/otp/verifications",
-    payload: {
-      challengeId: requested.json<{ challengeId: string }>().challengeId,
-      code: "111111",
-    },
-  });
-  return verified.headers["set-cookie"]!;
 }
 
 function envelope(
