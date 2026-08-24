@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+
 import { cartContract, cartResolutionContract } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -23,8 +25,14 @@ describe("guest cart and login attachment HTTP API", () => {
     await sql`delete from order_cart_idempotency_records`;
     await sql`delete from order_carts`;
     await sql`delete from inventory_levels`;
-    await sql`delete from product_products`;
-    await sql`delete from store_stores`;
+    await sql`
+      delete from product_products
+      where id in (${productId}::uuid, ${other.productId}::uuid)
+    `;
+    await sql`
+      delete from store_stores
+      where id in (${storeId}::uuid, ${other.storeId}::uuid)
+    `;
     await sql`
       insert into store_stores
         (id, name, slug, status, publication_version, revision, updated_at)
@@ -49,6 +57,11 @@ describe("guest cart and login attachment HTTP API", () => {
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${productId}, ${variantId}, 4500000, 'IRR', 1)
+    `;
+    await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key)
+      values (${variantId}, ${productId}, ${storeId}, 'simple', '')
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
@@ -79,6 +92,11 @@ describe("guest cart and login attachment HTTP API", () => {
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${other.productId}, ${other.variantId}, 3200000, 'IRR', 1)
+    `;
+    await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key)
+      values (${other.variantId}, ${other.productId}, ${other.storeId}, 'simple', '')
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
@@ -146,6 +164,37 @@ describe("guest cart and login attachment HTTP API", () => {
     });
   });
 
+  it("replays the first anonymous mutation after a lost response", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const request = {
+      method: "PUT" as const,
+      url: `/v1/cart/items/${variantId}`,
+      headers: { "idempotency-key": randomUUID() },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    };
+
+    const first = await server.inject(request);
+    const replay = await server.inject(request);
+
+    expect(first.statusCode).toBe(200);
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(first.json());
+    expect(replay.headers["set-cookie"]).toBe(first.headers["set-cookie"]);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const carts = await sql<Array<{ count: number }>>`
+      select count(*)::int as count from order_carts
+    `;
+    const tokens = await sql<Array<{ count: number }>>`
+      select count(*)::int as count from order_cart_access_tokens
+    `;
+    await sql.end();
+    expect(carts[0]?.count).toBe(1);
+    expect(tokens[0]?.count).toBe(1);
+  });
+
   it("replaces an expired guest secret instead of trusting or reusing it", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -165,6 +214,31 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(freshSecret).toBeTruthy();
     expect(freshSecret).not.toBe(staleSecret);
     expect(fresh.json()).toMatchObject({ revision: 1, items: [{ quantity: 2 }] });
+  });
+
+  it("removes an item idempotently with revision protection", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const added = await add(server, undefined, 2, 0);
+    const cookie = added.headers["set-cookie"]!;
+    const request = {
+      method: "DELETE" as const,
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": randomUUID() },
+      payload: { expectedRevision: 1 },
+    };
+
+    const removed = await server.inject(request);
+    const replay = await server.inject(request);
+
+    expect(removed.statusCode).toBe(200);
+    expect(cartContract.parse(removed.json())).toMatchObject({
+      revision: 2,
+      items: [],
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(removed.json());
   });
 
   it("attaches a guest cart after OTP login and idempotently merges duplicate lines", async () => {
@@ -193,11 +267,21 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(conflict.status).toBe("RESOLUTION_REQUIRED");
     if (conflict.status !== "RESOLUTION_REQUIRED") throw new Error("conflict expected");
     expect(conflict.conflict.kind).toBe("SAME_STORE");
+    if (conflict.conflict.kind !== "SAME_STORE") throw new Error("same store expected");
+    expect(conflict.conflict.combinedQuantities).toEqual([
+      {
+        variantId,
+        name: "فنجان سرامیکی",
+        guestQuantity: 2,
+        buyerQuantity: 3,
+        mergedQuantity: 5,
+      },
+    ]);
 
     const resolveKey = crypto.randomUUID();
     const request = {
       method: "POST" as const,
-      url: "/v1/cart/resolve",
+      url: "/v1/cart/identity-resolution",
       headers: {
         cookie: `${sessionCookie}; ${guestCookie}`,
         "idempotency-key": resolveKey,
@@ -217,6 +301,77 @@ describe("guest cart and login attachment HTTP API", () => {
     const replayed = await server.inject(request);
     expect(replayed.statusCode).toBe(200);
     expect(replayed.json()).toEqual(merged.json());
+  });
+
+  it("keeps one buyer cart when attachment requests race after login", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const guest = await add(server, undefined, 1, 0);
+    const sessionCookie = await signIn(server);
+    const headers = {
+      cookie: `${sessionCookie}; ${guest.headers["set-cookie"]!}`,
+      "idempotency-key": randomUUID(),
+    };
+
+    const responses = await Promise.all([
+      server.inject({ method: "POST", url: "/v1/cart/attach", headers, payload: {} }),
+      server.inject({
+        method: "POST",
+        url: "/v1/cart/attach",
+        headers: { ...headers, "idempotency-key": randomUUID() },
+        payload: {},
+      }),
+    ]);
+
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const active = await sql<Array<{ count: number }>>`
+      select count(*)::int as count from order_carts
+      where identity_id is not null and status = 'ACTIVE'
+    `;
+    await sql.end();
+    expect(active[0]?.count).toBe(1);
+  });
+
+  it("rejects a merge above 100 lines without changing either cart", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const sessionCookie = await signIn(server);
+    const fixture = await seedOversizedMerge();
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/v1/cart/identity-resolution",
+      headers: {
+        cookie: `${sessionCookie}; sevo_cart=${fixture.guestSecret}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: {
+        decision: "MERGE",
+        guestRevision: 1,
+        buyerRevision: 1,
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ code: "CART_LIMIT_REACHED" });
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const carts = await sql<Array<{ status: string; itemCount: number }>>`
+      select cart.status, count(item.variant_id)::int as "itemCount"
+      from order_carts cart
+      join order_cart_items item on item.cart_id = cart.id
+      where cart.id in (${fixture.buyerCartId}, ${fixture.guestCartId})
+      group by cart.id, cart.status
+      order by count(item.variant_id) desc
+    `;
+    await sql.end();
+    expect(carts).toEqual([
+      { status: "ACTIVE", itemCount: 100 },
+      { status: "ACTIVE", itemCount: 1 },
+    ]);
   });
 
   it("keeps the current store until the guest explicitly confirms replacement", async () => {
@@ -345,4 +500,114 @@ async function signIn(server: TestServer) {
     },
   });
   return verified.headers["set-cookie"]!;
+}
+
+async function seedOversizedMerge() {
+  const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  const identity = await sql<Array<{ identityId: string }>>`
+    select identity_id as "identityId" from identity_login_methods
+    where mobile = '09123456789'
+  `;
+  const identityId = identity[0]!.identityId;
+  const variants = Array.from({ length: 101 }, (_, index) => ({
+    productId: randomUUID(),
+    variantId: randomUUID(),
+    mediaId: randomUUID(),
+    name: `کالای سبد ${index + 1}`,
+  }));
+  const now = new Date();
+  const result = await sql.begin(async (transaction) => {
+    await transaction`
+      insert into product_products ${transaction(
+        variants.map((variant) => ({
+          id: variant.productId,
+          store_id: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+          state: "PUBLISHED",
+          revision: 1,
+          publication_version: 1,
+          published_at: now,
+        })),
+      )}
+    `;
+    await transaction`
+      insert into product_publications ${transaction(
+        variants.map((variant) => ({
+          product_id: variant.productId,
+          publication_version: 1,
+          name: variant.name,
+          description: "شرح کالا",
+          media_id: variant.mediaId,
+          variant_id: variant.variantId,
+        })),
+      )}
+    `;
+    await transaction`
+      insert into product_variants ${transaction(
+        variants.map((variant) => ({
+          id: variant.variantId,
+          product_id: variant.productId,
+          store_id: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+          client_key: "simple",
+          combination_key: "",
+        })),
+      )}
+    `;
+    await transaction`
+      insert into product_offers ${transaction(
+        variants.map((variant) => ({
+          product_id: variant.productId,
+          variant_id: variant.variantId,
+          amount: 1_000_000,
+          currency: "IRR",
+          revision: 1,
+        })),
+      )}
+    `;
+    await transaction`
+      insert into inventory_levels ${transaction(
+        variants.map((variant) => ({
+          variant_id: variant.variantId,
+          store_id: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+          on_hand: 10,
+          revision: 1,
+        })),
+      )}
+    `;
+
+    const buyerCartId = randomUUID();
+    const guestCartId = randomUUID();
+    await transaction`
+      insert into order_carts
+        (id, store_id, identity_id, status, revision, expires_at, updated_at)
+      values
+        (${buyerCartId}, 'ad75d73c-1744-422c-a6ae-31195ed6abf1', ${identityId},
+         'ACTIVE', 1, now() + interval '30 days', now()),
+        (${guestCartId}, 'ad75d73c-1744-422c-a6ae-31195ed6abf1', null,
+         'ACTIVE', 1, now() + interval '30 days', now())
+    `;
+    await transaction`
+      insert into order_cart_items ${transaction(
+        variants.slice(0, 100).map((variant) => ({
+          cart_id: buyerCartId,
+          variant_id: variant.variantId,
+          product_id: variant.productId,
+          quantity: 1,
+        })),
+      )}
+    `;
+    await transaction`
+      insert into order_cart_items (cart_id, variant_id, product_id, quantity)
+      values (${guestCartId}, ${variants[100]!.variantId}, ${variants[100]!.productId}, 1)
+    `;
+    const guestSecret = randomUUID();
+    await transaction`
+      insert into order_cart_access_tokens (id, cart_id, token_hash, expires_at)
+      values (${randomUUID()}, ${guestCartId},
+        ${createHash("sha256").update(guestSecret).digest("hex")},
+        now() + interval '30 days')
+    `;
+    return { buyerCartId, guestCartId, guestSecret };
+  });
+  await sql.end();
+  return result;
 }

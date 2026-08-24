@@ -23,6 +23,7 @@ import {
   replaceProductOffersBatchContract,
   replaceProductWorkingCopyContract,
   replaceSimpleProductWorkingCopyContract,
+  unpublishProductInputContract,
 } from "@sevo/contracts/product/v1";
 import { productIdContract } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -42,6 +43,7 @@ import {
   ProductNotFoundError,
   ProductNotReadyError,
   ProductRevisionConflictError,
+  ProductInvalidTransitionError,
   SellerAccessInactiveError,
 } from "./public";
 import { PRODUCT_SERVICE } from "./product.tokens";
@@ -218,6 +220,34 @@ export class ProductController {
     );
   }
 
+  @Post("seller/products/:productId/unpublication")
+  @HttpCode(HttpStatus.OK)
+  async unpublish(
+    @Param("productId") rawProductId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const identityId = await requireIdentity(request, this.sessions);
+    const productId = parseProductId(rawProductId, request.id);
+    const parsed = unpublishProductInputContract.safeParse(body);
+    if (!parsed.success) throw validationError(request.id);
+    const write = requireWrite(request.id, idempotencyKey, ifMatch);
+    if (parsed.data.expectedRevision !== write.expectedRevision) {
+      throw preconditionError(request.id);
+    }
+    const product = await this.handle(request, () =>
+      this.products.unpublish(identityId, productId, parsed.data, {
+        correlationId: request.id,
+        ...write,
+      }),
+    );
+    response.header("etag", `"${product.revision}"`);
+    return product;
+  }
+
   @Get("stores/:storeSlug/products")
   async listPublic(
     @Param("storeSlug") storeSlug: string,
@@ -289,6 +319,16 @@ export class ProductController {
           {
             code: "IDEMPOTENCY_CONFLICT",
             message: "این شناسه درخواست قبلاً برای تغییر دیگری استفاده شده است.",
+            correlationId: request.id,
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (error instanceof ProductInvalidTransitionError) {
+        throw new HttpException(
+          {
+            code: "INVALID_TRANSITION",
+            message: "توقف انتشار در وضعیت فعلی کالا ممکن نیست.",
             correlationId: request.id,
           },
           HttpStatus.CONFLICT,

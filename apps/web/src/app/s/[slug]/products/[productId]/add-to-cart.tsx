@@ -1,21 +1,22 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
 
 import styles from "./product-public.module.css";
 
 export function AddToCart({
-  variantId,
-  available,
+  variants,
 }: {
-  variantId: string;
-  available: boolean;
+  variants: Array<{ variantId: string; label: string; available: boolean }>;
 }) {
+  const initialVariant = variants.find((variant) => variant.available) ?? variants[0]!;
+  const [variantId, setVariantId] = useState(initialVariant.variantId);
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [replacementRevision, setReplacementRevision] = useState<number>();
-  const quantityId = useId();
+  const selectedVariant =
+    variants.find((variant) => variant.variantId === variantId) ?? initialVariant;
 
   async function add() {
     setPending(true);
@@ -87,12 +88,30 @@ export function AddToCart({
 
   return (
     <div className={styles.cartAction}>
-      <label htmlFor={quantityId}>تعداد</label>
+      {variants.length > 1 ? (
+        <>
+          <label htmlFor="cart-variant">گونه</label>
+          <select
+            id="cart-variant"
+            value={variantId}
+            onChange={(event) => setVariantId(event.target.value)}
+            disabled={pending}
+          >
+            {variants.map((variant) => (
+              <option key={variant.variantId} value={variant.variantId}>
+                {variant.label}
+                {variant.available ? "" : " — ناموجود"}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
+      <label htmlFor="cart-quantity">تعداد</label>
       <select
-        id={quantityId}
+        id="cart-quantity"
         value={quantity}
         onChange={(event) => setQuantity(Number(event.target.value))}
-        disabled={!available || pending}
+        disabled={!selectedVariant.available || pending}
       >
         {[1, 2, 3, 4, 5].map((value) => (
           <option key={value} value={value}>
@@ -101,8 +120,16 @@ export function AddToCart({
         ))}
       </select>
       {replacementRevision === undefined ? (
-        <button type="button" onClick={add} disabled={!available || pending}>
-          {pending ? "در حال افزودن…" : available ? "افزودن به سبد" : "فعلاً ناموجود"}
+        <button
+          type="button"
+          onClick={add}
+          disabled={!selectedVariant.available || pending}
+        >
+          {pending
+            ? "در حال افزودن…"
+            : selectedVariant.available
+              ? "افزودن به سبد"
+              : "فعلاً ناموجود"}
         </button>
       ) : null}
       {message ? <p role="status">{message}</p> : null}

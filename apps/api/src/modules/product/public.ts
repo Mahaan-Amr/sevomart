@@ -6,6 +6,7 @@ import type {
   ReplaceProductInventoryBatch,
   ReplaceProductOffersBatch,
   ReplaceProductWorkingCopy,
+  UnpublishProductInput,
   PublicSimpleProduct,
   PublicSimpleProductSummary,
   ReplaceSimpleProductWorkingCopy,
@@ -25,7 +26,8 @@ export type ProductWriteContext = Readonly<{
     | "REPLACE_WORKING_COPY"
     | "REPLACE_OFFERS_BATCH"
     | "REPLACE_INVENTORY_BATCH"
-    | "PUBLISH_PRODUCT";
+    | "PUBLISH_PRODUCT"
+    | "UNPUBLISH_PRODUCT";
   actorId: IdentityId;
   correlationId: string;
   idempotencyKey: string;
@@ -48,6 +50,14 @@ export interface ProductAuthoritativeRead {
   readAuthoritativeVariant(
     variantId: VariantId,
   ): Promise<ProductAuthoritativeVariant | undefined>;
+  readPublishedProduct(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicProduct | undefined>;
+  readPublished(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicSimpleProduct | undefined>;
 }
 
 export interface ProductRepository extends ProductAuthoritativeRead {
@@ -72,10 +82,6 @@ export interface ProductRepository extends ProductAuthoritativeRead {
     storeId: StoreId,
     context: ProductWriteContext,
   ): Promise<PublicSimpleProduct>;
-  readPublished(
-    productId: ProductId,
-    storeId: StoreId,
-  ): Promise<PublicSimpleProduct | undefined>;
   listPublished(storeId: StoreId): Promise<PublicSimpleProductSummary[]>;
   findPublishedMediaStoreId(mediaId: string): Promise<StoreId | undefined>;
   replaceProductWorkingCopy(
@@ -106,10 +112,12 @@ export interface ProductRepository extends ProductAuthoritativeRead {
     storeId: StoreId,
     context: ProductWriteContext,
   ): Promise<PublicProduct>;
-  readPublishedProduct(
+  unpublishProduct(
     productId: ProductId,
     storeId: StoreId,
-  ): Promise<PublicProduct | undefined>;
+    input: UnpublishProductInput,
+    context: ProductWriteContext,
+  ): Promise<ProductView | SimpleProductView>;
   listPublishedProducts(storeId: StoreId): Promise<PublicProductSummary[]>;
 }
 
@@ -118,6 +126,7 @@ export class ProductNotReadyError extends Error {}
 export class SellerAccessInactiveError extends Error {}
 export class InvalidVariantError extends Error {}
 export class DuplicateSkuError extends Error {}
+export class ProductInvalidTransitionError extends Error {}
 
 export class ProductRevisionConflictError extends Error {
   readonly code = "REVISION_CONFLICT" as const;

@@ -4,6 +4,7 @@ import {
   productBatchResultContract,
   productViewContract,
   productPublishedV2Contract,
+  productUnpublishedV1Contract,
   productCombinationKey,
   publicProductContract,
   publicProductSummaryContract,
@@ -18,6 +19,7 @@ import {
   type ReplaceProductInventoryBatch,
   type ReplaceProductOffersBatch,
   type ReplaceProductWorkingCopy,
+  type UnpublishProductInput,
   type ProductView,
   type PublicProduct,
   type SimpleProductView,
@@ -26,6 +28,8 @@ import {
   productIdContract,
   storeIdContract,
   variantIdContract,
+  type ProductId,
+  type StoreId,
   type VariantId,
 } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
@@ -41,6 +45,7 @@ import {
   InvalidVariantError,
   ProductNotFoundError,
   ProductRevisionConflictError,
+  ProductInvalidTransitionError,
   type ProductRepository,
   type ProductWriteContext,
 } from "../public";
@@ -48,7 +53,7 @@ import {
 type ProductRow = {
   productId: string;
   storeId: string;
-  state: "DRAFT" | "PUBLISHED";
+  state: "DRAFT" | "PUBLISHED" | "UNPUBLISHED";
   revision: number;
   publicationVersion: number;
   name: string | null;
@@ -346,6 +351,61 @@ export class PostgresProductRepository implements ProductRepository {
       limit 1
     `;
     return rows[0] ? storeIdContract.parse(rows[0].storeId) : undefined;
+  }
+
+  async readAuthoritativeVariant(variantId: VariantId) {
+    const rows = await this.#sql<
+      Array<{
+        productId: string;
+        storeId: string;
+        variantId: string;
+        name: string;
+        mediaId: string;
+        amount: number | string;
+        publicationVersion: number;
+        sellable: boolean;
+        publicationVariantId: string | null;
+        snapshot: JSONValue | null;
+      }>
+    >`
+      select p.id as "productId", p.store_id as "storeId",
+        variant.id as "variantId", publication.name,
+        publication.media_id as "mediaId", offer.amount,
+        p.publication_version as "publicationVersion",
+        (p.state = 'PUBLISHED') as sellable,
+        publication.variant_id as "publicationVariantId", publication.snapshot
+      from product_variants variant
+      join product_products p on p.id = variant.product_id
+      join product_publications publication
+        on publication.product_id = p.id
+       and publication.publication_version = p.publication_version
+      join product_offers offer
+        on offer.product_id = p.id and offer.variant_id = variant.id
+      where variant.id = ${variantId}::uuid
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row) return undefined;
+    const snapshot = row.snapshot
+      ? publicProductContract.safeParse(row.snapshot)
+      : undefined;
+    const publishedVariant = snapshot?.success
+      ? snapshot.data.variants.find((variant) => variant.variantId === row.variantId)
+      : undefined;
+    if (row.snapshot ? !publishedVariant : row.publicationVariantId !== row.variantId) {
+      return undefined;
+    }
+    const image = snapshot?.success ? snapshot.data.images[0]! : undefined;
+    return {
+      productId: productIdContract.parse(row.productId),
+      variantId: variantIdContract.parse(row.variantId),
+      storeId: storeIdContract.parse(row.storeId),
+      name: snapshot?.success ? snapshot.data.name : row.name,
+      image: image ?? { id: row.mediaId, url: `/v1/media/${row.mediaId}` },
+      unitPrice: { amount: Number(row.amount), currency: "IRR" as const },
+      publicationVersion: row.publicationVersion,
+      sellable: row.sellable,
+    } as const;
   }
 
   async replaceProductWorkingCopy(
@@ -746,6 +806,65 @@ export class PostgresProductRepository implements ProductRepository {
     );
   }
 
+  async unpublishProduct(
+    productId: ProductId,
+    storeId: StoreId,
+    input: UnpublishProductInput,
+    context: ProductWriteContext,
+  ) {
+    return this.#sql.begin((sql) =>
+      this.#idempotentWrite(sql, context, async () => {
+        const current = await this.#lockProductBase(sql, productId, storeId);
+        this.#requireRevision(current, context.expectedRevision);
+        if (current.state !== "PUBLISHED") {
+          throw new ProductInvalidTransitionError();
+        }
+        const revision = current.revision + 1;
+        await sql`
+          update product_products set state = 'UNPUBLISHED', revision = ${revision},
+            updated_at = now()
+          where id = ${productId}
+        `;
+        await sql`
+          insert into product_state_transitions
+            (id, product_id, store_id, actor_identity_id, previous_state, next_state,
+             previous_revision, next_revision, reason_code, correlation_id)
+          values
+            (${this.createId()}, ${productId}, ${storeId}, ${context.actorId},
+             'PUBLISHED', 'UNPUBLISHED', ${current.revision}, ${revision},
+             ${input.reasonCode}, ${context.correlationId})
+        `;
+        await enqueueOutboxEvent(
+          sql,
+          productUnpublishedV1Contract.parse({
+            version: 1,
+            eventId: this.createId(),
+            eventType: "ProductUnpublished.v1",
+            aggregateId: productId,
+            aggregateVersion: revision,
+            occurredAt: new Date().toISOString(),
+            correlationId: context.correlationId,
+            actor: { type: "IDENTITY", id: context.actorId },
+            payload: {
+              storeId,
+              productId,
+              publicationVersion: current.publicationVersion,
+            },
+          }),
+        );
+        const productView = await this.#readProductViewInTransaction(
+          sql,
+          productId,
+          storeId,
+        );
+        if (productView) return productView;
+        const simpleRow = await this.#readRow(sql, productId, storeId);
+        if (!simpleRow) throw new ProductNotFoundError();
+        return this.#toView(simpleRow);
+      }),
+    );
+  }
+
   async readPublishedProduct(productId: string, storeId: string) {
     const rows = await this.#sql<Array<{ snapshot: JSONValue }>>`
       select publication.snapshot
@@ -772,71 +891,6 @@ export class PostgresProductRepository implements ProductRepository {
     return products
       .filter((product): product is PublicProduct => Boolean(product))
       .map(toPublicMultivariantSummary);
-  }
-
-  async readAuthoritativeVariant(variantId: VariantId) {
-    const rows = await this.#sql<
-      Array<{
-        productId: string;
-        storeId: string;
-        name: string;
-        mediaId: string;
-        amount: number | string;
-        publicationVersion: number;
-        snapshot: JSONValue | null;
-      }>
-    >`
-      select product.id as "productId", product.store_id as "storeId",
-        publication.name, publication.media_id as "mediaId", offer.amount,
-        product.publication_version as "publicationVersion", publication.snapshot
-      from product_products product
-      join product_publications publication
-        on publication.product_id = product.id
-       and publication.publication_version = product.publication_version
-      join product_offers offer
-        on offer.product_id = product.id and offer.variant_id = ${variantId}::uuid
-      where product.state = 'PUBLISHED'
-        and (
-          publication.variant_id = ${variantId}::uuid
-          or (
-            publication.snapshot is not null
-            and publication.snapshot -> 'variants' @>
-              jsonb_build_array(jsonb_build_object('variantId', ${variantId}::text))
-          )
-        )
-      limit 1
-    `;
-    const row = rows[0];
-    if (!row) return undefined;
-    if (!row.snapshot) {
-      return {
-        productId: productIdContract.parse(row.productId),
-        variantId,
-        storeId: storeIdContract.parse(row.storeId),
-        name: row.name,
-        image: { id: row.mediaId, url: `/v1/media/${row.mediaId}` },
-        unitPrice: { amount: Number(row.amount), currency: "IRR" as const },
-        publicationVersion: row.publicationVersion,
-        sellable: true,
-      } as const;
-    }
-    const product = await this.#refreshPublicProduct(
-      publicProductContract.parse(row.snapshot),
-    );
-    const variant = product.variants.find(
-      (candidate) => candidate.variantId === variantId,
-    );
-    if (!variant) return undefined;
-    return {
-      productId: productIdContract.parse(row.productId),
-      variantId: variantIdContract.parse(variant.variantId),
-      storeId: storeIdContract.parse(row.storeId),
-      name: product.name,
-      image: product.images[0]!,
-      unitPrice: variant.price,
-      publicationVersion: product.publicationVersion,
-      sellable: true,
-    } as const;
   }
 
   async #refreshPublicProduct(product: PublicProduct) {

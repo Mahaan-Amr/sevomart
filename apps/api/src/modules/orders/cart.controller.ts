@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -19,6 +20,7 @@ import {
   attachCartInputContract,
   cartIdempotencyKeyContract,
   cartMutationInputContract,
+  removeCartItemInputContract,
   replaceCartStoreInputContract,
 } from "@sevo/contracts/orders/v1";
 import { variantIdContract } from "@sevo/contracts/platform/v1";
@@ -32,6 +34,7 @@ import {
 import { CartService } from "./application/cart.service";
 import {
   CartIdempotencyConflictError,
+  CartLineLimitError,
   CartQuantityLimitError,
   CartResolutionRequiredError,
   CartRevisionConflictError,
@@ -55,6 +58,36 @@ export class CartController {
   async read(@Req() request: FastifyRequest) {
     const identityId = await this.optionalIdentity(request);
     return this.carts.read(identityId, readCookie(request, "sevo_cart"));
+  }
+
+  @Delete("items/:variantId")
+  async remove(
+    @Param("variantId") rawVariantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") rawKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const variant = variantIdContract.safeParse(rawVariantId);
+    const input = removeCartItemInputContract.safeParse(body);
+    if (!variant.success || !input.success) throw validationError(request.id);
+    const identityId = await this.optionalIdentity(request);
+    try {
+      return await this.carts.remove(
+        identityId,
+        readCookie(request, "sevo_cart"),
+        variant.data,
+        input.data,
+        requireIdempotencyKey(request.id, rawKey),
+      );
+    } catch (error) {
+      return cartError(
+        error,
+        request.id,
+        this.carts,
+        identityId,
+        readCookie(request, "sevo_cart"),
+      );
+    }
   }
 
   @Put("items/:variantId")
@@ -157,7 +190,7 @@ export class CartController {
     }
   }
 
-  @Post("resolve")
+  @Post("identity-resolution")
   @HttpCode(HttpStatus.OK)
   async resolve(
     @Body() body: unknown,
@@ -304,6 +337,16 @@ async function cartError(
       {
         code: "INVALID_QUANTITY",
         message: "تعداد مجاز بین ۱ تا ۹۹ است.",
+        correlationId,
+      },
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
+  }
+  if (error instanceof CartLineLimitError) {
+    throw new HttpException(
+      {
+        code: "CART_LIMIT_REACHED",
+        message: "سبد حداکثر می‌تواند ۱۰۰ گونه داشته باشد.",
         correlationId,
       },
       HttpStatus.UNPROCESSABLE_ENTITY,

@@ -10,7 +10,7 @@ import {
 } from "../../platform/v1/index";
 
 export const cartIdContract = z.uuid().brand("CartId");
-export const cartIdempotencyKeyContract = z.string().min(1).max(200);
+export const cartIdempotencyKeyContract = z.uuid();
 
 export const cartMutationInputContract = z
   .object({
@@ -18,6 +18,10 @@ export const cartMutationInputContract = z
     quantity: z.int().min(1).max(99),
     expectedRevision: z.int().nonnegative(),
   })
+  .strict();
+
+export const removeCartItemInputContract = z
+  .object({ expectedRevision: z.int().nonnegative() })
   .strict();
 
 export const replaceCartStoreInputContract = cartMutationInputContract.extend({
@@ -75,6 +79,7 @@ export const cartConflictContract = z.discriminatedUnion("kind", [
         z
           .object({
             variantId: variantIdContract,
+            name: z.string().min(1).max(120),
             guestQuantity: z.int().nonnegative(),
             buyerQuantity: z.int().nonnegative(),
             mergedQuantity: z.int().min(1).max(99),
@@ -155,6 +160,7 @@ export const ordersV1Schemas = {
   CartVariantId: variantIdContract,
   CartIdempotencyKey: cartIdempotencyKeyContract,
   CartMutationInput: cartMutationInputContract,
+  RemoveCartItemInput: removeCartItemInputContract,
   ReplaceCartStoreInput: replaceCartStoreInputContract,
   CartItem: cartItemContract,
   Cart: cartContract,
@@ -173,12 +179,13 @@ export function createOrdersV1JsonSchemas() {
 export const ordersV1Examples = {
   CartId: "15e66295-eecd-4a7d-b06c-1d0909ab89c7",
   CartVariantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
-  CartIdempotencyKey: "cart-add-01",
+  CartIdempotencyKey: "5a5d7a6f-25d1-4b62-8510-c3ce13ab0d7e",
   CartMutationInput: {
     variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
     quantity: 2,
     expectedRevision: 0,
   },
+  RemoveCartItemInput: { expectedRevision: 1 },
   ReplaceCartStoreInput: {
     variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
     quantity: 1,
@@ -239,6 +246,7 @@ export type CartId = z.infer<typeof cartIdContract>;
 export type Cart = z.infer<typeof cartContract>;
 export type CartItem = z.infer<typeof cartItemContract>;
 export type CartMutationInput = z.infer<typeof cartMutationInputContract>;
+export type RemoveCartItemInput = z.infer<typeof removeCartItemInputContract>;
 export type ReplaceCartStoreInput = z.infer<typeof replaceCartStoreInputContract>;
 export type CartConflict = z.infer<typeof cartConflictContract>;
 export type AttachCartInput = z.infer<typeof attachCartInputContract>;

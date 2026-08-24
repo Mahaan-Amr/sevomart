@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { createJsonSchemaMap } from "./json-schema";
 import { mediaIdContract, mediaReferenceContract } from "./media-v1";
+import { storeSlugContract } from "./store-identifiers";
 import {
   publicFollowerCountV1Contract,
   viewerStoreFollowV1Contract,
@@ -15,12 +16,7 @@ import {
   timestampV1Contract,
 } from "./platform/v1/index";
 
-export const storeSlugContract = z
-  .string()
-  .min(3)
-  .max(48)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  .brand<"StoreSlug">();
+export { storeSlugContract } from "./store-identifiers";
 
 export const storeIdempotencyKeyContract = z.string().min(1).max(200);
 export const storeRevisionTagContract = z.string().regex(/^"\d+"$/);

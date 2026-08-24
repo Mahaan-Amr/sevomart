@@ -9,3 +9,4 @@ async function handle(request: Request, context: RouteContext) {
 export const GET = handle;
 export const POST = handle;
 export const PUT = handle;
+export const DELETE = handle;

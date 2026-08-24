@@ -50,26 +50,11 @@ export default async function PublicProductPage({
                     {formatIrrAsToman(variant.price.amount)} ·{" "}
                     {variant.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
                   </span>
-                  <AddToCart
-                    variantId={variant.variantId}
-                    available={variant.availability === "AVAILABLE"}
-                  />
                 </li>
               ))}
             </ul>
           ) : null}
-          {"variants" in product && product.variants.length === 1 ? (
-            <AddToCart
-              variantId={product.variants[0]!.variantId}
-              available={product.variants[0]!.availability === "AVAILABLE"}
-            />
-          ) : null}
-          {"variantId" in product ? (
-            <AddToCart
-              variantId={product.variantId}
-              available={product.availability === "AVAILABLE"}
-            />
-          ) : null}
+          <AddToCart variants={cartVariants(product)} />
           <p className={styles.payment}>
             روش پرداخت و شرایط مرجوعی پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
@@ -107,4 +92,21 @@ function formatProductPrice(product: PublicProduct | PublicSimpleProduct) {
   return minimum.amount === maximum.amount
     ? formatIrrAsToman(minimum.amount)
     : `از ${formatIrrAsToman(minimum.amount)} تا ${formatIrrAsToman(maximum.amount)}`;
+}
+
+function cartVariants(product: PublicProduct | PublicSimpleProduct) {
+  if (!("variants" in product)) {
+    return [
+      {
+        variantId: product.variantId,
+        label: product.name,
+        available: product.availability === "AVAILABLE",
+      },
+    ];
+  }
+  return product.variants.map((variant) => ({
+    variantId: variant.variantId,
+    label: variant.combination.map((part) => part.value).join("، ") || product.name,
+    available: variant.availability === "AVAILABLE",
+  }));
 }

@@ -29,6 +29,7 @@ label: wayfinder:map
 - [آماده سازی خط پایه توسعه، تست و CI](tickets/017-engineering-baseline.md) — workspace، PostgreSQL محلی، کنترل‌های کیفیت و CI و قرارداد OpenAPI آماده شدند.
 - [نمونه تجربه مشاهده کالا، کشف و دنبال‌کردن](https://github.com/Mahaan-Amr/sevomart/issues/52) — «کشف» کالامحور با شبکه ۳×۳، جزئیات پست‌مانند و هویت قابل‌ورود فروشگاه تأیید شد؛ دنبال‌کردن و گفت‌وگو هنگام اقدام نیازمند ورودند.
 - [ساخت چهارقدم کالای چندگونه](https://github.com/Mahaan-Amr/sevomart/issues/84) — نویسندگی چهارمرحله‌ای فارسی با گونه‌های دسته‌خنثی، هویت پایدار، batch اتمیک، readiness راهنما و انتشار نسخه‌دار تثبیت شد.
+- [ویرایش امن، موجودی و توقف/بازنشر کالا](https://github.com/Mahaan-Amr/sevomart/issues/85) — نسخه کاری از انتشار جدا ماند؛ اصلاح گروهی موجودی اتمیک و ممیزی‌شده است و توقف/بازنشر با revision، idempotency و publicationVersion تازه انجام می‌شود.
 
 ## هنوز مشخص نشده
 

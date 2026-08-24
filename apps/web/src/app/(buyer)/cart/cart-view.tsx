@@ -83,11 +83,39 @@ export function CartView() {
     }
   }
 
+  async function removeItem(variantId: string) {
+    if (!cart) return;
+    setPending(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/cart/items/${variantId}`, {
+        method: "DELETE",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ expectedRevision: cart.revision }),
+      });
+      const parsed = cartContract.safeParse(await response.json());
+      if (!response.ok || !parsed.success) {
+        setMessage("سبد تغییر کرده است؛ نسخه تازه را ببینید.");
+        await load();
+        return;
+      }
+      setCart(parsed.data);
+      setMessage("کالا از سبد حذف شد.");
+    } catch {
+      setMessage("حذف کالا انجام نشد. دوباره تلاش کنید.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function resolve(decision: "MERGE" | "KEEP_GUEST" | "KEEP_BUYER") {
     if (!conflict) return;
     setPending(true);
     try {
-      const response = await fetch("/api/cart/resolve", {
+      const response = await fetch("/api/cart/identity-resolution", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -136,11 +164,21 @@ export function CartView() {
                   <span>
                     <b>{item.name}</b>
                     <small>تعداد {item.quantity.toLocaleString("fa-IR")}</small>
+                    <small>قیمت به‌روز فروشگاه</small>
                     {item.availability !== "AVAILABLE" ? (
                       <em>موجودی این مورد تغییر کرده است.</em>
                     ) : null}
                   </span>
                   <strong>{formatIrrAsToman(item.unitPrice.amount)}</strong>
+                  <button
+                    className={styles.removeAction}
+                    type="button"
+                    disabled={pending}
+                    onClick={() => removeItem(item.variantId)}
+                    aria-label={`حذف ${item.name} از سبد`}
+                  >
+                    حذف
+                  </button>
                 </li>
               ))}
             </ul>
@@ -175,10 +213,40 @@ function ConflictChoice({
         پیش از ورود سبد «{conflict.guest.storeName}» و در حساب شما سبد «
         {conflict.buyer.storeName}» وجود دارد. تا انتخاب شما چیزی حذف نمی‌شود.
       </p>
+      <div className={styles.conflictSummaries}>
+        <p>
+          <b>سبد پیش از ورود</b>
+          <span>
+            {conflict.guest.itemCount.toLocaleString("fa-IR")} کالا از «
+            {conflict.guest.storeName}»
+          </span>
+        </p>
+        <p>
+          <b>سبد حساب من</b>
+          <span>
+            {conflict.buyer.itemCount.toLocaleString("fa-IR")} کالا از «
+            {conflict.buyer.storeName}»
+          </span>
+        </p>
+      </div>
       {conflict.kind === "SAME_STORE" ? (
-        <button type="button" disabled={pending} onClick={() => resolve("MERGE")}>
-          ترکیب دو سبد
-        </button>
+        <>
+          <ul className={styles.mergeSummary}>
+            {conflict.combinedQuantities.map((item) => (
+              <li key={item.variantId}>
+                <b>{item.name}</b>
+                <span>
+                  پیش از ورود {item.guestQuantity.toLocaleString("fa-IR")}، حساب من{" "}
+                  {item.buyerQuantity.toLocaleString("fa-IR")}، پس از ترکیب{" "}
+                  {item.mergedQuantity.toLocaleString("fa-IR")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <button type="button" disabled={pending} onClick={() => resolve("MERGE")}>
+            ترکیب دو سبد
+          </button>
+        </>
       ) : null}
       <button
         className={styles.secondaryAction}

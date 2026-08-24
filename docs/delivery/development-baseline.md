@@ -100,3 +100,10 @@ Worker یک command با وضعیت `PENDING` را از endpoint داخلی مح
 `pnpm dev`، و هم مسیر رسمی با `pnpm compose:up` بررسی می‌شوند. پذیرش این تغییر مستلزم
 سبزشدن health هر دو پردازش و پردازش یک recovery پس از restart API در تست integration
 است؛ این بررسی از ساخت imageهای جداگانه API، Worker و migrate نیز محافظت می‌کند.
+
+فید عمومی کشف cursor را با کلید فعال `DISCOVERY_CURSOR_ACTIVE_KEY_ID` در keyring
+نسخه‌دار `DISCOVERY_CURSOR_KEYRING` امضا می‌کند و seed رتبه‌بندی را جداگانه از
+`DISCOVERY_RANKING_SECRET` می‌سازد. مقدارهای محلی یکسان در `.env.example` و
+`compose.yaml` فقط برای توسعه بازتولیدپذیرند و startup production آن‌ها را رد
+می‌کند. مسیر native و Compose باید این متغیرها را هم‌زمان دریافت کنند و هنگام
+rotation، کلید قبلی تا پایان عمر ۲۴ساعته cursorهای صادرشده در keyring بماند.

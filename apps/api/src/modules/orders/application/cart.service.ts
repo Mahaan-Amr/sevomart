@@ -7,6 +7,7 @@ import {
   type CartConflict,
   type CartMutationInput,
   type ReplaceCartStoreInput,
+  type RemoveCartItemInput,
 } from "@sevo/contracts/orders/v1";
 import { cartIdContract, cartIdempotencyKeyContract } from "@sevo/contracts/orders/v1";
 import {
@@ -38,6 +39,7 @@ export class CartService {
     private readonly products: ProductAuthoritativeRead,
     private readonly inventory: InventoryAuthoring,
     private readonly stores: Pick<StoreRepository, "findById">,
+    private readonly guestSecretKey: string,
   ) {}
 
   async read(
@@ -92,7 +94,8 @@ export class CartService {
       );
     }
     const reusableGuestSecret = existingGuest ? guestSecret : undefined;
-    const newSecret = reusableGuestSecret ?? randomBytes(32).toString("base64url");
+    const newSecret =
+      reusableGuestSecret ?? deriveInitialGuestSecret(this.guestSecretKey, parsedKey);
     const stored = await this.repository.mutate({
       ...(actor && !existingGuest ? { identityId: actor } : {}),
       guestTokenHash: hashSecret(newSecret),
@@ -140,6 +143,35 @@ export class CartService {
       status: "RESOLUTION_REQUIRED",
       conflict: await this.toConflict(result.guest, result.buyer),
     };
+  }
+
+  async remove(
+    identityId: string | undefined,
+    guestSecret: string | undefined,
+    variantId: string,
+    input: RemoveCartItemInput,
+    idempotencyKey: string,
+  ): Promise<Cart> {
+    const actor = identityId ? identityIdContract.parse(identityId) : undefined;
+    if (!actor && !guestSecret) throw new CartRevisionConflictError();
+    const guestTokenHash = hashSecret(guestSecret ?? "");
+    const [guest, buyer] = await Promise.all([
+      guestSecret ? this.repository.readGuest(guestTokenHash) : undefined,
+      actor ? this.repository.readBuyer(actor) : undefined,
+    ]);
+    if (guest && buyer && guest.cartId !== buyer.cartId) {
+      throw new CartResolutionRequiredError();
+    }
+    const stored = await this.repository.remove({
+      ...(actor && !guest ? { identityId: actor } : {}),
+      guestTokenHash,
+      variantId: variantIdContract.parse(variantId),
+      input,
+      idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
+      requestHash: requestHash({ variantId, ...input }),
+      expiresAt: new Date(Date.now() + CART_LIFETIME_MS),
+    });
+    return this.toCart(stored, false);
   }
 
   async replaceStore(
@@ -271,18 +303,23 @@ export class CartService {
     return {
       kind: "SAME_STORE",
       ...summaries,
-      combinedQuantities: [...variants].map((variantId) => {
-        const guestQuantity =
-          guest.items.find((item) => item.variantId === variantId)?.quantity ?? 0;
-        const buyerQuantity =
-          buyer.items.find((item) => item.variantId === variantId)?.quantity ?? 0;
-        return {
-          variantId,
-          guestQuantity,
-          buyerQuantity,
-          mergedQuantity: Math.min(99, guestQuantity + buyerQuantity),
-        };
-      }),
+      combinedQuantities: await Promise.all(
+        [...variants].map(async (variantId) => {
+          const guestQuantity =
+            guest.items.find((item) => item.variantId === variantId)?.quantity ?? 0;
+          const buyerQuantity =
+            buyer.items.find((item) => item.variantId === variantId)?.quantity ?? 0;
+          const product = await this.products.readAuthoritativeVariant(variantId);
+          if (!product) throw new CartVariantUnavailableError();
+          return {
+            variantId,
+            name: product.name,
+            guestQuantity,
+            buyerQuantity,
+            mergedQuantity: Math.min(99, guestQuantity + buyerQuantity),
+          };
+        }),
+      ),
     };
   }
 
@@ -302,6 +339,12 @@ function requestHash(value: unknown) {
 function deriveReplacementSecret(guestSecret: string, idempotencyKey: string) {
   return createHmac("sha256", guestSecret)
     .update(`replace-store:${idempotencyKey}`)
+    .digest("base64url");
+}
+
+function deriveInitialGuestSecret(secretKey: string, idempotencyKey: string) {
+  return createHmac("sha256", secretKey)
+    .update(`create-cart:${idempotencyKey}`)
     .digest("base64url");
 }
 

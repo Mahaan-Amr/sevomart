@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
 import { readIdentitySession } from "../../../../lib/identity-api-proxy";
-import { SellerLogin } from "./seller-login";
+import { IdentityLogin } from "../../../login/identity-login";
 
 export default async function SellerLoginPage({
   searchParams,
@@ -16,7 +16,7 @@ export default async function SellerLoginPage({
   );
 
   return (
-    <SellerLogin
+    <IdentityLogin
       initiallySignedIn={Boolean(session)}
       returnTo={returnTo}
       showDevelopmentCode={

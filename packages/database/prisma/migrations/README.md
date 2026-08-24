@@ -27,6 +27,14 @@ corrected. `docker compose up --build --wait` applied all 21 migrations and brou
 API, Web, and worker to healthy status; native `pnpm dev` reported no pending
 migrations and brought API, Web, and worker to ready state.
 
+Issue 86 adds the orders-owned guest cart tables and partial unique index for one
+active cart per identity. The migration is additive, needs no compatibility window,
+and uses a forward fix if deployment must be corrected. It stores only hashed cart
+access secrets; prices and availability remain authoritative in their owner modules.
+`docker compose up --build --wait` applied all 24 migrations and reached healthy
+status; native `pnpm dev` reported no pending migrations and brought Web, API, and
+worker to ready state.
+
 Issue 84 verification (2026-08-24): the multivariant `product` migration relaxes
 legacy one-variant constraints and adds variant identity, immutable snapshot and SKU
 history storage without removing existing rows; it needs no compatibility window and
@@ -35,12 +43,12 @@ uses a forward fix if deployment must be corrected. `docker compose up --build
 native `pnpm dev` reported no pending migrations and brought Web, API, and worker to
 ready state.
 
-Issue 86 adds the orders-owned guest cart tables and partial unique index for one
-active cart per identity. The migration is additive, needs no compatibility window,
-and uses a forward fix if deployment must be corrected. It stores only hashed cart
-access secrets; prices and availability remain authoritative in their owner modules.
-`docker compose up --build --wait` applied all 24 migrations and reached healthy
-status; native `pnpm dev` reported no pending migrations and brought Web, API, and
+Issue 85 verification (2026-08-24): the `product` lifecycle migration extends the
+existing state check with `UNPUBLISHED` and adds an append-only state-transition
+audit without rewriting product or publication rows. It needs no compatibility
+window and uses a forward fix if deployment must be corrected. `docker compose up
+--build --wait` applied all 27 migrations and brought API, Web, and worker to healthy
+state; native `pnpm dev` reported no pending migrations and brought API, Web, and
 worker to ready state.
 
 The platform outbox envelope-version migration is a forward compatibility fix for

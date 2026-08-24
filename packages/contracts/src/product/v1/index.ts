@@ -437,7 +437,7 @@ const canonicalSimpleProductWorkingCopyContract = z
 export const simpleProductDraftContract = z
   .object({
     productId: productIdContract,
-    state: z.enum(["DRAFT", "PUBLISHED"]),
+    state: z.enum(["DRAFT", "PUBLISHED", "UNPUBLISHED"]),
     revision: z.int().nonnegative(),
     publicationVersion: z.int().nonnegative(),
     workingCopy: canonicalSimpleProductWorkingCopyContract,
@@ -461,7 +461,7 @@ export const simpleProductEmptyDraftContract = z
 export const simpleProductIncompleteDraftContract = z
   .object({
     productId: productIdContract,
-    state: z.enum(["DRAFT", "PUBLISHED"]),
+    state: z.enum(["DRAFT", "PUBLISHED", "UNPUBLISHED"]),
     revision: z.int().positive(),
     publicationVersion: z.int().nonnegative(),
     workingCopy: z
@@ -490,6 +490,11 @@ export const simpleProductViewContract = z.union([
   simpleProductDraftContract,
 ]);
 
+export const sellerProductViewContract = z.union([
+  productViewContract,
+  simpleProductViewContract,
+]);
+
 export const productReadinessIssueContract = z
   .object({ path: z.string().min(1), code: z.string().min(1) })
   .strict();
@@ -513,6 +518,17 @@ export const simpleProductPreviewContract = z
 
 export const publishSimpleProductInputContract = z
   .object({ expectedRevision: z.int().nonnegative(), confirmed: z.literal(true) })
+  .strict();
+
+export const unpublishProductInputContract = z
+  .object({
+    expectedRevision: z.int().nonnegative(),
+    reasonCode: z.enum([
+      "SELLER_REQUEST",
+      "TEMPORARILY_UNAVAILABLE",
+      "NEEDS_CORRECTION",
+    ]),
+  })
   .strict();
 
 export const publicSimpleProductContract = z
@@ -560,7 +576,12 @@ export const productNotFoundErrorContract = z
 
 export const productWriteConflictErrorContract = z
   .object({
-    code: z.enum(["REVISION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STORE_NOT_PUBLISHED"]),
+    code: z.enum([
+      "REVISION_CONFLICT",
+      "IDEMPOTENCY_CONFLICT",
+      "STORE_NOT_PUBLISHED",
+      "INVALID_TRANSITION",
+    ]),
     message: z.string().min(1),
     correlationId: z.string().min(1),
   })
@@ -613,6 +634,18 @@ export const productPublishedV2Contract = eventEnvelopeV1Contract.extend({
     .strict(),
 });
 
+export const productUnpublishedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("ProductUnpublished.v1"),
+  actor: eventActorV1Contract,
+  payload: z
+    .object({
+      storeId: storeIdContract,
+      productId: productIdContract,
+      publicationVersion: z.int().positive(),
+    })
+    .strict(),
+});
+
 export const variantPriceChangedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("VariantPriceChanged.v1"),
   actor: eventActorV1Contract,
@@ -652,6 +685,7 @@ export const productV1Schemas = {
   SimpleProductView: simpleProductViewContract,
   SimpleProductPreview: simpleProductPreviewContract,
   PublishSimpleProductInput: publishSimpleProductInputContract,
+  UnpublishProductInput: unpublishProductInputContract,
   PublicSimpleProduct: publicSimpleProductContract,
   PublicSimpleProductSummary: publicSimpleProductSummaryContract,
   PublicSimpleProductList: publicSimpleProductListContract,
@@ -665,6 +699,7 @@ export const productV1Schemas = {
   PublicProductSummary: publicProductSummaryContract,
   PublicProductList: publicProductListContract,
   ProductView: productViewContract,
+  SellerProductView: sellerProductViewContract,
   ProductPreview: productPreviewContract,
   ProductBatchResult: productBatchResultContract,
 } as const;
@@ -740,6 +775,10 @@ export const productV1Examples = {
     ],
   },
   PublishSimpleProductInput: { expectedRevision: 1, confirmed: true },
+  UnpublishProductInput: {
+    expectedRevision: 2,
+    reasonCode: "SELLER_REQUEST",
+  },
   ProductNotFoundError: {
     code: "PRODUCT_NOT_FOUND",
     message: "کالا پیدا نشد.",
@@ -787,3 +826,5 @@ export type PublicProductSummary = z.infer<typeof publicProductSummaryContract>;
 export type ProductView = z.infer<typeof productViewContract>;
 export type ProductPreview = z.infer<typeof productPreviewContract>;
 export type ProductBatchResult = z.infer<typeof productBatchResultContract>;
+export type UnpublishProductInput = z.infer<typeof unpublishProductInputContract>;
+export type ProductUnpublishedV1 = z.infer<typeof productUnpublishedV1Contract>;
