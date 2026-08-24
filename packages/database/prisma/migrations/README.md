@@ -35,6 +35,19 @@ access secrets; prices and availability remain authoritative in their owner modu
 status; native `pnpm dev` reported no pending migrations and brought Web, API, and
 worker to ready state.
 
+Issue 84 verification (2026-08-24): the multivariant `product` migration relaxes
+legacy one-variant constraints and adds variant identity, immutable snapshot and SKU
+history storage without removing existing rows; it needs no compatibility window and
+uses a forward fix if deployment must be corrected.
+
+Issue 85 verification (2026-08-24): the `product` lifecycle migration extends the
+existing state check with `UNPUBLISHED` and adds an append-only state-transition
+audit without rewriting product or publication rows. It needs no compatibility
+window and uses a forward fix if deployment must be corrected. `docker compose up
+--build --wait` applied all 27 migrations and brought API, Web, and worker to healthy
+state; native `pnpm dev` reported no pending migrations and brought API, Web, and
+worker to ready state.
+
 Issue 87 additively extends the orders-owned cart snapshot with reviewed product and
 store terms, and adds versioned saved-address, idempotency, and PII-free audit
 tables. Follow-up orders migrations add `IN_PROGRESS | COMPLETED` leases to cart and
@@ -44,16 +57,6 @@ corrections use a forward fix. `docker compose up --build --wait` found all 27
 migrations, applied the pending cart-lease migration, and brought API, Web, and
 worker to healthy status. Native `pnpm dev` found all 27 migrations with none
 pending and brought API, Web, and worker to ready state.
-
-Issue 84 verification (2026-08-24): the multivariant `product` migration relaxes
-legacy one-variant constraints and adds variant identity, immutable snapshot and SKU
-history storage without removing existing rows; it needs no compatibility window and
-uses a forward fix if deployment must be corrected.
-
-Issue 85 verification (2026-08-24): the `product` lifecycle migration extends the
-existing state check with `UNPUBLISHED` and adds an append-only state-transition
-audit without rewriting product or publication rows. It needs no compatibility
-window and uses a forward fix if deployment must be corrected.
 
 Issue 88 adds inventory-owned expiring reservations and orders-owned checkout,
 immutable snapshot and idempotency tables. Both migrations are additive, require no

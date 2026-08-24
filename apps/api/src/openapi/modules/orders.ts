@@ -88,8 +88,8 @@ const operations = [
     },
     headerParameters: idempotencyHeader,
     request: {
-      schema: "RemoveCartItemInput",
-      example: ordersV1Examples.RemoveCartItemInput,
+      schema: "CartItemRemovalInput",
+      example: ordersV1Examples.CartItemRemovalInput,
     },
     responses: [
       { status: 200, schema: "Cart" },

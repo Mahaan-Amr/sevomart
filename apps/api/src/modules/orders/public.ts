@@ -239,6 +239,9 @@ export class CartVariantUnavailableError extends Error {
 export class CartQuantityLimitError extends Error {
   readonly code = "INVALID_QUANTITY" as const;
 }
+export class CartLineLimitError extends Error {
+  readonly code = "CART_LIMIT_REACHED" as const;
+}
 export class SavedAddressNotFoundError extends Error {
   readonly code = "ADDRESS_NOT_FOUND" as const;
 }

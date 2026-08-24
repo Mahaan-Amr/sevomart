@@ -13,6 +13,7 @@ import postgres, { type JSONValue, type Sql } from "postgres";
 import {
   CartIdempotencyConflictError,
   CartIdempotencyInProgressError,
+  CartLineLimitError,
   CartQuantityLimitError,
   CartResolutionRequiredError,
   CartRevisionConflictError,
@@ -214,7 +215,7 @@ export class PostgresCartRepository implements CartRepository {
         ) as exists
       `;
         if ((counts[0]?.count ?? 0) >= 100 && !existing[0]?.exists) {
-          throw new CartQuantityLimitError();
+          throw new CartLineLimitError();
         }
         await sql`
         insert into order_cart_items
@@ -539,6 +540,11 @@ export class PostgresCartRepository implements CartRepository {
         let kept: StoredCart;
         if (command.input.decision === "MERGE") {
           if (guest.storeId !== buyer.storeId) throw new CartResolutionRequiredError();
+          const mergedLineCount = new Set([
+            ...guest.items.map((item) => item.variantId),
+            ...buyer.items.map((item) => item.variantId),
+          ]).size;
+          if (mergedLineCount > 100) throw new CartLineLimitError();
           for (const item of guest.items) {
             const current = buyer.items.find(
               (candidate) => candidate.variantId === item.variantId,
@@ -800,6 +806,9 @@ function cartFailure(error: unknown, correlationId: string): JSONValue | undefin
   if (error instanceof CartQuantityLimitError) {
     return { failureCode: "INVALID_QUANTITY", correlationId };
   }
+  if (error instanceof CartLineLimitError) {
+    return { failureCode: "CART_LIMIT_REACHED", correlationId };
+  }
   if (error instanceof CartVariantUnavailableError) {
     return { failureCode: "VARIANT_UNAVAILABLE", correlationId };
   }
@@ -844,6 +853,8 @@ function replayCartFailure(value: JSONValue) {
       );
     case "INVALID_QUANTITY":
       throw withReplayCorrelation(new CartQuantityLimitError(), failure.correlationId);
+    case "CART_LIMIT_REACHED":
+      throw withReplayCorrelation(new CartLineLimitError(), failure.correlationId);
     case "VARIANT_UNAVAILABLE":
       throw withReplayCorrelation(
         new CartVariantUnavailableError(),

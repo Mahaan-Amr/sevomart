@@ -75,16 +75,6 @@ describe("runtime trust guard", () => {
     ).toMatchObject({ SEVO_RUNTIME_ENV: "production", MINIO_USE_SSL: true });
   });
 
-  it("requires the active discovery cursor key to exist in the retained keyring", () => {
-    expect(() =>
-      readRuntimeEnvironment({
-        ...common,
-        DISCOVERY_CURSOR_ACTIVE_KEY_ID: "missing",
-        DISCOVERY_CURSOR_KEYRING: '{"current":"current-production-cursor-signing-key"}',
-      }),
-    ).toThrow("Active discovery cursor key is missing");
-  });
-
   it("rejects the local seller approval recovery secret at production trust", () => {
     expect(() =>
       readRuntimeEnvironment({

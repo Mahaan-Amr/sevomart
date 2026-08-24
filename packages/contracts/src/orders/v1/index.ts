@@ -469,7 +469,6 @@ export const ordersV1Schemas = {
   CartGuestScope: cartGuestScopeContract,
   CartMutationInput: cartMutationInputContract,
   CartItemRemovalInput: cartItemRemovalInputContract,
-  RemoveCartItemInput: cartItemRemovalInputContract,
   CartReviewInput: cartReviewInputContract,
   ReplaceCartStoreInput: replaceCartStoreInputContract,
   CartItem: cartItemContract,
@@ -514,7 +513,6 @@ export const ordersV1Examples = {
     expectedRevision: 0,
   },
   CartItemRemovalInput: { expectedRevision: 1 },
-  RemoveCartItemInput: { expectedRevision: 1 },
   CartReviewInput: { expectedRevision: 1, confirmed: true },
   ReplaceCartStoreInput: {
     variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",

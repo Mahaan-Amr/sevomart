@@ -25,70 +25,100 @@ describe("guest cart and login attachment HTTP API", () => {
 
   beforeEach(async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql`delete from order_cart_audits`;
-    await sql`delete from order_cart_idempotency_records`;
-    await sql`delete from order_carts`;
-    await sql`delete from inventory_levels`;
     await sql`
-      delete from product_state_transitions
-      where product_id in (${productId}::uuid, ${other.productId}::uuid)
+      delete from order_cart_audits
+      where cart_id in (
+        select id from order_carts where store_id in (${storeId}, ${other.storeId})
+      )
     `;
     await sql`
-      delete from product_products
-      where id in (${productId}::uuid, ${other.productId}::uuid)
+      delete from order_cart_idempotency_records
+      where scope in (${storeId}, ${other.storeId})
+         or operation like '%CART%'
     `;
     await sql`
-      delete from store_stores
-      where id in (${storeId}::uuid, ${other.storeId}::uuid)
+      delete from order_carts where store_id in (${storeId}, ${other.storeId})
+    `;
+    await sql`
+      delete from inventory_levels where variant_id in (${variantId}, ${other.variantId})
     `;
     await sql`
       insert into store_stores
         (id, name, slug, status, publication_version, revision, updated_at)
       values
         (${storeId}, 'خانه فنجان', 'cart-store', 'PUBLISHED', 1, 1, now())
+      on conflict (id) do update set
+        name = excluded.name, slug = excluded.slug, status = excluded.status,
+        publication_version = excluded.publication_version, revision = excluded.revision,
+        return_policy = null, return_policy_revision = 0, updated_at = now()
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
-      values (${crypto.randomUUID()}, ${storeId}, ${crypto.randomUUID()}, 'OWNER')
+      select ${crypto.randomUUID()}, ${storeId}, ${crypto.randomUUID()}, 'OWNER'
+      where not exists (select 1 from store_memberships where store_id = ${storeId})
     `;
     await sql`
       insert into product_products
         (id, store_id, state, revision, publication_version, published_at)
       values (${productId}, ${storeId}, 'PUBLISHED', 2, 1, now())
+      on conflict (id) do update set
+        store_id = excluded.store_id, state = excluded.state, revision = excluded.revision,
+        publication_version = excluded.publication_version, published_at = now()
     `;
     await sql`
       insert into product_publications
         (product_id, publication_version, name, description, media_id, variant_id)
       values
         (${productId}, 1, 'فنجان سرامیکی', 'فنجان دست‌ساز', ${mediaId}, ${variantId})
+      on conflict (product_id, publication_version) do update set
+        name = excluded.name, description = excluded.description,
+        media_id = excluded.media_id, variant_id = excluded.variant_id
     `;
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${productId}, ${variantId}, 4500000, 'IRR', 1)
+      on conflict (variant_id) do update set
+        product_id = excluded.product_id, amount = excluded.amount,
+        currency = excluded.currency, revision = excluded.revision
     `;
     await sql`
       insert into product_variants
         (id, product_id, store_id, client_key, combination_key)
       values (${variantId}, ${productId}, ${storeId}, 'simple', '')
+      on conflict (id) do update set
+        product_id = excluded.product_id, store_id = excluded.store_id,
+        client_key = excluded.client_key, combination_key = excluded.combination_key
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
       values (${variantId}, ${storeId}, 8, 1)
+      on conflict (variant_id) do update set
+        store_id = excluded.store_id, on_hand = excluded.on_hand, revision = excluded.revision
     `;
     await sql`
       insert into store_stores
         (id, name, slug, status, publication_version, revision, updated_at)
       values
         (${other.storeId}, 'خانه پارچه', 'other-cart-store', 'PUBLISHED', 1, 1, now())
+      on conflict (id) do update set
+        name = excluded.name, slug = excluded.slug, status = excluded.status,
+        publication_version = excluded.publication_version, revision = excluded.revision,
+        return_policy = null, return_policy_revision = 0, updated_at = now()
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
-      values (${crypto.randomUUID()}, ${other.storeId}, ${crypto.randomUUID()}, 'OWNER')
+      select ${crypto.randomUUID()}, ${other.storeId}, ${crypto.randomUUID()}, 'OWNER'
+      where not exists (
+        select 1 from store_memberships where store_id = ${other.storeId}
+      )
     `;
     await sql`
       insert into product_products
         (id, store_id, state, revision, publication_version, published_at)
       values (${other.productId}, ${other.storeId}, 'PUBLISHED', 2, 1, now())
+      on conflict (id) do update set
+        store_id = excluded.store_id, state = excluded.state, revision = excluded.revision,
+        publication_version = excluded.publication_version, published_at = now()
     `;
     await sql`
       insert into product_publications
@@ -96,19 +126,30 @@ describe("guest cart and login attachment HTTP API", () => {
       values
         (${other.productId}, 1, 'شال دست‌باف', 'شال دست‌باف', ${other.mediaId},
          ${other.variantId})
+      on conflict (product_id, publication_version) do update set
+        name = excluded.name, description = excluded.description,
+        media_id = excluded.media_id, variant_id = excluded.variant_id
     `;
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${other.productId}, ${other.variantId}, 3200000, 'IRR', 1)
+      on conflict (variant_id) do update set
+        product_id = excluded.product_id, amount = excluded.amount,
+        currency = excluded.currency, revision = excluded.revision
     `;
     await sql`
       insert into product_variants
         (id, product_id, store_id, client_key, combination_key)
       values (${other.variantId}, ${other.productId}, ${other.storeId}, 'simple', '')
+      on conflict (id) do update set
+        product_id = excluded.product_id, store_id = excluded.store_id,
+        client_key = excluded.client_key, combination_key = excluded.combination_key
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
       values (${other.variantId}, ${other.storeId}, 4, 1)
+      on conflict (variant_id) do update set
+        store_id = excluded.store_id, on_hand = excluded.on_hand, revision = excluded.revision
     `;
     await sql.end();
   });
@@ -326,7 +367,7 @@ describe("guest cart and login attachment HTTP API", () => {
     const first = await add(server, undefined, 1, 0);
     const cookie = first.headers["set-cookie"]!;
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql`delete from product_products where id = ${productId}`;
+    await sql`delete from product_variants where product_id = ${productId}`;
     await sql.end();
 
     const reviewed = await server.inject({

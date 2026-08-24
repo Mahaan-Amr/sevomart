@@ -236,7 +236,6 @@ test("guest adds a product, signs in and continues the same cart", async ({
         Number.parseFloat(getComputedStyle(element).transitionDuration),
       ),
   ).toBeLessThan(0.001);
-
   await page.getByRole("link", { name: "بازگشت به سبد" }).click();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
   await page.getByRole("link", { name: "رفتن به مرور نهایی سفارش" }).click();
@@ -284,10 +283,10 @@ test("same-store carts merge only after the buyer chooses merge", async ({
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toBeVisible();
   await expect(
-    page.getByText("سبد پیش از ورود ۱ کالا و سبد حساب شما ۱ کالا دارد."),
+    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
   ).toBeVisible();
   await expect(
-    page.getByText("پیش از ورود: ۲، حساب من: ۳، پس از ترکیب: ۵"),
+    page.getByText("پیش از ورود: ۲، هویت سوو من: ۳، پس از ترکیب: ۵"),
   ).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ترکیب دو سبد" }).click();
@@ -315,7 +314,7 @@ test("different-store carts change only after the buyer chooses which one to kee
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toHaveCount(0);
   await expect(
-    page.getByText("سبد پیش از ورود ۱ کالا و سبد حساب شما ۱ کالا دارد."),
+    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
   ).toBeVisible();
   await expect(page.getByText("کالای حساب")).toBeVisible();
   await page.getByRole("button", { name: "نگه‌داشتن سبد پیش از ورود" }).click();

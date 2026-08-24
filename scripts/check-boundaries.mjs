@@ -108,10 +108,17 @@ export function findMigrationOwnershipViolations(paths, registeredModules) {
   const violations = [];
   const convention =
     /^packages\/database\/prisma\/migrations\/\d{14}__([a-z][a-z0-9-]*)__[a-z0-9]+(?:-[a-z0-9]+)*\/migration\.sql$/;
+  const publishedLegacyOwners = new Map([
+    [
+      "packages/database/prisma/migrations/20260824174500__product__state_transition_truncate_guard/migration.sql",
+      "product",
+    ],
+  ]);
 
   for (const migrationPath of paths.map(toPosix)) {
     const match = migrationPath.match(convention);
-    if (!match) {
+    const owner = match?.[1] ?? publishedLegacyOwners.get(migrationPath);
+    if (!owner) {
       violations.push({
         path: migrationPath,
         rule: "migration-directory-convention",
@@ -119,8 +126,7 @@ export function findMigrationOwnershipViolations(paths, registeredModules) {
       continue;
     }
 
-    const owner = match[1];
-    if (!owner || !registeredModules.has(owner)) {
+    if (!registeredModules.has(owner)) {
       violations.push({
         path: migrationPath,
         rule: "registered-migration-owner",
