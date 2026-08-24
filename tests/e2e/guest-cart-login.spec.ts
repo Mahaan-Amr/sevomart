@@ -251,7 +251,9 @@ test("guest adds a product, signs in and continues the same cart", async ({
       where variant_id = ${ids.variant}
     `;
     await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
-    await expect(page.getByRole("alert")).toContainText("سبد را اصلاح");
+    await expect(
+      page.getByRole("alert").filter({ hasText: "سبد را اصلاح" }),
+    ).toBeVisible();
     await stockSql`
       update inventory_levels set on_hand = 8, revision = revision + 1
       where variant_id = ${ids.variant}
@@ -393,6 +395,14 @@ async function seedCartConflict(
         insert into product_products
           (id, store_id, state, revision, publication_version, published_at)
         values (${fixture.productId}, ${fixture.storeId}, 'PUBLISHED', 2, 1, now())
+      `;
+      await sql`
+        insert into product_variants
+          (id, product_id, store_id, client_key, combination_key,
+           retired, ever_published)
+        values
+          (${fixture.variantId}, ${fixture.productId}, ${fixture.storeId},
+           'legacy-default', 'legacy-default', false, true)
       `;
       await sql`
         insert into product_publications

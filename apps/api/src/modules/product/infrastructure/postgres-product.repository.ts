@@ -209,7 +209,9 @@ export class PostgresProductRepository implements ProductRepository {
             orderedMediaIds: input.workingCopy.orderedMediaIds,
             variant: { variantId, price: input.workingCopy.variant.price },
           },
-          inventory: inventory ?? null,
+          inventory: inventory
+            ? { onHand: inventory.onHand, revision: inventory.revision }
+            : null,
         };
         return input.workingCopy.name &&
           input.workingCopy.orderedMediaIds.length === 1 &&
@@ -973,7 +975,11 @@ export class PostgresProductRepository implements ProductRepository {
           variantIdContract.parse(variant.variantId),
         );
         return snapshot
-          ? { variantId: variant.variantId, ...snapshot }
+          ? {
+              variantId: variant.variantId,
+              onHand: snapshot.onHand,
+              revision: snapshot.revision,
+            }
           : { variantId: variant.variantId, onHand: 0, revision: 0 };
       }),
     );
@@ -1092,7 +1098,9 @@ export class PostgresProductRepository implements ProductRepository {
               : { amount: Number(row.amount), currency: "IRR" as const },
         },
       },
-      inventory,
+      inventory: inventory
+        ? { onHand: inventory.onHand, revision: inventory.revision }
+        : null,
     };
     return row.name && row.mediaId && row.amount !== null && inventory
       ? simpleProductDraftContract.parse(view)

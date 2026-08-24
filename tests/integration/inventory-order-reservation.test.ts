@@ -23,8 +23,9 @@ import {
 } from "../../apps/api/src/modules/store/composition";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
-const variantId = "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7";
-const storeId = "ad75d73c-1744-422c-a6ae-31195ed6abf1";
+const variantId = "2a275962-142f-46a9-b767-d54bb57d0dbc";
+const storeId = "78bc50d3-364c-4b17-8cbc-86f25c3e9f88";
+const productId = "456bc78d-20eb-433e-9e17-da0aaebfe02c";
 
 describe("inventory reservation transaction seam", () => {
   const clients: ReturnType<typeof postgres>[] = [];
@@ -37,8 +38,21 @@ describe("inventory reservation transaction seam", () => {
       where identity_id = '0fc8f4a0-0cf8-4df0-9fde-82234ef66413'
     `;
     await sql`delete from platform_outbox_events where aggregate_id = '47a3f408-858c-45d7-a0bd-ab84a28718ef'`;
-    await sql`delete from inventory_reservation_lines`;
-    await sql`delete from inventory_reservations`;
+    await sql`
+      delete from inventory_reservation_lines
+      where reservation_id in (
+        select id from inventory_reservations where store_id = ${storeId}
+      )
+    `;
+    await sql`delete from inventory_reservations where store_id = ${storeId}`;
+    await sql`
+      update order_checkout_preparations set consumed_order_id = null
+      where checkout_revision = 'e571d3b9-53cb-47de-8e62-31257784a10c'
+    `;
+    await sql`delete from order_items where order_id = '47a3f408-858c-45d7-a0bd-ab84a28718ef'`;
+    await sql`delete from order_delivery_snapshots where order_id = '47a3f408-858c-45d7-a0bd-ab84a28718ef'`;
+    await sql`delete from order_shipping_snapshots where order_id = '47a3f408-858c-45d7-a0bd-ab84a28718ef'`;
+    await sql`delete from order_policy_snapshots where order_id = '47a3f408-858c-45d7-a0bd-ab84a28718ef'`;
     await sql`delete from order_orders where id = '47a3f408-858c-45d7-a0bd-ab84a28718ef'`;
     await sql`
       delete from order_checkout_preparations
@@ -47,7 +61,8 @@ describe("inventory reservation transaction seam", () => {
     await sql`
       delete from order_carts where id = '15e66295-eecd-4a7d-b06c-1d0909ab89c7'
     `;
-    await sql`delete from product_products where id = 'a78fdcc0-caad-4315-a7cd-b22834fe76d4'`;
+    await sql`delete from product_state_transitions where product_id = ${productId}`;
+    await sql`delete from product_products where id = ${productId}`;
     await sql`delete from store_stores where id = ${storeId}`;
     await sql`delete from inventory_levels where variant_id = ${variantId}`;
     await sql`
@@ -133,13 +148,31 @@ describe("inventory reservation transaction seam", () => {
     clients.push(sql);
     const orderId = "47a3f408-858c-45d7-a0bd-ab84a28718ef";
     const reservationId = "6070faec-78f8-4a5f-86da-cdd19b39c5a3";
+    const cartId = "15e66295-eecd-4a7d-b06c-1d0909ab89c7";
+    const checkoutRevision = "e571d3b9-53cb-47de-8e62-31257784a10c";
+    await sql`
+      insert into order_carts
+        (id, store_id, identity_id, status, revision, expires_at)
+      values
+        (${cartId}, ${storeId}, '0fc8f4a0-0cf8-4df0-9fde-82234ef66413',
+         'ACTIVE', 1, now() + interval '1 day')
+    `;
+    await sql`
+      insert into order_checkout_preparations
+        (checkout_revision, identity_id, cart_id, cart_revision,
+         shipping_method_id, shipping_revision, policy_revision, snapshot, expires_at)
+      values
+        (${checkoutRevision}, '0fc8f4a0-0cf8-4df0-9fde-82234ef66413',
+         ${cartId}, 1, 'be77af55-ce97-46d5-8540-b5d55652daf1', 1, 1, '{}',
+         now() + interval '1 day')
+    `;
     await sql`
       insert into order_orders
         (id, identity_id, store_id, checkout_revision, reservation_id, status,
          total_amount, currency, reservation_expires_at, review_snapshot)
       values
         (${orderId}, '0fc8f4a0-0cf8-4df0-9fde-82234ef66413', ${storeId},
-         'e571d3b9-53cb-47de-8e62-31257784a10c', ${reservationId},
+         ${checkoutRevision}, ${reservationId},
          'PENDING_PAYMENT', 1000, 'IRR', now() - interval '1 second', '{}')
     `;
     await sql`
@@ -218,7 +251,6 @@ describe("inventory reservation transaction seam", () => {
     const checkoutRevision = "e571d3b9-53cb-47de-8e62-31257784a10c";
     const orderId = "47a3f408-858c-45d7-a0bd-ab84a28718ef";
     const reservationId = "6070faec-78f8-4a5f-86da-cdd19b39c5a3";
-    const productId = "a78fdcc0-caad-4315-a7cd-b22834fe76d4";
     const shippingId = "be77af55-ce97-46d5-8540-b5d55652daf1";
     const requestHash = "b".repeat(64);
     await sql`
