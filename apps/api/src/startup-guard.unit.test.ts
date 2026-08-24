@@ -65,7 +65,26 @@ describe("runtime trust guard", () => {
         MINIO_ACCESS_KEY: "production-access",
         MINIO_SECRET_KEY: "production-secret-value",
         MINIO_BUCKET: "production-media",
+        SELLER_APPROVAL_RECOVERY_SECRET: "production-seller-approval-recovery-secret",
       }),
     ).toMatchObject({ SEVO_RUNTIME_ENV: "production", MINIO_USE_SSL: true });
+  });
+
+  it("rejects the local seller approval recovery secret at production trust", () => {
+    expect(() =>
+      readRuntimeEnvironment({
+        ...common,
+        NODE_ENV: "production",
+        SEVO_RUNTIME_ENV: "production",
+        DATABASE_URL: "postgresql://sevo:strong-password@database.example:5432/sevo",
+        OTP_PROVIDER: "external",
+        MINIO_ENDPOINT: "objects.example.com",
+        MINIO_PORT: "443",
+        MINIO_USE_SSL: "true",
+        MINIO_ACCESS_KEY: "production-access",
+        MINIO_SECRET_KEY: "production-secret-value",
+        MINIO_BUCKET: "production-media",
+      }),
+    ).toThrow("non-default secrets");
   });
 });
