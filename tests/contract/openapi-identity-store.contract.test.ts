@@ -27,6 +27,20 @@ const frozenConsumerOperations = [
   ["post", "/v1/auth/otp/verifications", "none", [200, 401, 422, 500]],
   ["get", "/v1/auth/session", "identity", [200, 401, 500]],
   ["delete", "/v1/auth/session", "none", [204, 500]],
+  ["post", "/v1/seller-applications", "identity", [201, 401, 409, 422, 500]],
+  ["get", "/v1/seller-applications/mine", "identity", [200, 401, 422, 500]],
+  [
+    "post",
+    "/v1/seller-applications/{applicationId}/resubmission",
+    "identity",
+    [200, 401, 404, 409, 422, 500],
+  ],
+  [
+    "post",
+    "/v1/seller-applications/{applicationId}/withdrawal",
+    "identity",
+    [200, 401, 404, 409, 422, 500],
+  ],
   ["get", "/v1/seller/store/draft", "identity", [200, 401, 404, 500]],
   ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "identity", [200, 401, 422, 500]],
@@ -67,6 +81,40 @@ describe("OpenAPI identity and store compatibility", () => {
       );
     }
 
+    for (const path of [
+      "/v1/seller-applications",
+      "/v1/seller-applications/{applicationId}/resubmission",
+      "/v1/seller-applications/{applicationId}/withdrawal",
+    ]) {
+      expect(document.paths[path].post.parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "Idempotency-Key",
+            in: "header",
+            required: true,
+            schema: { $ref: "#/components/schemas/IdempotencyKey" },
+          }),
+        ]),
+      );
+      expect(document.paths[path].post.responses["409"].headers).toMatchObject({
+        "Retry-After": expect.objectContaining({
+          schema: { type: "string" },
+        }),
+      });
+    }
+
+    expect(document.paths["/v1/seller-applications/mine"].get.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cursor", in: "query", required: false }),
+        expect.objectContaining({ name: "limit", in: "query", required: false }),
+      ]),
+    );
+    expect(
+      document.paths["/v1/seller-applications/mine"].get.responses["422"].content[
+        "application/json"
+      ].schema,
+    ).toEqual({ $ref: "#/components/schemas/SellerApplicationReadMineError" });
+
     expect(document.components.schemas.StoreDraftInput.required ?? []).toEqual([]);
     expect(
       document.paths["/v1/seller/media"].post.requestBody.content["multipart/form-data"]
@@ -99,7 +147,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "7ddafc1492be9fbe0f7f5e542ffc8dab4de19ac12d6cb1542462397df67efc2b",
+      "76176faf5467e50d9054a168cf058b3f89f096cffe2a6f0f074eac27e3dbcb3c",
     );
   });
 

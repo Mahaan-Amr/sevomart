@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 import {
   acceptanceTestMobiles,
+  sellerApplicationDraftTestMobiles,
   storefrontTestMobiles,
   visualViewports,
 } from "./tests/helpers/visual-projects";
@@ -49,6 +50,7 @@ export default defineConfig({
           "09111111111",
           ...storefrontTestMobiles,
           ...acceptanceTestMobiles,
+          ...sellerApplicationDraftTestMobiles,
         ].join(","),
       },
       reuseExistingServer: !process.env.CI,

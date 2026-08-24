@@ -21,6 +21,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const response =
       exception instanceof HttpException ? exception.getResponse() : null;
     if (typeof response === "object" && response !== null && "code" in response) {
+      if (response.code === "IDEMPOTENCY_IN_PROGRESS") {
+        void reply.header("retry-after", "1");
+      }
       void reply.status(status).send(response);
       return;
     }

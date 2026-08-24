@@ -50,3 +50,95 @@ model IdentitySession {
   @@index([identityId, expiresAt])
   @@map("identity_sessions")
 }
+
+model SellerApplication {
+  id               String   @id @db.Uuid
+  identityId       String   @map("identity_id") @db.Uuid
+  status           String   @db.VarChar(32)
+  currentRevision  Int      @map("current_revision")
+  aggregateVersion Int      @map("aggregate_version")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSubmittedAt  DateTime @map("last_submitted_at") @db.Timestamptz(3)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(3)
+  revisions        SellerApplicationRevision[]
+  decisions        SellerApplicationDecision[]
+
+  @@index([identityId, createdAt])
+  @@map("identity_seller_applications")
+}
+
+model SellerAccess {
+  id         String   @id @db.Uuid
+  identityId String   @unique @map("identity_id") @db.Uuid
+  status     String   @db.VarChar(16)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("identity_seller_access")
+}
+
+model SellerApplicationRevision {
+  id                 String            @id @db.Uuid
+  applicationId      String            @map("application_id") @db.Uuid
+  revision           Int
+  applicantName      String            @map("applicant_name") @db.VarChar(80)
+  proposedStoreName  String            @map("proposed_store_name") @db.VarChar(80)
+  goodsAreaText      String            @map("goods_area_text") @db.VarChar(120)
+  currentSalesMethod String            @map("current_sales_method") @db.VarChar(240)
+  submittedAt        DateTime          @map("submitted_at") @db.Timestamptz(3)
+  application        SellerApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
+  @@unique([applicationId, revision])
+  @@map("identity_seller_application_revisions")
+}
+
+model SellerApplicationDecision {
+  id              String            @id @db.Uuid
+  applicationId   String            @map("application_id") @db.Uuid
+  revision        Int
+  action          String            @db.VarChar(32)
+  reasonCode      String            @map("reason_code") @db.VarChar(48)
+  publicReason    String            @map("public_reason") @db.VarChar(1000)
+  internalNote    String?           @map("internal_note") @db.VarChar(2000)
+  requestedFields String[]          @map("requested_fields")
+  actorIdentityId String            @map("actor_identity_id") @db.Uuid
+  occurredAt      DateTime          @map("occurred_at") @db.Timestamptz(3)
+  application     SellerApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
+  @@index([applicationId, occurredAt])
+  @@map("identity_seller_application_decisions")
+}
+
+model SellerApplicationIdempotency {
+  operation    String   @db.VarChar(64)
+  actorId      String   @map("actor_id") @db.Uuid
+  key          String   @db.VarChar(128)
+  payloadHash  String   @map("payload_hash") @db.VarChar(64)
+  state        String   @db.VarChar(16)
+  response     Json?    @db.JsonB
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  @@id([operation, actorId, key])
+  @@map("identity_seller_application_idempotency")
+}
+
+model SellerApplicationAudit {
+  id                 String   @id @db.Uuid
+  actorKind          String   @map("actor_kind") @db.VarChar(24)
+  actorIdentityId    String?  @map("actor_identity_id") @db.Uuid
+  audience           String   @db.VarChar(24)
+  action             String   @db.VarChar(64)
+  targetId           String   @map("target_id") @db.Uuid
+  result             String   @db.VarChar(24)
+  previousStatus     String?  @map("previous_status") @db.VarChar(32)
+  nextStatus         String   @map("next_status") @db.VarChar(32)
+  previousRevision   Int?     @map("previous_revision")
+  nextRevision       Int      @map("next_revision")
+  reasonCode         String?  @map("reason_code") @db.VarChar(48)
+  correlationId      String   @map("correlation_id") @db.Uuid
+  idempotencyKeyHash String   @map("idempotency_key_hash") @db.VarChar(64)
+  occurredAt         DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([targetId, occurredAt])
+  @@map("identity_seller_application_audit")
+}

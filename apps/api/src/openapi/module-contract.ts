@@ -1,9 +1,12 @@
 import type { OpenAPIObject } from "@nestjs/swagger";
 
-export type ApiResponseContract =
+export type ApiResponseContract = (
   | { status: number; schema: string }
   | { status: number; binaryMedia: true }
-  | { status: number; noContent: true };
+  | { status: number; noContent: true }
+) & {
+  headers?: Record<string, { description: string; schema: { type: "string" } }>;
+};
 
 export type ApiResponseMetadata = {
   descriptions: Readonly<Record<number, string>>;
@@ -23,6 +26,18 @@ export type ApiOperationContract = {
     schema: string;
     example: string;
   };
+  headerParameters?: readonly {
+    name: string;
+    schema: string;
+    example: string;
+    required: boolean;
+  }[];
+  queryParameters?: readonly {
+    name: string;
+    schema: string;
+    example: string | number;
+    required: boolean;
+  }[];
   request?: {
     schema: string;
     example: unknown;
@@ -47,10 +62,10 @@ type ContractOperation = {
   security: Array<Record<string, string[]>>;
   parameters?: Array<{
     name: string;
-    in: "path";
-    required: true;
+    in: "path" | "header" | "query";
+    required: boolean;
     schema: SchemaReference;
-    example: string;
+    example: string | number;
   }>;
   requestBody?: {
     required: true;
@@ -73,17 +88,19 @@ function response(
     throw new Error(`OpenAPI response ${contract.status} requires a description`);
   }
   if ("noContent" in contract) {
-    return { description };
+    return { description, headers: contract.headers };
   }
   if ("binaryMedia" in contract) {
     return {
       description,
       content: { "image/*": { schema: { type: "string", format: "binary" } } },
+      headers: contract.headers,
     };
   }
 
   const responseObject: ContractResponse = {
     description,
+    headers: contract.headers,
     content: {
       "application/json": {
         schema: schemaReference(contract.schema),
@@ -130,6 +147,30 @@ export function addModuleOpenApiContract(
         },
       ];
     }
+    if (contract.headerParameters) {
+      operation.parameters ??= [];
+      operation.parameters.push(
+        ...contract.headerParameters.map((parameter) => ({
+          name: parameter.name,
+          in: "header" as const,
+          required: parameter.required,
+          schema: schemaReference(parameter.schema),
+          example: parameter.example,
+        })),
+      );
+    }
+    if (contract.queryParameters) {
+      operation.parameters ??= [];
+      operation.parameters.push(
+        ...contract.queryParameters.map((parameter) => ({
+          name: parameter.name,
+          in: "query" as const,
+          required: parameter.required,
+          schema: schemaReference(parameter.schema),
+          example: parameter.example,
+        })),
+      );
+    }
     if (contract.request) {
       operation.requestBody = {
         required: true,
@@ -160,18 +201,26 @@ function compatibilitySignature(operation: Partial<ContractOperation>): string {
   return JSON.stringify({
     security: operation.security ?? [],
     parameterRefs:
-      operation.parameters?.map(({ name, schema }) => [name, schema.$ref]) ?? [],
+      operation.parameters?.map(({ name, schema, in: location, required }) => [
+        name,
+        location,
+        required,
+        schema.$ref,
+      ]) ?? [],
     requestRef:
       Object.values(operation.requestBody?.content ?? {})[0]?.schema.$ref ?? null,
     responses: Object.fromEntries(
       Object.entries(operation.responses ?? {}).map(([status, value]) => [
         status,
-        Object.fromEntries(
-          Object.entries(value.content ?? {}).map(([contentType, media]) => [
-            contentType,
-            media.schema,
-          ]),
-        ),
+        {
+          content: Object.fromEntries(
+            Object.entries(value.content ?? {}).map(([contentType, media]) => [
+              contentType,
+              media.schema,
+            ]),
+          ),
+          headers: Object.keys(value.headers ?? {}).sort(),
+        },
       ]),
     ),
   });

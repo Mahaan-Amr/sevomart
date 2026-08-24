@@ -2,6 +2,12 @@ import type {
   IranianMobile,
   OtpCode,
   IdentitySession,
+  MySellerApplications,
+  ReadMySellerApplicationsQuery,
+  ResubmitSellerApplication,
+  SellerApplicationInput,
+  SellerApplicationView,
+  WithdrawSellerApplication,
 } from "@sevo/contracts/identity-access/v1";
 
 export const IDENTITY_SESSION_READER = Symbol("IDENTITY_SESSION_READER");
@@ -72,4 +78,40 @@ export interface IdentityAccessRepository {
     now: Date,
   ): Promise<ActiveIdentitySession | undefined>;
   revokeSession(tokenHash: string, revokedAt: Date): Promise<boolean>;
+}
+
+export type SellerApplicationCommandContext = {
+  identityId: string;
+  correlationId: string;
+  idempotencyKey: string;
+};
+
+export class SellerApplicationNotFoundError extends Error {}
+export class ActiveSellerApplicationExistsError extends Error {}
+export class SellerAccessExistsError extends Error {}
+export class InvalidSellerApplicationTransitionError extends Error {}
+export class SellerApplicationRevisionConflictError extends Error {}
+export class SellerApplicationIdempotencyConflictError extends Error {}
+export class SellerApplicationIdempotencyInProgressError extends Error {}
+export class SellerApplicationCursorError extends Error {}
+
+export interface SellerApplicationApplicant {
+  submit(
+    context: SellerApplicationCommandContext,
+    input: SellerApplicationInput,
+  ): Promise<SellerApplicationView>;
+  readMine(
+    identityId: string,
+    query?: Partial<ReadMySellerApplicationsQuery>,
+  ): Promise<MySellerApplications>;
+  resubmit(
+    context: SellerApplicationCommandContext,
+    applicationId: string,
+    input: ResubmitSellerApplication,
+  ): Promise<SellerApplicationView>;
+  withdraw(
+    context: SellerApplicationCommandContext,
+    applicationId: string,
+    input: WithdrawSellerApplication,
+  ): Promise<SellerApplicationView>;
 }

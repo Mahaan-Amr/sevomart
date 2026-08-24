@@ -2,6 +2,7 @@ import {
   createIdentityAccessV1JsonSchemas,
   identityAccessV1Examples,
   identityAccessV1Paths,
+  sellerApplicationV1Paths,
 } from "@sevo/contracts/identity-access/v1";
 
 import {
@@ -9,6 +10,13 @@ import {
   type ApiOperationContract,
 } from "../module-contract";
 import type { OpenApiContributor } from "../public";
+
+const retryAfterHeader = {
+  "Retry-After": {
+    description: "Present when an idempotent command with this key is still running.",
+    schema: { type: "string" as const },
+  },
+};
 
 const operations = [
   {
@@ -68,14 +76,146 @@ const operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    operationId: "submitSellerApplication",
+    method: "post",
+    path: sellerApplicationV1Paths.submit,
+    tag: "identity-access",
+    auth: "identity-session",
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: identityAccessV1Examples.IdempotencyKey,
+        required: true,
+      },
+    ],
+    request: {
+      schema: "SellerApplicationInput",
+      example: identityAccessV1Examples.SellerApplicationInput,
+    },
+    responses: [
+      { status: 201, schema: "SellerApplicationView" },
+      { status: 401, schema: "UnauthorizedError" },
+      {
+        status: 409,
+        schema: "SellerApplicationError",
+        headers: retryAfterHeader,
+      },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "readMySellerApplications",
+    method: "get",
+    path: sellerApplicationV1Paths.readMine,
+    tag: "identity-access",
+    auth: "identity-session",
+    queryParameters: [
+      {
+        name: "cursor",
+        schema: "SellerApplicationCursor",
+        example: identityAccessV1Examples.SellerApplicationCursor,
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "SellerApplicationPageLimit",
+        example: identityAccessV1Examples.SellerApplicationPageLimit,
+        required: false,
+      },
+    ],
+    responses: [
+      { status: 200, schema: "MySellerApplications" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 422, schema: "SellerApplicationReadMineError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "resubmitSellerApplication",
+    method: "post",
+    path: sellerApplicationV1Paths.resubmit,
+    tag: "identity-access",
+    auth: "identity-session",
+    pathParameter: {
+      name: "applicationId",
+      schema: "SellerApplicationId",
+      example: identityAccessV1Examples.SellerApplicationId,
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: identityAccessV1Examples.IdempotencyKey,
+        required: true,
+      },
+    ],
+    request: {
+      schema: "ResubmitSellerApplication",
+      example: identityAccessV1Examples.ResubmitSellerApplication,
+    },
+    responses: [
+      { status: 200, schema: "SellerApplicationView" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "SellerApplicationError" },
+      {
+        status: 409,
+        schema: "SellerApplicationError",
+        headers: retryAfterHeader,
+      },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "withdrawSellerApplication",
+    method: "post",
+    path: sellerApplicationV1Paths.withdraw,
+    tag: "identity-access",
+    auth: "identity-session",
+    pathParameter: {
+      name: "applicationId",
+      schema: "SellerApplicationId",
+      example: identityAccessV1Examples.SellerApplicationId,
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: identityAccessV1Examples.IdempotencyKey,
+        required: true,
+      },
+    ],
+    request: {
+      schema: "WithdrawSellerApplication",
+      example: identityAccessV1Examples.WithdrawSellerApplication,
+    },
+    responses: [
+      { status: 200, schema: "SellerApplicationView" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "SellerApplicationError" },
+      {
+        status: 409,
+        schema: "SellerApplicationError",
+        headers: retryAfterHeader,
+      },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 const responseMetadata = {
   descriptions: {
     200: "Successful response",
+    201: "Seller application submitted",
     202: "Request accepted",
     204: "Session ended",
     401: "Identity session is missing or invalid",
+    404: "Seller application was not found",
+    409: "Seller application command conflicts with current state",
     429: "Request rate limit exceeded",
     422: "Request validation failed",
     500: "Unexpected server error",

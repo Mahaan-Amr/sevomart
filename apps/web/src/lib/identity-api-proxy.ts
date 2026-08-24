@@ -12,7 +12,8 @@ export async function proxyIdentityRequest(
   forwardSessionCookie = false,
 ): Promise<Response> {
   try {
-    const upstream = await fetch(`${API_BASE_URL}${path}`, {
+    const search = new URL(request.url).search;
+    const upstream = await fetch(`${API_BASE_URL}${path}${search}`, {
       method: request.method,
       headers: {
         ...(request.headers.get("content-type")
@@ -20,6 +21,9 @@ export async function proxyIdentityRequest(
           : {}),
         ...(request.headers.get("cookie")
           ? { cookie: request.headers.get("cookie")! }
+          : {}),
+        ...(request.headers.get("idempotency-key")
+          ? { "idempotency-key": request.headers.get("idempotency-key")! }
           : {}),
         "x-correlation-id":
           request.headers.get("x-correlation-id") ?? crypto.randomUUID(),
@@ -35,6 +39,8 @@ export async function proxyIdentityRequest(
     if (forwardSessionCookie && sessionCookie) {
       headers.set("set-cookie", sessionCookie);
     }
+    const retryAfter = upstream.headers.get("retry-after");
+    if (retryAfter) headers.set("retry-after", retryAfter);
     const body = upstream.status === 204 ? null : await upstream.text();
     return new Response(body, {
       status: upstream.status,

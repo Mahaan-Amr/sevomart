@@ -10,3 +10,13 @@ receipts. This owner does not introduce another product-domain module.
 
 Every pull request that adds a migration must state the owning module, rollback or
 forward-fix plan, and whether a compatibility window is required.
+
+The same `prisma migrate deploy` command applies migrations in both supported local
+paths. A migration change must be verified once with `docker compose up --build
+--wait` and once with `pnpm dev`; record those checks in the pull request. The seller
+application migration owned by `identity-access` is additive, needs no compatibility
+window, and uses a forward fix if deployment must be corrected.
+
+Issue 79 verification (2026-08-24): Compose built all four application images, applied
+all ten migrations, and reached healthy status; native `pnpm dev` reported no pending
+migrations and brought Web, API, and worker to ready state.

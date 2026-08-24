@@ -1,0 +1,210 @@
+.page {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(100%, 520px);
+  padding: 24px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 22px;
+  background: var(--color-surface);
+  box-shadow:
+    8px 8px 20px var(--shadow-neutral),
+    -8px -8px 20px var(--shadow-highlight-strong);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand,
+.progress,
+.statusLabel {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.progress {
+  color: var(--color-muted);
+}
+
+.panel h1 {
+  margin-top: 12px;
+}
+
+.form {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.form label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.help {
+  min-height: 25px;
+  font-size: 13px;
+}
+
+.form input,
+.form textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  background: var(--color-background);
+  box-shadow: inset 2px 2px 5px var(--shadow-neutral-soft);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.8;
+  resize: vertical;
+  transition:
+    border-color 180ms ease,
+    outline-color 180ms ease;
+}
+
+.form input:focus-visible,
+.form textarea:focus-visible,
+.form button:focus-visible,
+.leave:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.message {
+  min-height: 25px;
+  color: var(--color-primary-dark);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.actions button {
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-primary);
+  box-shadow: 3px 3px 8px var(--shadow-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.actions .secondary {
+  border: 1px solid var(--color-divider);
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-primary-dark);
+}
+
+.actions .danger,
+.danger {
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 8px 18px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  cursor: pointer;
+}
+
+.actions .danger {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  box-shadow: none;
+}
+
+.danger:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.danger:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.primaryAction {
+  display: block;
+  min-height: 44px;
+  margin-top: 16px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryAction:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.leave {
+  display: inline-block;
+  margin-top: 16px;
+  border-radius: 8px;
+  color: var(--color-muted);
+  font-size: 13px;
+  text-underline-offset: 4px;
+}
+
+.reason {
+  margin-top: 16px;
+  padding: 12px;
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: 8px;
+  background: var(--color-cover-start);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.statusLabel {
+  margin-top: 16px;
+}
+
+@media (max-width: 420px) {
+  .page {
+    align-items: start;
+    padding: 16px;
+  }
+
+  .panel {
+    padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form input,
+  .form textarea {
+    transition: none;
+  }
+}
