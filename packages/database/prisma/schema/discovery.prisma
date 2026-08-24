@@ -68,3 +68,51 @@ model DiscoveryFollowAudit {
   @@index([storeId, occurredAt])
   @@map("discovery_follow_audits")
 }
+
+model DiscoveryStoreFeedProjection {
+  storeId            String   @id @map("store_id") @db.Uuid
+  published          Boolean
+  aggregateVersion   Int      @map("aggregate_version")
+  publicationVersion Int      @map("publication_version")
+  updatedAt          DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@index([published, storeId])
+  @@map("discovery_store_feed_projections")
+}
+
+model DiscoveryProductFeedProjection {
+  productId               String   @id @map("product_id") @db.Uuid
+  storeId                 String   @map("store_id") @db.Uuid
+  productAggregateVersion Int      @map("product_aggregate_version")
+  publicationVersion      Int      @map("publication_version")
+  published               Boolean
+  firstPublishedAt        DateTime @map("first_published_at") @db.Timestamptz(3)
+  eligibleSince           DateTime @map("eligible_since") @db.Timestamptz(3)
+  offerVersion            Int      @map("offer_version")
+  availabilityVersion     Int      @map("availability_version")
+  updatedAt               DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@index([published, firstPublishedAt, productId])
+  @@index([storeId, published])
+  @@map("discovery_product_feed_projections")
+}
+
+model DiscoveryProductFeedVersionBuffer {
+  productId          String   @map("product_id") @db.Uuid
+  publicationVersion Int      @map("publication_version")
+  versionKind        String   @map("version_kind") @db.VarChar(16)
+  version            Int
+  updatedAt          DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@id([productId, publicationVersion, versionKind])
+  @@map("discovery_product_feed_version_buffers")
+}
+
+model DiscoveryProjectionStatus {
+  projectionName String   @id @map("projection_name") @db.VarChar(64)
+  healthy        Boolean
+  reason         String?  @db.VarChar(64)
+  updatedAt      DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("discovery_projection_status")
+}

@@ -26,6 +26,53 @@ const writeHeaders = [
 
 const operations = [
   {
+    operationId: "getDiscoveryFeed",
+    method: "get",
+    path: "/v1/feeds/discovery",
+    tag: "discovery",
+    auth: "none",
+    queryParameters: [
+      {
+        name: "cursor",
+        schema: "DiscoveryFeedCursor",
+        example: discoveryV1Examples.DiscoveryFeedCursor,
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "DiscoveryFeedLimit",
+        example: discoveryV1Examples.DiscoveryFeedLimit,
+        required: false,
+      },
+    ],
+    responses: [
+      {
+        status: 200,
+        schema: "DiscoveryFeedPageV1",
+        headers: {
+          "X-Projection-Lag-Ms": {
+            description: "Age of the latest committed discovery projection",
+            schema: { type: "string" },
+          },
+        },
+      },
+      { status: 400, schema: "DiscoveryFeedErrorV1" },
+      { status: 409, schema: "DiscoveryFeedErrorV1" },
+      { status: 410, schema: "DiscoveryFeedErrorV1" },
+      {
+        status: 503,
+        schema: "DiscoveryFeedErrorV1",
+        headers: {
+          "Retry-After": {
+            description: "Seconds before retrying an unavailable projection",
+            schema: { type: "string" },
+          },
+        },
+      },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "activateStoreFollow",
     method: "put",
     path: "/v1/me/follows/{storeId}",
@@ -72,13 +119,16 @@ const operations = [
 
 const responseMetadata = {
   descriptions: {
-    200: "Store-follow relationship returned",
+    200: "Discovery response returned",
+    400: "Discovery cursor is invalid",
     401: "Identity session is missing or invalid",
     404: "Published store was not found",
     409: "Revision or idempotency key conflicts with current state",
+    410: "Discovery cursor has expired",
     422: "The acting identity owns this store",
     428: "Required write precondition is missing or malformed",
     500: "Unexpected server error",
+    503: "Discovery projection is unavailable",
   },
   headersBySchema: {
     StoreFollowViewV1: {

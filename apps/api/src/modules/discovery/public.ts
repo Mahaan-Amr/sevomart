@@ -1,12 +1,54 @@
 import type {
+  DiscoveryFeedPageV1,
   PublicFollowerCountV1,
   StoreFollowViewV1,
   ViewerStoreFollowV1,
 } from "@sevo/contracts/discovery/v1";
-import type { IdentityId, StoreId } from "@sevo/contracts/platform/v1";
+import type { PublicProduct, PublicSimpleProduct } from "@sevo/contracts/product/v1";
+import type { IdentityId, ProductId, StoreId } from "@sevo/contracts/platform/v1";
 
 export const STORE_FOLLOWING = Symbol("STORE_FOLLOWING");
 export const STORE_FOLLOW_REPOSITORY = Symbol("STORE_FOLLOW_REPOSITORY");
+
+export type DiscoveryFeedProjectionCandidate = Readonly<{
+  productId: string;
+  storeId: string;
+  firstPublishedAt: Date;
+  eligibleSince: Date;
+  storePublicationVersion: number;
+  publicationVersion: number;
+  offerVersion: number;
+  availabilityVersion: number;
+}>;
+
+export interface DiscoveryFeedRepository {
+  readPublicSnapshot(snapshotAt: Date): Promise<{
+    healthy: boolean;
+    reason?: string;
+    projectionUpdatedAt: Date;
+    candidates: DiscoveryFeedProjectionCandidate[];
+  }>;
+}
+
+export interface DiscoveryProductRead {
+  readPublishedProduct(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicProduct | undefined>;
+  readPublished(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicSimpleProduct | undefined>;
+}
+
+export interface DiscoveryFeed {
+  read(input: { cursor?: string; limit?: number }): Promise<{
+    page: DiscoveryFeedPageV1;
+    projectionLagMs: number;
+  }>;
+}
+
+export class DiscoveryProjectionUnavailableError extends Error {}
 
 export type StoreFollowOperation = "ACTIVATE" | "DEACTIVATE";
 

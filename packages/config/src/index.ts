@@ -15,6 +15,22 @@ const iranianTestMobileList = z
       .min(1),
   );
 
+const discoveryCursorKeyring = z
+  .string()
+  .default('{"local-v1":"sevo_local_discovery_cursor_signing_secret"}')
+  .transform((value, context) => {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "Invalid discovery cursor keyring JSON",
+      });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.record(z.string().min(1).max(64), z.string().min(32)));
+
 const runtimeEnvironmentContract = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   SEVO_RUNTIME_ENV: z
@@ -43,6 +59,12 @@ const runtimeEnvironmentContract = z.object({
     .min(32)
     .default("sevo_local_seller_approval_recovery_secret"),
   CART_GUEST_SECRET: z.string().min(32).default("sevo_local_cart_guest_secret_value"),
+  DISCOVERY_CURSOR_ACTIVE_KEY_ID: z.string().min(1).max(64).default("local-v1"),
+  DISCOVERY_CURSOR_KEYRING: discoveryCursorKeyring,
+  DISCOVERY_RANKING_SECRET: z
+    .string()
+    .min(32)
+    .default("sevo_local_discovery_ranking_seed_secret"),
 });
 
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentContract>;
@@ -51,6 +73,11 @@ export function readRuntimeEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): RuntimeEnvironment {
   const environment = runtimeEnvironmentContract.parse(source);
+  if (
+    !environment.DISCOVERY_CURSOR_KEYRING[environment.DISCOVERY_CURSOR_ACTIVE_KEY_ID]
+  ) {
+    throw new Error("Active discovery cursor key is missing from its keyring");
+  }
   if (environment.SEVO_RUNTIME_ENV === "production") {
     const unsafe =
       environment.OTP_PROVIDER === "dev" ||
@@ -64,6 +91,11 @@ export function readRuntimeEnvironment(
       environment.SELLER_APPROVAL_RECOVERY_SECRET ===
         "sevo_local_seller_approval_recovery_secret" ||
       environment.CART_GUEST_SECRET === "sevo_local_cart_guest_secret_value" ||
+      Object.values(environment.DISCOVERY_CURSOR_KEYRING).includes(
+        "sevo_local_discovery_cursor_signing_secret",
+      ) ||
+      environment.DISCOVERY_RANKING_SECRET ===
+        "sevo_local_discovery_ranking_seed_secret" ||
       environment.DATABASE_URL.includes("sevo_local");
     if (unsafe) {
       throw new Error(

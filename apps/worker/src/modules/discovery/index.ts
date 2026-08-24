@@ -2,6 +2,10 @@ import { identityStatusChangedV1Contract } from "@sevo/contracts/identity-access
 import { DurableOutboxWorker, type OutboxEventHandler } from "@sevo/outbox";
 
 import type { WorkerHandler } from "../public";
+import {
+  projectDiscoveryProductEvent,
+  projectDiscoveryStoreEvent,
+} from "./project-public-feed";
 
 export const projectIdentityStatusForFollowerCount: OutboxEventHandler = async (
   event,
@@ -81,6 +85,25 @@ const followerCountIdentityProjectionWorker: WorkerHandler = {
   },
 };
 
+const publicDiscoveryProjectionWorker: WorkerHandler = {
+  async start(environment) {
+    const worker = new DurableOutboxWorker(environment.DATABASE_URL, {
+      consumerName: "discovery-public-feed-v1",
+      handlers: {
+        "StorePublished.v1": projectDiscoveryStoreEvent,
+        "StoreUnpublished.v1": projectDiscoveryStoreEvent,
+        "ProductPublished.v1": projectDiscoveryProductEvent,
+        "ProductPublished.v2": projectDiscoveryProductEvent,
+        "VariantPriceChanged.v1": projectDiscoveryProductEvent,
+        "VariantAvailabilityChanged.v1": projectDiscoveryProductEvent,
+      },
+    });
+    await worker.start();
+    return () => worker.close();
+  },
+};
+
 export const discovery_workerHandlers: readonly WorkerHandler[] = [
   followerCountIdentityProjectionWorker,
+  publicDiscoveryProjectionWorker,
 ];
