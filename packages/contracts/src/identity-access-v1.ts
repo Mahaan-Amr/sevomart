@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { validationErrorContract } from "./api-errors-v1";
 import { createJsonSchemaMap } from "./json-schema";
-import { eventEnvelopeV1Contract } from "./platform/v1";
+import { eventEnvelopeV1Contract, identityIdContract } from "./platform/v1";
 
 export const iranianMobileContract = z
   .string()
@@ -26,6 +26,19 @@ export const sellerApplicationV1Paths = {
   readMine: "/v1/seller-applications/mine",
   resubmit: "/v1/seller-applications/{applicationId}/resubmission",
   withdraw: "/v1/seller-applications/{applicationId}/withdrawal",
+} as const;
+
+export const platformSellerApplicationV1Paths = {
+  list: "/v1/platform/seller-applications",
+  read: "/v1/platform/seller-applications/{applicationId}",
+  requestInformation:
+    "/v1/platform/seller-applications/{applicationId}/information-request",
+  reject: "/v1/platform/seller-applications/{applicationId}/rejection",
+} as const;
+
+export const platformAgentAuthV1Paths = {
+  requestOtp: "/v1/platform/auth/otp/requests",
+  verifyOtp: "/v1/platform/auth/otp/verifications",
 } as const;
 
 const trimmedText = (minimum: number, maximum: number) =>
@@ -68,6 +81,35 @@ export const sellerApplicationReasonCodeContract = z.enum([
   "ELIGIBILITY_NOT_ESTABLISHED",
   "OTHER",
 ]);
+
+export const platformPermissionContract = z.literal("SELLER_APPLICATION_REVIEW");
+
+const platformSellerApplicationDecisionBaseContract = z.object({
+  expectedRevision: z.number().int().positive(),
+  publicReason: trimmedText(5, 1_000),
+  internalNote: trimmedText(1, 2_000).optional(),
+});
+
+export const requestSellerApplicationInformationContract =
+  platformSellerApplicationDecisionBaseContract.extend({
+    reasonCode: z.enum(["INFORMATION_INCOMPLETE", "INFORMATION_INCONSISTENT", "OTHER"]),
+    requestedFields: z
+      .array(sellerApplicationRequestedFieldContract)
+      .min(1)
+      .max(4)
+      .refine((fields) => new Set(fields).size === fields.length, {
+        message: "requested fields must be unique",
+      }),
+  });
+
+export const rejectSellerApplicationContract =
+  platformSellerApplicationDecisionBaseContract.extend({
+    reasonCode: z.enum([
+      "INFORMATION_INCONSISTENT",
+      "ELIGIBILITY_NOT_ESTABLISHED",
+      "OTHER",
+    ]),
+  });
 
 export const resubmitSellerApplicationContract = sellerApplicationInputContract.extend({
   expectedRevision: z.number().int().positive(),
@@ -115,6 +157,51 @@ export const mySellerApplicationsContract = z.object({
   nextCursor: z.string().nullable(),
 });
 
+export const platformSellerApplicationListQueryContract = z.object({
+  status: z
+    .enum(["SUBMITTED", "NEEDS_INFORMATION", "APPROVED", "REJECTED", "WITHDRAWN"])
+    .optional(),
+  cursor: sellerApplicationCursorContract.optional(),
+  limit: sellerApplicationPageLimitContract.default(20),
+});
+
+export const platformSellerApplicationSummaryContract = z.object({
+  applicationId: sellerApplicationIdContract,
+  applicantName: trimmedText(2, 80),
+  proposedStoreName: trimmedText(2, 80),
+  status: sellerApplicationStatusContract,
+  revision: z.number().int().positive(),
+  lastSubmittedAt: z.string().datetime({ offset: true }),
+});
+
+export const platformSellerApplicationPageContract = z.object({
+  items: z.array(platformSellerApplicationSummaryContract),
+  nextCursor: z.string().nullable(),
+});
+
+export const platformSellerApplicationDecisionContract = z.object({
+  action: z.enum(["REQUEST_INFORMATION", "REJECT"]),
+  reasonCode: sellerApplicationReasonCodeContract,
+  publicReason: trimmedText(5, 1_000),
+  internalNote: trimmedText(1, 2_000).nullable(),
+  requestedFields: z.array(sellerApplicationRequestedFieldContract),
+  actorIdentityId: z.string().uuid(),
+  revision: z.number().int().positive(),
+  occurredAt: z.string().datetime({ offset: true }),
+});
+
+export const platformSellerApplicationViewContract = z.object({
+  applicationId: sellerApplicationIdContract,
+  isSelfReview: z.boolean(),
+  status: sellerApplicationStatusContract,
+  revision: z.number().int().positive(),
+  payloadRevision: z.number().int().positive(),
+  currentPayload: sellerApplicationInputContract,
+  createdAt: z.string().datetime({ offset: true }),
+  lastSubmittedAt: z.string().datetime({ offset: true }),
+  decisions: z.array(platformSellerApplicationDecisionContract),
+});
+
 export const sellerApplicationErrorContract = z.object({
   code: z.enum([
     "APPLICATION_NOT_FOUND",
@@ -125,6 +212,8 @@ export const sellerApplicationErrorContract = z.object({
     "IDEMPOTENCY_CONFLICT",
     "IDEMPOTENCY_IN_PROGRESS",
     "INVALID_CURSOR",
+    "SELF_REVIEW_FORBIDDEN",
+    "PLATFORM_PERMISSION_REQUIRED",
   ]),
   message: z.string().min(1),
   correlationId: z.string().min(1),
@@ -158,6 +247,25 @@ export const sellerApplicationEventContract = eventEnvelopeV1Contract
   })
   .strict();
 
+export const platformSellerApplicationDecisionEventContract = eventEnvelopeV1Contract
+  .extend({
+    eventType: z.enum([
+      "SellerApplicationInformationRequested.v1",
+      "SellerApplicationRejected.v1",
+    ]),
+    actor: z.object({ type: z.literal("IDENTITY"), id: identityIdContract }).strict(),
+    payload: z
+      .object({
+        applicationId: z.string().uuid(),
+        status: z.enum(["NEEDS_INFORMATION", "REJECTED"]),
+        revision: z.number().int().positive(),
+        reasonCode: sellerApplicationReasonCodeContract,
+        actorKind: z.literal("PLATFORM_AGENT"),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const otpRequestContract = z.object({
   mobile: iranianMobileContract,
 });
@@ -182,6 +290,15 @@ export const identitySessionContract = z.object({
   expiresAt: z.string().datetime({ offset: true }),
 });
 
+export const platformAgentSessionContract = z.object({
+  actor: z.object({
+    identityId: z.string().uuid(),
+    audience: z.literal("PLATFORM_AGENT"),
+  }),
+  permission: platformPermissionContract,
+  expiresAt: z.string().datetime({ offset: true }),
+});
+
 export const unauthorizedErrorContract = z.object({
   code: z.literal("UNAUTHORIZED"),
   message: z.string().min(1),
@@ -200,12 +317,14 @@ export const identityAccessV1Schemas = {
   OtpVerification: otpVerificationContract,
   ActorContext: actorContextContract,
   IdentitySession: identitySessionContract,
+  PlatformAgentSession: platformAgentSessionContract,
   UnauthorizedError: unauthorizedErrorContract,
   RateLimitError: rateLimitErrorContract,
   SellerApplicationId: sellerApplicationIdContract,
   IdempotencyKey: idempotencyKeyContract,
   SellerApplicationCursor: sellerApplicationCursorContract,
   SellerApplicationPageLimit: sellerApplicationPageLimitContract,
+  SellerApplicationStatus: sellerApplicationStatusContract,
   SellerApplicationInput: sellerApplicationInputContract,
   ResubmitSellerApplication: resubmitSellerApplicationContract,
   WithdrawSellerApplication: withdrawSellerApplicationContract,
@@ -214,6 +333,13 @@ export const identityAccessV1Schemas = {
   MySellerApplications: mySellerApplicationsContract,
   SellerApplicationError: sellerApplicationErrorContract,
   SellerApplicationReadMineError: sellerApplicationReadMineErrorContract,
+  PlatformPermission: platformPermissionContract,
+  RequestSellerApplicationInformation: requestSellerApplicationInformationContract,
+  RejectSellerApplication: rejectSellerApplicationContract,
+  PlatformSellerApplicationSummary: platformSellerApplicationSummaryContract,
+  PlatformSellerApplicationPage: platformSellerApplicationPageContract,
+  PlatformSellerApplicationDecision: platformSellerApplicationDecisionContract,
+  PlatformSellerApplicationView: platformSellerApplicationViewContract,
 } as const;
 
 export function createIdentityAccessV1JsonSchemas() {
@@ -241,6 +367,14 @@ export const identityAccessV1Examples = {
     },
     expiresAt: "2026-08-23T09:00:00.000Z",
   },
+  PlatformAgentSession: {
+    actor: {
+      identityId: "9921f18f-187f-40dd-a389-1626156366f8",
+      audience: "PLATFORM_AGENT",
+    },
+    permission: "SELLER_APPLICATION_REVIEW",
+    expiresAt: "2026-08-24T17:00:00.000Z",
+  },
   UnauthorizedError: {
     code: "UNAUTHORIZED",
     message: "نشست شما معتبر نیست. دوباره وارد شوید.",
@@ -255,6 +389,7 @@ export const identityAccessV1Examples = {
   IdempotencyKey: "74155020-2830-43a5-9bc1-d5bb7a7fead8",
   SellerApplicationCursor: "eyJjcmVhdGVkQXQiOiIyMDI2LTA4LTI0VDA4OjAwOjAwLjAwMFoifQ",
   SellerApplicationPageLimit: 20,
+  SellerApplicationStatus: "SUBMITTED",
   SellerApplicationReadMineError: {
     code: "INVALID_CURSOR",
     message: "ادامه فهرست درخواست‌ها معتبر نیست.",
@@ -304,6 +439,54 @@ export const identityAccessV1Examples = {
     message: "یک درخواست در حال بررسی دارید.",
     correlationId: "01J5H8CZHJ2QX0M5MEQ7M6H1P4",
   },
+  PlatformPermission: "SELLER_APPLICATION_REVIEW",
+  RequestSellerApplicationInformation: {
+    expectedRevision: 1,
+    reasonCode: "INFORMATION_INCOMPLETE",
+    publicReason: "لطفاً روش فعلی فروش را روشن‌تر توضیح دهید.",
+    internalNote: "شرح مسیر ثبت سفارش کامل نیست.",
+    requestedFields: ["currentSalesMethod"],
+  },
+  RejectSellerApplication: {
+    expectedRevision: 1,
+    reasonCode: "ELIGIBILITY_NOT_ESTABLISHED",
+    publicReason: "با اطلاعات فعلی امکان تأیید فروشندگی وجود ندارد.",
+  },
+  PlatformSellerApplicationSummary: {
+    applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+    applicantName: "نگار محمدی",
+    proposedStoreName: "خانه ماه",
+    status: "SUBMITTED",
+    revision: 1,
+    lastSubmittedAt: "2026-08-24T08:00:00.000Z",
+  },
+  PlatformSellerApplicationPage: { items: [], nextCursor: null },
+  PlatformSellerApplicationDecision: {
+    action: "REQUEST_INFORMATION",
+    reasonCode: "INFORMATION_INCOMPLETE",
+    publicReason: "لطفاً روش فعلی فروش را روشن‌تر توضیح دهید.",
+    internalNote: null,
+    requestedFields: ["currentSalesMethod"],
+    actorIdentityId: "9921f18f-187f-40dd-a389-1626156366f8",
+    revision: 2,
+    occurredAt: "2026-08-24T08:05:00.000Z",
+  },
+  PlatformSellerApplicationView: {
+    applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+    isSelfReview: false,
+    status: "SUBMITTED",
+    revision: 1,
+    payloadRevision: 1,
+    currentPayload: {
+      applicantName: "نگار محمدی",
+      proposedStoreName: "خانه ماه",
+      goodsAreaText: "سفال دست‌ساز",
+      currentSalesMethod: "فروش از راه اینستاگرام و پیام مستقیم",
+    },
+    createdAt: "2026-08-24T08:00:00.000Z",
+    lastSubmittedAt: "2026-08-24T08:00:00.000Z",
+    decisions: [],
+  },
 } as const;
 
 export type IranianMobile = z.infer<typeof iranianMobileContract>;
@@ -314,6 +497,7 @@ export type OtpChallenge = z.infer<typeof otpChallengeContract>;
 export type OtpVerification = z.infer<typeof otpVerificationContract>;
 export type ActorContext = z.infer<typeof actorContextContract>;
 export type IdentitySession = z.infer<typeof identitySessionContract>;
+export type PlatformAgentSession = z.infer<typeof platformAgentSessionContract>;
 export type SellerApplicationInput = z.infer<typeof sellerApplicationInputContract>;
 export type SellerApplicationStatus = z.infer<typeof sellerApplicationStatusContract>;
 export type SellerApplicationEvent = z.infer<typeof sellerApplicationEventContract>;
@@ -329,3 +513,17 @@ export type ReadMySellerApplicationsQuery = z.infer<
 >;
 export type SellerApplicationView = z.infer<typeof sellerApplicationViewContract>;
 export type MySellerApplications = z.infer<typeof mySellerApplicationsContract>;
+export type PlatformPermission = z.infer<typeof platformPermissionContract>;
+export type RequestSellerApplicationInformation = z.infer<
+  typeof requestSellerApplicationInformationContract
+>;
+export type RejectSellerApplication = z.infer<typeof rejectSellerApplicationContract>;
+export type PlatformSellerApplicationListQuery = z.infer<
+  typeof platformSellerApplicationListQueryContract
+>;
+export type PlatformSellerApplicationPage = z.infer<
+  typeof platformSellerApplicationPageContract
+>;
+export type PlatformSellerApplicationView = z.infer<
+  typeof platformSellerApplicationViewContract
+>;

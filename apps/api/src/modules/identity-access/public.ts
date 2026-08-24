@@ -3,9 +3,15 @@ import type {
   OtpCode,
   IdentitySession,
   MySellerApplications,
+  PlatformSellerApplicationListQuery,
+  PlatformSellerApplicationPage,
+  PlatformSellerApplicationView,
   ReadMySellerApplicationsQuery,
+  RejectSellerApplication,
+  RequestSellerApplicationInformation,
   ResubmitSellerApplication,
   SellerApplicationInput,
+  SellerApplicationStatus,
   SellerApplicationView,
   WithdrawSellerApplication,
 } from "@sevo/contracts/identity-access/v1";
@@ -94,6 +100,31 @@ export class SellerApplicationRevisionConflictError extends Error {}
 export class SellerApplicationIdempotencyConflictError extends Error {}
 export class SellerApplicationIdempotencyInProgressError extends Error {}
 export class SellerApplicationCursorError extends Error {}
+export class PlatformPermissionRequiredError extends Error {}
+export class PlatformAgentSessionUnauthorizedError extends Error {}
+export class SellerApplicationSelfReviewForbiddenError extends Error {
+  constructor(
+    readonly status: SellerApplicationStatus,
+    readonly revision: number,
+  ) {
+    super("A platform agent cannot review their own seller application");
+  }
+}
+
+export type PlatformAgentActor = {
+  identityId: string;
+  audience: "PLATFORM_AGENT";
+  permission: "SELLER_APPLICATION_REVIEW";
+};
+
+export interface PlatformAgentSessionAuthorizer {
+  authorizeSellerApplicationReview(token: string): Promise<PlatformAgentActor>;
+}
+
+export type SellerApplicationReviewContext = SellerApplicationCommandContext & {
+  audience: "PLATFORM_AGENT";
+  permission: "SELLER_APPLICATION_REVIEW";
+};
 
 export interface SellerApplicationApplicant {
   submit(
@@ -114,4 +145,24 @@ export interface SellerApplicationApplicant {
     applicationId: string,
     input: WithdrawSellerApplication,
   ): Promise<SellerApplicationView>;
+}
+
+export interface SellerApplicationReviewer {
+  list(
+    query?: Partial<PlatformSellerApplicationListQuery>,
+  ): Promise<PlatformSellerApplicationPage>;
+  read(
+    context: Omit<SellerApplicationReviewContext, "idempotencyKey">,
+    applicationId: string,
+  ): Promise<PlatformSellerApplicationView>;
+  requestInformation(
+    context: SellerApplicationReviewContext,
+    applicationId: string,
+    input: RequestSellerApplicationInformation,
+  ): Promise<PlatformSellerApplicationView>;
+  reject(
+    context: SellerApplicationReviewContext,
+    applicationId: string,
+    input: RejectSellerApplication,
+  ): Promise<PlatformSellerApplicationView>;
 }

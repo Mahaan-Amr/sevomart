@@ -6,6 +6,7 @@ model Identity {
   createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   loginMethods LoginMethod[]
   sessions     IdentitySession[]
+  platformPermissionGrants PlatformPermissionGrant[]
 
   @@map("identity_identities")
 }
@@ -30,11 +31,30 @@ model OtpChallenge {
   providerReference String    @map("provider_reference") @db.VarChar(128)
   expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
   consumedAt        DateTime? @map("consumed_at") @db.Timestamptz(3)
+  audience          String    @default("PUBLIC") @db.VarChar(24)
   verificationAttempts Int    @default(0) @map("verification_attempts") @db.SmallInt
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([mobile, createdAt])
   @@map("identity_otp_challenges")
+}
+
+model PlatformPermissionAudit {
+  id                 String   @id @db.Uuid
+  identityId         String   @map("identity_id") @db.Uuid
+  permission         String   @db.VarChar(64)
+  action             String   @db.VarChar(32)
+  reason             String   @db.VarChar(500)
+  idempotencyKeyHash String   @map("idempotency_key_hash") @db.VarChar(64)
+  payloadHash        String   @map("payload_hash") @db.VarChar(64)
+  operation          String   @db.VarChar(16)
+  actorScope         String   @map("actor_scope") @db.VarChar(16)
+  actorKind          String   @map("actor_kind") @db.VarChar(32)
+  correlationId      String   @map("correlation_id") @db.Uuid
+  occurredAt         DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@unique([operation, actorScope, idempotencyKeyHash])
+  @@map("identity_platform_permission_audit")
 }
 
 model IdentitySession {
@@ -95,6 +115,7 @@ model SellerApplicationDecision {
   id              String            @id @db.Uuid
   applicationId   String            @map("application_id") @db.Uuid
   revision        Int
+  aggregateVersion Int             @map("aggregate_version")
   action          String            @db.VarChar(32)
   reasonCode      String            @map("reason_code") @db.VarChar(48)
   publicReason    String            @map("public_reason") @db.VarChar(1000)
@@ -106,6 +127,17 @@ model SellerApplicationDecision {
 
   @@index([applicationId, occurredAt])
   @@map("identity_seller_application_decisions")
+}
+
+model PlatformPermissionGrant {
+  id         String    @id @db.Uuid
+  identityId String    @map("identity_id") @db.Uuid
+  permission String    @db.VarChar(64)
+  grantedAt  DateTime  @map("granted_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  identity   Identity  @relation(fields: [identityId], references: [id], onDelete: Restrict)
+
+  @@map("identity_platform_permission_grants")
 }
 
 model SellerApplicationIdempotency {
@@ -127,6 +159,7 @@ model SellerApplicationAudit {
   actorKind          String   @map("actor_kind") @db.VarChar(24)
   actorIdentityId    String?  @map("actor_identity_id") @db.Uuid
   audience           String   @db.VarChar(24)
+  permission         String?  @db.VarChar(64)
   action             String   @db.VarChar(64)
   targetId           String   @map("target_id") @db.Uuid
   result             String   @db.VarChar(24)

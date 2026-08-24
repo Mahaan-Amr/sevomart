@@ -25,6 +25,10 @@ export function readIdentitySessionToken(request: FastifyRequest): string | unde
   return readCookie(request.headers.cookie, "sevo_session");
 }
 
+export function readPlatformSessionToken(request: FastifyRequest): string | undefined {
+  return readCookie(request.headers.cookie, "sevo_platform_session");
+}
+
 function readCookie(header: string | undefined, name: string): string | undefined {
   return header
     ?.split(";")

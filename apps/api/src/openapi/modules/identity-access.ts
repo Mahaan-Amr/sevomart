@@ -3,6 +3,8 @@ import {
   identityAccessV1Examples,
   identityAccessV1Paths,
   sellerApplicationV1Paths,
+  platformSellerApplicationV1Paths,
+  platformAgentAuthV1Paths,
 } from "@sevo/contracts/identity-access/v1";
 
 import {
@@ -205,6 +207,162 @@ const operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    operationId: "requestPlatformAgentOtp",
+    method: "post",
+    path: platformAgentAuthV1Paths.requestOtp,
+    tag: "identity-access",
+    auth: "none",
+    request: {
+      schema: "OtpRequest",
+      example: identityAccessV1Examples.OtpRequest,
+    },
+    responses: [
+      { status: 202, schema: "OtpChallenge" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 429, schema: "RateLimitError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "verifyPlatformAgentOtp",
+    method: "post",
+    path: platformAgentAuthV1Paths.verifyOtp,
+    tag: "identity-access",
+    auth: "none",
+    request: {
+      schema: "OtpVerification",
+      example: identityAccessV1Examples.OtpVerification,
+    },
+    responses: [
+      { status: 200, schema: "PlatformAgentSession" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "listPlatformSellerApplications",
+    method: "get",
+    path: platformSellerApplicationV1Paths.list,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    queryParameters: [
+      {
+        name: "status",
+        schema: "SellerApplicationStatus",
+        example: identityAccessV1Examples.SellerApplicationStatus,
+        required: false,
+      },
+      {
+        name: "cursor",
+        schema: "SellerApplicationCursor",
+        example: identityAccessV1Examples.SellerApplicationCursor,
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "SellerApplicationPageLimit",
+        example: identityAccessV1Examples.SellerApplicationPageLimit,
+        required: false,
+      },
+    ],
+    responses: [
+      { status: 200, schema: "PlatformSellerApplicationPage" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 422, schema: "SellerApplicationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "readPlatformSellerApplication",
+    method: "get",
+    path: platformSellerApplicationV1Paths.read,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "applicationId",
+      schema: "SellerApplicationId",
+      example: identityAccessV1Examples.SellerApplicationId,
+    },
+    responses: [
+      { status: 200, schema: "PlatformSellerApplicationView" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 404, schema: "SellerApplicationError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "requestPlatformSellerApplicationInformation",
+    method: "post",
+    path: platformSellerApplicationV1Paths.requestInformation,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "applicationId",
+      schema: "SellerApplicationId",
+      example: identityAccessV1Examples.SellerApplicationId,
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: identityAccessV1Examples.IdempotencyKey,
+        required: true,
+      },
+    ],
+    request: {
+      schema: "RequestSellerApplicationInformation",
+      example: identityAccessV1Examples.RequestSellerApplicationInformation,
+    },
+    responses: [
+      { status: 200, schema: "PlatformSellerApplicationView" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 404, schema: "SellerApplicationError" },
+      { status: 409, schema: "SellerApplicationError", headers: retryAfterHeader },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "rejectPlatformSellerApplication",
+    method: "post",
+    path: platformSellerApplicationV1Paths.reject,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "applicationId",
+      schema: "SellerApplicationId",
+      example: identityAccessV1Examples.SellerApplicationId,
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: identityAccessV1Examples.IdempotencyKey,
+        required: true,
+      },
+    ],
+    request: {
+      schema: "RejectSellerApplication",
+      example: identityAccessV1Examples.RejectSellerApplication,
+    },
+    responses: [
+      { status: 200, schema: "PlatformSellerApplicationView" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 404, schema: "SellerApplicationError" },
+      { status: 409, schema: "SellerApplicationError", headers: retryAfterHeader },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 const responseMetadata = {
@@ -214,6 +372,7 @@ const responseMetadata = {
     202: "Request accepted",
     204: "Session ended",
     401: "Identity session is missing or invalid",
+    403: "Platform permission is missing or self-review is forbidden",
     404: "Seller application was not found",
     409: "Seller application command conflicts with current state",
     429: "Request rate limit exceeded",
@@ -224,6 +383,12 @@ const responseMetadata = {
     IdentitySession: {
       "Set-Cookie": {
         description: "Creates the HTTP-only identity session cookie.",
+        schema: { type: "string" as const },
+      },
+    },
+    PlatformAgentSession: {
+      "Set-Cookie": {
+        description: "Creates the isolated HTTP-only platform-agent session cookie.",
         schema: { type: "string" as const },
       },
     },
@@ -239,6 +404,13 @@ export const contribute_identity_access_openApi: OpenApiContributor = (document)
     name: "sevo_session",
     description:
       "HTTP-only public identity session established after OTP verification.",
+  };
+  document.components.securitySchemes.platformAgentSession = {
+    type: "apiKey",
+    in: "cookie",
+    name: "sevo_platform_session",
+    description:
+      "HTTP-only platform-agent session with a live seller-application review grant.",
   };
   return addModuleOpenApiContract(
     document,

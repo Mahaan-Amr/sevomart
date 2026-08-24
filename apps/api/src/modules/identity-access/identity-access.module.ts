@@ -1,5 +1,6 @@
 import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
+import type { OtpCode } from "@sevo/contracts/identity-access/v1";
 
 import {
   createProductionOtpCode,
@@ -12,8 +13,13 @@ import {
   RUNTIME_ENVIRONMENT,
   IDENTITY_OTP_SERVICE,
   SELLER_APPLICATION_APPLICANT,
+  SELLER_APPLICATION_REPOSITORY,
+  SELLER_APPLICATION_REVIEWER,
+  PLATFORM_AGENT_SESSION_AUTHORIZER,
+  PLATFORM_AGENT_OTP_SERVICE,
 } from "./identity-access.tokens";
 import { PostgresIdentityAccessRepository } from "./infrastructure/postgres-identity-access.repository";
+import { PostgresPlatformAgentSessionAuthorizer } from "./infrastructure/postgres-platform-agent-session-authorizer";
 import { PostgresSellerApplicationRepository } from "./infrastructure/postgres-seller-application.repository";
 import {
   IDENTITY_SESSION_READER,
@@ -21,6 +27,9 @@ import {
   type OtpProvider,
 } from "./public";
 import { SellerApplicationController } from "./seller-application.controller";
+import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
+import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
+import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
 
 export type IdentityAccessModuleOptions = {
   otpProvider?: OtpProvider;
@@ -41,10 +50,25 @@ export class IdentityAccessModule {
     return {
       module: IdentityAccessModule,
       global: true,
-      controllers: [IdentityAccessController, SellerApplicationController],
+      controllers: [
+        IdentityAccessController,
+        SellerApplicationController,
+        PlatformSellerApplicationController,
+        PlatformAgentAuthController,
+      ],
       providers: [
         { provide: RUNTIME_ENVIRONMENT, useValue: environment },
         { provide: OTP_PROVIDER, useValue: otpProvider },
+        {
+          provide: PLATFORM_AGENT_OTP_SERVICE,
+          useValue: new PlatformAgentOtpService(
+            environment.DATABASE_URL,
+            otpProvider,
+            environment.SEVO_RUNTIME_ENV === "production"
+              ? createProductionOtpCode
+              : () => "111111" as OtpCode,
+          ),
+        },
         {
           provide: IDENTITY_ACCESS_REPOSITORY,
           useValue:
@@ -69,8 +93,22 @@ export class IdentityAccessModule {
         },
         { provide: IDENTITY_SESSION_READER, useExisting: IDENTITY_OTP_SERVICE },
         {
-          provide: SELLER_APPLICATION_APPLICANT,
+          provide: SELLER_APPLICATION_REPOSITORY,
           useValue: new PostgresSellerApplicationRepository(environment.DATABASE_URL),
+        },
+        {
+          provide: SELLER_APPLICATION_APPLICANT,
+          useExisting: SELLER_APPLICATION_REPOSITORY,
+        },
+        {
+          provide: SELLER_APPLICATION_REVIEWER,
+          useExisting: SELLER_APPLICATION_REPOSITORY,
+        },
+        {
+          provide: PLATFORM_AGENT_SESSION_AUTHORIZER,
+          useValue: new PostgresPlatformAgentSessionAuthorizer(
+            environment.DATABASE_URL,
+          ),
         },
       ],
       exports: [IDENTITY_SESSION_READER],

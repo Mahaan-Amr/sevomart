@@ -1,0 +1,279 @@
+.page {
+  display: block;
+  min-height: 100dvh;
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  width: min(100%, 1060px);
+  margin: 0 auto 16px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header span,
+.caseHeading span {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.header h1 {
+  margin-top: 4px;
+}
+
+.workspace {
+  display: grid;
+  width: min(100%, 1060px);
+  margin: 0 auto;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.queue,
+.case {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 18px;
+  background: var(--color-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.queue {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.queue button {
+  display: grid;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.queue button:hover {
+  box-shadow: var(--elevation-hover);
+}
+
+.queue button[aria-pressed="true"] {
+  border-color: var(--color-border-primary);
+  background: var(--color-cover-start);
+  box-shadow: var(--elevation-pressed);
+}
+
+.queue button:focus-visible,
+.decision input:focus-visible,
+.decision textarea:focus-visible,
+.decision select:focus-visible,
+.decision button:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.queue button span,
+.queue button small {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.queue button small {
+  color: var(--color-primary-dark);
+}
+
+.case {
+  padding: 24px;
+}
+
+.caseHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.caseHeading h2 {
+  margin: 4px 0 0;
+  color: var(--color-primary-dark);
+  font-size: 20px;
+}
+
+.caseHeading > strong {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-size: 12px;
+}
+
+.facts {
+  display: grid;
+  margin: 24px 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+
+.facts div {
+  padding-block: 8px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.facts dt {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.facts dd {
+  margin: 4px 0 0;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.history {
+  margin-bottom: 24px;
+  color: var(--color-muted);
+}
+
+.history summary {
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.history ol {
+  margin: 8px 24px 0 0;
+}
+
+.decision {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.decision fieldset {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: 16px;
+}
+
+.decision legend,
+.textField span {
+  width: 100%;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.decision label {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.decision .fields {
+  flex-wrap: wrap;
+}
+
+.textField {
+  display: grid !important;
+}
+
+.textField textarea,
+.textField select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.8;
+  resize: vertical;
+}
+
+.decision button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  background: var(--color-primary);
+  box-shadow: var(--elevation-action);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.decision button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.message,
+.empty,
+.closed {
+  width: min(100%, 1060px);
+  margin: 0 auto 12px;
+  padding: 12px;
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: 8px;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+}
+
+.empty,
+.closed {
+  width: auto;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 16px;
+  }
+
+  .header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .queue {
+    max-height: 260px;
+    overflow: auto;
+  }
+
+  .facts {
+    grid-template-columns: 1fr;
+  }
+
+  .decision fieldset {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue button {
+    transition: none;
+  }
+}

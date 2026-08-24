@@ -41,6 +41,25 @@ const frozenConsumerOperations = [
     "identity",
     [200, 401, 404, 409, 422, 500],
   ],
+  ["get", "/v1/platform/seller-applications", "platform", [200, 401, 403, 422, 500]],
+  [
+    "get",
+    "/v1/platform/seller-applications/{applicationId}",
+    "platform",
+    [200, 401, 403, 404, 422, 500],
+  ],
+  [
+    "post",
+    "/v1/platform/seller-applications/{applicationId}/information-request",
+    "platform",
+    [200, 401, 403, 404, 409, 422, 500],
+  ],
+  [
+    "post",
+    "/v1/platform/seller-applications/{applicationId}/rejection",
+    "platform",
+    [200, 401, 403, 404, 409, 422, 500],
+  ],
   ["get", "/v1/seller/store/draft", "identity", [200, 401, 404, 500]],
   ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 428, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "identity", [200, 401, 422, 500]],
@@ -74,12 +93,21 @@ describe("OpenAPI identity and store compatibility", () => {
       type: "apiKey",
       in: "cookie",
     });
+    expect(document.components.securitySchemes.platformAgentSession).toMatchObject({
+      type: "apiKey",
+      in: "cookie",
+      name: "sevo_platform_session",
+    });
 
     for (const [method, path, auth, statuses] of frozenConsumerOperations) {
       const operation = document.paths[path]?.[method] as OpenApiOperation | undefined;
       expect(operation, `${method.toUpperCase()} ${path}`).toBeDefined();
       expect(operation?.security).toEqual(
-        auth === "identity" ? [{ identitySession: [] }] : [],
+        auth === "identity"
+          ? [{ identitySession: [] }]
+          : auth === "platform"
+            ? [{ platformAgentSession: [] }]
+            : [],
       );
       expect(Object.keys(operation?.responses ?? {}).sort()).toEqual(
         statuses.map(String).sort(),
@@ -167,7 +195,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "3edf27624b0b28880f15de551bb712d54957750305112041bf7e94456516eb7b",
+      "f3a395e369f4a805444d98d74f0cb26caa4814f6486962c282ef9d2b613f6812",
     );
   });
 

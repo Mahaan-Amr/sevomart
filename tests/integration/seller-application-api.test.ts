@@ -12,7 +12,7 @@ describe("seller application applicant API with PostgreSQL", () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     await sql`delete from identity_seller_access`;
     await sql`delete from identity_seller_application_idempotency`;
-    await sql`delete from identity_seller_application_audit`;
+    await sql`truncate identity_seller_application_audit`;
     await sql`delete from identity_seller_application_decisions`;
     await sql`delete from identity_seller_application_revisions`;
     await sql`delete from identity_seller_applications`;
@@ -300,15 +300,15 @@ describe("seller application applicant API with PostgreSQL", () => {
       await sql.begin(async (transaction) => {
         await transaction`
           update identity_seller_applications
-          set status = 'NEEDS_INFORMATION'
+          set status = 'NEEDS_INFORMATION', aggregate_version = 2
           where id = ${applicationId}
         `;
         await transaction`
           insert into identity_seller_application_decisions
-            (id, application_id, revision, action, reason_code, public_reason,
+            (id, application_id, revision, aggregate_version, action, reason_code, public_reason,
              requested_fields, actor_identity_id, occurred_at)
           values
-            ('1aba8d31-21df-4d2a-8be0-3df6ec16f51d', ${applicationId}, 1,
+            ('1aba8d31-21df-4d2a-8be0-3df6ec16f51d', ${applicationId}, 1, 2,
              'REQUEST_INFORMATION', 'INFORMATION_INCOMPLETE',
              'لطفاً روش فعلی فروش را روشن‌تر بنویسید.',
              ARRAY['currentSalesMethod'],
@@ -386,15 +386,15 @@ describe("seller application applicant API with PostgreSQL", () => {
       await sql.begin(async (transaction) => {
         await transaction`
           update identity_seller_applications
-          set status = 'REJECTED', completed_at = now()
+          set status = 'REJECTED', aggregate_version = 2, completed_at = now()
           where id = ${applicationId}
         `;
         await transaction`
           insert into identity_seller_application_decisions
-            (id, application_id, revision, action, reason_code, public_reason,
+            (id, application_id, revision, aggregate_version, action, reason_code, public_reason,
              internal_note, requested_fields, actor_identity_id, occurred_at)
           values
-            ('ad57f73f-cb39-40ab-9296-93539cc5a0de', ${applicationId}, 1,
+            ('ad57f73f-cb39-40ab-9296-93539cc5a0de', ${applicationId}, 1, 2,
              'REJECT', 'ELIGIBILITY_NOT_ESTABLISHED',
              'با اطلاعات فعلی امکان تأیید فروشندگی وجود ندارد.',
              'یادداشت محرمانه عامل پلتفرم', ARRAY[]::text[],

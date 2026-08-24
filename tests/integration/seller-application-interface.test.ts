@@ -15,7 +15,7 @@ describe("seller application applicant interface with PostgreSQL", () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     await sql`delete from identity_seller_access`;
     await sql`delete from identity_seller_application_idempotency`;
-    await sql`delete from identity_seller_application_audit`;
+    await sql`truncate identity_seller_application_audit`;
     await sql`delete from identity_seller_application_decisions`;
     await sql`delete from identity_seller_application_revisions`;
     await sql`delete from identity_seller_applications`;
