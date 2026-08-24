@@ -19,6 +19,379 @@ const productPriceContract = moneyV1Contract.refine(
   "Price must be a positive safe IRR amount divisible by ten",
 );
 
+const clientKeyContract = z.string().trim().min(1).max(100);
+
+export function productCombinationKey(
+  combination: readonly {
+    axisClientKey: string;
+    valueClientKey: string;
+  }[],
+): string {
+  if (combination.length === 0) return "";
+  return JSON.stringify(
+    combination
+      .map(
+        ({ axisClientKey, valueClientKey }) => [axisClientKey, valueClientKey] as const,
+      )
+      .sort(([leftAxis, leftValue], [rightAxis, rightValue]) => {
+        if (leftAxis !== rightAxis) return leftAxis < rightAxis ? -1 : 1;
+        return leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0;
+      }),
+  );
+}
+const skuContract = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine(
+    (value) =>
+      Array.from(value).every((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint > 31 && codePoint !== 127;
+      }),
+    "SKU cannot contain control characters",
+  );
+
+const productAxisInputContract = z
+  .object({
+    clientKey: clientKeyContract,
+    name: z.string().trim().min(1).max(50),
+    values: z
+      .array(
+        z
+          .object({
+            clientKey: clientKeyContract,
+            name: z.string().trim().min(1).max(50),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+  })
+  .strict();
+
+const productVariantInputContract = z
+  .object({
+    clientKey: clientKeyContract,
+    combination: z
+      .array(
+        z
+          .object({
+            axisClientKey: clientKeyContract,
+            valueClientKey: clientKeyContract,
+          })
+          .strict(),
+      )
+      .max(2),
+    price: productPriceContract.nullable(),
+    sku: skuContract.nullable(),
+  })
+  .strict();
+
+const productWorkingCopyInputContract = z
+  .object({
+    name: z.string().trim().min(2).max(120).nullable(),
+    description: z.string().trim().max(2_000).default(""),
+    orderedMediaIds: z.array(mediaIdContract).max(6),
+    axes: z.array(productAxisInputContract).max(2),
+    variants: z.array(productVariantInputContract).max(50),
+  })
+  .strict()
+  .superRefine((workingCopy, context) => {
+    const normalized = (value: string) =>
+      value.trim().replace(/\s+/gu, " ").toLocaleLowerCase("fa");
+    const unique = (values: string[]) => new Set(values).size === values.length;
+    const axisKeys = workingCopy.axes.map((axis) => axis.clientKey);
+    const axisNames = workingCopy.axes.map((axis) => normalized(axis.name));
+    if (!unique(axisKeys) || !unique(axisNames)) {
+      context.addIssue({
+        code: "custom",
+        path: ["axes"],
+        message: "Axis keys and names must be unique",
+      });
+    }
+    for (const [axisIndex, axis] of workingCopy.axes.entries()) {
+      if (
+        !unique(axis.values.map((value) => value.clientKey)) ||
+        !unique(axis.values.map((value) => normalized(value.name)))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["axes", axisIndex, "values"],
+          message: "Axis value keys and names must be unique",
+        });
+      }
+    }
+    if (!unique(workingCopy.variants.map((variant) => variant.clientKey))) {
+      context.addIssue({
+        code: "custom",
+        path: ["variants"],
+        message: "Variant client keys must be unique",
+      });
+    }
+    const combinationKeys: string[] = [];
+    const usedValues = new Set<string>();
+    for (const [variantIndex, variant] of workingCopy.variants.entries()) {
+      const combination = new Map(
+        variant.combination.map((entry) => [entry.axisClientKey, entry.valueClientKey]),
+      );
+      const valid =
+        combination.size === workingCopy.axes.length &&
+        variant.combination.length === workingCopy.axes.length &&
+        workingCopy.axes.every((axis) =>
+          axis.values.some(
+            (value) => value.clientKey === combination.get(axis.clientKey),
+          ),
+        );
+      if (!valid) {
+        context.addIssue({
+          code: "custom",
+          path: ["variants", variantIndex, "combination"],
+          message: "Variant combination must select one value from every axis",
+        });
+        continue;
+      }
+      const key = productCombinationKey(variant.combination);
+      combinationKeys.push(key);
+      for (const axis of workingCopy.axes)
+        usedValues.add(`${axis.clientKey}:${combination.get(axis.clientKey)}`);
+    }
+    if (!unique(combinationKeys)) {
+      context.addIssue({
+        code: "custom",
+        path: ["variants"],
+        message: "Variant combinations must be unique",
+      });
+    }
+    if (workingCopy.variants.length > 0) {
+      for (const [axisIndex, axis] of workingCopy.axes.entries()) {
+        for (const [valueIndex, value] of axis.values.entries()) {
+          if (!usedValues.has(`${axis.clientKey}:${value.clientKey}`)) {
+            context.addIssue({
+              code: "custom",
+              path: ["axes", axisIndex, "values", valueIndex],
+              message: "Every axis value must be used by a variant",
+            });
+          }
+        }
+      }
+    }
+  });
+
+export const replaceProductWorkingCopyContract = z
+  .object({
+    expectedRevision: z.int().nonnegative(),
+    workingCopy: productWorkingCopyInputContract,
+    inventory: z
+      .object({
+        rows: z
+          .array(
+            z
+              .object({
+                variantClientKey: clientKeyContract,
+                onHand: z.int().nonnegative(),
+                expectedRevision: z.int().nonnegative(),
+              })
+              .strict(),
+          )
+          .max(50),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (!input.inventory) return;
+    const keys = input.inventory.rows.map((row) => row.variantClientKey);
+    if (new Set(keys).size !== keys.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["inventory", "rows"],
+        message: "Inventory rows must be unique",
+      });
+    }
+    const variants = new Set(
+      input.workingCopy.variants.map((variant) => variant.clientKey),
+    );
+    for (const [index, row] of input.inventory.rows.entries()) {
+      if (!variants.has(row.variantClientKey)) {
+        context.addIssue({
+          code: "custom",
+          path: ["inventory", "rows", index, "variantClientKey"],
+          message: "Inventory row must reference a submitted variant",
+        });
+      }
+    }
+  });
+
+const batchOfferRowContract = z
+  .object({
+    variantId: variantIdContract,
+    price: productPriceContract,
+    sku: skuContract.nullable(),
+    expectedRevision: z.int().nonnegative(),
+  })
+  .strict();
+
+export const replaceProductOffersBatchContract = z
+  .object({
+    expectedRevision: z.int().nonnegative(),
+    rows: z.array(batchOfferRowContract).min(1).max(50),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      new Set(input.rows.map((row) => row.variantId)).size === input.rows.length,
+    {
+      message: "Offer rows must be unique",
+      path: ["rows"],
+    },
+  );
+
+export const replaceProductInventoryBatchContract = z
+  .object({
+    expectedRevision: z.int().nonnegative(),
+    reasonCode: z.enum([
+      "INITIAL_STOCK",
+      "MANUAL_COUNT",
+      "DAMAGED",
+      "RETURNED_TO_STOCK",
+      "CORRECTION",
+    ]),
+    rows: z
+      .array(
+        z
+          .object({
+            variantId: variantIdContract,
+            onHand: z.int().nonnegative(),
+            expectedRevision: z.int().nonnegative(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      new Set(input.rows.map((row) => row.variantId)).size === input.rows.length,
+    {
+      message: "Inventory rows must be unique",
+      path: ["rows"],
+    },
+  );
+
+const canonicalProductVariantContract = z
+  .object({
+    clientKey: clientKeyContract,
+    variantId: variantIdContract,
+    combination: z
+      .array(
+        z
+          .object({
+            axisClientKey: clientKeyContract,
+            valueClientKey: clientKeyContract,
+          })
+          .strict(),
+      )
+      .max(2),
+    price: productPriceContract.nullable(),
+    sku: skuContract.nullable(),
+    offerRevision: z.int().nonnegative(),
+  })
+  .strict();
+
+export const productViewContract = z
+  .object({
+    productId: productIdContract,
+    state: z.enum(["DRAFT", "PUBLISHED", "UNPUBLISHED"]),
+    revision: z.int().nonnegative(),
+    publicationVersion: z.int().nonnegative(),
+    workingCopy: z
+      .object({
+        name: z.string().min(2).max(120).nullable(),
+        description: z.string().max(2_000),
+        orderedMediaIds: z.array(mediaIdContract).max(6),
+        axes: z.array(productAxisInputContract).max(2),
+        variants: z.array(canonicalProductVariantContract).max(50),
+      })
+      .strict()
+      .nullable(),
+    inventory: z.array(
+      z
+        .object({
+          variantId: variantIdContract,
+          onHand: z.int().nonnegative(),
+          revision: z.int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const productBatchResultContract = z
+  .object({
+    productRevision: z.int().nonnegative(),
+    rows: z.array(
+      z
+        .object({
+          variantId: variantIdContract,
+          revision: z.int().positive(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const publicProductImageContract = z
+  .object({
+    id: mediaIdContract,
+    url: z.string().regex(/^\/v1\/media\/[0-9a-f-]{36}$/),
+  })
+  .strict();
+
+const publicProductVariantContract = z
+  .object({
+    variantId: variantIdContract,
+    combination: z
+      .array(z.object({ axis: z.string().min(1), value: z.string().min(1) }).strict())
+      .max(2),
+    price: productPriceContract,
+    availability: z.enum(["AVAILABLE", "OUT_OF_STOCK"]),
+  })
+  .strict();
+
+export const publicProductContract = z
+  .object({
+    productId: productIdContract,
+    name: z.string().min(2).max(120),
+    description: z.string().max(2_000),
+    images: z.array(publicProductImageContract).min(1).max(6),
+    axes: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            values: z.array(z.string().min(1)).min(1),
+          })
+          .strict(),
+      )
+      .max(2),
+    variants: z.array(publicProductVariantContract).min(1).max(50),
+    priceRange: z
+      .object({ minimum: productPriceContract, maximum: productPriceContract })
+      .strict(),
+    availability: z.enum(["AVAILABLE", "OUT_OF_STOCK"]),
+    publicationVersion: z.int().positive(),
+  })
+  .strict();
+
+export const publicProductSummaryContract = publicProductContract
+  .omit({ description: true, images: true, axes: true, variants: true })
+  .extend({ image: publicProductImageContract })
+  .strict();
+
 export const createSimpleProductInputContract = z.object({}).strict();
 
 export const replaceSimpleProductWorkingCopyContract = z
@@ -121,6 +494,15 @@ export const productReadinessIssueContract = z
   .object({ path: z.string().min(1), code: z.string().min(1) })
   .strict();
 
+export const productPreviewContract = z
+  .object({
+    product: productViewContract,
+    ready: z.boolean(),
+    issues: z.array(productReadinessIssueContract),
+    projection: publicProductContract.nullable(),
+  })
+  .strict();
+
 export const simpleProductPreviewContract = z
   .object({
     product: simpleProductViewContract,
@@ -160,6 +542,14 @@ export const publicSimpleProductListContract = z
   .object({ products: z.array(publicSimpleProductSummaryContract) })
   .strict();
 
+export const publicProductListContract = z
+  .object({
+    products: z.array(
+      z.union([publicSimpleProductSummaryContract, publicProductSummaryContract]),
+    ),
+  })
+  .strict();
+
 export const productNotFoundErrorContract = z
   .object({
     code: z.literal("PRODUCT_NOT_FOUND"),
@@ -184,6 +574,12 @@ export const productPreconditionRequiredErrorContract = z
   })
   .strict();
 
+export const productPublicationEventSnapshotContract = z
+  .object({
+    variantIds: z.array(variantIdContract).min(1).max(50),
+  })
+  .strict();
+
 export const productPublishedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("ProductPublished.v1"),
   actor: eventActorV1Contract,
@@ -192,9 +588,57 @@ export const productPublishedV1Contract = eventEnvelopeV1Contract.extend({
       storeId: storeIdContract,
       productId: productIdContract,
       publicationVersion: z.int().positive(),
-      snapshot: publicSimpleProductSummaryContract,
+      snapshot: z.union([
+        publicSimpleProductSummaryContract,
+        publicProductSummaryContract,
+      ]),
       offerVersion: z.int().positive(),
       availabilityVersion: z.int().nonnegative(),
+    })
+    .strict(),
+});
+
+export const productPublishedV2Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("ProductPublished.v2"),
+  actor: eventActorV1Contract,
+  payload: z
+    .object({
+      storeId: storeIdContract,
+      productId: productIdContract,
+      publicationVersion: z.int().positive(),
+      snapshot: productPublicationEventSnapshotContract,
+      offerVersion: z.int().positive(),
+      availabilityVersion: z.int().nonnegative(),
+    })
+    .strict(),
+});
+
+export const variantPriceChangedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("VariantPriceChanged.v1"),
+  actor: eventActorV1Contract,
+  payload: z
+    .object({
+      storeId: storeIdContract,
+      productId: productIdContract,
+      variantId: variantIdContract,
+      publicationVersion: z.int().positive(),
+      offerVersion: z.int().positive(),
+      price: productPriceContract,
+    })
+    .strict(),
+});
+
+export const variantAvailabilityChangedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("VariantAvailabilityChanged.v1"),
+  actor: eventActorV1Contract,
+  payload: z
+    .object({
+      storeId: storeIdContract,
+      productId: productIdContract,
+      variantId: variantIdContract,
+      publicationVersion: z.int().positive(),
+      availabilityVersion: z.int().positive(),
+      availability: z.enum(["AVAILABLE", "OUT_OF_STOCK"]),
     })
     .strict(),
 });
@@ -214,6 +658,15 @@ export const productV1Schemas = {
   ProductNotFoundError: productNotFoundErrorContract,
   ProductWriteConflictError: productWriteConflictErrorContract,
   ProductPreconditionRequiredError: productPreconditionRequiredErrorContract,
+  ReplaceProductWorkingCopy: replaceProductWorkingCopyContract,
+  ReplaceProductOffersBatch: replaceProductOffersBatchContract,
+  ReplaceProductInventoryBatch: replaceProductInventoryBatchContract,
+  PublicProduct: publicProductContract,
+  PublicProductSummary: publicProductSummaryContract,
+  PublicProductList: publicProductListContract,
+  ProductView: productViewContract,
+  ProductPreview: productPreviewContract,
+  ProductBatchResult: productBatchResultContract,
 } as const;
 
 export function createProductV1JsonSchemas() {
@@ -237,6 +690,54 @@ export const productV1Examples = {
       },
     },
     inventory: { onHand: 8, expectedRevision: 0 },
+  },
+  ReplaceProductWorkingCopy: {
+    expectedRevision: 0,
+    workingCopy: {
+      name: "پیراهن روزمره",
+      description: "پارچه نرم و مناسب استفاده روزانه",
+      orderedMediaIds: ["807c619f-a989-4fd9-8b78-a437a07c7bc4"],
+      axes: [
+        {
+          clientKey: "color",
+          name: "رنگ",
+          values: [{ clientKey: "red", name: "قرمز" }],
+        },
+      ],
+      variants: [
+        {
+          clientKey: "red",
+          combination: [{ axisClientKey: "color", valueClientKey: "red" }],
+          price: { amount: 7_500_000, currency: "IRR" },
+          sku: "SHIRT-RED",
+        },
+      ],
+    },
+    inventory: {
+      rows: [{ variantClientKey: "red", onHand: 4, expectedRevision: 0 }],
+    },
+  },
+  ReplaceProductOffersBatch: {
+    expectedRevision: 1,
+    rows: [
+      {
+        variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
+        price: { amount: 7_900_000, currency: "IRR" },
+        sku: "SHIRT-RED",
+        expectedRevision: 1,
+      },
+    ],
+  },
+  ReplaceProductInventoryBatch: {
+    expectedRevision: 2,
+    reasonCode: "MANUAL_COUNT",
+    rows: [
+      {
+        variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
+        onHand: 6,
+        expectedRevision: 1,
+      },
+    ],
   },
   PublishSimpleProductInput: { expectedRevision: 1, confirmed: true },
   ProductNotFoundError: {
@@ -267,3 +768,22 @@ export type PublicSimpleProductSummary = z.infer<
   typeof publicSimpleProductSummaryContract
 >;
 export type ProductPublishedV1 = z.infer<typeof productPublishedV1Contract>;
+export type ProductPublishedV2 = z.infer<typeof productPublishedV2Contract>;
+export type VariantPriceChangedV1 = z.infer<typeof variantPriceChangedV1Contract>;
+export type VariantAvailabilityChangedV1 = z.infer<
+  typeof variantAvailabilityChangedV1Contract
+>;
+export type ReplaceProductWorkingCopy = z.infer<
+  typeof replaceProductWorkingCopyContract
+>;
+export type ReplaceProductOffersBatch = z.infer<
+  typeof replaceProductOffersBatchContract
+>;
+export type ReplaceProductInventoryBatch = z.infer<
+  typeof replaceProductInventoryBatchContract
+>;
+export type PublicProduct = z.infer<typeof publicProductContract>;
+export type PublicProductSummary = z.infer<typeof publicProductSummaryContract>;
+export type ProductView = z.infer<typeof productViewContract>;
+export type ProductPreview = z.infer<typeof productPreviewContract>;
+export type ProductBatchResult = z.infer<typeof productBatchResultContract>;

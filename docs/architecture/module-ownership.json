@@ -44,6 +44,8 @@
     "product_working_copies": "product",
     "product_publications": "product",
     "product_offers": "product",
+    "product_variants": "product",
+    "product_sku_history": "product",
     "product_idempotency_records": "product",
     "inventory_levels": "inventory",
     "inventory_adjustments": "inventory",

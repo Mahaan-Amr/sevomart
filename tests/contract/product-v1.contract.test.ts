@@ -1,6 +1,7 @@
 import {
   createSimpleProductInputContract,
   productPublishedV1Contract,
+  productPublishedV2Contract,
   publicSimpleProductContract,
   replaceSimpleProductWorkingCopyContract,
   simpleProductDraftContract,
@@ -137,6 +138,18 @@ describe("simple product v1 contract", () => {
       },
     });
     expect(event.payload).not.toHaveProperty("onHand");
+
+    const privacySafeEvent = productPublishedV2Contract.parse({
+      ...event,
+      eventType: "ProductPublished.v2",
+      payload: {
+        ...event.payload,
+        snapshot: { variantIds: [ids.variant] },
+      },
+    });
+    expect(JSON.stringify(privacySafeEvent.payload)).not.toMatch(
+      /onHand|sku|name|description|image|url/i,
+    );
   });
 });
 

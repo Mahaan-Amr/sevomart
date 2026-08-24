@@ -1,4 +1,11 @@
 import type {
+  ProductBatchResult,
+  ProductView,
+  PublicProduct,
+  PublicProductSummary,
+  ReplaceProductInventoryBatch,
+  ReplaceProductOffersBatch,
+  ReplaceProductWorkingCopy,
   PublicSimpleProduct,
   PublicSimpleProductSummary,
   ReplaceSimpleProductWorkingCopy,
@@ -13,7 +20,12 @@ import type {
 } from "@sevo/contracts/platform/v1";
 
 export type ProductWriteContext = Readonly<{
-  operation: "CREATE_PRODUCT" | "REPLACE_WORKING_COPY" | "PUBLISH_PRODUCT";
+  operation:
+    | "CREATE_PRODUCT"
+    | "REPLACE_WORKING_COPY"
+    | "REPLACE_OFFERS_BATCH"
+    | "REPLACE_INVENTORY_BATCH"
+    | "PUBLISH_PRODUCT";
   actorId: IdentityId;
   correlationId: string;
   idempotencyKey: string;
@@ -66,11 +78,46 @@ export interface ProductRepository extends ProductAuthoritativeRead {
   ): Promise<PublicSimpleProduct | undefined>;
   listPublished(storeId: StoreId): Promise<PublicSimpleProductSummary[]>;
   findPublishedMediaStoreId(mediaId: string): Promise<StoreId | undefined>;
+  replaceProductWorkingCopy(
+    productId: ProductId,
+    storeId: StoreId,
+    input: ReplaceProductWorkingCopy,
+    context: ProductWriteContext,
+  ): Promise<ProductView>;
+  readProductOwned(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<ProductView | undefined>;
+  previewProduct(productId: ProductId, storeId: StoreId): Promise<PublicProduct>;
+  replaceOffersBatch(
+    productId: ProductId,
+    storeId: StoreId,
+    input: ReplaceProductOffersBatch,
+    context: ProductWriteContext,
+  ): Promise<ProductBatchResult>;
+  replaceInventoryBatch(
+    productId: ProductId,
+    storeId: StoreId,
+    input: ReplaceProductInventoryBatch,
+    context: ProductWriteContext,
+  ): Promise<ProductBatchResult>;
+  publishProduct(
+    productId: ProductId,
+    storeId: StoreId,
+    context: ProductWriteContext,
+  ): Promise<PublicProduct>;
+  readPublishedProduct(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicProduct | undefined>;
+  listPublishedProducts(storeId: StoreId): Promise<PublicProductSummary[]>;
 }
 
 export class ProductNotFoundError extends Error {}
 export class ProductNotReadyError extends Error {}
 export class SellerAccessInactiveError extends Error {}
+export class InvalidVariantError extends Error {}
+export class DuplicateSkuError extends Error {}
 
 export class ProductRevisionConflictError extends Error {
   readonly code = "REVISION_CONFLICT" as const;

@@ -13,7 +13,7 @@ import {
   visualProjectIndex,
 } from "../helpers/visual-projects";
 
-test("seller publishes a simple product that a guest sees on the storefront", async ({
+test("seller publishes a two-axis product that a guest sees on the storefront", async ({
   page,
 }, testInfo) => {
   const projectIndex = visualProjectIndex(testInfo.project.name);
@@ -81,8 +81,6 @@ test("seller publishes a simple product that a guest sees on the storefront", as
   await page
     .getByLabel("توضیح کالا")
     .fill("فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه");
-  await page.getByRole("button", { name: "ادامه" }).click();
-
   const image = await sharp({
     create: { width: 900, height: 900, channels: 4, background: "#A41439" },
   })
@@ -95,17 +93,46 @@ test("seller publishes a simple product that a guest sees on the storefront", as
   });
   await page.getByRole("button", { name: "ادامه" }).click();
 
-  await page.getByLabel("قیمت به تومان").fill("450000");
-  await page.getByLabel("موجودی").fill("8");
+  await expect(page.getByRole("heading", { name: "گونه‌های کالا" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await expect(page.getByText("تصویر ذخیره شده است")).toBeVisible();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByRole("heading", { name: "گونه‌های کالا" })).toBeVisible();
+  await page.getByRole("radio", { name: "چندگونه" }).click();
+  await page.getByLabel("نام محور 1").fill("رنگ");
+  await page.getByRole("textbox", { name: "مقدار 1 محور 1", exact: true }).fill("قرمز");
+  await page.getByRole("button", { name: "افزودن مقدار" }).click();
+  await page.getByRole("textbox", { name: "مقدار 2 محور 1", exact: true }).fill("آبی");
+  await page.getByRole("button", { name: "افزودن محور دوم" }).click();
+  await page.getByLabel("نام محور 2").fill("اندازه");
+  await page.getByRole("textbox", { name: "مقدار 1 محور 2", exact: true }).fill("کوچک");
+  await page.getByRole("button", { name: "افزودن مقدار" }).nth(1).click();
+  await page.getByRole("textbox", { name: "مقدار 2 محور 2", exact: true }).fill("بزرگ");
+  await expect(page.getByText("۴ گونه ساخته می‌شود")).toBeVisible();
+  await page.getByRole("button", { name: "ادامه" }).click();
+
+  await page.getByLabel("قیمت قرمز، کوچک").fill("450000");
+  await page.getByLabel("موجودی قرمز، کوچک").fill("8");
+  await page.getByLabel("قیمت قرمز، بزرگ").fill("460000");
+  await page.getByLabel("موجودی قرمز، بزرگ").fill("0");
+  await page.getByLabel("قیمت آبی، کوچک").fill("470000");
+  await page.getByLabel("موجودی آبی، کوچک").fill("2");
+  await page.getByLabel("قیمت آبی، بزرگ").fill("480000");
+  await page.getByLabel("موجودی آبی، بزرگ").fill("1");
   await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
 
-  await expect(page.getByRole("heading", { name: "بازبینی کالا" })).toBeVisible();
-  await expect(page.getByText("۴۵۰٬۰۰۰ تومان")).toBeVisible();
-  await expect(page.getByText("موجود")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "پیش‌نمایش کالا" })).toBeVisible();
+  await expect(page.getByText("از ۴۵۰٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("۴۵۰٬۰۰۰ تومان · موجود", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("۴۶۰٬۰۰۰ تومان · ناموجود", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "برگشت و ویرایش" }).click();
-  await page.getByLabel("قیمت به تومان").fill("460000");
+  await page.getByLabel("قیمت قرمز، کوچک").fill("455000");
   await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
-  await expect(page.getByText("۴۶۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("از ۴۵۵٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
   await page.getByRole("button", { name: "انتشار کالا" }).focus();
@@ -118,8 +145,10 @@ test("seller publishes a simple product that a guest sees on the storefront", as
   await expect(storefrontProduct).toBeVisible();
   await storefrontProduct.click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
-  await expect(page.getByText("۴۶۰٬۰۰۰ تومان")).toBeVisible();
-  await expect(page.getByText("موجود")).toBeVisible();
+  await expect(page.getByText("از ۴۵۵٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("قرمز، بزرگ")).toBeVisible();
+  await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
+  await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
   await expect(page.locator("img")).toHaveJSProperty("complete", true);
   await assertNoHorizontalOverflow(page);
