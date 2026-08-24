@@ -1,1 +1,28 @@
 // Tables in this file are owned by the inventory module.
+
+model InventoryLevel {
+  variantId String   @id @map("variant_id") @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  onHand    Int      @default(0) @map("on_hand")
+  revision  Int      @default(0)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@index([storeId])
+  @@map("inventory_levels")
+}
+
+model InventoryAdjustment {
+  id              String   @id @db.Uuid
+  variantId       String   @map("variant_id") @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  reasonCode      String   @map("reason_code") @db.VarChar(32)
+  previousOnHand  Int      @map("previous_on_hand")
+  nextOnHand      Int      @map("next_on_hand")
+  revision        Int
+  correlationId   String   @map("correlation_id") @db.Uuid
+  occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([variantId, occurredAt])
+  @@map("inventory_adjustments")
+}

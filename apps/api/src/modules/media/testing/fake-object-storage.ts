@@ -18,7 +18,12 @@ export class FakeObjectStorage implements ObjectStoragePort {
   async get(key: string, requestedVariant?: MediaVariant) {
     const object = this.#objects.get(key);
     if (!object) return undefined;
-    const canonical = object.purpose === "STORE_LOGO" ? "logo-large" : "cover-desktop";
+    const canonical =
+      object.purpose === "STORE_LOGO"
+        ? "logo-large"
+        : object.purpose === "STORE_COVER"
+          ? "cover-desktop"
+          : "product-detail";
     const variant = object.variants.find(
       (candidate) => candidate.name === (requestedVariant ?? canonical),
     );
@@ -29,6 +34,22 @@ export class FakeObjectStorage implements ObjectStoragePort {
       bytes: variant.bytes.slice(),
       variant: variant.name,
       variants: undefined,
+    };
+  }
+
+  async inspect(key: string) {
+    const object = this.#objects.get(key);
+    if (!object) return undefined;
+    return {
+      key: object.key,
+      purpose: object.purpose,
+      contentType: object.contentType,
+      checksum: object.checksum,
+      width: object.width,
+      height: object.height,
+      ownerSellerId: object.ownerSellerId,
+      ownerReferenceId: object.ownerReferenceId,
+      visibility: object.visibility,
     };
   }
 

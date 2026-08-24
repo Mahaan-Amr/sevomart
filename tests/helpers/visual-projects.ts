@@ -23,6 +23,10 @@ export const sellerApplicationDraftTestMobiles = Array.from({ length: 4 }, (_, i
   testMobile(40 + index),
 );
 
+export const productTracerTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(50 + index),
+);
+
 export function visualProjectIndex(projectName: string) {
   const index = visualViewports.findIndex(({ name }) => name === projectName);
   if (index === -1) throw new Error(`Unknown visual project ${projectName}`);

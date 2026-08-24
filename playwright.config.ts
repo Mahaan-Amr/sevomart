@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 import {
   acceptanceTestMobiles,
   sellerApplicationDraftTestMobiles,
+  productTracerTestMobiles,
   storefrontTestMobiles,
   visualViewports,
 } from "./tests/helpers/visual-projects";
@@ -51,6 +52,7 @@ export default defineConfig({
           ...storefrontTestMobiles,
           ...acceptanceTestMobiles,
           ...sellerApplicationDraftTestMobiles,
+          ...productTracerTestMobiles,
         ].join(","),
       },
       reuseExistingServer: !process.env.CI,

@@ -19,6 +19,7 @@ export type StoredMedia = {
   height: number;
   variants: StoredMediaVariant[];
   ownerSellerId: string;
+  ownerReferenceId?: string;
   visibility: "PRIVATE" | "PUBLIC";
 };
 
@@ -28,6 +29,8 @@ export type ReadableMedia = Omit<StoredMedia, "bytes" | "variants"> & {
   variant: MediaVariant;
 };
 
+export type MediaMetadata = Omit<StoredMedia, "bytes" | "variants">;
+
 export const MEDIA_STORAGE = Symbol("MEDIA_STORAGE");
 export const PUBLISHED_MEDIA_ACCESS = Symbol("PUBLISHED_MEDIA_ACCESS");
 export const SELLER_UPLOAD_RATE_LIMITER = Symbol("SELLER_UPLOAD_RATE_LIMITER");
@@ -36,6 +39,7 @@ export type PublishedMediaAccess = (mediaId: string) => Promise<boolean>;
 
 export interface MediaStorage {
   put(object: StoredMedia): Promise<void>;
+  inspect(key: string): Promise<MediaMetadata | undefined>;
   get(key: string, variant?: MediaVariant): Promise<ReadableMedia | undefined>;
   makePublic(key: string, ownerSellerId: string): Promise<void>;
   makePrivate(key: string, ownerSellerId: string): Promise<void>;

@@ -122,6 +122,12 @@ export class StoreNotSellableError extends Error {
 }
 
 export interface StoreAuthoritativeRead {
+  readOwnedStore(
+    identityId: IdentityId,
+  ): Promise<StoreAuthoritativeSnapshotV1 | undefined>;
+  readPublishedStoreBySlug(
+    slug: StoreSlug,
+  ): Promise<StoreAuthoritativeSnapshotV1 | undefined>;
   readStore(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1 | undefined>;
   requireOwnership(
     identityId: IdentityId,

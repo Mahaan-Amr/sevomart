@@ -12,13 +12,19 @@ import {
   IdentityAccessModule,
   type IdentityAccessModuleOptions,
 } from "../modules/identity-access/composition";
-import { InventoryModule } from "../modules/inventory/composition";
+import {
+  InventoryModule,
+  PostgresInventoryAuthoring,
+} from "../modules/inventory/composition";
 import { MediaModule } from "../modules/media/composition";
 import { NotificationsModule } from "../modules/notifications/composition";
 import { OrdersModule } from "../modules/orders/composition";
 import { PaymentsModule } from "../modules/payments/composition";
 import { ProblemFollowUpModule } from "../modules/problem-follow-up/composition";
-import { ProductModule } from "../modules/product/composition";
+import {
+  PostgresProductRepository,
+  ProductModule,
+} from "../modules/product/composition";
 import { ReportingAnalyticsModule } from "../modules/reporting-analytics/composition";
 import { PostgresStoreRepository, StoreModule } from "../modules/store/composition";
 import { DevOtpProvider } from "../modules/notifications/composition";
@@ -36,17 +42,25 @@ export function composeCanonicalApiModules(
   const storeFollowingRepository = new PostgresStoreFollowingRepository(
     environment.DATABASE_URL,
   );
+  const inventoryAuthoring = new PostgresInventoryAuthoring(environment.DATABASE_URL);
+  const productRepository = new PostgresProductRepository(
+    environment.DATABASE_URL,
+    inventoryAuthoring,
+  );
 
   return [
     IdentityAccessModule.register(environment, { ...identityOptions, otpProvider }),
-    MediaModule.register(environment, undefined, (mediaId) =>
-      storeRepository.isMediaPublished(mediaId),
-    ),
+    MediaModule.register(environment, undefined, async (mediaId) => {
+      if (await storeRepository.isMediaPublished(mediaId)) return true;
+      const storeId = await productRepository.findPublishedMediaStoreId(mediaId);
+      if (!storeId) return false;
+      return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
+    }),
     StoreModule.register(environment, {
       repository: storeRepository,
       publicStoreFollowingReader: storeFollowingRepository,
     }),
-    ProductModule,
+    ProductModule.register(environment, { repository: productRepository }),
     InventoryModule,
     OrdersModule,
     PaymentsModule,

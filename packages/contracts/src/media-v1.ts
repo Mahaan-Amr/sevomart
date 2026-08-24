@@ -11,12 +11,18 @@ export const MEDIA_UPLOAD_ACCEPTED_TYPES = [
   "image/png",
   "image/webp",
 ] as const;
-export const MEDIA_UPLOAD_PURPOSES = ["STORE_LOGO", "STORE_COVER"] as const;
+export const MEDIA_UPLOAD_PURPOSES = [
+  "STORE_LOGO",
+  "STORE_COVER",
+  "PRODUCT_IMAGE",
+] as const;
 export const MEDIA_VARIANTS = [
   "logo-small",
   "logo-large",
   "cover-mobile",
   "cover-desktop",
+  "product-card",
+  "product-detail",
 ] as const;
 
 export const mediaUploadPurposeContract = z.enum(MEDIA_UPLOAD_PURPOSES);

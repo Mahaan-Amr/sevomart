@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import type { IranianMobile } from "@sevo/contracts/identity-access/v1";
+import type { IdentityId } from "@sevo/contracts/platform/v1";
 import postgres, { type Sql } from "postgres";
 
 import type {
   IdentityAccessRepository,
+  SellerAccessRead,
   SevoIdentity,
   StoredIdentitySession,
   StoredOtpChallenge,
@@ -12,7 +14,9 @@ import type {
 
 const MAX_OTP_VERIFICATION_ATTEMPTS = 5;
 
-export class PostgresIdentityAccessRepository implements IdentityAccessRepository {
+export class PostgresIdentityAccessRepository
+  implements IdentityAccessRepository, SellerAccessRead
+{
   readonly #sql: Sql;
 
   constructor(databaseUrl: string) {
@@ -125,6 +129,16 @@ export class PostgresIdentityAccessRepository implements IdentityAccessRepositor
       limit 1
     `;
     return rows[0];
+  }
+
+  async isActiveSeller(identityId: IdentityId): Promise<boolean> {
+    const rows = await this.#sql<Array<{ active: boolean }>>`
+      select exists(
+        select 1 from identity_seller_access
+        where identity_id = ${identityId} and status = 'ACTIVE'
+      ) as active
+    `;
+    return rows[0]?.active ?? false;
   }
 
   async revokeSession(tokenHash: string, revokedAt: Date): Promise<boolean> {

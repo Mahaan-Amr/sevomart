@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { PublicStore } from "@sevo/contracts/store/v1";
+import type { PublicSimpleProductSummary } from "@sevo/contracts/product/v1";
 import type { CSSProperties, ReactNode } from "react";
 
+import { formatIrrAsToman } from "../../../lib/format-money";
 import styles from "./storefront.module.css";
 import { StoreFollowControl } from "./store-follow-control";
 
@@ -113,9 +115,11 @@ function TrustDetails({ store }: { store: PublicStore }) {
 
 export function ReadyStorefront({
   store,
+  products = [],
   autoFollow = false,
 }: {
   store: PublicStore;
+  products?: PublicSimpleProductSummary[];
   autoFollow?: boolean;
 }) {
   const identityStyle = { "--store-accent": store.themeColor } as CSSProperties;
@@ -160,7 +164,7 @@ export function ReadyStorefront({
           />
         ) : null}
       </header>
-      {store.activeProductCount === 0 ? (
+      {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">
           <span className={styles.emptyMark} aria-hidden="true">
             ✦
@@ -168,7 +172,27 @@ export function ReadyStorefront({
           <h2 id="empty-title">هنوز کالایی منتشر نشده</h2>
           <p>فروشنده در حال آماده‌کردن اولین کالاهاست.</p>
         </section>
-      ) : null}
+      ) : (
+        <section className={styles.products} aria-labelledby="products-title">
+          <h2 id="products-title">کالاهای فروشگاه</h2>
+          <div className={styles.productList}>
+            {products.map((product) => (
+              <Link
+                className={styles.product}
+                href={`/s/${store.slug}/products/${product.productId}`}
+                key={product.productId}
+              >
+                <img src={`/api/store/media/${product.image.id}`} alt={product.name} />
+                <span>
+                  <strong>{product.name}</strong>
+                  <small>{formatIrrAsToman(product.price.amount)}</small>
+                  <em>{product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}</em>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       <TrustDetails store={store} />
     </StorefrontFrame>
   );

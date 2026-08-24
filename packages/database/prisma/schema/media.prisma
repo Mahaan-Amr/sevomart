@@ -3,6 +3,7 @@
 model MediaAsset {
   id                String         @id @db.Uuid
   ownerSellerId     String         @map("owner_seller_id") @db.Uuid
+  ownerReferenceId  String?        @map("owner_reference_id") @db.Uuid
   purpose           String         @db.VarChar(24)
   originalObjectKey String         @map("original_object_key") @db.VarChar(255)
   originalMimeType  String         @map("original_mime_type") @db.VarChar(32)

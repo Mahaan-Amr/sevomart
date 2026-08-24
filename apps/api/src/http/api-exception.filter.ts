@@ -28,6 +28,24 @@ export class ApiExceptionFilter implements ExceptionFilter {
       return;
     }
 
+    if (!(exception instanceof HttpException)) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "api_request_failed",
+          correlationId: request.id,
+          errorKind: exception instanceof Error ? exception.name : "UnknownError",
+          errorCode:
+            typeof exception === "object" &&
+            exception !== null &&
+            "code" in exception &&
+            typeof exception.code === "string"
+              ? exception.code
+              : undefined,
+        }),
+      );
+    }
+
     void reply.status(status).send({
       code:
         status === HttpStatus.INTERNAL_SERVER_ERROR

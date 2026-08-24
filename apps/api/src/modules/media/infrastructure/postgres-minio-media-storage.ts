@@ -15,6 +15,7 @@ type MediaRow = {
   width: number;
   height: number;
   ownerSellerId: string;
+  ownerReferenceId: string | null;
   visibility: "PRIVATE" | "PUBLIC";
   variant: MediaVariant;
   objectKey: string;
@@ -68,12 +69,14 @@ export class PostgresMinioMediaStorage implements MediaStorage {
       await this.#sql.begin(async (sql) => {
         await sql`
           insert into media_assets
-            (id, owner_seller_id, purpose, original_object_key, original_mime_type,
-             original_size, original_checksum, width, height, visibility)
+            (id, owner_seller_id, owner_reference_id, purpose, original_object_key,
+             original_mime_type, original_size, original_checksum, width, height,
+             visibility)
           values
-            (${object.key}, ${object.ownerSellerId}, ${object.purpose}, ${originalKey},
-             ${object.contentType}, ${object.bytes.byteLength}, ${object.checksum},
-             ${object.width}, ${object.height}, ${object.visibility})
+            (${object.key}, ${object.ownerSellerId}, ${object.ownerReferenceId ?? null},
+             ${object.purpose}, ${originalKey}, ${object.contentType},
+             ${object.bytes.byteLength}, ${object.checksum}, ${object.width},
+             ${object.height}, ${object.visibility})
         `;
         await sql`
           insert into media_variants ${sql(
@@ -102,14 +105,19 @@ export class PostgresMinioMediaStorage implements MediaStorage {
     const rows = await this.#sql<MediaRow[]>`
       select a.id as key, a.purpose, a.original_mime_type as "originalContentType",
         a.original_checksum as checksum, a.width, a.height,
-        a.owner_seller_id as "ownerSellerId", a.visibility,
+        a.owner_seller_id as "ownerSellerId",
+        a.owner_reference_id as "ownerReferenceId", a.visibility,
         v.name as variant, v.object_key as "objectKey"
       from media_assets a
       join media_variants v on v.media_id = a.id
       where a.id = ${key}
         and v.name = coalesce(
           ${requestedVariant ?? null},
-          case when a.purpose = 'STORE_LOGO' then 'logo-large' else 'cover-desktop' end
+          case
+            when a.purpose = 'STORE_LOGO' then 'logo-large'
+            when a.purpose = 'STORE_COVER' then 'cover-desktop'
+            else 'product-detail'
+          end
         )
       limit 1
     `;
@@ -128,9 +136,37 @@ export class PostgresMinioMediaStorage implements MediaStorage {
       width: row.width,
       height: row.height,
       ownerSellerId: row.ownerSellerId,
+      ownerReferenceId: row.ownerReferenceId ?? undefined,
       visibility: row.visibility,
       variant: row.variant,
     };
+  }
+
+  async inspect(key: string) {
+    const rows = await this.#sql<
+      Array<{
+        key: string;
+        purpose: MediaUploadPurpose;
+        contentType: "image/jpeg" | "image/png" | "image/webp";
+        checksum: string;
+        width: number;
+        height: number;
+        ownerSellerId: string;
+        ownerReferenceId: string | null;
+        visibility: "PRIVATE" | "PUBLIC";
+      }>
+    >`
+      select id as key, purpose, original_mime_type as "contentType",
+        original_checksum as checksum, width, height,
+        owner_seller_id as "ownerSellerId",
+        owner_reference_id as "ownerReferenceId", visibility
+      from media_assets where id = ${key}::uuid
+      limit 1
+    `;
+    const row = rows[0];
+    return row
+      ? { ...row, ownerReferenceId: row.ownerReferenceId ?? undefined }
+      : undefined;
   }
 
   async makePublic(key: string, ownerSellerId: string): Promise<void> {

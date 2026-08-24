@@ -145,9 +145,12 @@ test("keyboard order, focus, and interactive targets stay usable", async ({ page
   await page.keyboard.press("Enter");
   await expect(page.locator("main")).toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "دنبال‌کردن فروشگاه" })).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "رفتن به صفحه اصلی سوو" })).toBeFocused();
 
   await assertInteractiveTargets(page, "a");
+  await assertInteractiveTargets(page, "button");
 });
 
 test("the storefront reflows without clipping at an effective 200% zoom", async ({

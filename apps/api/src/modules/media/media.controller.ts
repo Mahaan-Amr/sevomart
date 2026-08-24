@@ -21,6 +21,7 @@ import {
   type MediaReference,
   type MediaUploadPurpose,
 } from "@sevo/contracts/media/v1";
+import { productIdContract, type ProductId } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
 
@@ -65,11 +66,30 @@ export class MediaController {
 
   @Post("seller/media")
   async upload(@Req() request: FastifyRequest) {
+    return this.uploadOwnedMedia(request);
+  }
+
+  @Post("seller/products/:productId/images")
+  async uploadProductImage(
+    @Param("productId") rawProductId: string,
+    @Req() request: FastifyRequest,
+  ) {
+    const productId = productIdContract.safeParse(rawProductId);
+    if (!productId.success) throw mediaNotFound(request.id);
+    return this.uploadOwnedMedia(request, productId.data);
+  }
+
+  private async uploadOwnedMedia(
+    request: FastifyRequest,
+    ownerReferenceId?: ProductId,
+  ) {
     const identityId = await requireIdentity(request, this.sessions);
     if (!this.uploadRateLimiter.accept(identityId)) {
       throw mediaError(request.id, "RATE_LIMITED");
     }
-    let purpose: MediaUploadPurpose | undefined;
+    let purpose: MediaUploadPurpose | undefined = ownerReferenceId
+      ? "PRODUCT_IMAGE"
+      : undefined;
     let fileName = "";
     let declaredContentType = "";
     let bytes: Buffer | undefined;
@@ -77,7 +97,12 @@ export class MediaController {
       for await (const part of request.parts()) {
         if (part.type === "field" && part.fieldname === "purpose") {
           const parsed = mediaUploadPurposeContract.safeParse(part.value);
-          if (parsed.success) purpose = parsed.data;
+          if (
+            parsed.success &&
+            (!ownerReferenceId || parsed.data === "PRODUCT_IMAGE")
+          ) {
+            purpose = parsed.data;
+          }
         } else if (part.type === "file" && part.fieldname === "file") {
           fileName = part.filename;
           declaredContentType = part.mimetype;
@@ -113,6 +138,7 @@ export class MediaController {
       height: inspected.height,
       variants,
       ownerSellerId: identityId,
+      ownerReferenceId,
       visibility: "PRIVATE",
     });
     return {
@@ -185,10 +211,15 @@ async function createVariants(
           ["logo-small", 128, 128, true],
           ["logo-large", 512, 512, true],
         ] as const)
-      : ([
-          ["cover-mobile", 960, undefined, false],
-          ["cover-desktop", 1920, undefined, false],
-        ] as const);
+      : purpose === "STORE_COVER"
+        ? ([
+            ["cover-mobile", 960, undefined, false],
+            ["cover-desktop", 1920, undefined, false],
+          ] as const)
+        : ([
+            ["product-card", 640, 640, false],
+            ["product-detail", 1600, 1600, false],
+          ] as const);
   return Promise.all(
     definitions.map(async ([name, width, height, lossless]) => {
       const result = await sharp(bytes, { limitInputPixels: MEDIA_UPLOAD_MAX_PIXELS })

@@ -21,6 +21,12 @@ Issue 79 verification (2026-08-24): Compose built all four application images, a
 all ten migrations, and reached healthy status; native `pnpm dev` reported no pending
 migrations and brought Web, API, and worker to ready state.
 
+Issue 80 verification (2026-08-24): the additive `product`, `inventory`, and `media`
+migrations need no compatibility window and use a forward fix if deployment must be
+corrected. `docker compose up --build --wait` applied all 21 migrations and brought
+API, Web, and worker to healthy status; native `pnpm dev` reported no pending
+migrations and brought API, Web, and worker to ready state.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

@@ -15,8 +15,14 @@ import type {
   SellerApplicationView,
   WithdrawSellerApplication,
 } from "@sevo/contracts/identity-access/v1";
+import type { IdentityId } from "@sevo/contracts/platform/v1";
 
 export const IDENTITY_SESSION_READER = Symbol("IDENTITY_SESSION_READER");
+export const SELLER_ACCESS_READ = Symbol("SELLER_ACCESS_READ");
+
+export interface SellerAccessRead {
+  isActiveSeller(identityId: IdentityId): Promise<boolean>;
+}
 
 export interface IdentitySessionReader {
   readActiveIdentitySession(token: string): Promise<IdentitySession | undefined>;
