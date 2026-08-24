@@ -195,7 +195,9 @@ describe("OpenAPI identity and store compatibility", () => {
         }),
       )
       .digest("hex");
-    expect(completeSurfaceHash).toBe("REGENERATE_AFTER_MERGE");
+    expect(completeSurfaceHash).toBe(
+      "7b854b76f7677aece6c3569c68b898bb1620fbaba99e549329cb6ec5d59d1eb0",
+    );
   });
 
   it("publishes each owned module schema without ambiguous any", async () => {
