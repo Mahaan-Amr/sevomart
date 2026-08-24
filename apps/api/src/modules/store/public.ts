@@ -1,7 +1,23 @@
 import type { StoreAuthoritativeSnapshotV1, StoreSlug } from "@sevo/contracts/store/v1";
+import type {
+  PublicFollowerCountV1,
+  ViewerStoreFollowV1,
+} from "@sevo/contracts/discovery/v1";
 import type { IdentityId, StoreId } from "@sevo/contracts/platform/v1";
 
 export const STORE_AUTHORITATIVE_READ = Symbol("STORE_AUTHORITATIVE_READ");
+
+export interface PublicStoreFollowingReader {
+  readPublicStoreFollowing(
+    storeId: StoreId,
+    viewerIdentityId?: IdentityId,
+    fallbackUpdatedAt?: string,
+  ): Promise<{
+    followerCount: PublicFollowerCountV1;
+    viewer?: ViewerStoreFollowV1;
+    etag?: string;
+  }>;
+}
 
 export type SettlementDestination = {
   kind: "TEST";

@@ -6,6 +6,7 @@ import { StoreService } from "./application/store.service";
 import { PostgresStoreRepository } from "./infrastructure/postgres-store.repository";
 import {
   STORE_AUTHORITATIVE_READ,
+  type PublicStoreFollowingReader,
   type SettlementDestinationVerifier,
   type StoreRepository,
 } from "./public";
@@ -14,12 +15,14 @@ import {
   SETTLEMENT_DESTINATION_VERIFIER,
   STORE_REPOSITORY,
   STORE_SERVICE,
+  PUBLIC_STORE_FOLLOWING_READER,
 } from "./store.tokens";
 import { TestSettlementDestinationVerifier } from "./testing/test-settlement-verifier";
 
 export type StoreModuleOptions = {
   repository?: StoreRepository;
   settlementVerifier?: SettlementDestinationVerifier;
+  publicStoreFollowingReader?: PublicStoreFollowingReader;
 };
 
 @Module({})
@@ -30,6 +33,7 @@ export class StoreModule {
   ): DynamicModule {
     return {
       module: StoreModule,
+      global: true,
       controllers: [StoreController],
       providers: [
         {
@@ -60,6 +64,23 @@ export class StoreModule {
             ),
         },
         { provide: STORE_AUTHORITATIVE_READ, useExisting: STORE_SERVICE },
+        {
+          provide: PUBLIC_STORE_FOLLOWING_READER,
+          useValue:
+            options.publicStoreFollowingReader ??
+            ({
+              async readPublicStoreFollowing(storeId, _viewerIdentityId, updatedAt) {
+                return {
+                  followerCount: {
+                    version: 1,
+                    storeId,
+                    count: 0,
+                    updatedAt: updatedAt ?? new Date(0).toISOString(),
+                  },
+                };
+              },
+            } satisfies PublicStoreFollowingReader),
+        },
       ],
       exports: [STORE_AUTHORITATIVE_READ],
     };

@@ -4,6 +4,21 @@ import { validationErrorContract } from "./api-errors-v1";
 import { createJsonSchemaMap } from "./json-schema";
 import { eventEnvelopeV1Contract, identityIdContract } from "./platform/v1";
 
+export const identityStatusContract = z.enum(["ACTIVE", "INACTIVE"]);
+
+export const identityStatusChangedV1Contract = eventEnvelopeV1Contract
+  .extend({
+    eventType: z.literal("IdentityStatusChanged.v1"),
+    actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+    payload: z
+      .object({
+        status: identityStatusContract,
+        statusVersion: z.number().int().positive(),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const iranianMobileContract = z
   .string()
   .regex(/^09\d{9}$/)
@@ -498,6 +513,8 @@ export type OtpVerification = z.infer<typeof otpVerificationContract>;
 export type ActorContext = z.infer<typeof actorContextContract>;
 export type IdentitySession = z.infer<typeof identitySessionContract>;
 export type PlatformAgentSession = z.infer<typeof platformAgentSessionContract>;
+export type IdentityStatus = z.infer<typeof identityStatusContract>;
+export type IdentityStatusChangedV1 = z.infer<typeof identityStatusChangedV1Contract>;
 export type SellerApplicationInput = z.infer<typeof sellerApplicationInputContract>;
 export type SellerApplicationStatus = z.infer<typeof sellerApplicationStatusContract>;
 export type SellerApplicationEvent = z.infer<typeof sellerApplicationEventContract>;

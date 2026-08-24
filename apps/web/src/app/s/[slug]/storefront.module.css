@@ -136,6 +136,78 @@
   line-height: 1.8;
 }
 
+.follow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px;
+}
+
+.followSummary {
+  display: grid;
+  min-width: 0;
+}
+
+.followSummary strong {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.followSummary time {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.followButton,
+.followingButton,
+.followError button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.followButton {
+  background: var(--color-primary);
+  box-shadow: 3px 3px 8px var(--shadow-primary);
+  color: var(--color-on-primary);
+}
+
+.followingButton {
+  background: var(--color-background);
+  box-shadow: inset 3px 3px 7px var(--shadow-neutral-soft);
+  color: var(--color-primary-dark);
+}
+
+.followButton:disabled,
+.followingButton:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.followError {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-primary-dark);
+  font-size: 13px;
+}
+
+.followError button {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-primary-dark);
+}
+
 .emptyState {
   display: grid;
   justify-items: center;
@@ -336,6 +408,13 @@
   outline-offset: 3px;
 }
 
+.followButton:focus-visible,
+.followingButton:focus-visible,
+.followError button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
 @media (min-width: 768px) {
   .page {
     padding: 32px;
@@ -346,6 +425,10 @@
   }
 
   .identityBody {
+    padding-inline: 24px;
+  }
+
+  .follow {
     padding-inline: 24px;
   }
 
@@ -376,5 +459,19 @@
   .footer a:hover {
     transform: translateY(-2px);
     box-shadow: 4px 4px 8px var(--shadow-neutral-soft);
+  }
+
+  .followButton,
+  .followingButton,
+  .followError button {
+    transition:
+      background-color 180ms cubic-bezier(0.22, 0.8, 0.28, 1),
+      box-shadow 180ms cubic-bezier(0.22, 0.8, 0.28, 1),
+      transform 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
+  }
+
+  .followButton:hover:not(:disabled),
+  .followingButton:hover:not(:disabled) {
+    transform: translateY(-2px);
   }
 }

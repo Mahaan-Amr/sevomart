@@ -3,6 +3,10 @@ import { z } from "zod";
 import { createJsonSchemaMap } from "./json-schema";
 import { mediaIdContract, mediaReferenceContract } from "./media-v1";
 import {
+  publicFollowerCountV1Contract,
+  viewerStoreFollowV1Contract,
+} from "./discovery/v1/index";
+import {
   eventActorV1Contract,
   eventEnvelopeV1Contract,
   identityIdContract,
@@ -255,6 +259,8 @@ export const publicStoreContract = z.object({
   status: z.literal("PUBLISHED"),
   publishedAt: z.string().datetime({ offset: true }),
   activeProductCount: z.number().int().nonnegative(),
+  followerCount: publicFollowerCountV1Contract.optional(),
+  viewer: viewerStoreFollowV1Contract.optional(),
   trust: z.object({
     settlementStatus: z.literal("TEST_VERIFIED"),
     platformBrandingRequired: z.literal(true),

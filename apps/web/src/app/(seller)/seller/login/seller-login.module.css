@@ -59,6 +59,23 @@
   outline-offset: 2px;
 }
 
+.cancelLink {
+  display: grid;
+  min-height: 40px;
+  margin-block-start: 12px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--color-primary-dark);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.cancelLink:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
 .intro {
   margin-block-end: 20px;
 }

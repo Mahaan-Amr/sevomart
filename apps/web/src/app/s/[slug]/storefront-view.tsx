@@ -3,6 +3,7 @@ import type { PublicStore } from "@sevo/contracts/store/v1";
 import type { CSSProperties, ReactNode } from "react";
 
 import styles from "./storefront.module.css";
+import { StoreFollowControl } from "./store-follow-control";
 
 export function StorefrontPageFrame({ children }: { children: ReactNode }) {
   return (
@@ -110,7 +111,13 @@ function TrustDetails({ store }: { store: PublicStore }) {
   );
 }
 
-export function ReadyStorefront({ store }: { store: PublicStore }) {
+export function ReadyStorefront({
+  store,
+  autoFollow = false,
+}: {
+  store: PublicStore;
+  autoFollow?: boolean;
+}) {
   const identityStyle = { "--store-accent": store.themeColor } as CSSProperties;
   const monogram = Array.from(store.name.trim())[0] ?? "س";
 
@@ -143,6 +150,15 @@ export function ReadyStorefront({ store }: { store: PublicStore }) {
             <p>{store.bio}</p>
           </div>
         </div>
+        {store.followerCount ? (
+          <StoreFollowControl
+            storeId={store.id}
+            slug={store.slug}
+            initialCount={store.followerCount}
+            initialViewer={store.viewer}
+            autoFollow={autoFollow}
+          />
+        ) : null}
       </header>
       {store.activeProductCount === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">

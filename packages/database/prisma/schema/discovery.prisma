@@ -1,1 +1,70 @@
 // Tables in this file are owned by the discovery module.
+
+model DiscoveryStoreFollow {
+  relationId    String    @unique @map("relation_id") @db.Uuid
+  identityId    String    @map("identity_id") @db.Uuid
+  storeId       String    @map("store_id") @db.Uuid
+  status        String    @db.VarChar(16)
+  revision      Int
+  activatedAt   DateTime  @map("activated_at") @db.Timestamptz(3)
+  deactivatedAt DateTime? @map("deactivated_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @map("updated_at") @db.Timestamptz(3)
+
+  @@id([identityId, storeId])
+  @@index([storeId, status])
+  @@map("discovery_store_follows")
+}
+
+model DiscoveryFollowSet {
+  identityId String   @id @map("identity_id") @db.Uuid
+  revision   Int
+  updatedAt  DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("discovery_follow_sets")
+}
+
+model DiscoveryPublicFollowerCount {
+  storeId      String   @id @map("store_id") @db.Uuid
+  followerCount Int    @default(0) @map("follower_count")
+  updatedAt    DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("discovery_public_follower_counts")
+}
+
+model DiscoveryIdentityStatusProjection {
+  identityId    String   @id @map("identity_id") @db.Uuid
+  status        String   @db.VarChar(16)
+  statusVersion Int      @map("status_version")
+  updatedAt     DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("discovery_identity_status_projections")
+}
+
+model DiscoveryFollowIdempotencyRecord {
+  operation       String   @db.VarChar(32)
+  identityId      String   @map("identity_id") @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  idempotencyKey  String   @map("idempotency_key") @db.VarChar(200)
+  requestHash     String   @map("request_hash") @db.Char(64)
+  responseJson    Json     @map("response_json") @db.JsonB
+  responseEtag    String   @map("response_etag") @db.VarChar(64)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, identityId, storeId, idempotencyKey])
+  @@map("discovery_follow_idempotency_records")
+}
+
+model DiscoveryFollowAudit {
+  id                String   @id @db.Uuid
+  actorIdentityId   String   @map("actor_identity_id") @db.Uuid
+  storeId           String   @map("store_id") @db.Uuid
+  previousStatus    String?  @map("previous_status") @db.VarChar(16)
+  nextStatus        String   @map("next_status") @db.VarChar(16)
+  previousRevision  Int?     @map("previous_revision")
+  nextRevision      Int      @map("next_revision")
+  correlationId     String   @map("correlation_id") @db.Uuid
+  occurredAt        DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([storeId, occurredAt])
+  @@map("discovery_follow_audits")
+}

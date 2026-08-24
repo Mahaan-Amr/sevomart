@@ -24,8 +24,10 @@ import {
   storeRevisionTagContract,
   storeSlugContract,
 } from "@sevo/contracts/store/v1";
+import { identityIdContract, storeIdContract } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { requireIdentity } from "../../http/identity-session";
+import { readIdentitySessionToken } from "../../http/identity-session";
 
 import {
   IncompleteStoreError,
@@ -34,8 +36,9 @@ import {
   StoreService,
   StoreSlugConflictError,
 } from "./application/store.service";
-import { STORE_SERVICE } from "./store.tokens";
+import { PUBLIC_STORE_FOLLOWING_READER, STORE_SERVICE } from "./store.tokens";
 import { StoreIdempotencyConflictError, StoreRevisionConflictError } from "./public";
+import type { PublicStoreFollowingReader } from "./public";
 
 @ApiExcludeController()
 @Controller("v1")
@@ -44,6 +47,8 @@ export class StoreController {
     @Inject(STORE_SERVICE) private readonly service: StoreService,
     @Inject(IDENTITY_SESSION_READER)
     private readonly sessions: IdentitySessionReader,
+    @Inject(PUBLIC_STORE_FOLLOWING_READER)
+    private readonly following: PublicStoreFollowingReader,
   ) {}
 
   @Get("seller/store/draft")
@@ -124,10 +129,36 @@ export class StoreController {
   }
 
   @Get("stores/:slug")
-  async readPublished(@Param("slug") value: string, @Req() request: FastifyRequest) {
+  async readPublished(
+    @Param("slug") value: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
     const parsed = storeSlugContract.safeParse(value);
     if (!parsed.success) return this.notFound(request.id);
-    return this.handle(request, () => this.service.readPublished(parsed.data));
+    const store = await this.handle(request, () =>
+      this.service.readPublished(parsed.data),
+    );
+    const token = readIdentitySessionToken(request);
+    const session = token
+      ? await this.sessions.readActiveIdentitySession(token)
+      : undefined;
+    const following = await this.following.readPublicStoreFollowing(
+      storeIdContract.parse(store.id),
+      session ? identityIdContract.parse(session.actor.identityId) : undefined,
+      store.publishedAt,
+    );
+    response.header(
+      "cache-control",
+      session ? "private, no-store" : "public, max-age=30, must-revalidate",
+    );
+    response.header("vary", "Cookie");
+    if (following.etag) response.header("etag", following.etag);
+    return {
+      ...store,
+      followerCount: following.followerCount,
+      ...(following.viewer ? { viewer: following.viewer } : {}),
+    };
   }
 
   private async handle<T>(request: FastifyRequest, operation: () => Promise<T>) {

@@ -58,6 +58,7 @@ function isAllowedPath(segments: readonly string[]) {
     path === "seller/store/publication" ||
     path === "seller/media" ||
     /^stores\/[a-z0-9-]+$/.test(path) ||
+    /^me\/follows\/[0-9a-f-]{36}$/.test(path) ||
     /^store-slugs\/[a-z0-9-]+\/availability$/.test(path) ||
     /^media\/[0-9a-f-]{36}$/.test(path)
   );

@@ -15,10 +15,14 @@ export function SellerLogin({
   initiallySignedIn,
   showDevelopmentCode,
   returnTo,
+  autoContinue = false,
+  cancelTo,
 }: {
   initiallySignedIn: boolean;
   showDevelopmentCode: boolean;
   returnTo: string;
+  autoContinue?: boolean;
+  cancelTo?: string;
 }) {
   const [step, setStep] = useState<Step>(initiallySignedIn ? "signed-in" : "mobile");
   const [mobile, setMobile] = useState("");
@@ -75,6 +79,10 @@ export function SellerLogin({
       }
       if (!identitySessionContract.safeParse(body).success) {
         throw new Error("invalid session response");
+      }
+      if (autoContinue) {
+        window.location.assign(returnTo);
+        return;
       }
       setStep("signed-in");
     } catch {
@@ -197,6 +205,11 @@ export function SellerLogin({
             </button>
           </form>
         )}
+        {cancelTo ? (
+          <a className={styles.cancelLink} href={cancelTo}>
+            انصراف و بازگشت به فروشگاه
+          </a>
+        ) : null}
       </section>
     </main>
   );

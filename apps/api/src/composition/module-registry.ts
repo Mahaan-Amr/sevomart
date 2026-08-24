@@ -3,7 +3,10 @@ import type { RuntimeEnvironment } from "@sevo/config";
 
 import { ConversationsModule } from "../modules/conversations/composition";
 import { ContentModule } from "../modules/content/composition";
-import { DiscoveryModule } from "../modules/discovery/composition";
+import {
+  DiscoveryModule,
+  PostgresStoreFollowingRepository,
+} from "../modules/discovery/composition";
 import { FulfillmentModule } from "../modules/fulfillment/composition";
 import {
   IdentityAccessModule,
@@ -30,13 +33,19 @@ export function composeCanonicalApiModules(
     identityOptions.otpProvider ??
     (environment.OTP_PROVIDER === "dev" ? new DevOtpProvider() : undefined);
   const storeRepository = new PostgresStoreRepository(environment.DATABASE_URL);
+  const storeFollowingRepository = new PostgresStoreFollowingRepository(
+    environment.DATABASE_URL,
+  );
 
   return [
     IdentityAccessModule.register(environment, { ...identityOptions, otpProvider }),
     MediaModule.register(environment, undefined, (mediaId) =>
       storeRepository.isMediaPublished(mediaId),
     ),
-    StoreModule.register(environment, { repository: storeRepository }),
+    StoreModule.register(environment, {
+      repository: storeRepository,
+      publicStoreFollowingReader: storeFollowingRepository,
+    }),
     ProductModule,
     InventoryModule,
     OrdersModule,
@@ -45,7 +54,7 @@ export function composeCanonicalApiModules(
     ConversationsModule,
     ProblemFollowUpModule,
     ContentModule,
-    DiscoveryModule,
+    DiscoveryModule.register(environment, storeFollowingRepository),
     NotificationsModule,
     ReportingAnalyticsModule,
   ];
