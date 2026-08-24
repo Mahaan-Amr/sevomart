@@ -58,7 +58,10 @@ const runtimeEnvironmentContract = z.object({
     .string()
     .min(32)
     .default("sevo_local_seller_approval_recovery_secret"),
-  CART_GUEST_SECRET: z.string().min(32).default("sevo_local_cart_guest_secret_value"),
+  CART_TOKEN_DERIVATION_SECRET: z
+    .string()
+    .min(32)
+    .default("sevo_local_cart_token_derivation_secret"),
   DISCOVERY_CURSOR_ACTIVE_KEY_ID: z.string().min(1).max(64).default("local-v1"),
   DISCOVERY_CURSOR_KEYRING: discoveryCursorKeyring,
   DISCOVERY_RANKING_SECRET: z
@@ -90,7 +93,8 @@ export function readRuntimeEnvironment(
       environment.MINIO_BUCKET === "sevo-media" ||
       environment.SELLER_APPROVAL_RECOVERY_SECRET ===
         "sevo_local_seller_approval_recovery_secret" ||
-      environment.CART_GUEST_SECRET === "sevo_local_cart_guest_secret_value" ||
+      environment.CART_TOKEN_DERIVATION_SECRET ===
+        "sevo_local_cart_token_derivation_secret" ||
       Object.values(environment.DISCOVERY_CURSOR_KEYRING).includes(
         "sevo_local_discovery_cursor_signing_secret",
       ) ||

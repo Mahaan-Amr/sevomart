@@ -95,6 +95,11 @@ Worker یک command با وضعیت `PENDING` را از endpoint داخلی مح
 باشد—همان ماژول recovery را با audit شکست به `CANCELLED` می‌برد تا command نامعتبر
 دوباره اجرا نشود و بازیابی‌های بعدی متوقف نمانند.
 
+توکن دسترسی سبد مهمان از `CART_TOKEN_DERIVATION_SECRET` و کلید idempotency درخواست
+به‌صورت HMAC مشتق می‌شود تا retry نخستین افزودن، حتی پیش از دریافت cookie، همان سبد را
+برگرداند. مقدار محلی `.env.example` برای production ممنوع است و باید در مسیر Docker و
+native با secret مستقل و حداقل ۳۲ نویسه جایگزین شود.
+
 برای migrationهای تأیید فروشندگی، هم مسیر native با
 `pnpm --filter @sevo/database exec prisma migrate deploy` سپس اجرای API/Worker از
 `pnpm dev`، و هم مسیر رسمی با `pnpm compose:up` بررسی می‌شوند. پذیرش این تغییر مستلزم

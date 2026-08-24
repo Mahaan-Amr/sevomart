@@ -66,7 +66,7 @@ describe("runtime trust guard", () => {
         MINIO_SECRET_KEY: "production-secret-value",
         MINIO_BUCKET: "production-media",
         SELLER_APPROVAL_RECOVERY_SECRET: "production-seller-approval-recovery-secret",
-        CART_GUEST_SECRET: "production-cart-guest-secret-value",
+        CART_TOKEN_DERIVATION_SECRET: "production-cart-token-derivation-secret",
         DISCOVERY_CURSOR_ACTIVE_KEY_ID: "current",
         DISCOVERY_CURSOR_KEYRING:
           '{"previous":"previous-production-cursor-signing-key","current":"current-production-cursor-signing-key"}',
