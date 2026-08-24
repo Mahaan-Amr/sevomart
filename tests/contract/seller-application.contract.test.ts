@@ -1,8 +1,11 @@
 import {
+  approveSellerApplicationContract,
+  approveSellerApplicationResultContract,
   platformSellerApplicationDecisionEventContract,
   platformSellerApplicationV1Paths,
   rejectSellerApplicationContract,
   requestSellerApplicationInformationContract,
+  sellerAccessActivatedEventContract,
   sellerApplicationEventContract,
   sellerApplicationInputContract,
   sellerApplicationStatusContract,
@@ -52,6 +55,7 @@ describe("seller application v1 contract", () => {
       read: "/v1/platform/seller-applications/{applicationId}",
       requestInformation:
         "/v1/platform/seller-applications/{applicationId}/information-request",
+      approve: "/v1/platform/seller-applications/{applicationId}/approval",
       reject: "/v1/platform/seller-applications/{applicationId}/rejection",
     });
 
@@ -65,12 +69,30 @@ describe("seller application v1 contract", () => {
       }),
     ).toMatchObject({ requestedFields: ["currentSalesMethod"] });
     expect(
+      approveSellerApplicationContract.parse({
+        expectedRevision: 1,
+        reasonCode: "ELIGIBILITY_CONFIRMED",
+        publicReason: "شرایط فروشندگی شما تأیید شد.",
+      }),
+    ).toMatchObject({ reasonCode: "ELIGIBILITY_CONFIRMED" });
+    expect(
       rejectSellerApplicationContract.parse({
         expectedRevision: 1,
         reasonCode: "ELIGIBILITY_NOT_ESTABLISHED",
         publicReason: "با اطلاعات فعلی امکان تأیید فروشندگی وجود ندارد.",
       }),
     ).toMatchObject({ reasonCode: "ELIGIBILITY_NOT_ESTABLISHED" });
+  });
+
+  it("publishes the atomic approval result with seller access and store identifiers", () => {
+    expect(
+      approveSellerApplicationResultContract.parse({
+        applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+        revision: 2,
+        sellerAccessId: "9ef2709b-066f-4d6e-82f6-791c75a46fc7",
+        storeId: "15f00f04-813c-44f9-b681-22cb4f3dbeae",
+      }),
+    ).toMatchObject({ revision: 2 });
   });
 
   it("keeps versioned event payloads free of names, request text and reasons", () => {
@@ -148,6 +170,52 @@ describe("seller application v1 contract", () => {
     });
 
     expect(JSON.stringify(event.payload)).not.toMatch(
+      /applicantName|proposedStoreName|goodsAreaText|currentSalesMethod|publicReason|internalNote/i,
+    );
+  });
+
+  it("keeps approval and seller-access events free of names and reason text", () => {
+    const approval = platformSellerApplicationDecisionEventContract.parse({
+      version: 1,
+      eventId: "7ef2709b-066f-4d6e-82f6-791c75a46fc7",
+      eventType: "SellerApplicationApproved.v1",
+      aggregateId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+      aggregateVersion: 2,
+      occurredAt: "2026-08-24T08:05:00.000Z",
+      correlationId: "592b7574-c60d-42dd-b91d-1603092b9835",
+      actor: {
+        type: "IDENTITY",
+        id: "9921f18f-187f-40dd-a389-1626156366f8",
+      },
+      payload: {
+        applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+        status: "APPROVED",
+        revision: 2,
+        reasonCode: "ELIGIBILITY_CONFIRMED",
+        actorKind: "PLATFORM_AGENT",
+      },
+    });
+    const access = sellerAccessActivatedEventContract.parse({
+      version: 1,
+      eventId: "8ef2709b-066f-4d6e-82f6-791c75a46fc7",
+      eventType: "SellerAccessActivated.v1",
+      aggregateId: "9ef2709b-066f-4d6e-82f6-791c75a46fc7",
+      aggregateVersion: 1,
+      occurredAt: "2026-08-24T08:05:00.000Z",
+      correlationId: "592b7574-c60d-42dd-b91d-1603092b9835",
+      actor: {
+        type: "IDENTITY",
+        id: "9921f18f-187f-40dd-a389-1626156366f8",
+      },
+      payload: {
+        sellerAccessId: "9ef2709b-066f-4d6e-82f6-791c75a46fc7",
+        identityId: "021e92b0-9188-442f-9713-4fcf85b7f7e5",
+        status: "ACTIVE",
+        actorKind: "PLATFORM_AGENT",
+      },
+    });
+
+    expect(JSON.stringify([approval.payload, access.payload])).not.toMatch(
       /applicantName|proposedStoreName|goodsAreaText|currentSalesMethod|publicReason|internalNote/i,
     );
   });

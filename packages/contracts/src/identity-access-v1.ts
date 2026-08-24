@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import { validationErrorContract } from "./api-errors-v1";
 import { createJsonSchemaMap } from "./json-schema";
-import { eventEnvelopeV1Contract, identityIdContract } from "./platform/v1";
+import {
+  eventEnvelopeV1Contract,
+  identityIdContract,
+  storeIdContract,
+} from "./platform/v1";
 
 export const identityStatusContract = z.enum(["ACTIVE", "INACTIVE"]);
 
@@ -48,6 +52,7 @@ export const platformSellerApplicationV1Paths = {
   read: "/v1/platform/seller-applications/{applicationId}",
   requestInformation:
     "/v1/platform/seller-applications/{applicationId}/information-request",
+  approve: "/v1/platform/seller-applications/{applicationId}/approval",
   reject: "/v1/platform/seller-applications/{applicationId}/rejection",
 } as const;
 
@@ -126,6 +131,18 @@ export const rejectSellerApplicationContract =
     ]),
   });
 
+export const approveSellerApplicationContract =
+  platformSellerApplicationDecisionBaseContract.extend({
+    reasonCode: z.literal("ELIGIBILITY_CONFIRMED"),
+  });
+
+export const approveSellerApplicationResultContract = z.object({
+  applicationId: sellerApplicationIdContract,
+  revision: z.number().int().positive(),
+  sellerAccessId: z.string().uuid(),
+  storeId: storeIdContract,
+});
+
 export const resubmitSellerApplicationContract = sellerApplicationInputContract.extend({
   expectedRevision: z.number().int().positive(),
 });
@@ -195,7 +212,7 @@ export const platformSellerApplicationPageContract = z.object({
 });
 
 export const platformSellerApplicationDecisionContract = z.object({
-  action: z.enum(["REQUEST_INFORMATION", "REJECT"]),
+  action: z.enum(["REQUEST_INFORMATION", "APPROVE", "REJECT"]),
   reasonCode: sellerApplicationReasonCodeContract,
   publicReason: trimmedText(5, 1_000),
   internalNote: trimmedText(1, 2_000).nullable(),
@@ -266,15 +283,31 @@ export const platformSellerApplicationDecisionEventContract = eventEnvelopeV1Con
   .extend({
     eventType: z.enum([
       "SellerApplicationInformationRequested.v1",
+      "SellerApplicationApproved.v1",
       "SellerApplicationRejected.v1",
     ]),
     actor: z.object({ type: z.literal("IDENTITY"), id: identityIdContract }).strict(),
     payload: z
       .object({
         applicationId: z.string().uuid(),
-        status: z.enum(["NEEDS_INFORMATION", "REJECTED"]),
+        status: z.enum(["NEEDS_INFORMATION", "APPROVED", "REJECTED"]),
         revision: z.number().int().positive(),
         reasonCode: sellerApplicationReasonCodeContract,
+        actorKind: z.literal("PLATFORM_AGENT"),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const sellerAccessActivatedEventContract = eventEnvelopeV1Contract
+  .extend({
+    eventType: z.literal("SellerAccessActivated.v1"),
+    actor: z.object({ type: z.literal("IDENTITY"), id: identityIdContract }).strict(),
+    payload: z
+      .object({
+        sellerAccessId: z.string().uuid(),
+        identityId: identityIdContract,
+        status: z.literal("ACTIVE"),
         actorKind: z.literal("PLATFORM_AGENT"),
       })
       .strict(),
@@ -350,6 +383,8 @@ export const identityAccessV1Schemas = {
   SellerApplicationReadMineError: sellerApplicationReadMineErrorContract,
   PlatformPermission: platformPermissionContract,
   RequestSellerApplicationInformation: requestSellerApplicationInformationContract,
+  ApproveSellerApplication: approveSellerApplicationContract,
+  ApproveSellerApplicationResult: approveSellerApplicationResultContract,
   RejectSellerApplication: rejectSellerApplicationContract,
   PlatformSellerApplicationSummary: platformSellerApplicationSummaryContract,
   PlatformSellerApplicationPage: platformSellerApplicationPageContract,
@@ -462,6 +497,17 @@ export const identityAccessV1Examples = {
     internalNote: "شرح مسیر ثبت سفارش کامل نیست.",
     requestedFields: ["currentSalesMethod"],
   },
+  ApproveSellerApplication: {
+    expectedRevision: 1,
+    reasonCode: "ELIGIBILITY_CONFIRMED",
+    publicReason: "شرایط فروشندگی شما تأیید شد.",
+  },
+  ApproveSellerApplicationResult: {
+    applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+    revision: 2,
+    sellerAccessId: "9ef2709b-066f-4d6e-82f6-791c75a46fc7",
+    storeId: "15f00f04-813c-44f9-b681-22cb4f3dbeae",
+  },
   RejectSellerApplication: {
     expectedRevision: 1,
     reasonCode: "ELIGIBILITY_NOT_ESTABLISHED",
@@ -533,6 +579,10 @@ export type MySellerApplications = z.infer<typeof mySellerApplicationsContract>;
 export type PlatformPermission = z.infer<typeof platformPermissionContract>;
 export type RequestSellerApplicationInformation = z.infer<
   typeof requestSellerApplicationInformationContract
+>;
+export type ApproveSellerApplication = z.infer<typeof approveSellerApplicationContract>;
+export type ApproveSellerApplicationResult = z.infer<
+  typeof approveSellerApplicationResultContract
 >;
 export type RejectSellerApplication = z.infer<typeof rejectSellerApplicationContract>;
 export type PlatformSellerApplicationListQuery = z.infer<

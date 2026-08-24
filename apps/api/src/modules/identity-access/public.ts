@@ -1,4 +1,6 @@
 import type {
+  ApproveSellerApplication,
+  ApproveSellerApplicationResult,
   IranianMobile,
   OtpCode,
   IdentitySession,
@@ -171,4 +173,9 @@ export interface SellerApplicationReviewer {
     applicationId: string,
     input: RejectSellerApplication,
   ): Promise<PlatformSellerApplicationView>;
+  approve(
+    context: SellerApplicationReviewContext,
+    applicationId: string,
+    input: ApproveSellerApplication,
+  ): Promise<ApproveSellerApplicationResult>;
 }

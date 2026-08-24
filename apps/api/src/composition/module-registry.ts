@@ -49,7 +49,12 @@ export function composeCanonicalApiModules(
   );
 
   return [
-    IdentityAccessModule.register(environment, { ...identityOptions, otpProvider }),
+    IdentityAccessModule.register(environment, {
+      ...identityOptions,
+      otpProvider,
+      approvedSellerStoreProvisioner:
+        identityOptions.approvedSellerStoreProvisioner ?? storeRepository,
+    }),
     MediaModule.register(environment, undefined, async (mediaId) => {
       if (await storeRepository.isMediaPublished(mediaId)) return true;
       const storeId = await productRepository.findPublishedMediaStoreId(mediaId);

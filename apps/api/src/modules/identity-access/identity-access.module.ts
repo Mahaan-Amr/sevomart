@@ -31,10 +31,12 @@ import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
 import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
+import type { ApprovedSellerStoreProvisioner } from "../store/public";
 
 export type IdentityAccessModuleOptions = {
   otpProvider?: OtpProvider;
   repository?: IdentityAccessRepository;
+  approvedSellerStoreProvisioner?: ApprovedSellerStoreProvisioner;
 };
 
 @Module({})
@@ -96,7 +98,10 @@ export class IdentityAccessModule {
         { provide: SELLER_ACCESS_READ, useExisting: IDENTITY_ACCESS_REPOSITORY },
         {
           provide: SELLER_APPLICATION_REPOSITORY,
-          useValue: new PostgresSellerApplicationRepository(environment.DATABASE_URL),
+          useValue: new PostgresSellerApplicationRepository(
+            environment.DATABASE_URL,
+            options.approvedSellerStoreProvisioner,
+          ),
         },
         {
           provide: SELLER_APPLICATION_APPLICANT,

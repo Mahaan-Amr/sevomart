@@ -5,10 +5,13 @@ import {
   storePublishedV1Contract,
   storeUnpublishedV1Contract,
 } from "@sevo/contracts/store/v1";
+import { storeIdContract, type IdentityId } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
 import {
+  type ApprovedSellerStoreProvisioner,
+  type OpaqueStoreTransactionContext,
   StoreIdempotencyConflictError,
   StoreRevisionConflictError,
   type StoreRepository,
@@ -33,7 +36,9 @@ type StoredIdempotencyRow = {
   responseJson: JSONValue;
 };
 
-export class PostgresStoreRepository implements StoreRepository {
+export class PostgresStoreRepository
+  implements StoreRepository, ApprovedSellerStoreProvisioner
+{
   readonly #sql: Sql;
   readonly #createEventId: () => string;
 
@@ -63,6 +68,52 @@ export class PostgresStoreRepository implements StoreRepository {
       ) as published
     `;
     return rows[0]?.published ?? false;
+  }
+
+  async provisionApprovedSellerStore(command: {
+    identityId: IdentityId;
+    proposedStoreName: string;
+    idempotencyKey: string;
+    correlationId: string;
+    transactionContext: OpaqueStoreTransactionContext;
+  }) {
+    const sql = command.transactionContext.transaction as Sql;
+    if (command.transactionContext.kind !== "opaque-store-transaction") {
+      throw new Error("Approved seller store transaction context is invalid");
+    }
+    await sql`
+      select pg_advisory_xact_lock(
+        hashtextextended(${`approved-seller-store:${command.identityId}`}, 0)
+      )
+    `;
+    const existing = await sql<Array<{ storeId: string; revision: number }>>`
+      select s.id as "storeId", s.revision
+      from store_stores s
+      join store_memberships m on m.store_id = s.id and m.role = 'OWNER'
+      where m.seller_id = ${command.identityId}
+      limit 1
+    `;
+    if (existing[0]) {
+      return {
+        storeId: storeIdContract.parse(existing[0].storeId),
+        revision: existing[0].revision,
+      };
+    }
+
+    const storeId = randomUUID();
+    const occurredAt = new Date();
+    await sql`
+      insert into store_stores
+        (id, name, status, publication_version, revision,
+         return_policy_revision, updated_at)
+      values
+        (${storeId}, ${command.proposedStoreName}, 'DRAFT', 0, 1, 0, ${occurredAt})
+    `;
+    await sql`
+      insert into store_memberships (id, store_id, seller_id, role)
+      values (${randomUUID()}, ${storeId}, ${command.identityId}, 'OWNER')
+    `;
+    return { storeId: storeIdContract.parse(storeId), revision: 1 };
   }
 
   async #find(criteria: { id?: string; sellerId?: string; slug?: string }) {

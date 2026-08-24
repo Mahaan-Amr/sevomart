@@ -27,7 +27,7 @@ model Store {
 model StoreMembership {
   id       String @id @db.Uuid
   storeId  String @map("store_id") @db.Uuid
-  sellerId String @map("seller_id") @db.Uuid
+  sellerId String @unique @map("seller_id") @db.Uuid
   role     String @default("OWNER") @db.VarChar(16)
   store    Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
 

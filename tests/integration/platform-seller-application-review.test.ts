@@ -11,9 +11,13 @@ describe("platform seller application review API with PostgreSQL", () => {
   const apps: Awaited<ReturnType<typeof createApiApp>>[] = [];
   const environment = {
     ...apiTestEnvironment,
-    DEV_OTP_TEST_MOBILES: ["09123456789", "09123456788", "09123456787"].map((mobile) =>
-      iranianMobileContract.parse(mobile),
-    ),
+    DEV_OTP_TEST_MOBILES: [
+      "09123456789",
+      "09123456788",
+      "09123456787",
+      "09123456786",
+      "09123456785",
+    ].map((mobile) => iranianMobileContract.parse(mobile)),
   };
 
   beforeEach(async () => {
@@ -25,12 +29,303 @@ describe("platform seller application review API with PostgreSQL", () => {
     await sql`delete from identity_seller_application_decisions`;
     await sql`delete from identity_seller_application_revisions`;
     await sql`delete from identity_seller_applications`;
+    await sql`delete from identity_seller_access`;
     await sql`delete from platform_outbox_events where event_type like 'SellerApplication%'`;
     await sql`delete from identity_sessions`;
     await sql`delete from identity_otp_challenges`;
     await sql`delete from identity_login_methods`;
     await sql`delete from identity_identities`;
     await sql.end();
+  });
+
+  it("approves once and atomically provisions active seller access with an unpublished store", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const applicantCookie = await signIn(app, "09123456786");
+    const submitted = await server.inject({
+      method: "POST",
+      url: "/v1/seller-applications",
+      headers: { cookie: applicantCookie, "idempotency-key": randomUUID() },
+      payload: applicationPayload(),
+    });
+    const applicationId = submitted.json<{ applicationId: string }>().applicationId;
+    const applicantIdentityId = await identityIdForMobile("09123456786");
+
+    await signIn(app, "09123456785");
+    const agentIdentityId = await identityIdForMobile("09123456785");
+    const token = await seedPlatformSession(agentIdentityId);
+    await grantReviewPermission(agentIdentityId);
+    const correlationId = randomUUID();
+    const idempotencyKey = randomUUID();
+    const payload = {
+      expectedRevision: 1,
+      reasonCode: "ELIGIBILITY_CONFIRMED",
+      publicReason: "شرایط فروشندگی شما تأیید شد.",
+    };
+    const request = () =>
+      server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers: {
+          cookie: platformCookie(token),
+          "x-correlation-id": correlationId,
+          "idempotency-key": idempotencyKey,
+        },
+        payload,
+      });
+
+    const approved = await request();
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json()).toMatchObject({ applicationId, revision: 2 });
+    expect(approved.json()).toHaveProperty("sellerAccessId");
+    expect(approved.json()).toHaveProperty("storeId");
+    const replay = await request();
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(approved.json());
+
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      const state = await sql<
+        Array<{
+          status: string;
+          revision: number;
+          accessCount: number;
+          storeCount: number;
+          membershipCount: number;
+          storeStatus: string;
+          storeName: string;
+          auditCount: number;
+          eventCount: number;
+        }>
+      >`
+        select a.status, a.aggregate_version as revision,
+          (select count(*)::int from identity_seller_access sa
+           where sa.identity_id = ${applicantIdentityId}) as "accessCount",
+          (select count(*)::int from store_stores s
+           join store_memberships m on m.store_id = s.id
+           where m.seller_id = ${applicantIdentityId}) as "storeCount",
+          (select count(*)::int from store_memberships m
+           where m.seller_id = ${applicantIdentityId} and m.role = 'OWNER')
+             as "membershipCount",
+          (select s.status from store_stores s
+           join store_memberships m on m.store_id = s.id
+           where m.seller_id = ${applicantIdentityId}) as "storeStatus",
+          (select s.name from store_stores s
+           join store_memberships m on m.store_id = s.id
+           where m.seller_id = ${applicantIdentityId}) as "storeName",
+          (select count(*)::int from identity_seller_application_audit au
+           where au.target_id = a.id and au.action = 'ApproveSellerApplication.v1'
+             and au.result = 'SUCCEEDED') as "auditCount",
+          (select count(*)::int from platform_outbox_events e
+           where e.correlation_id = ${correlationId}
+             and e.event_type in ('SellerApplicationApproved.v1',
+                                  'SellerAccessActivated.v1')) as "eventCount"
+        from identity_seller_applications a where a.id = ${applicationId}
+      `;
+      expect(state).toEqual([
+        {
+          status: "APPROVED",
+          revision: 2,
+          accessCount: 1,
+          storeCount: 1,
+          membershipCount: 1,
+          storeStatus: "DRAFT",
+          storeName: "خانه ماه",
+          auditCount: 1,
+          eventCount: 2,
+        },
+      ]);
+    } finally {
+      await sql.end();
+    }
+
+    const mine = await server.inject({
+      method: "GET",
+      url: "/v1/seller-applications/mine",
+      headers: { cookie: applicantCookie },
+    });
+    expect(mine.json()).toMatchObject({
+      items: [
+        {
+          status: "APPROVED",
+          nextStep: "START_SELLER_WORKSPACE",
+          timeline: expect.arrayContaining([
+            expect.objectContaining({
+              status: "APPROVED",
+              publicReason: payload.publicReason,
+            }),
+          ]),
+        },
+      ],
+    });
+    const sellerWorkspace = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/draft",
+      headers: { cookie: applicantCookie },
+    });
+    expect(sellerWorkspace.statusCode).toBe(200);
+    expect(sellerWorkspace.json()).toMatchObject({
+      id: approved.json<{ storeId: string }>().storeId,
+      name: "خانه ماه",
+      status: "DRAFT",
+      revision: 1,
+    });
+    expect(sellerWorkspace.json()).not.toHaveProperty("publishedAt");
+  });
+
+  it("lets only one concurrent approval create seller access and a store", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const applicantCookie = await signIn(app, "09123456786");
+    const submitted = await server.inject({
+      method: "POST",
+      url: "/v1/seller-applications",
+      headers: { cookie: applicantCookie, "idempotency-key": randomUUID() },
+      payload: applicationPayload(),
+    });
+    const applicationId = submitted.json<{ applicationId: string }>().applicationId;
+    const applicantIdentityId = await identityIdForMobile("09123456786");
+    await signIn(app, "09123456788");
+    await signIn(app, "09123456787");
+    const firstAgentId = await identityIdForMobile("09123456788");
+    const secondAgentId = await identityIdForMobile("09123456787");
+    const firstToken = await seedPlatformSession(firstAgentId);
+    const secondToken = await seedPlatformSession(secondAgentId);
+    await grantReviewPermission(firstAgentId);
+    await grantReviewPermission(secondAgentId);
+    const payload = {
+      expectedRevision: 1,
+      reasonCode: "ELIGIBILITY_CONFIRMED",
+      publicReason: "شرایط فروشندگی شما تأیید شد.",
+    };
+
+    const results = await Promise.all([
+      server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers: {
+          cookie: platformCookie(firstToken),
+          "idempotency-key": randomUUID(),
+        },
+        payload,
+      }),
+      server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers: {
+          cookie: platformCookie(secondToken),
+          "idempotency-key": randomUUID(),
+        },
+        payload,
+      }),
+    ]);
+    expect(results.map((result) => result.statusCode).sort()).toEqual([200, 409]);
+
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      const counts = await sql<
+        Array<{ accessCount: number; storeCount: number; decisionCount: number }>
+      >`
+        select
+          (select count(*)::int from identity_seller_access
+           where identity_id = ${applicantIdentityId}) as "accessCount",
+          (select count(*)::int from store_memberships
+           where seller_id = ${applicantIdentityId}) as "storeCount",
+          (select count(*)::int from identity_seller_application_decisions
+           where application_id = ${applicationId} and action = 'APPROVE')
+            as "decisionCount"
+      `;
+      expect(counts).toEqual([{ accessCount: 1, storeCount: 1, decisionCount: 1 }]);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("rolls back a provision failure, audits it, and completes a retry without duplicates", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const applicantCookie = await signIn(app, "09123456786");
+    const submitted = await server.inject({
+      method: "POST",
+      url: "/v1/seller-applications",
+      headers: { cookie: applicantCookie, "idempotency-key": randomUUID() },
+      payload: applicationPayload(),
+    });
+    const applicationId = submitted.json<{ applicationId: string }>().applicationId;
+    const applicantIdentityId = await identityIdForMobile("09123456786");
+    await signIn(app, "09123456785");
+    const agentIdentityId = await identityIdForMobile("09123456785");
+    const token = await seedPlatformSession(agentIdentityId);
+    await grantReviewPermission(agentIdentityId);
+    const idempotencyKey = randomUUID();
+    const headers = {
+      cookie: platformCookie(token),
+      "idempotency-key": idempotencyKey,
+    };
+    const payload = {
+      expectedRevision: 1,
+      reasonCode: "ELIGIBILITY_CONFIRMED",
+      publicReason: "شرایط فروشندگی شما تأیید شد.",
+    };
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await sql.unsafe(`
+        create function test_fail_store_provision() returns trigger
+        language plpgsql as $$ begin raise exception 'simulated provision crash'; end $$;
+        create trigger test_fail_store_provision
+        before insert on store_stores
+        for each row execute function test_fail_store_provision();
+      `);
+      const failed = await server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers,
+        payload,
+      });
+      expect(failed.statusCode).toBe(500);
+
+      const rolledBack = await sql<
+        Array<{
+          status: string;
+          accessCount: number;
+          storeCount: number;
+          failedAuditCount: number;
+        }>
+      >`
+        select a.status,
+          (select count(*)::int from identity_seller_access
+           where identity_id = ${applicantIdentityId}) as "accessCount",
+          (select count(*)::int from store_memberships
+           where seller_id = ${applicantIdentityId}) as "storeCount",
+          (select count(*)::int from identity_seller_application_audit au
+           where au.target_id = a.id and au.action = 'ApproveSellerApplication.v1'
+             and au.result = 'FAILED') as "failedAuditCount"
+        from identity_seller_applications a where a.id = ${applicationId}
+      `;
+      expect(rolledBack).toEqual([
+        { status: "SUBMITTED", accessCount: 0, storeCount: 0, failedAuditCount: 1 },
+      ]);
+
+      await sql`drop trigger test_fail_store_provision on store_stores`;
+      await sql`drop function test_fail_store_provision()`;
+      const retried = await server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers,
+        payload,
+      });
+      expect(retried.statusCode).toBe(200);
+      expect(retried.json()).toMatchObject({ applicationId, revision: 2 });
+    } finally {
+      await sql.unsafe(`
+        drop trigger if exists test_fail_store_provision on store_stores;
+        drop function if exists test_fail_store_provision();
+      `);
+      await sql.end();
+    }
   });
 
   afterEach(async () => {
@@ -436,6 +731,21 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     expect(denied.statusCode).toBe(403);
     expect(denied.json()).toMatchObject({ code: "SELF_REVIEW_FORBIDDEN" });
+    const approvalDenied = await server.inject({
+      method: "POST",
+      url: `/v1/platform/seller-applications/${applicationId}/approval`,
+      headers: {
+        cookie: platformCookie(token),
+        "idempotency-key": randomUUID(),
+      },
+      payload: {
+        expectedRevision: 1,
+        reasonCode: "ELIGIBILITY_CONFIRMED",
+        publicReason: "شرایط فروشندگی شما تأیید شد.",
+      },
+    });
+    expect(approvalDenied.statusCode).toBe(403);
+    expect(approvalDenied.json()).toMatchObject({ code: "SELF_REVIEW_FORBIDDEN" });
 
     const sql = postgres(environment.DATABASE_URL, { max: 1 });
     try {
@@ -456,6 +766,12 @@ describe("platform seller application review API with PostgreSQL", () => {
           and action = 'RequestSellerApplicationInformation.v1'
       `;
       expect(audits).toEqual([{ result: "DENIED", correlationId }]);
+      const approvalAudits = await sql<Array<{ result: string }>>`
+        select result from identity_seller_application_audit
+        where target_id = ${applicationId}
+          and action = 'ApproveSellerApplication.v1'
+      `;
+      expect(approvalAudits).toEqual([{ result: "DENIED" }]);
     } finally {
       await sql.end();
     }

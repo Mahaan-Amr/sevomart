@@ -331,6 +331,39 @@ const operations = [
     ],
   },
   {
+    operationId: "approvePlatformSellerApplication",
+    method: "post",
+    path: platformSellerApplicationV1Paths.approve,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "applicationId",
+      schema: "SellerApplicationId",
+      example: identityAccessV1Examples.SellerApplicationId,
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: identityAccessV1Examples.IdempotencyKey,
+        required: true,
+      },
+    ],
+    request: {
+      schema: "ApproveSellerApplication",
+      example: identityAccessV1Examples.ApproveSellerApplication,
+    },
+    responses: [
+      { status: 200, schema: "ApproveSellerApplicationResult" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 404, schema: "SellerApplicationError" },
+      { status: 409, schema: "SellerApplicationError", headers: retryAfterHeader },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "rejectPlatformSellerApplication",
     method: "post",
     path: platformSellerApplicationV1Paths.reject,

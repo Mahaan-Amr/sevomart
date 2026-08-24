@@ -142,6 +142,7 @@ export interface StoreAuthoritativeRead {
 
 export type OpaqueStoreTransactionContext = Readonly<{
   kind: "opaque-store-transaction";
+  transaction: unknown;
 }>;
 
 export interface ApprovedSellerStoreProvisioner {

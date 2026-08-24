@@ -16,6 +16,7 @@ import {
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
+  approveSellerApplicationContract,
   platformSellerApplicationListQueryContract,
   idempotencyKeyContract,
   rejectSellerApplicationContract,
@@ -40,6 +41,7 @@ import {
   SellerApplicationIdempotencyInProgressError,
   SellerApplicationRevisionConflictError,
   SellerApplicationSelfReviewForbiddenError,
+  SellerAccessExistsError,
   type PlatformAgentSessionAuthorizer,
   type SellerApplicationReviewer,
 } from "./public";
@@ -197,6 +199,40 @@ export class PlatformSellerApplicationController {
     }
   }
 
+  @Post(":applicationId/approval")
+  @HttpCode(HttpStatus.OK)
+  async approve(
+    @Param("applicationId") applicationId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const id = sellerApplicationIdContract.safeParse(applicationId);
+    const input = approveSellerApplicationContract.safeParse(body);
+    const key = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!id.success || !input.success || !key.success) {
+      throw new HttpException(
+        {
+          code: "VALIDATION_ERROR",
+          message: "دلیل تأیید درخواست را کامل و درست وارد کنید.",
+          correlationId: request.id,
+        },
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const actor = await this.requireAgent(request);
+    const correlationId = correlationIdFor(request.id);
+    try {
+      return await this.reviewer.approve(
+        { ...actor, correlationId, idempotencyKey: key.data },
+        id.data,
+        input.data,
+      );
+    } catch (error) {
+      throw mapReviewError(error, correlationId);
+    }
+  }
+
   private async requireAgent(request: FastifyRequest) {
     try {
       return await this.sessions.authorizeSellerApplicationReview(
@@ -270,6 +306,14 @@ function mapReviewError(error: unknown, correlationId: string): HttpException {
       "این درخواست متعلق به خود شماست و باید عامل دیگری آن را بررسی کند.",
       correlationId,
       HttpStatus.FORBIDDEN,
+    );
+  }
+  if (error instanceof SellerAccessExistsError) {
+    return reviewError(
+      "SELLER_ALREADY_ACTIVE",
+      "برای این هویت پیش‌تر فروشندگی ثبت شده است.",
+      correlationId,
+      HttpStatus.CONFLICT,
     );
   }
   if (error instanceof SellerApplicationIdempotencyConflictError) {

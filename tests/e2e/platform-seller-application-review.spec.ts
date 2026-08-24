@@ -122,6 +122,70 @@ test("shows a self-owned application read-only and asks for handoff", async ({
   await expect(page.getByRole("button", { name: "ثبت درخواست تکمیل" })).toHaveCount(0);
 });
 
+test("platform agent confirms approval before the initial store is created", async ({
+  page,
+}) => {
+  const application = sellerApplication();
+  let approved = false;
+  let approvalPayload: Record<string, unknown> | undefined;
+  await page.route("**/api/platform/seller-applications**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST" && pathname.endsWith("/approval")) {
+      approved = true;
+      approvalPayload = request.postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        json: {
+          applicationId: application.applicationId,
+          revision: 2,
+          sellerAccessId: "9ef2709b-066f-4d6e-82f6-791c75a46fc7",
+          storeId: "15f00f04-813c-44f9-b681-22cb4f3dbeae",
+        },
+      });
+      return;
+    }
+    if (pathname.endsWith(application.applicationId)) {
+      await route.fulfill({ status: 200, json: application });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: {
+        items: approved
+          ? []
+          : [
+              {
+                applicationId: application.applicationId,
+                applicantName: application.currentPayload.applicantName,
+                proposedStoreName: application.currentPayload.proposedStoreName,
+                status: application.status,
+                revision: application.revision,
+                lastSubmittedAt: application.lastSubmittedAt,
+              },
+            ],
+        nextCursor: null,
+      },
+    });
+  });
+
+  await page.goto("/platform/seller-applications");
+  await page.getByLabel("تأیید درخواست").check();
+  await expect(page.getByLabel("کد دلیل")).toBeDisabled();
+  await page
+    .getByLabel("دلیل قابل‌نمایش به متقاضی")
+    .fill("شرایط فروشندگی شما تأیید شد.");
+  await page.getByRole("button", { name: "تأیید و ساخت فروشگاه" }).click();
+
+  await expect(page.getByText("درخواستی برای بررسی باقی نمانده است.")).toBeVisible();
+  expect(approvalPayload).toMatchObject({
+    expectedRevision: 1,
+    reasonCode: "ELIGIBILITY_CONFIRMED",
+    publicReason: "شرایط فروشندگی شما تأیید شد.",
+  });
+  expect(approvalPayload).not.toHaveProperty("requestedFields");
+});
+
 function sellerApplication() {
   return {
     applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",

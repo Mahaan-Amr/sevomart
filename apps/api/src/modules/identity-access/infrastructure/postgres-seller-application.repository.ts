@@ -1,11 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  approveSellerApplicationResultContract,
   sellerApplicationIdContract,
   platformSellerApplicationPageContract,
   platformSellerApplicationViewContract,
   platformSellerApplicationDecisionEventContract,
+  sellerAccessActivatedEventContract,
   sellerApplicationViewContract,
+  type ApproveSellerApplication,
+  type ApproveSellerApplicationResult,
   type MySellerApplications,
   type PlatformSellerApplicationListQuery,
   type PlatformSellerApplicationPage,
@@ -23,6 +27,8 @@ import {
 import { identityIdContract } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
+
+import type { ApprovedSellerStoreProvisioner } from "../../store/public";
 
 import {
   ActiveSellerApplicationExistsError,
@@ -81,7 +87,7 @@ type PlatformQueueRow = {
 };
 
 type PlatformDecisionRow = {
-  action: "REQUEST_INFORMATION" | "REJECT";
+  action: "REQUEST_INFORMATION" | "APPROVE" | "REJECT";
   reasonCode: SellerApplicationView["timeline"][number]["reasonCode"];
   publicReason: string;
   internalNote: string | null;
@@ -95,15 +101,18 @@ const SUBMIT_OPERATION = "SubmitSellerApplication.v1";
 const RESUBMIT_OPERATION = "ResubmitSellerApplication.v1";
 const WITHDRAW_OPERATION = "WithdrawSellerApplication.v1";
 const REQUEST_INFORMATION_OPERATION = "RequestSellerApplicationInformation.v1";
+const APPROVE_OPERATION = "ApproveSellerApplication.v1";
 const REJECT_OPERATION = "RejectSellerApplication.v1";
 
 export class PostgresSellerApplicationRepository
   implements SellerApplicationApplicant, SellerApplicationReviewer
 {
   readonly #sql: Sql;
+  readonly #storeProvisioner?: ApprovedSellerStoreProvisioner;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, storeProvisioner?: ApprovedSellerStoreProvisioner) {
     this.#sql = postgres(databaseUrl, { max: 5 });
+    this.#storeProvisioner = storeProvisioner;
   }
 
   async submit(
@@ -297,6 +306,25 @@ export class PostgresSellerApplicationRepository
     }
   }
 
+  async approve(
+    context: SellerApplicationReviewContext,
+    applicationId: string,
+    input: ApproveSellerApplication,
+  ): Promise<ApproveSellerApplicationResult> {
+    try {
+      return await this.#approve(context, applicationId, input);
+    } catch (error) {
+      await this.#recordReviewFailure(
+        context,
+        applicationId,
+        APPROVE_OPERATION,
+        error,
+        true,
+      );
+      throw error;
+    }
+  }
+
   async reject(
     context: SellerApplicationReviewContext,
     applicationId: string,
@@ -315,6 +343,7 @@ export class PostgresSellerApplicationRepository
     applicationId: string,
     action: string,
     error: unknown,
+    recordUnexpectedFailure = false,
   ): Promise<void> {
     const result =
       error instanceof SellerApplicationSelfReviewForbiddenError
@@ -324,7 +353,11 @@ export class PostgresSellerApplicationRepository
           : error instanceof SellerApplicationRevisionConflictError ||
               error instanceof InvalidSellerApplicationTransitionError
             ? "CONFLICT"
-            : undefined;
+            : error instanceof SellerAccessExistsError
+              ? "CONFLICT"
+              : recordUnexpectedFailure
+                ? "FAILED"
+                : undefined;
     if (!result) return;
     await this.#sql.begin((sql) =>
       readPlatformApplicationRows(sql, applicationId).then(([application]) => {
@@ -344,6 +377,157 @@ export class PostgresSellerApplicationRepository
         });
       }),
     );
+  }
+
+  async #approve(
+    context: SellerApplicationReviewContext,
+    applicationId: string,
+    input: ApproveSellerApplication,
+  ): Promise<ApproveSellerApplicationResult> {
+    const storeProvisioner = this.#storeProvisioner;
+    if (!storeProvisioner) {
+      throw new Error("Approved seller store provisioner is not configured");
+    }
+    const payloadHash = hashPayload({ applicationId, ...input });
+    return this.#sql.begin(async (sql) => {
+      const grants = await sql<Array<{ permission: PlatformPermission }>>`
+        select permission
+        from identity_platform_permission_grants
+        where identity_id = ${context.identityId}
+          and permission = ${context.permission}
+          and revoked_at is null
+        for share
+      `;
+      if (!grants[0]) throw new PlatformPermissionRequiredError();
+
+      const replay = await beginApprovalIdempotentCommand(sql, context, payloadHash);
+      if (replay) return replay;
+
+      const rows = await sql<
+        Array<{
+          identityId: string;
+          status: SellerApplicationStatus;
+          currentRevision: number;
+          aggregateVersion: number;
+          proposedStoreName: string;
+        }>
+      >`
+        select a.identity_id as "identityId", a.status,
+          a.current_revision as "currentRevision",
+          a.aggregate_version as "aggregateVersion",
+          r.proposed_store_name as "proposedStoreName"
+        from identity_seller_applications a
+        join identity_seller_application_revisions r
+          on r.application_id = a.id and r.revision = a.current_revision
+        where a.id = ${applicationId}
+        for update of a
+      `;
+      const application = rows[0];
+      if (!application) throw new SellerApplicationNotFoundError();
+      if (application.aggregateVersion !== input.expectedRevision) {
+        throw new SellerApplicationRevisionConflictError();
+      }
+      if (application.identityId === context.identityId) {
+        throw new SellerApplicationSelfReviewForbiddenError(
+          application.status,
+          application.aggregateVersion,
+        );
+      }
+      if (application.status !== "SUBMITTED") {
+        throw new InvalidSellerApplicationTransitionError();
+      }
+      const existingAccess = await sql<Array<{ id: string }>>`
+        select id from identity_seller_access
+        where identity_id = ${application.identityId}
+        limit 1
+      `;
+      if (existingAccess[0]) throw new SellerAccessExistsError();
+
+      const store = await storeProvisioner.provisionApprovedSellerStore({
+        identityId: identityIdContract.parse(application.identityId),
+        proposedStoreName: application.proposedStoreName,
+        idempotencyKey: context.idempotencyKey,
+        correlationId: context.correlationId,
+        transactionContext: { kind: "opaque-store-transaction", transaction: sql },
+      });
+      const sellerAccessId = randomUUID();
+      const revision = application.aggregateVersion + 1;
+      const occurredAt = new Date();
+      await sql`
+        insert into identity_seller_access (id, identity_id, status, created_at)
+        values (${sellerAccessId}, ${application.identityId}, 'ACTIVE', ${occurredAt})
+      `;
+      await sql`
+        update identity_seller_applications
+        set status = 'APPROVED', aggregate_version = ${revision},
+          completed_at = ${occurredAt}
+        where id = ${applicationId}
+      `;
+      await sql`
+        insert into identity_seller_application_decisions
+          (id, application_id, revision, aggregate_version, action, reason_code,
+           public_reason, internal_note, requested_fields, actor_identity_id,
+           occurred_at)
+        values
+          (${randomUUID()}, ${applicationId}, ${application.currentRevision},
+           ${revision}, 'APPROVE', ${input.reasonCode}, ${input.publicReason},
+           ${input.internalNote ?? null}, ARRAY[]::text[], ${context.identityId},
+           ${occurredAt})
+      `;
+      await insertPlatformAudit(sql, {
+        context,
+        applicationId,
+        action: APPROVE_OPERATION,
+        result: "SUCCEEDED",
+        previousStatus: application.status,
+        nextStatus: "APPROVED",
+        previousRevision: application.aggregateVersion,
+        nextRevision: revision,
+        reasonCode: input.reasonCode,
+        idempotencyKey: context.idempotencyKey,
+        occurredAt,
+      });
+      await enqueuePlatformDecisionEvent(sql, {
+        context,
+        applicationId,
+        eventType: "SellerApplicationApproved.v1",
+        status: "APPROVED",
+        revision,
+        reasonCode: input.reasonCode,
+        occurredAt,
+      });
+      await enqueueOutboxEvent(
+        sql,
+        sellerAccessActivatedEventContract.parse({
+          version: 1,
+          eventId: randomUUID(),
+          eventType: "SellerAccessActivated.v1",
+          aggregateId: sellerAccessId,
+          aggregateVersion: 1,
+          occurredAt: occurredAt.toISOString(),
+          correlationId: context.correlationId,
+          actor: {
+            type: "IDENTITY",
+            id: identityIdContract.parse(context.identityId),
+          },
+          payload: {
+            sellerAccessId,
+            identityId: identityIdContract.parse(application.identityId),
+            status: "ACTIVE",
+            actorKind: "PLATFORM_AGENT",
+          },
+        }),
+      );
+
+      const response = approveSellerApplicationResultContract.parse({
+        applicationId,
+        revision,
+        sellerAccessId,
+        storeId: store.storeId,
+      });
+      await completeApprovalIdempotentCommand(sql, context, response, occurredAt);
+      return response;
+    });
   }
 
   async #reviewDecision(
@@ -756,6 +940,57 @@ async function completePlatformIdempotentCommand(
   `;
 }
 
+async function beginApprovalIdempotentCommand(
+  sql: Sql,
+  context: SellerApplicationReviewContext,
+  payloadHash: string,
+): Promise<ApproveSellerApplicationResult | undefined> {
+  const lockKey = `${APPROVE_OPERATION}:${context.identityId}:${context.idempotencyKey}`;
+  const lock = await sql<Array<{ locked: boolean }>>`
+    select pg_try_advisory_xact_lock(hashtextextended(${lockKey}, 0)) as locked
+  `;
+  if (!lock[0]?.locked) throw new SellerApplicationIdempotencyInProgressError();
+  const rows = await sql<IdempotencyRow[]>`
+    select payload_hash as "payloadHash", state, response
+    from identity_seller_application_idempotency
+    where operation = ${APPROVE_OPERATION} and actor_id = ${context.identityId}
+      and key = ${context.idempotencyKey}
+  `;
+  const existing = rows[0];
+  if (existing) {
+    if (existing.payloadHash !== payloadHash) {
+      throw new SellerApplicationIdempotencyConflictError();
+    }
+    if (existing.state !== "COMPLETED" || !existing.response) {
+      throw new SellerApplicationIdempotencyInProgressError();
+    }
+    return approveSellerApplicationResultContract.parse(existing.response);
+  }
+  await sql`
+    insert into identity_seller_application_idempotency
+      (operation, actor_id, key, payload_hash, state)
+    values
+      (${APPROVE_OPERATION}, ${context.identityId}, ${context.idempotencyKey},
+       ${payloadHash}, 'IN_PROGRESS')
+  `;
+  return undefined;
+}
+
+async function completeApprovalIdempotentCommand(
+  sql: Sql,
+  context: SellerApplicationReviewContext,
+  response: ApproveSellerApplicationResult,
+  completedAt: Date,
+): Promise<void> {
+  await sql`
+    update identity_seller_application_idempotency
+    set state = 'COMPLETED', response = ${sql.json(response as unknown as JSONValue)},
+      completed_at = ${completedAt}
+    where operation = ${APPROVE_OPERATION} and actor_id = ${context.identityId}
+      and key = ${context.idempotencyKey}
+  `;
+}
+
 async function insertRevision(
   sql: Sql,
   applicationId: string,
@@ -844,8 +1079,10 @@ async function enqueuePlatformDecisionEvent(
     context: SellerApplicationReviewContext;
     applicationId: string;
     eventType:
-      "SellerApplicationInformationRequested.v1" | "SellerApplicationRejected.v1";
-    status: "NEEDS_INFORMATION" | "REJECTED";
+      | "SellerApplicationInformationRequested.v1"
+      | "SellerApplicationApproved.v1"
+      | "SellerApplicationRejected.v1";
+    status: "NEEDS_INFORMATION" | "APPROVED" | "REJECTED";
     revision: number;
     reasonCode: string;
     occurredAt: Date;
@@ -902,7 +1139,7 @@ async function readPlatformApplication(
       aggregate_version as revision, occurred_at as "occurredAt"
     from identity_seller_application_decisions
     where application_id = ${applicationId}
-      and action in ('REQUEST_INFORMATION', 'REJECT')
+      and action in ('REQUEST_INFORMATION', 'APPROVE', 'REJECT')
     order by occurred_at asc, id asc
   `;
   return platformSellerApplicationViewContract.parse({
@@ -1153,7 +1390,7 @@ async function insertPlatformAudit(
     context: Omit<SellerApplicationReviewContext, "idempotencyKey">;
     applicationId: string;
     action: string;
-    result: "SUCCEEDED" | "DENIED" | "CONFLICT";
+    result: "SUCCEEDED" | "DENIED" | "CONFLICT" | "FAILED";
     previousStatus: SellerApplicationStatus;
     nextStatus: SellerApplicationStatus;
     previousRevision: number;

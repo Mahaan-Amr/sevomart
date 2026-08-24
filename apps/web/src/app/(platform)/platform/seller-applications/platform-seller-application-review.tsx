@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  approveSellerApplicationResultContract,
   platformSellerApplicationPageContract,
   platformSellerApplicationViewContract,
   type PlatformSellerApplicationPage,
@@ -11,7 +12,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import styles from "./platform-seller-application.module.css";
 
-type DecisionKind = "information" | "rejection";
+type DecisionKind = "information" | "approval" | "rejection";
 type RequestedField = keyof SellerApplicationInput;
 type InformationReasonCode =
   "INFORMATION_INCOMPLETE" | "INFORMATION_INCONSISTENT" | "OTHER";
@@ -36,6 +37,7 @@ const statusLabels: Record<PlatformSellerApplicationView["status"], string> = {
 const reasonLabels = {
   INFORMATION_INCOMPLETE: "اطلاعات ناقص است",
   INFORMATION_INCONSISTENT: "اطلاعات با هم سازگار نیست",
+  ELIGIBILITY_CONFIRMED: "شرایط فروشندگی تأیید شد",
   ELIGIBILITY_NOT_ESTABLISHED: "شرایط فروشندگی احراز نشد",
   OTHER: "دلیل دیگر",
 } as const;
@@ -145,7 +147,11 @@ export function PlatformSellerApplicationReview() {
     try {
       const response = await fetch(
         `/api/platform/seller-applications/${application.applicationId}/${
-          decision === "information" ? "information-request" : "rejection"
+          decision === "information"
+            ? "information-request"
+            : decision === "approval"
+              ? "approval"
+              : "rejection"
         }`,
         {
           method: "POST",
@@ -156,7 +162,11 @@ export function PlatformSellerApplicationReview() {
           body: JSON.stringify({
             expectedRevision: application.revision,
             reasonCode:
-              decision === "information" ? informationReasonCode : rejectionReasonCode,
+              decision === "information"
+                ? informationReasonCode
+                : decision === "approval"
+                  ? "ELIGIBILITY_CONFIRMED"
+                  : rejectionReasonCode,
             publicReason,
             ...(internalNote.trim() ? { internalNote } : {}),
             ...(decision === "information" ? { requestedFields } : {}),
@@ -165,11 +175,17 @@ export function PlatformSellerApplicationReview() {
       );
       const body: unknown = await response.json();
       if (!response.ok) throw new Error(humanError(body));
-      const updated = platformSellerApplicationViewContract.parse(body);
-      setApplication(updated);
+      if (decision === "approval") {
+        approveSellerApplicationResultContract.parse(body);
+        setApplication(undefined);
+        setSelectedId(undefined);
+      } else {
+        const updated = platformSellerApplicationViewContract.parse(body);
+        setApplication(updated);
+      }
       setPublicReason("");
       setInternalNote("");
-      await readQueue(updated.applicationId);
+      await readQueue();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تصمیم ثبت نشد.");
     } finally {
@@ -253,7 +269,9 @@ export function PlatformSellerApplicationReview() {
                         <strong>
                           {entry.action === "REQUEST_INFORMATION"
                             ? "درخواست تکمیل"
-                            : "رد درخواست"}
+                            : entry.action === "APPROVE"
+                              ? "تأیید درخواست"
+                              : "رد درخواست"}
                         </strong>
                         <p>{entry.publicReason}</p>
                       </li>
@@ -265,6 +283,15 @@ export function PlatformSellerApplicationReview() {
                 <form className={styles.decision} onSubmit={submitDecision}>
                   <fieldset>
                     <legend>تصمیم این بررسی</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name="decision"
+                        checked={decision === "approval"}
+                        onChange={() => setDecision("approval")}
+                      />
+                      تأیید درخواست
+                    </label>
                     <label>
                       <input
                         type="radio"
@@ -308,10 +335,13 @@ export function PlatformSellerApplicationReview() {
                   <label className={styles.textField}>
                     <span>کد دلیل</span>
                     <select
+                      disabled={decision === "approval"}
                       value={
                         decision === "information"
                           ? informationReasonCode
-                          : rejectionReasonCode
+                          : decision === "approval"
+                            ? "ELIGIBILITY_CONFIRMED"
+                            : rejectionReasonCode
                       }
                       onChange={(event) => {
                         if (decision === "information") {
@@ -325,17 +355,19 @@ export function PlatformSellerApplicationReview() {
                         }
                       }}
                     >
-                      {(decision === "information"
-                        ? ([
-                            "INFORMATION_INCOMPLETE",
-                            "INFORMATION_INCONSISTENT",
-                            "OTHER",
-                          ] as const)
-                        : ([
-                            "INFORMATION_INCONSISTENT",
-                            "ELIGIBILITY_NOT_ESTABLISHED",
-                            "OTHER",
-                          ] as const)
+                      {(decision === "approval"
+                        ? (["ELIGIBILITY_CONFIRMED"] as const)
+                        : decision === "information"
+                          ? ([
+                              "INFORMATION_INCOMPLETE",
+                              "INFORMATION_INCONSISTENT",
+                              "OTHER",
+                            ] as const)
+                          : ([
+                              "INFORMATION_INCONSISTENT",
+                              "ELIGIBILITY_NOT_ESTABLISHED",
+                              "OTHER",
+                            ] as const)
                       ).map((code) => (
                         <option key={code} value={code}>
                           {reasonLabels[code]}
@@ -366,7 +398,9 @@ export function PlatformSellerApplicationReview() {
                       ? "در حال ثبت…"
                       : decision === "information"
                         ? "ثبت درخواست تکمیل"
-                        : "ثبت رد درخواست"}
+                        : decision === "approval"
+                          ? "تأیید و ساخت فروشگاه"
+                          : "ثبت رد درخواست"}
                   </button>
                 </form>
               ) : application.isSelfReview ? (
