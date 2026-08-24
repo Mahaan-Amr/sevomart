@@ -28,12 +28,17 @@ const frozenConsumerOperations = [
   ["get", "/v1/auth/session", "identity", [200, 401, 500]],
   ["delete", "/v1/auth/session", "none", [204, 500]],
   ["get", "/v1/seller/store/draft", "identity", [200, 401, 404, 500]],
-  ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 500]],
+  ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 428, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "identity", [200, 401, 422, 500]],
   ["post", "/v1/seller/media", "identity", [201, 401, 413, 422, 429, 500]],
   ["get", "/v1/media/{mediaId}", "none", [200, 404, 500]],
   ["get", "/v1/seller/store/preview", "identity", [200, 401, 404, 500]],
-  ["post", "/v1/seller/store/publication", "identity", [200, 401, 404, 409, 422, 500]],
+  [
+    "post",
+    "/v1/seller/store/publication",
+    "identity",
+    [200, 401, 404, 409, 422, 428, 500],
+  ],
   ["get", "/v1/stores/{slug}", "none", [200, 404, 500]],
 ] as const;
 
@@ -85,9 +90,24 @@ describe("OpenAPI identity and store compatibility", () => {
         "slug",
         "shippingMethods",
         "returnPolicy",
+        "settlementDestination",
         "activeProductCount",
       ]),
     );
+    expect(document.components.schemas.PublicStore.properties).toHaveProperty(
+      "settlementDestination",
+    );
+    for (const [method, path] of [
+      ["put", "/v1/seller/store/draft"],
+      ["post", "/v1/seller/store/publication"],
+    ] as const) {
+      expect(document.paths[path][method].parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "Idempotency-Key", required: true }),
+          expect.objectContaining({ name: "If-Match", required: true }),
+        ]),
+      );
+    }
 
     const completeSurfaceHash = createHash("sha256")
       .update(
@@ -99,7 +119,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "7ddafc1492be9fbe0f7f5e542ffc8dab4de19ac12d6cb1542462397df67efc2b",
+      "90484de206b054d830d8cc7d4b09ee99689bd7c33e38d5f536b2ee46d1bd581d",
     );
   });
 

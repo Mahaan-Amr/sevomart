@@ -24,6 +24,7 @@
     "store_stores": "store",
     "store_memberships": "store",
     "store_shipping_methods": "store",
+    "store_idempotency_records": "store",
     "media_assets": "media",
     "media_variants": "media",
     "platform_outbox_events": "platform",

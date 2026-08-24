@@ -10,7 +10,8 @@ export const projectStorePublication: OutboxEventHandler = async (event, sql) =>
       (store_id, last_event_id, publication_version, published_at, projected_at)
     values
       (${publication.payload.storeId}, ${publication.eventId},
-       ${publication.aggregateVersion}, ${publication.occurredAt}, now())
+       ${publication.payload.publicationVersion ?? publication.aggregateVersion},
+       ${publication.occurredAt}, now())
     on conflict (store_id) do update set
       last_event_id = excluded.last_event_id,
       publication_version = excluded.publication_version,

@@ -73,6 +73,20 @@
 | فیدها و دنبال‌کردن | `DiscoveryFeed.v1` و `FollowingFeed.v1`                                                                                                                                                                          | query روی projection کالا/فروشگاه و رابطه دنبال‌کردن                        | رابط خریدار و مهمان؛ following فقط خریدار واردشده                                                     | sync روی read model  | eventual؛ cursor snapshot قطعی و تازگی قابل نمایش | ندارد                                                                      | read-only؛ projection منبع حقیقت عملیاتی نیست                                                | به رخدادهای فروشگاه/کالا/موجودی `integration-blocks`                                  |
 | فیدها و دنبال‌کردن | `PublicFollowerCount.v1`                                                                                                                                                                                         | projection رابطه و وضعیت هویت                                               | query فروشگاه عمومی و رابط فروشنده                                                                    | sync روی read model  | eventual با زمان آخرین به‌روزرسانی قابل نمایش     | ندارد                                                                      | read-only؛ فروشگاه نسخه authoritative دیگری نگه نمی‌دارد                                     | به رخداد follow و وضعیت هویت `integration-blocks`                                     |
 
+### جزئیات سازگاری قرارداد فروشگاه
+
+- `StoreAuthoritativeRead.v1` یک snapshot allow-list شده با `storeId`، مالک، slug،
+  هویت نمایشی، `revision` فروشگاه، `publicationVersion`، وضعیت انتشار، روش‌های
+  ارسال نسخه‌دار و سیاست مرجوعی نسخه‌دار می‌دهد. query عمومی برای سازگاری v1 فقط
+  نوع و وضعیت آزمون‌شدهٔ مقصد تسویه را نگه می‌دارد؛ جزئیات بانکی، مقصد واقعی و آمار
+  خصوصی در آن جایی ندارند.
+- writeهای فروشگاه `Idempotency-Key` و tag نسخه `If-Match` می‌خواهند. replay همان
+  payload پاسخ پیشین را بدون revision یا رخداد تازه می‌دهد؛ payload متفاوت
+  `IDEMPOTENCY_CONFLICT` و tag قدیمی `STORE_REVISION_CONFLICT` است.
+- `StorePublished.v1`، `StoreUnpublished.v1` و `StorePolicyChanged.v1` فقط شناسه،
+  وضعیت و version لازم را حمل می‌کنند. متن سیاست، اطلاعات تماس و مقصد تسویه در
+  outbox ممنوع‌اند.
+
 ## مرجع عملیاتی و projection
 
 | مفهوم                           | مرجع حقیقت عملیاتی         | projection مجاز               | تصمیمی که projection حق انجامش را ندارد             |

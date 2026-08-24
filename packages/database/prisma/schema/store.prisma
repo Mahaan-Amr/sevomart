@@ -15,6 +15,8 @@ model Store {
   status               String                @default("DRAFT") @db.VarChar(16)
   publishedAt          DateTime?             @map("published_at") @db.Timestamptz(3)
   publicationVersion   Int                   @default(0) @map("publication_version")
+  revision             Int                   @default(0)
+  returnPolicyRevision Int                   @default(0) @map("return_policy_revision")
   updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
   memberships          StoreMembership[]
   shippingMethods      StoreShippingMethod[]
@@ -35,13 +37,32 @@ model StoreMembership {
 }
 
 model StoreShippingMethod {
-  id       String @id @db.Uuid
-  storeId  String @map("store_id") @db.Uuid
-  position Int
-  code     String @db.VarChar(32)
-  label    String @db.VarChar(60)
-  store    Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  id                      String @id @db.Uuid
+  storeId                 String @map("store_id") @db.Uuid
+  position                Int
+  revision                Int    @default(1)
+  code                    String @db.VarChar(32)
+  label                   String @db.VarChar(60)
+  fixedFeeAmount          BigInt @default(0) @map("fixed_fee_amount")
+  currency                String @default("IRR") @db.Char(3)
+  estimatedDeliveryText   String @default("زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود.") @map("estimated_delivery_text") @db.VarChar(120)
+  enabled                 Boolean @default(true)
+  requiresDeliveryAddress Boolean @default(true) @map("requires_delivery_address")
+  requiresPostalCode      Boolean @default(false) @map("requires_postal_code")
+  store                   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, position])
   @@map("store_shipping_methods")
+}
+
+model StoreIdempotencyRecord {
+  operation       String   @db.VarChar(80)
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  idempotencyKey  String   @map("idempotency_key") @db.VarChar(200)
+  requestHash     String   @map("request_hash") @db.Char(64)
+  responseJson    Json     @map("response_json") @db.JsonB
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, actorIdentityId, idempotencyKey])
+  @@map("store_idempotency_records")
 }
