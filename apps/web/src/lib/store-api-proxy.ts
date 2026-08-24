@@ -16,6 +16,10 @@ export async function proxyStoreRequest(
     });
     const contentType = request.headers.get("content-type");
     if (contentType) headers.set("content-type", contentType);
+    for (const name of ["idempotency-key", "if-match"]) {
+      const value = request.headers.get(name);
+      if (value) headers.set(name, value);
+    }
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
     const upstream = await fetch(`${API_BASE_URL}${path}`, {
       method: request.method,
@@ -28,6 +32,8 @@ export async function proxyStoreRequest(
     if (upstreamContentType) {
       responseHeaders.set("content-type", upstreamContentType);
     }
+    const etag = upstream.headers.get("etag");
+    if (etag) responseHeaders.set("etag", etag);
     return new Response(upstream.body, {
       status: upstream.status,
       headers: responseHeaders,

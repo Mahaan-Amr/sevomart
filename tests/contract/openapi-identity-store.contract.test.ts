@@ -42,12 +42,17 @@ const frozenConsumerOperations = [
     [200, 401, 404, 409, 422, 500],
   ],
   ["get", "/v1/seller/store/draft", "identity", [200, 401, 404, 500]],
-  ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 500]],
+  ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 428, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "identity", [200, 401, 422, 500]],
   ["post", "/v1/seller/media", "identity", [201, 401, 413, 422, 429, 500]],
   ["get", "/v1/media/{mediaId}", "none", [200, 404, 500]],
   ["get", "/v1/seller/store/preview", "identity", [200, 401, 404, 500]],
-  ["post", "/v1/seller/store/publication", "identity", [200, 401, 404, 409, 422, 500]],
+  [
+    "post",
+    "/v1/seller/store/publication",
+    "identity",
+    [200, 401, 404, 409, 422, 428, 500],
+  ],
   ["get", "/v1/stores/{slug}", "none", [200, 404, 500]],
 ] as const;
 
@@ -133,9 +138,24 @@ describe("OpenAPI identity and store compatibility", () => {
         "slug",
         "shippingMethods",
         "returnPolicy",
+        "settlementDestination",
         "activeProductCount",
       ]),
     );
+    expect(document.components.schemas.PublicStore.properties).toHaveProperty(
+      "settlementDestination",
+    );
+    for (const [method, path] of [
+      ["put", "/v1/seller/store/draft"],
+      ["post", "/v1/seller/store/publication"],
+    ] as const) {
+      expect(document.paths[path][method].parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "Idempotency-Key", required: true }),
+          expect.objectContaining({ name: "If-Match", required: true }),
+        ]),
+      );
+    }
 
     const completeSurfaceHash = createHash("sha256")
       .update(
@@ -147,7 +167,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "76176faf5467e50d9054a168cf058b3f89f096cffe2a6f0f074eac27e3dbcb3c",
+      "3edf27624b0b28880f15de551bb712d54957750305112041bf7e94456516eb7b",
     );
   });
 

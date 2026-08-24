@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpException,
   HttpCode,
   HttpStatus,
@@ -10,14 +11,20 @@ import {
   Post,
   Put,
   Req,
+  Res,
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
   IDENTITY_SESSION_READER,
   type IdentitySessionReader,
 } from "../identity-access/public";
-import { storeDraftInputContract, storeSlugContract } from "@sevo/contracts/store/v1";
-import type { FastifyRequest } from "fastify";
+import {
+  storeDraftInputContract,
+  storeIdempotencyKeyContract,
+  storeRevisionTagContract,
+  storeSlugContract,
+} from "@sevo/contracts/store/v1";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { requireIdentity } from "../../http/identity-session";
 
 import {
@@ -28,6 +35,7 @@ import {
   StoreSlugConflictError,
 } from "./application/store.service";
 import { STORE_SERVICE } from "./store.tokens";
+import { StoreIdempotencyConflictError, StoreRevisionConflictError } from "./public";
 
 @ApiExcludeController()
 @Controller("v1")
@@ -39,13 +47,24 @@ export class StoreController {
   ) {}
 
   @Get("seller/store/draft")
-  async readDraft(@Req() request: FastifyRequest) {
+  async readDraft(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
     const identityId = await requireIdentity(request, this.sessions);
-    return this.handle(request, () => this.service.readDraft(identityId));
+    const draft = await this.handle(request, () => this.service.readDraft(identityId));
+    response.header("etag", `"${draft.revision}"`);
+    return draft;
   }
 
   @Put("seller/store/draft")
-  async saveDraft(@Body() body: unknown, @Req() request: FastifyRequest) {
+  async saveDraft(
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
     const identityId = await requireIdentity(request, this.sessions);
     const parsed = storeDraftInputContract.safeParse(body);
     if (!parsed.success) {
@@ -58,7 +77,15 @@ export class StoreController {
         })),
       );
     }
-    return this.handle(request, () => this.service.saveDraft(identityId, parsed.data));
+    const write = requireStoreWriteHeaders(request.id, idempotencyKey, ifMatch);
+    const draft = await this.handle(request, () =>
+      this.service.saveDraft(identityId, parsed.data, {
+        correlationId: request.id,
+        ...write,
+      }),
+    );
+    response.header("etag", `"${draft.revision}"`);
+    return draft;
   }
 
   @Get("store-slugs/:slug/availability")
@@ -81,11 +108,19 @@ export class StoreController {
 
   @Post("seller/store/publication")
   @HttpCode(HttpStatus.OK)
-  async publish(@Req() request: FastifyRequest) {
+  async publish(
+    @Req() request: FastifyRequest,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
     const identityId = await requireIdentity(request, this.sessions);
-    return this.handle(request, () =>
-      this.service.publish(identityId, { correlationId: request.id }),
+    const write = requireStoreWriteHeaders(request.id, idempotencyKey, ifMatch);
+    const publication = await this.handle(request, () =>
+      this.service.publish(identityId, { correlationId: request.id, ...write }),
     );
+    response.header("etag", `"${publication.store.revision}"`);
+    return publication;
   }
 
   @Get("stores/:slug")
@@ -126,6 +161,30 @@ export class StoreController {
           { field: "media", code: "INVALID_FORMAT" },
         ]);
       }
+      if (error instanceof StoreRevisionConflictError) {
+        throw new HttpException(
+          {
+            code: error.code,
+            message: "فروشگاه در جای دیگری تغییر کرده است. نسخه تازه را ببینید.",
+            correlationId: request.id,
+            details: {
+              expectedRevision: error.expectedRevision,
+              currentRevision: error.currentRevision,
+            },
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (error instanceof StoreIdempotencyConflictError) {
+        throw new HttpException(
+          {
+            code: error.code,
+            message: "این شناسه درخواست قبلاً برای تغییر دیگری استفاده شده است.",
+            correlationId: request.id,
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
       throw error;
     }
   }
@@ -140,6 +199,29 @@ export class StoreController {
       HttpStatus.NOT_FOUND,
     );
   }
+}
+
+function requireStoreWriteHeaders(
+  correlationId: string,
+  idempotencyKey: string | undefined,
+  ifMatch: string | undefined,
+) {
+  const parsedKey = storeIdempotencyKeyContract.safeParse(idempotencyKey);
+  const parsedTag = storeRevisionTagContract.safeParse(ifMatch);
+  if (!parsedKey.success || !parsedTag.success) {
+    throw new HttpException(
+      {
+        code: "PRECONDITION_REQUIRED",
+        message: "نسخه فروشگاه و شناسه یکتای درخواست لازم است.",
+        correlationId,
+      },
+      HttpStatus.PRECONDITION_REQUIRED,
+    );
+  }
+  return {
+    idempotencyKey: parsedKey.data,
+    expectedRevision: Number(parsedTag.data.slice(1, -1)),
+  };
 }
 
 function validationError(

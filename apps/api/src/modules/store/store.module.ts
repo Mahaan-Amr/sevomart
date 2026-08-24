@@ -4,7 +4,11 @@ import { MEDIA_STORAGE, type MediaStorage } from "../media/public";
 
 import { StoreService } from "./application/store.service";
 import { PostgresStoreRepository } from "./infrastructure/postgres-store.repository";
-import type { SettlementDestinationVerifier, StoreRepository } from "./public";
+import {
+  STORE_AUTHORITATIVE_READ,
+  type SettlementDestinationVerifier,
+  type StoreRepository,
+} from "./public";
 import { StoreController } from "./store.controller";
 import {
   SETTLEMENT_DESTINATION_VERIFIER,
@@ -55,7 +59,9 @@ export class StoreModule {
               (id, sellerId) => mediaStorage.makePrivate(id, sellerId),
             ),
         },
+        { provide: STORE_AUTHORITATIVE_READ, useExisting: STORE_SERVICE },
       ],
+      exports: [STORE_AUTHORITATIVE_READ],
     };
   }
 }

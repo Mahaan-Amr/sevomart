@@ -228,6 +228,10 @@ async function createStore(mobile: string, slug: string, customized: boolean) {
   }
 
   const draft = await context.put("/v1/seller/store/draft", {
+    headers: {
+      "idempotency-key": crypto.randomUUID(),
+      "if-match": '"0"',
+    },
     data: {
       name: customized
         ? "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران"
@@ -248,7 +252,13 @@ async function createStore(mobile: string, slug: string, customized: boolean) {
     },
   });
   expect(draft.ok()).toBe(true);
-  const publication = await context.post("/v1/seller/store/publication");
+  const saved = (await draft.json()) as { revision: number };
+  const publication = await context.post("/v1/seller/store/publication", {
+    headers: {
+      "idempotency-key": crypto.randomUUID(),
+      "if-match": `"${saved.revision}"`,
+    },
+  });
   expect(publication.ok()).toBe(true);
   await context.dispose();
 }

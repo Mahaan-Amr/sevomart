@@ -1,20 +1,26 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
+import { storeAuthoritativeSnapshotV1Contract } from "@sevo/contracts/store/v1";
 import type {
   PublicStore,
   StoreDraft,
   StoreDraftInput,
   StorePreview,
   StorePublication,
+  StoreAuthoritativeSnapshotV1,
 } from "@sevo/contracts/store/v1";
 import type { MediaId } from "@sevo/contracts/media/v1";
+import type { IdentityId, StoreId } from "@sevo/contracts/platform/v1";
 
 import type {
   SettlementDestination,
+  StoreAuthoritativeRead,
   StoreRepository,
   StoreRow,
+  StoreShippingMethod,
   VerifiedSettlementDestination,
 } from "../public";
+import { StoreNotSellableError, StoreOwnershipRequiredError } from "../public";
 
 export type MissingStoreField =
   StorePreview["publicationReadiness"]["missingFields"][number];
@@ -49,7 +55,13 @@ type ResolveMedia = (id: string) => Promise<
 type PublishMedia = (id: string, sellerId: string) => Promise<void>;
 type UnpublishMedia = (id: string, sellerId: string) => Promise<void>;
 
-export class StoreService {
+type StoreWriteRequest = {
+  correlationId: string;
+  idempotencyKey: string;
+  expectedRevision: number;
+};
+
+export class StoreService implements StoreAuthoritativeRead {
   constructor(
     private readonly repository: StoreRepository,
     private readonly verifySettlement: VerifySettlement,
@@ -65,7 +77,11 @@ export class StoreService {
     return toDraft(row);
   }
 
-  async saveDraft(sellerId: string, input: StoreDraftInput): Promise<StoreDraft> {
+  async saveDraft(
+    sellerId: string,
+    input: StoreDraftInput,
+    context: StoreWriteRequest,
+  ): Promise<StoreDraft> {
     await this.assertOwnedMedia(sellerId, [input.logoMediaId, input.coverMediaId]);
     const current = await this.repository.findBySellerId(sellerId);
     if (input.slug) {
@@ -79,28 +95,54 @@ export class StoreService {
       ? await this.verifySettlement(input.settlementDestination)
       : current?.settlementDestination;
     const updatedAt = this.now();
-    const saved = await this.repository.saveDraft({
-      id: current?.id ?? randomUUID(),
-      sellerId,
-      name: input.name ?? current?.name,
-      slug: input.slug ?? current?.slug,
-      bio: input.bio ?? current?.bio,
-      shippingMethods: input.shippingMethods ?? current?.shippingMethods,
-      returnPolicy: input.returnPolicy ?? current?.returnPolicy,
-      settlementDestination,
-      logoMediaId:
-        input.logoMediaId !== undefined
-          ? input.logoMediaId
-          : (current?.logoMediaId ?? null),
-      coverMediaId:
-        input.coverMediaId !== undefined
-          ? input.coverMediaId
-          : (current?.coverMediaId ?? null),
-      themeColor: input.themeColor ?? current?.themeColor ?? "#A41439",
-      status: "DRAFT",
-      publishedAt: undefined,
-      updatedAt,
-    });
+    const shippingMethods = input.shippingMethods
+      ? versionShippingMethods(input.shippingMethods, current?.shippingMethods)
+      : current?.shippingMethods;
+    const policyChanged =
+      (input.returnPolicy !== undefined &&
+        input.returnPolicy !== current?.returnPolicy) ||
+      (input.shippingMethods !== undefined &&
+        !sameShippingMethods(shippingMethods, current?.shippingMethods));
+    const returnPolicyRevision =
+      input.returnPolicy !== undefined && input.returnPolicy !== current?.returnPolicy
+        ? (current?.returnPolicyRevision ?? 0) + 1
+        : (current?.returnPolicyRevision ?? (current?.returnPolicy ? 1 : 0));
+    const saved = await this.repository.saveDraft(
+      {
+        id: current?.id ?? randomUUID(),
+        sellerId,
+        name: input.name ?? current?.name,
+        slug: input.slug ?? current?.slug,
+        bio: input.bio ?? current?.bio,
+        shippingMethods,
+        returnPolicy: input.returnPolicy ?? current?.returnPolicy,
+        returnPolicyRevision,
+        settlementDestination,
+        logoMediaId:
+          input.logoMediaId !== undefined
+            ? input.logoMediaId
+            : (current?.logoMediaId ?? null),
+        coverMediaId:
+          input.coverMediaId !== undefined
+            ? input.coverMediaId
+            : (current?.coverMediaId ?? null),
+        themeColor: input.themeColor ?? current?.themeColor ?? "#A41439",
+        status: "DRAFT",
+        publishedAt: undefined,
+        publicationVersion: current?.publicationVersion ?? 0,
+        revision: context.expectedRevision + 1,
+        updatedAt,
+      },
+      {
+        operation: "SAVE_STORE_DRAFT",
+        actorId: sellerId,
+        correlationId: context.correlationId,
+        idempotencyKey: context.idempotencyKey,
+        requestHash: hashParsedInput(input),
+        expectedRevision: context.expectedRevision,
+        policyChanged,
+      },
+    );
     if (current?.status === "PUBLISHED") {
       await Promise.all(
         [
@@ -134,14 +176,22 @@ export class StoreService {
 
   async publish(
     sellerId: string,
-    context: { correlationId: string },
+    context: StoreWriteRequest,
   ): Promise<StorePublication> {
     const row = await this.repository.findBySellerId(sellerId);
     if (!row) throw new StoreNotFoundError();
     if (row.status === "PUBLISHED") {
+      const published = await this.repository.publish(row.id, this.now(), {
+        operation: "PUBLISH_STORE",
+        correlationId: context.correlationId,
+        actorId: sellerId,
+        idempotencyKey: context.idempotencyKey,
+        requestHash: hashParsedInput({ storeId: row.id }),
+        expectedRevision: context.expectedRevision,
+      });
       return {
-        store: await this.toPublicStore(row),
-        publicUrl: `/s/${row.slug!}`,
+        store: await this.toPublicStore(published),
+        publicUrl: `/s/${published.slug!}`,
       };
     }
     const missingFields = publicationReadiness(row);
@@ -163,8 +213,12 @@ export class StoreService {
     let published: StoreRow;
     try {
       published = await this.repository.publish(row.id, this.now(), {
+        operation: "PUBLISH_STORE",
         correlationId: context.correlationId,
         actorId: sellerId,
+        idempotencyKey: context.idempotencyKey,
+        requestHash: hashParsedInput({ storeId: row.id }),
+        expectedRevision: context.expectedRevision,
       });
     } catch (error) {
       await Promise.allSettled(mediaIds.map((id) => this.unpublishMedia(id, sellerId)));
@@ -180,6 +234,44 @@ export class StoreService {
     const row = await this.repository.findBySlug(slug);
     if (!row || row.status !== "PUBLISHED") throw new StoreNotFoundError();
     return this.toPublicStore(row);
+  }
+
+  async readStore(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
+    const row = await this.repository.findById(storeId);
+    return row ? toAuthoritativeStore(row) : undefined;
+  }
+
+  async requireOwnership(
+    identityId: IdentityId,
+    storeId: StoreId,
+  ): Promise<StoreAuthoritativeSnapshotV1> {
+    const store = await this.readStore(storeId);
+    if (!store || store.owner.identityId !== identityId) {
+      throw new StoreOwnershipRequiredError(storeId);
+    }
+    return store;
+  }
+
+  async requireSellable(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1> {
+    const store = await this.readStore(storeId);
+    if (!store || store.publicationStatus !== "PUBLISHED" || !store.settlement) {
+      throw new StoreNotSellableError(storeId);
+    }
+    return store;
+  }
+
+  async requireOwnedSellable(
+    identityId: IdentityId,
+    storeId: StoreId,
+  ): Promise<StoreAuthoritativeSnapshotV1> {
+    const store = await this.readStore(storeId);
+    if (!store || store.owner.identityId !== identityId) {
+      throw new StoreOwnershipRequiredError(storeId);
+    }
+    if (store.publicationStatus !== "PUBLISHED" || !store.settlement) {
+      throw new StoreNotSellableError(storeId);
+    }
+    return store;
   }
 
   private async toPublicStore(row: StoreRow): Promise<PublicStore> {
@@ -221,10 +313,13 @@ function publicationReadiness(row: StoreRow): MissingStoreField[] {
 function toDraft(row: StoreRow): StoreDraft {
   return {
     id: row.id,
+    revision: row.revision ?? 1,
+    publicationVersion: row.publicationVersion ?? 0,
+    returnPolicyRevision: row.returnPolicyRevision ?? (row.returnPolicy ? 1 : 0),
     name: row.name,
     slug: row.slug as StoreDraft["slug"],
     bio: row.bio,
-    shippingMethods: row.shippingMethods,
+    shippingMethods: row.shippingMethods?.map(toShippingMethodSnapshot),
     returnPolicy: row.returnPolicy,
     settlementDestination: row.settlementDestination
       ? { kind: "TEST", status: "TEST_VERIFIED" }
@@ -244,10 +339,13 @@ function toPublicStore(
 ): PublicStore {
   return {
     id: row.id,
+    revision: row.revision ?? 1,
+    publicationVersion: row.publicationVersion ?? 1,
+    returnPolicyRevision: row.returnPolicyRevision ?? 1,
     name: row.name!,
     slug: row.slug as PublicStore["slug"],
     bio: row.bio!,
-    shippingMethods: row.shippingMethods!,
+    shippingMethods: row.shippingMethods!.map(toShippingMethodSnapshot),
     returnPolicy: row.returnPolicy!,
     settlementDestination: { kind: "TEST", status: "TEST_VERIFIED" },
     logo:
@@ -275,4 +373,93 @@ function toPublicStore(
       platformBrandingRequired: true,
     },
   };
+}
+
+function versionShippingMethods(
+  input: StoreDraftInput["shippingMethods"] & readonly unknown[],
+  current: StoreShippingMethod[] | undefined,
+): StoreShippingMethod[] {
+  return input.map((method) => {
+    const previous = current?.find((candidate) => candidate.code === method.code);
+    const defaults = shippingDefaults(method.code);
+    const unchanged = previous?.label === method.label;
+    return {
+      id: previous?.id ?? randomUUID(),
+      revision: previous ? previous.revision + (unchanged ? 0 : 1) : 1,
+      code: method.code,
+      label: method.label,
+      fixedFeeAmount: previous?.fixedFeeAmount ?? 0,
+      currency: "IRR",
+      estimatedDeliveryText:
+        previous?.estimatedDeliveryText ??
+        "زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود.",
+      enabled: previous?.enabled ?? true,
+      requiresDeliveryAddress: defaults.requiresDeliveryAddress,
+      requiresPostalCode: defaults.requiresPostalCode,
+    };
+  });
+}
+
+function shippingDefaults(code: StoreShippingMethod["code"]) {
+  return {
+    requiresDeliveryAddress: code !== "PICKUP",
+    requiresPostalCode: code === "NATIONAL_POST",
+  };
+}
+
+function sameShippingMethods(
+  left: StoreShippingMethod[] | undefined,
+  right: StoreShippingMethod[] | undefined,
+) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function toShippingMethodSnapshot(method: StoreShippingMethod) {
+  return {
+    id: method.id,
+    revision: method.revision,
+    code: method.code,
+    label: method.label,
+    fixedFee: { amount: method.fixedFeeAmount, currency: method.currency },
+    estimatedDeliveryText: method.estimatedDeliveryText,
+    enabled: method.enabled,
+    requiresDeliveryAddress: method.requiresDeliveryAddress,
+    requiresPostalCode: method.requiresPostalCode,
+  };
+}
+
+function toAuthoritativeStore(row: StoreRow): StoreAuthoritativeSnapshotV1 {
+  return storeAuthoritativeSnapshotV1Contract.parse({
+    storeId: row.id,
+    revision: row.revision ?? 1,
+    publicationVersion: row.publicationVersion ?? 0,
+    publicationStatus: row.status,
+    owner: { identityId: row.sellerId },
+    ...(row.slug ? { slug: row.slug } : {}),
+    displayIdentity: {
+      ...(row.name ? { name: row.name } : {}),
+      ...(row.bio ? { bio: row.bio } : {}),
+      logoMediaId: row.logoMediaId ?? null,
+      coverMediaId: row.coverMediaId ?? null,
+      themeColor: row.themeColor ?? "#A41439",
+    },
+    shippingMethods: (row.shippingMethods ?? []).map(toShippingMethodSnapshot),
+    ...(row.returnPolicy
+      ? {
+          returnPolicy: {
+            revision: row.returnPolicyRevision ?? 1,
+            text: row.returnPolicy,
+          },
+        }
+      : {}),
+    ...(row.settlementDestination
+      ? { settlement: { mode: "DIRECT", status: "TEST_VERIFIED" } }
+      : {}),
+    updatedAt: row.updatedAt.toISOString(),
+    ...(row.publishedAt ? { publishedAt: row.publishedAt.toISOString() } : {}),
+  });
+}
+
+function hashParsedInput(value: unknown) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }

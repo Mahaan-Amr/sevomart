@@ -14,6 +14,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
 
   beforeEach(async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`delete from store_idempotency_records`;
     await sql`delete from store_stores`;
     await sql.end();
   });
@@ -51,7 +52,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const saved = await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 0),
       payload: {
         name: "خانه سفال ماه",
         slug: "integration-khane-mah",
@@ -95,7 +96,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const publication = await refreshedServer.inject({
       method: "POST",
       url: "/v1/seller/store/publication",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 1),
     });
     expect(publication.statusCode).toBe(200);
     expect(storePublicationContract.safeParse(publication.json()).success).toBe(true);
@@ -136,7 +137,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const saved = await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 0),
       payload: {
         name: "خانه رسانه",
         slug: "integration-media-store",
@@ -154,7 +155,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const publication = await server.inject({
       method: "POST",
       url: "/v1/seller/store/publication",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 1),
     });
     expect(publication.statusCode).toBe(200);
 
@@ -175,7 +176,7 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const edited = await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 2),
       payload: { name: "خانه رسانه تازه" },
     });
     expect(edited.json()).toMatchObject({ status: "DRAFT" });
@@ -324,6 +325,14 @@ async function animatedWebp() {
 
 function multipartHeaders(boundary: string) {
   return { "content-type": `multipart/form-data; boundary=${boundary}` };
+}
+
+function storeWriteHeaders(cookie: string, expectedRevision: number) {
+  return {
+    cookie,
+    "idempotency-key": crypto.randomUUID(),
+    "if-match": `"${expectedRevision}"`,
+  };
 }
 
 function multipartBody(

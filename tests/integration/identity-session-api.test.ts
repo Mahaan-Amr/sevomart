@@ -3,13 +3,19 @@ import {
   iranianMobileContract,
 } from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("identity session HTTP API with PostgreSQL", () => {
   const apps: Awaited<ReturnType<typeof createApiApp>>[] = [];
+
+  beforeEach(async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`delete from identity_otp_challenges`;
+    await sql.end();
+  });
 
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));

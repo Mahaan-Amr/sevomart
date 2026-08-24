@@ -56,6 +56,7 @@ export function StoreBuilder() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [publicUrl, setPublicUrl] = useState("");
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     void loadDraft();
@@ -83,6 +84,7 @@ export function StoreBuilder() {
   }
 
   function applyDraft(draft: StoreDraft) {
+    setRevision(draft.revision);
     setForm({
       name: draft.name ?? "",
       slug: draft.slug ?? "",
@@ -141,7 +143,11 @@ export function StoreBuilder() {
       };
       const savedResponse = await fetch("/api/store/seller/store/draft", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+          "if-match": `"${revision}"`,
+        },
         body: JSON.stringify(input),
       });
       const savedBody: unknown = await savedResponse.json();
@@ -150,9 +156,11 @@ export function StoreBuilder() {
         setErrors(apiFieldErrors(savedBody));
         return;
       }
-      if (!storeDraftContract.safeParse(savedBody).success) {
+      const parsedSaved = storeDraftContract.safeParse(savedBody);
+      if (!parsedSaved.success) {
         throw new Error("invalid draft response");
       }
+      setRevision(parsedSaved.data.revision);
       setStoredMedia({ logoMediaId, coverMediaId });
       const previewResponse = await fetch("/api/store/seller/store/preview", {
         cache: "no-store",
@@ -182,6 +190,10 @@ export function StoreBuilder() {
     try {
       const response = await fetch("/api/store/seller/store/publication", {
         method: "POST",
+        headers: {
+          "idempotency-key": crypto.randomUUID(),
+          "if-match": `"${revision}"`,
+        },
       });
       const body: unknown = await response.json();
       if (!response.ok) {
@@ -190,6 +202,7 @@ export function StoreBuilder() {
       }
       const parsed = storePublicationContract.safeParse(body);
       if (!parsed.success) throw new Error("invalid publication response");
+      setRevision(parsed.data.store.revision);
       setPublicUrl(parsed.data.publicUrl);
       setStage("published");
       setMessage("فروشگاه منتشر شد. حالا می‌توانید لینک آن را به خریداران بدهید.");

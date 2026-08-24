@@ -8,7 +8,7 @@ import {
   type OutboxEventHandler,
 } from "@sevo/outbox";
 import postgres from "postgres";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { PostgresStoreRepository } from "../../apps/api/src/modules/store/composition";
@@ -18,6 +18,13 @@ import { apiTestEnvironment } from "../helpers/api-test-environment";
 describe("durable outbox worker", () => {
   const apps: Awaited<ReturnType<typeof createApiApp>>[] = [];
   const workers: DurableOutboxWorker[] = [];
+
+  beforeEach(async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`delete from store_idempotency_records`;
+    await sql`delete from store_stores`;
+    await sql.end();
+  });
 
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
@@ -34,7 +41,7 @@ describe("durable outbox worker", () => {
     await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 0),
       payload: {
         name: "خانه رخداد",
         slug: "integration-outbox-store",
@@ -48,7 +55,10 @@ describe("durable outbox worker", () => {
     const publication = await server.inject({
       method: "POST",
       url: "/v1/seller/store/publication",
-      headers: { cookie, "x-correlation-id": correlationId },
+      headers: {
+        ...storeWriteHeaders(cookie, 1),
+        "x-correlation-id": correlationId,
+      },
     });
     expect(publication.statusCode).toBe(200);
 
@@ -81,6 +91,7 @@ describe("durable outbox worker", () => {
         payload: {
           storeId: publication.json<{ store: { id: string } }>().store.id,
           publicationStatus: "PUBLISHED",
+          publicationVersion: 1,
         },
       },
     ]);
@@ -96,7 +107,7 @@ describe("durable outbox worker", () => {
     const saved = await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 0),
       payload: {
         name: "خانه اتمیک",
         slug,
@@ -106,6 +117,7 @@ describe("durable outbox worker", () => {
         settlementDestination: { kind: "TEST" },
       },
     });
+    expect(saved.statusCode).toBe(200);
     const storeId = saved.json<{ id: string }>().id;
 
     const duplicateEventId = randomUUID();
@@ -136,8 +148,12 @@ describe("durable outbox worker", () => {
     );
     await expect(
       repository.publish(storeId, new Date(), {
+        operation: "PUBLISH_STORE",
         correlationId: randomUUID(),
         actorId: memberships[0]!.sellerId,
+        idempotencyKey: randomUUID(),
+        requestHash: "0".repeat(64),
+        expectedRevision: 1,
       }),
     ).rejects.toThrow();
     await repository.onModuleDestroy();
@@ -159,7 +175,7 @@ describe("durable outbox worker", () => {
     const saved = await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
-      headers: { cookie },
+      headers: storeWriteHeaders(cookie, 0),
       payload: {
         name: "خانه هم‌زمان",
         slug: `concurrent-${randomUUID().slice(0, 8)}`,
@@ -178,6 +194,7 @@ describe("durable outbox worker", () => {
     `;
     const actorId = memberships[0]!.sellerId;
     const correlationIds = [randomUUID(), randomUUID()] as const;
+    const idempotencyKey = randomUUID();
     const repositories = [
       new PostgresStoreRepository(apiTestEnvironment.DATABASE_URL),
       new PostgresStoreRepository(apiTestEnvironment.DATABASE_URL),
@@ -186,8 +203,12 @@ describe("durable outbox worker", () => {
     const results = await Promise.all(
       repositories.map((repository, index) =>
         repository.publish(storeId, new Date(), {
+          operation: "PUBLISH_STORE",
           correlationId: correlationIds[index]!,
           actorId,
+          idempotencyKey,
+          requestHash: "0".repeat(64),
+          expectedRevision: 1,
         }),
       ),
     );
@@ -402,4 +423,12 @@ async function signIn(server: {
     payload: { challengeId, code: "111111" },
   });
   return verified.headers["set-cookie"]!;
+}
+
+function storeWriteHeaders(cookie: string | string[], expectedRevision: number) {
+  return {
+    cookie,
+    "idempotency-key": randomUUID(),
+    "if-match": `"${expectedRevision}"`,
+  };
 }

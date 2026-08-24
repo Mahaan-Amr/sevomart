@@ -6,6 +6,23 @@ import {
 } from "../module-contract";
 import type { OpenApiContributor } from "../public";
 
+const storeWriteHeaders = [
+  {
+    name: "Idempotency-Key",
+    in: "header",
+    schema: { $ref: "#/components/schemas/StoreIdempotencyKey" },
+    example: storeV1Examples.StoreIdempotencyKey,
+    required: true,
+  },
+  {
+    name: "If-Match",
+    in: "header",
+    schema: { $ref: "#/components/schemas/StoreRevisionTag" },
+    example: storeV1Examples.StoreRevisionTag,
+    required: true,
+  },
+] as const;
+
 const operations = [
   {
     operationId: "readStoreDraft",
@@ -33,8 +50,9 @@ const operations = [
     responses: [
       { status: 200, schema: "StoreDraft" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 409, schema: "SlugConflictError" },
+      { status: 409, schema: "StoreWriteConflictError" },
       { status: 422, schema: "ValidationError" },
+      { status: 428, schema: "StorePreconditionRequiredError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
@@ -79,8 +97,9 @@ const operations = [
       { status: 200, schema: "StorePublication" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "StoreNotFoundError" },
-      { status: 409, schema: "SlugConflictError" },
+      { status: 409, schema: "StoreWriteConflictError" },
       { status: 422, schema: "ValidationError" },
+      { status: 428, schema: "StorePreconditionRequiredError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
@@ -110,15 +129,41 @@ const responseMetadata = {
     404: "Store was not found",
     409: "Store slug conflicts with an existing store",
     422: "Request validation failed",
+    428: "Required write precondition is missing or malformed",
     500: "Unexpected server error",
+  },
+  headersBySchema: {
+    StoreDraft: {
+      ETag: {
+        description: "Opaque optimistic-concurrency tag for the Store revision",
+        schema: { type: "string" as const },
+      },
+    },
+    StorePublication: {
+      ETag: {
+        description: "Opaque optimistic-concurrency tag for the Store revision",
+        schema: { type: "string" as const },
+      },
+    },
   },
 };
 
-export const contribute_store_openApi: OpenApiContributor = (document) =>
-  addModuleOpenApiContract(
+export const contribute_store_openApi: OpenApiContributor = (document) => {
+  const composed = addModuleOpenApiContract(
     document,
     createStoreV1JsonSchemas(),
     storeV1Examples,
     operations,
     responseMetadata,
   );
+  for (const [method, path] of [
+    ["put", "/v1/seller/store/draft"],
+    ["post", "/v1/seller/store/publication"],
+  ] as const) {
+    const operation = composed.paths[path]?.[method] as
+      { parameters?: unknown[] } | undefined;
+    if (!operation) throw new Error(`${method.toUpperCase()} ${path} is missing`);
+    operation.parameters = [...(operation.parameters ?? []), ...storeWriteHeaders];
+  }
+  return composed;
+};
