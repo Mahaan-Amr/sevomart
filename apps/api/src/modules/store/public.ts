@@ -79,6 +79,10 @@ export type StoreWriteContext = {
 
 export interface StoreRepository {
   findById(id: string): Promise<StoreRow | undefined>;
+  findByIdInTransaction?(
+    transaction: OpaqueStoreTransactionContext,
+    id: string,
+  ): Promise<StoreRow | undefined>;
   findBySellerId(sellerId: string): Promise<StoreRow | undefined>;
   findBySlug(slug: string): Promise<StoreRow | undefined>;
   isMediaPublished(mediaId: string): Promise<boolean>;
@@ -129,6 +133,10 @@ export interface StoreAuthoritativeRead {
     slug: StoreSlug,
   ): Promise<StoreAuthoritativeSnapshotV1 | undefined>;
   readStore(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1 | undefined>;
+  readStoreInTransaction?(
+    transaction: OpaqueStoreTransactionContext,
+    storeId: StoreId,
+  ): Promise<StoreAuthoritativeSnapshotV1 | undefined>;
   requireOwnership(
     identityId: IdentityId,
     storeId: StoreId,

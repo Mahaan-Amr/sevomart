@@ -3,6 +3,8 @@ import { z } from "zod";
 import { createJsonSchemaMap } from "../../json-schema";
 import { mediaIdContract } from "../../media-v1";
 import {
+  eventActorV1Contract,
+  eventEnvelopeV1Contract,
   moneyV1Contract,
   orderIdContract,
   productIdContract,
@@ -365,6 +367,25 @@ export const orderContract = z
     review: checkoutPreparationContract,
   })
   .strict();
+
+export const orderCreatedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("OrderCreated.v1"),
+  causationId: z.uuid(),
+  actor: eventActorV1Contract,
+  payload: z
+    .object({
+      status: z.literal("PENDING_PAYMENT"),
+      total: moneyV1Contract,
+    })
+    .strict(),
+});
+
+export const orderExpiredV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("OrderExpired.v1"),
+  causationId: z.uuid(),
+  actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+  payload: z.object({ status: z.literal("EXPIRED") }).strict(),
+});
 
 export const cartAttachConflictContract = z.union([
   cartResolutionContract,

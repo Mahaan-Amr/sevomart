@@ -63,6 +63,10 @@ export interface InventoryAuthoring {
       items: ReadonlyArray<{ variantId: VariantId; quantity: number }>;
     }>,
   ): Promise<void>;
+  releaseExpiredReservation(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{ reservationId: string; expiredAt: Date }>,
+  ): Promise<boolean>;
 }
 
 export class InventoryReservationUnavailableError extends Error {

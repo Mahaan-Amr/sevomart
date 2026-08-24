@@ -53,6 +53,9 @@ describe("OpenAPI guest cart and login attachment", () => {
     expect(
       document.paths["/v1/addresses"].post.responses["409"].headers,
     ).toHaveProperty("Retry-After");
+    expect(document.paths["/v1/orders"].post.responses["409"].headers).toHaveProperty(
+      "Retry-After",
+    );
     for (const [method, path] of writes
       .filter(([, path]) => path.startsWith("/v1/cart"))
       .map(([method, path]) => [method, path])) {

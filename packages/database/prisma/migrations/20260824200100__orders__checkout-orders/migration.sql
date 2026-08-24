@@ -1,3 +1,7 @@
+alter table order_carts drop constraint order_carts_status_check;
+alter table order_carts add constraint order_carts_status_check
+  check (status in ('ACTIVE', 'MERGED', 'REPLACED', 'EXPIRED', 'CONVERTED'));
+
 create table order_checkout_preparations (
   checkout_revision uuid primary key,
   identity_id uuid not null,
@@ -82,7 +86,11 @@ create table order_create_idempotency_records (
   identity_id uuid not null,
   key varchar(200) not null,
   request_hash char(64) not null,
-  response_json jsonb not null,
+  state varchar(16) not null,
+  locked_until timestamptz(3) not null,
+  response_json jsonb,
+  completed_at timestamptz(3),
   created_at timestamptz(3) not null default now(),
+  check (state in ('IN_PROGRESS', 'COMPLETED')),
   primary key (identity_id, key)
 );

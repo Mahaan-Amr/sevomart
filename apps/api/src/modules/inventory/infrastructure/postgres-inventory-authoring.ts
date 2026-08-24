@@ -109,6 +109,21 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
         { onHand: row.onHand, revision: row.revision },
       ]),
     );
+    const reservationRows = ordered.length
+      ? await sql<Array<{ variantId: string; reserved: number }>>`
+          select line.variant_id as "variantId",
+            coalesce(sum(line.quantity), 0)::int as reserved
+          from inventory_reservation_lines line
+          join inventory_reservations reservation
+            on reservation.id = line.reservation_id
+          where line.variant_id in ${sql(ordered.map((row) => row.variantId))}
+            and reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          group by line.variant_id
+        `
+      : [];
+    const reservedById = new Map(
+      reservationRows.map((row) => [row.variantId, row.reserved]),
+    );
     for (const row of ordered) {
       const current = currentById.get(row.variantId) ?? { onHand: 0, revision: 0 };
       if (current.revision !== row.expectedRevision) {
@@ -144,8 +159,8 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       results.push({
         variantId: variantIdContract.parse(row.variantId),
         ...updated[0]!,
-        reserved: 0,
-        available: updated[0]!.onHand,
+        reserved: reservedById.get(row.variantId) ?? 0,
+        available: updated[0]!.onHand - (reservedById.get(row.variantId) ?? 0),
       });
     }
     return results;
@@ -246,6 +261,21 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
         values (${command.reservationId}, ${item.variantId}, ${item.quantity})
       `;
     }
+  }
+
+  async releaseExpiredReservation(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["releaseExpiredReservation"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ id: string }>>`
+      update inventory_reservations
+      set status = 'RELEASED'
+      where id = ${command.reservationId}::uuid and status = 'ACTIVE'
+        and expires_at <= ${command.expiredAt}
+      returning id
+    `;
+    return rows.length === 1;
   }
 
   async onModuleDestroy() {

@@ -47,6 +47,7 @@ export class CheckoutService {
   ) {}
 
   async options(identity: string) {
+    await this.repository.expirePendingOrders?.(new Date());
     const identityId = identityIdContract.parse(identity);
     const cart = await this.carts.readBuyer(identityId);
     if (!cart?.items.length) throw new CheckoutNotReadyError();
@@ -78,6 +79,7 @@ export class CheckoutService {
   }
 
   async prepare(identity: string, rawInput: PrepareCheckoutInput) {
+    await this.repository.expirePendingOrders?.(new Date());
     const identityId = identityIdContract.parse(identity);
     const input = prepareCheckoutInputContract.parse(rawInput);
     const cart = await this.carts.readBuyer(identityId);
@@ -207,6 +209,14 @@ export class CheckoutService {
   ) {
     const identityId = identityIdContract.parse(identity);
     const input = createOrderInputContract.parse(rawInput);
+    const requestHash = hash(input);
+    const replay = await this.repository.replayOrder?.(
+      identityId,
+      idempotencyKey,
+      requestHash,
+    );
+    if (replay) return replay;
+    await this.repository.expirePendingOrders?.(new Date());
     const preparation = await this.repository.readPreparation(
       identityId,
       input.checkoutRevision,
@@ -223,7 +233,7 @@ export class CheckoutService {
       reservationId: reservationIdContract.parse(randomUUID()),
       input,
       idempotencyKey,
-      requestHash: hash(input),
+      requestHash,
       correlationId,
       reservationExpiresAt,
     });
@@ -236,7 +246,11 @@ export class CheckoutService {
   ): Promise<CheckoutChange[]> {
     const changes: CheckoutChange[] = [];
     const cart = await this.carts.readBuyer(identityId);
-    if (!cart || cart.revision !== input.cartRevision) {
+    if (
+      !cart ||
+      input.cartRevision !== preparation.cart.revision ||
+      cart.revision !== preparation.cart.revision
+    ) {
       return preparation.items.map((item) => ({
         kind: "QUANTITY_CHANGED" as const,
         variantId: item.variantId,
@@ -267,17 +281,26 @@ export class CheckoutService {
           previous: item.unitPrice,
           current: current.unitPrice,
         });
+      } else if (current.publicationVersion !== item.publicationVersion) {
+        changes.push({ kind: "VARIANT_UNAVAILABLE", variantId: item.variantId });
       }
     });
     const shipping = store?.shippingMethods.find(
       (method) => method.id === preparation.shippingMethod.id,
     );
-    if (!shipping?.enabled || shipping.revision !== input.shippingMethodRevision) {
+    if (
+      !shipping?.enabled ||
+      input.shippingMethodRevision !== preparation.shippingMethod.revision ||
+      shipping.revision !== preparation.shippingMethod.revision
+    ) {
       changes.push({ kind: "SHIPPING_METHOD_CHANGED" });
     } else if (shipping.fixedFee.amount !== preparation.shippingMethod.fee.amount) {
       changes.push({ kind: "SHIPPING_FEE_CHANGED" });
     }
-    if (store?.returnPolicy?.revision !== input.returnPolicyRevision) {
+    if (
+      input.returnPolicyRevision !== preparation.returnPolicy.revision ||
+      store?.returnPolicy?.revision !== preparation.returnPolicy.revision
+    ) {
       changes.push({ kind: "POLICY_CHANGED" });
     }
     if (
@@ -285,7 +308,8 @@ export class CheckoutService {
       !addresses.some(
         (address) =>
           address.addressId === preparation.address!.addressId &&
-          address.revision === input.addressRevision,
+          input.addressRevision === preparation.address!.revision &&
+          address.revision === preparation.address!.revision,
       )
     ) {
       changes.push({ kind: "ADDRESS_CHANGED" });

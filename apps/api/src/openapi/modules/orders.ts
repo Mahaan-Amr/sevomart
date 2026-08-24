@@ -221,7 +221,11 @@ const operations = [
     responses: [
       { status: 201, schema: "Order", headers: noStoreHeader },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 409, schema: "CheckoutRevisionConflict" },
+      {
+        status: 409,
+        schema: "CheckoutRevisionConflict",
+        headers: idempotencyRetryHeader,
+      },
       { status: 422, schema: "CheckoutRevisionConflict" },
       { status: 428, schema: "CheckoutRevisionConflict" },
       { status: 500, schema: "InternalServerError" },

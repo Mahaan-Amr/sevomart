@@ -3,6 +3,8 @@ import {
   checkoutRevisionConflictContract,
   createOrderInputContract,
   orderContract,
+  orderCreatedV1Contract,
+  orderExpiredV1Contract,
   prepareCheckoutInputContract,
 } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
@@ -118,5 +120,37 @@ describe("checkout and CreateOrder.v1 contracts", () => {
         review: preparation,
       }),
     ).toMatchObject({ orderId: ids.order, status: "PENDING_PAYMENT" });
+  });
+
+  it("publishes privacy-minimal versioned order lifecycle events", () => {
+    const base = {
+      version: 1 as const,
+      eventId: "0ba5139f-7a57-45d3-9e0f-539763623493",
+      aggregateId: ids.order,
+      occurredAt: "2026-08-24T20:00:00.000Z",
+      correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+      causationId: "7609f906-c921-490c-a793-84398fb67e0c",
+    };
+    expect(
+      orderCreatedV1Contract.parse({
+        ...base,
+        eventType: "OrderCreated.v1",
+        aggregateVersion: 1,
+        actor: { type: "IDENTITY", id: ids.store },
+        payload: {
+          status: "PENDING_PAYMENT",
+          total: preparation.total,
+        },
+      }).payload,
+    ).toEqual({ status: "PENDING_PAYMENT", total: preparation.total });
+    expect(
+      orderExpiredV1Contract.parse({
+        ...base,
+        eventType: "OrderExpired.v1",
+        aggregateVersion: 2,
+        actor: { type: "SYSTEM" },
+        payload: { status: "EXPIRED" },
+      }).aggregateVersion,
+    ).toBe(2);
   });
 });

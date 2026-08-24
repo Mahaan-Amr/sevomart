@@ -1,10 +1,19 @@
 import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
+import type { Sql } from "postgres";
 
 import type { InventoryAuthoring } from "../inventory/public";
-import type { ProductAuthoritativeRead } from "../product/public";
-import { STORE_AUTHORITATIVE_READ, type StoreAuthoritativeRead } from "../store/public";
+import type {
+  OpaqueProductTransactionContext,
+  ProductAuthoritativeRead,
+} from "../product/public";
+import {
+  STORE_AUTHORITATIVE_READ,
+  type OpaqueStoreTransactionContext,
+  type StoreAuthoritativeRead,
+} from "../store/public";
 import { CartService } from "./application/cart.service";
+import { CheckoutExpiryRunner } from "./application/checkout-expiry.runner";
 import { CheckoutService } from "./application/checkout.service";
 import { SavedAddressService } from "./application/saved-address.service";
 import { CartController } from "./cart.controller";
@@ -33,6 +42,10 @@ export type OrdersModuleOptions = {
   checkoutRepository?: CheckoutRepository;
   products: ProductAuthoritativeRead;
   inventory: InventoryAuthoring;
+  createProductTransactionContext: (
+    transaction: Sql,
+  ) => OpaqueProductTransactionContext;
+  createStoreTransactionContext: (transaction: Sql) => OpaqueStoreTransactionContext;
 };
 
 @Module({})
@@ -53,9 +66,17 @@ export class OrdersModule {
         },
         {
           provide: CHECKOUT_REPOSITORY,
-          useValue:
+          inject: [STORE_AUTHORITATIVE_READ],
+          useFactory: (stores: StoreAuthoritativeRead) =>
             options.checkoutRepository ??
-            new PostgresCheckoutRepository(environment.DATABASE_URL, options.inventory),
+            new PostgresCheckoutRepository(
+              environment.DATABASE_URL,
+              options.inventory,
+              options.products,
+              stores,
+              options.createProductTransactionContext,
+              options.createStoreTransactionContext,
+            ),
         },
         {
           provide: CHECKOUT_SERVICE,
@@ -79,6 +100,12 @@ export class OrdersModule {
               options.inventory,
               stores,
             ),
+        },
+        {
+          provide: CheckoutExpiryRunner,
+          inject: [CHECKOUT_REPOSITORY, "ORDERS_RUNTIME_ENVIRONMENT"],
+          useFactory: (repository: CheckoutRepository, runtime: RuntimeEnvironment) =>
+            new CheckoutExpiryRunner(repository, runtime),
         },
         {
           provide: CART_SERVICE,

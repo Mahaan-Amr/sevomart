@@ -180,6 +180,11 @@ export interface CheckoutRepository {
     identityId: IdentityId,
     checkoutRevision: string,
   ): Promise<CheckoutPreparation | undefined>;
+  replayOrder?(
+    identityId: IdentityId,
+    idempotencyKey: string,
+    requestHash: string,
+  ): Promise<Order | undefined>;
   createOrder(command: {
     identityId: IdentityId;
     orderId: string;
@@ -190,6 +195,7 @@ export interface CheckoutRepository {
     correlationId: string;
     reservationExpiresAt: Date;
   }): Promise<Order>;
+  expirePendingOrders?(now: Date): Promise<number>;
 }
 
 export type CartReadResult = { cart: Cart | null };
@@ -269,4 +275,7 @@ export class CheckoutShippingUnavailableError extends Error {
 }
 export class CheckoutIdempotencyConflictError extends Error {
   readonly code = "IDEMPOTENCY_CONFLICT" as const;
+}
+export class CheckoutIdempotencyInProgressError extends Error {
+  readonly code = "IDEMPOTENCY_IN_PROGRESS" as const;
 }

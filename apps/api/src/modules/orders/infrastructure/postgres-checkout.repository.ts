@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
+
 import {
   checkoutPreparationContract,
   orderContract,
+  orderCreatedV1Contract,
+  orderExpiredV1Contract,
 } from "@sevo/contracts/orders/v1";
 import type { IdentityId } from "@sevo/contracts/platform/v1";
+import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
 import {
@@ -10,10 +15,19 @@ import {
   type InventoryAuthoring,
   type InventoryTransactionContext,
 } from "../../inventory/public";
+import type {
+  OpaqueProductTransactionContext,
+  ProductAuthoritativeRead,
+} from "../../product/public";
+import type {
+  OpaqueStoreTransactionContext,
+  StoreAuthoritativeRead,
+} from "../../store/public";
 import {
   CheckoutAddressInvalidError,
   CheckoutChangedError,
   CheckoutIdempotencyConflictError,
+  CheckoutIdempotencyInProgressError,
   CheckoutRevisionExpiredError,
   type CheckoutRepository,
 } from "../public";
@@ -30,6 +44,14 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
   constructor(
     databaseUrl: string,
     private readonly inventory: InventoryAuthoring,
+    private readonly products?: ProductAuthoritativeRead,
+    private readonly stores?: StoreAuthoritativeRead,
+    private readonly createProductTransactionContext?: (
+      transaction: Sql,
+    ) => OpaqueProductTransactionContext,
+    private readonly createStoreTransactionContext?: (
+      transaction: Sql,
+    ) => OpaqueStoreTransactionContext,
   ) {
     this.#sql = postgres(databaseUrl, { max: 5 });
   }
@@ -63,16 +85,54 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
     return rows[0] ? checkoutPreparationContract.parse(rows[0].snapshot) : undefined;
   }
 
+  async replayOrder(
+    identityId: IdentityId,
+    idempotencyKey: string,
+    requestHash: string,
+  ) {
+    const rows = await this.#sql<
+      Array<{
+        requestHash: string;
+        state: string;
+        lockedUntil: Date;
+        response: JSONValue | null;
+      }>
+    >`
+      select request_hash as "requestHash", state,
+        locked_until as "lockedUntil", response_json as response
+      from order_create_idempotency_records
+      where identity_id = ${identityId} and key = ${idempotencyKey}
+    `;
+    if (!rows[0]) return undefined;
+    if (rows[0].requestHash !== requestHash) {
+      throw new CheckoutIdempotencyConflictError();
+    }
+    if (rows[0].state !== "COMPLETED" || rows[0].response === null) {
+      if (rows[0].lockedUntil.getTime() <= Date.now()) return undefined;
+      throw new CheckoutIdempotencyInProgressError();
+    }
+    return orderContract.parse(rows[0].response);
+  }
+
   async createOrder(command: Parameters<CheckoutRepository["createOrder"]>[0]) {
     try {
       return await this.#sql.begin(async (sql) => {
-        await sql`
-          select pg_advisory_xact_lock(
+        const lock = await sql<Array<{ locked: boolean }>>`
+          select pg_try_advisory_xact_lock(
             hashtextextended(${`create-order:${command.identityId}:${command.idempotencyKey}`}, 0)
-          )
+          ) as locked
         `;
-        const replay = await sql<Array<{ requestHash: string; response: JSONValue }>>`
-          select request_hash as "requestHash", response_json as response
+        if (!lock[0]?.locked) throw new CheckoutIdempotencyInProgressError();
+        const replay = await sql<
+          Array<{
+            requestHash: string;
+            state: string;
+            lockedUntil: Date;
+            response: JSONValue | null;
+          }>
+        >`
+          select request_hash as "requestHash", state,
+            locked_until as "lockedUntil", response_json as response
           from order_create_idempotency_records
           where identity_id = ${command.identityId} and key = ${command.idempotencyKey}
         `;
@@ -80,7 +140,26 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
           if (replay[0].requestHash !== command.requestHash) {
             throw new CheckoutIdempotencyConflictError();
           }
-          return orderContract.parse(replay[0].response);
+          if (replay[0].state === "COMPLETED" && replay[0].response !== null) {
+            return orderContract.parse(replay[0].response);
+          }
+          if (replay[0].lockedUntil.getTime() > Date.now()) {
+            throw new CheckoutIdempotencyInProgressError();
+          }
+          await sql`
+            update order_create_idempotency_records
+            set state = 'IN_PROGRESS', locked_until = now() + interval '30 seconds',
+              response_json = null, completed_at = null
+            where identity_id = ${command.identityId} and key = ${command.idempotencyKey}
+          `;
+        } else {
+          await sql`
+            insert into order_create_idempotency_records
+              (identity_id, key, request_hash, state, locked_until)
+            values
+              (${command.identityId}, ${command.idempotencyKey}, ${command.requestHash},
+               'IN_PROGRESS', now() + interval '30 seconds')
+          `;
         }
 
         const preparations = await sql<PreparationRow[]>`
@@ -119,13 +198,7 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
             createdAt: persisted.createdAt.toISOString(),
             review,
           });
-          await sql`
-            insert into order_create_idempotency_records
-              (identity_id, key, request_hash, response_json)
-            values
-              (${command.identityId}, ${command.idempotencyKey}, ${command.requestHash},
-               ${sql.json(asJson(result))})
-          `;
+          await completeOrderIdempotency(sql, command, result);
           return result;
         }
         const carts = await sql<Array<{ revision: number }>>`
@@ -142,6 +215,19 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
             })),
           );
         }
+        if (
+          command.input.cartRevision !== review.cart.revision ||
+          command.input.shippingMethodRevision !== review.shippingMethod.revision ||
+          command.input.returnPolicyRevision !== review.returnPolicy.revision ||
+          command.input.addressRevision !== review.address?.revision
+        ) {
+          throw new CheckoutChangedError(
+            review.items.map((item) => ({
+              kind: "QUANTITY_CHANGED" as const,
+              variantId: item.variantId,
+            })),
+          );
+        }
         const delivery = review.address
           ? await readAddress(
               sql,
@@ -151,6 +237,15 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
             )
           : undefined;
         if (review.address && !delivery) throw new CheckoutAddressInvalidError();
+
+        await assertAuthoritativeReview(
+          sql,
+          review,
+          this.products,
+          this.stores,
+          this.createProductTransactionContext,
+          this.createStoreTransactionContext,
+        );
 
         await sql`
           insert into order_orders
@@ -207,10 +302,11 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
               (order_id, address_id, address_revision, recipient_name,
                recipient_mobile, province_text, city_text, address_line, postal_code)
             values
-              (${command.orderId}, ${review.address!.addressId},
-               ${review.address!.revision}, ${delivery.recipientName},
-               ${delivery.recipientMobile}, ${delivery.provinceText},
-               ${delivery.cityText}, ${delivery.addressLine}, ${delivery.postalCode})
+               (${command.orderId}, ${review.address!.addressId},
+               ${review.address!.revision}, ${review.address!.recipientName},
+               ${review.address!.recipientMobile}, ${review.address!.provinceText},
+               ${review.address!.cityText}, ${review.address!.addressLine},
+               ${review.address!.postalCode ?? null})
           `;
         }
         await sql`
@@ -218,6 +314,25 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
           set consumed_order_id = ${command.orderId}
           where checkout_revision = ${review.checkoutRevision}
         `;
+        await sql`
+          update order_carts set status = 'CONVERTED', updated_at = now()
+          where id = ${review.cart.cartId} and status = 'ACTIVE'
+        `;
+        await enqueueOutboxEvent(
+          sql,
+          orderCreatedV1Contract.parse({
+            eventId: randomUUID(),
+            version: 1,
+            eventType: "OrderCreated.v1",
+            aggregateId: command.orderId,
+            aggregateVersion: 1,
+            occurredAt: new Date().toISOString(),
+            correlationId: command.correlationId,
+            causationId: command.correlationId,
+            actor: { type: "IDENTITY", id: command.identityId },
+            payload: { status: "PENDING_PAYMENT", total: review.total },
+          }),
+        );
         const createdAt = new Date().toISOString();
         const result = orderContract.parse({
           orderId: command.orderId,
@@ -227,13 +342,7 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
           createdAt,
           review,
         });
-        await sql`
-          insert into order_create_idempotency_records
-            (identity_id, key, request_hash, response_json)
-          values
-            (${command.identityId}, ${command.idempotencyKey}, ${command.requestHash},
-             ${sql.json(asJson(result))})
-        `;
+        await completeOrderIdempotency(sql, command, result);
         return result;
       });
     } catch (error) {
@@ -242,9 +351,146 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
     }
   }
 
+  async expirePendingOrders(now: Date) {
+    return this.#sql.begin(async (sql) => {
+      const rows = await sql<
+        Array<{ orderId: string; identityId: string; reservationId: string }>
+      >`
+        select id as "orderId", identity_id as "identityId",
+          reservation_id as "reservationId"
+        from order_orders
+        where status = 'PENDING_PAYMENT' and reservation_expires_at <= ${now}
+        order by reservation_expires_at
+        for update skip locked
+        limit 100
+      `;
+      let expired = 0;
+      for (const row of rows) {
+        const released = await this.inventory.releaseExpiredReservation(
+          sql as unknown as InventoryTransactionContext,
+          { reservationId: row.reservationId, expiredAt: now },
+        );
+        if (!released) continue;
+        await sql`
+          update order_orders set status = 'EXPIRED'
+          where id = ${row.orderId} and status = 'PENDING_PAYMENT'
+        `;
+        const expiryCauseId = randomUUID();
+        await enqueueOutboxEvent(
+          sql,
+          orderExpiredV1Contract.parse({
+            eventId: randomUUID(),
+            version: 1,
+            eventType: "OrderExpired.v1",
+            aggregateId: row.orderId,
+            aggregateVersion: 2,
+            occurredAt: now.toISOString(),
+            correlationId: expiryCauseId,
+            causationId: expiryCauseId,
+            actor: { type: "SYSTEM" },
+            payload: { status: "EXPIRED" },
+          }),
+        );
+        expired += 1;
+      }
+      return expired;
+    });
+  }
+
   async onModuleDestroy() {
     await this.#sql.end();
   }
+}
+
+async function completeOrderIdempotency(
+  sql: Sql,
+  command: Parameters<CheckoutRepository["createOrder"]>[0],
+  result: unknown,
+) {
+  await sql`
+    update order_create_idempotency_records
+    set state = 'COMPLETED', locked_until = now(), completed_at = now(),
+      response_json = ${sql.json(asJson(result))}
+    where identity_id = ${command.identityId} and key = ${command.idempotencyKey}
+  `;
+}
+
+async function assertAuthoritativeReview(
+  sql: Sql,
+  review: ReturnType<typeof checkoutPreparationContract.parse>,
+  products: ProductAuthoritativeRead | undefined,
+  stores: StoreAuthoritativeRead | undefined,
+  createProductTransactionContext:
+    ((transaction: Sql) => OpaqueProductTransactionContext) | undefined,
+  createStoreTransactionContext:
+    ((transaction: Sql) => OpaqueStoreTransactionContext) | undefined,
+) {
+  if (
+    !products?.readAuthoritativeVariantInTransaction ||
+    !stores?.readStoreInTransaction ||
+    !createProductTransactionContext ||
+    !createStoreTransactionContext
+  ) {
+    throw new Error("Transactional checkout readers are not configured");
+  }
+  const changes: CheckoutChangedError["changes"] = [];
+  const store = await stores.readStoreInTransaction(
+    createStoreTransactionContext(sql),
+    review.store.storeId,
+  );
+  const shipping = store?.shippingMethods.find(
+    (method) => method.id === review.shippingMethod.id,
+  );
+  if (
+    !store ||
+    store.publicationStatus !== "PUBLISHED" ||
+    store.settlement?.mode !== "DIRECT" ||
+    store.settlement.status !== "TEST_VERIFIED"
+  ) {
+    changes.push({ kind: "POLICY_CHANGED" });
+  } else {
+    if (
+      store.returnPolicy?.revision !== review.returnPolicy.revision ||
+      store.returnPolicy.text !== review.returnPolicy.text
+    ) {
+      changes.push({ kind: "POLICY_CHANGED" });
+    }
+    if (
+      !shipping?.enabled ||
+      shipping.revision !== review.shippingMethod.revision ||
+      shipping.fixedFee.currency !== "IRR"
+    ) {
+      changes.push({ kind: "SHIPPING_METHOD_CHANGED" });
+    } else if (shipping.fixedFee.amount !== review.shippingMethod.fee.amount) {
+      changes.push({ kind: "SHIPPING_FEE_CHANGED" });
+    }
+  }
+
+  const productTransaction = createProductTransactionContext(sql);
+  for (const item of review.items) {
+    const product = await products.readAuthoritativeVariantInTransaction(
+      productTransaction,
+      item.variantId,
+    );
+    if (
+      !product ||
+      !product.sellable ||
+      product.storeId !== review.store.storeId ||
+      product.productId !== item.productId ||
+      product.publicationVersion !== item.publicationVersion ||
+      product.unitPrice.currency !== "IRR"
+    ) {
+      changes.push({ kind: "VARIANT_UNAVAILABLE", variantId: item.variantId });
+    } else if (product.unitPrice.amount !== item.unitPrice.amount) {
+      changes.push({
+        kind: "PRICE_CHANGED",
+        variantId: item.variantId,
+        previous: item.unitPrice,
+        current: product.unitPrice,
+      });
+    }
+  }
+  if (changes.length) throw new CheckoutChangedError(changes);
 }
 
 async function readAddress(

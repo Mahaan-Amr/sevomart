@@ -110,6 +110,14 @@ test("guest adds a product, signs in and continues the same cart", async ({
       values (${ids.product}, ${ids.store}, 'PUBLISHED', 2, 1, now())
     `;
     await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key,
+         retired, ever_published)
+      values
+        (${ids.variant}, ${ids.product}, ${ids.store}, 'legacy-default',
+         'legacy-default', false, true)
+    `;
+    await sql`
       insert into product_publications
         (product_id, publication_version, name, description, media_id, variant_id)
       values
@@ -236,7 +244,22 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
   await expect(page.getByRole("heading", { name: "تسویه مستقیم" })).toBeVisible();
   await expect(page.getByText("بازپرداخت را تضمین نمی‌کند.")).toBeVisible();
-  await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
+  const stockSql = postgres(databaseUrl, { max: 1 });
+  try {
+    await stockSql`
+      update inventory_levels set on_hand = 0, revision = revision + 1
+      where variant_id = ${ids.variant}
+    `;
+    await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
+    await expect(page.getByRole("alert")).toContainText("سبد را اصلاح");
+    await stockSql`
+      update inventory_levels set on_hand = 8, revision = revision + 1
+      where variant_id = ${ids.variant}
+    `;
+  } finally {
+    await stockSql.end();
+  }
+  await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
   await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
 });

@@ -31,6 +31,7 @@ import {
   CheckoutAddressInvalidError,
   CheckoutChangedError,
   CheckoutIdempotencyConflictError,
+  CheckoutIdempotencyInProgressError,
   CheckoutNotReadyError,
   CheckoutRevisionExpiredError,
   CheckoutShippingUnavailableError,
@@ -97,6 +98,9 @@ export class CheckoutController {
         request.id,
       );
     } catch (error) {
+      if (error instanceof CheckoutIdempotencyInProgressError) {
+        response.header("retry-after", "1");
+      }
       throw checkoutError(error, request.id);
     }
   }
@@ -158,6 +162,16 @@ function checkoutError(error: unknown, correlationId: string) {
       "IDEMPOTENCY_CONFLICT",
       "این شناسه درخواست قبلاً برای سفارش دیگری استفاده شده است.",
       correlationId,
+    );
+  }
+  if (error instanceof CheckoutIdempotencyInProgressError) {
+    return new HttpException(
+      {
+        code: "IDEMPOTENCY_IN_PROGRESS",
+        message: "این درخواست هنوز در حال انجام است. کمی بعد دوباره تلاش کنید.",
+        correlationId,
+      },
+      HttpStatus.CONFLICT,
     );
   }
   if (error instanceof CheckoutNotReadyError) {

@@ -48,7 +48,9 @@ import {
   ProductInvalidTransitionError,
   type ProductRepository,
   type ProductWriteContext,
+  type OpaqueProductTransactionContext,
 } from "../public";
+import { readOpaqueProductTransaction } from "./opaque-product-transaction";
 
 type ProductRow = {
   productId: string;
@@ -354,7 +356,28 @@ export class PostgresProductRepository implements ProductRepository {
   }
 
   async readAuthoritativeVariant(variantId: VariantId) {
-    const rows = await this.#sql<
+    return this.#readAuthoritativeVariant(this.#sql, variantId);
+  }
+
+  async readAuthoritativeVariantInTransaction(
+    transaction: OpaqueProductTransactionContext,
+    variantId: VariantId,
+  ) {
+    const sql = readOpaqueProductTransaction(transaction);
+    await sql`
+      select product.id
+      from product_variants variant
+      join product_products product on product.id = variant.product_id
+      join product_offers offer
+        on offer.product_id = product.id and offer.variant_id = variant.id
+      where variant.id = ${variantId}::uuid
+      for share of product, variant, offer
+    `;
+    return this.#readAuthoritativeVariant(sql, variantId);
+  }
+
+  async #readAuthoritativeVariant(sql: Sql, variantId: VariantId) {
+    const rows = await sql<
       Array<{
         productId: string;
         storeId: string;
