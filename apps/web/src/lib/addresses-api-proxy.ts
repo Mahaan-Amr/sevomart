@@ -1,15 +1,13 @@
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
 
-export async function proxyCartRequest(
+export async function proxyAddressesRequest(
   request: Request,
   segments: readonly string[],
 ): Promise<Response> {
   if (!isAllowed(segments)) {
     return Response.json({ message: "مسیر درخواست معتبر نیست." }, { status: 404 });
   }
-  const suffix = segments.length
-    ? `/${segments.map(encodeURIComponent).join("/")}`
-    : "";
+  const suffix = segments.length ? `/${encodeURIComponent(segments[0]!)}` : "";
   try {
     const headers = new Headers({
       cookie: request.headers.get("cookie") ?? "",
@@ -21,17 +19,15 @@ export async function proxyCartRequest(
       if (value) headers.set(name, value);
     }
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
-    const upstream = await fetch(`${API_BASE_URL}/v1/cart${suffix}`, {
+    const upstream = await fetch(`${API_BASE_URL}/v1/addresses${suffix}`, {
       method: request.method,
       headers,
       body: hasBody ? await request.arrayBuffer() : undefined,
       cache: "no-store",
     });
-    const responseHeaders = new Headers();
-    for (const name of ["content-type", "set-cookie", "retry-after"]) {
-      const value = upstream.headers.get(name);
-      if (value) responseHeaders.set(name, value);
-    }
+    const responseHeaders = new Headers({ "cache-control": "no-store" });
+    const contentType = upstream.headers.get("content-type");
+    if (contentType) responseHeaders.set("content-type", contentType);
     return new Response(upstream.body, {
       status: upstream.status,
       headers: responseHeaders,
@@ -43,19 +39,11 @@ export async function proxyCartRequest(
         message: "ارتباط با سرور برقرار نشد. دوباره تلاش کنید.",
         correlationId: crypto.randomUUID(),
       },
-      { status: 503 },
+      { status: 503, headers: { "cache-control": "no-store" } },
     );
   }
 }
 
 function isAllowed(segments: readonly string[]) {
-  const path = segments.join("/");
-  return (
-    path === "" ||
-    path === "attach" ||
-    path === "resolve" ||
-    path === "review" ||
-    path === "store-replacement" ||
-    /^items\/[0-9a-f-]{36}$/.test(path)
-  );
+  return segments.length === 0 || /^[0-9a-f-]{36}$/.test(segments[0] ?? "");
 }

@@ -5,7 +5,10 @@ import {
   type AttachCartInput,
   type Cart,
   type CartConflict,
+  type CartItemRemovalInput,
   type CartMutationInput,
+  type CartReviewInput,
+  type CartReviewChange,
   type ReplaceCartStoreInput,
 } from "@sevo/contracts/orders/v1";
 import { cartIdContract, cartIdempotencyKeyContract } from "@sevo/contracts/orders/v1";
@@ -18,7 +21,7 @@ import {
 
 import type { InventoryAuthoring } from "../../inventory/public";
 import type { ProductAuthoritativeRead } from "../../product/public";
-import type { StoreRepository } from "../../store/public";
+import type { StoreAuthoritativeRead } from "../../store/public";
 import {
   CartResolutionRequiredError,
   CartRevisionConflictError,
@@ -27,6 +30,7 @@ import {
   type CartAttachmentResult,
   type CartReadResult,
   type CartRepository,
+  type CartReviewSnapshot,
   type StoredCart,
 } from "../public";
 
@@ -37,7 +41,7 @@ export class CartService {
     private readonly repository: CartRepository,
     private readonly products: ProductAuthoritativeRead,
     private readonly inventory: InventoryAuthoring,
-    private readonly stores: Pick<StoreRepository, "findById">,
+    private readonly stores: StoreAuthoritativeRead,
   ) {}
 
   async read(
@@ -57,14 +61,16 @@ export class CartService {
     guestSecret: string | undefined,
     input: CartMutationInput,
     idempotencyKey: string,
+    correlationId: string,
   ): Promise<{ cart: Cart; guestSecret?: string }> {
     const actor = identityId ? identityIdContract.parse(identityId) : undefined;
     const parsedKey = cartIdempotencyKeyContract.parse(idempotencyKey);
     const variantId = variantIdContract.parse(input.variantId);
     const authoritative = await this.products.readAuthoritativeVariant(variantId);
     if (!authoritative?.sellable) throw new CartVariantUnavailableError();
-    const nextStore = await this.stores.findById(authoritative.storeId);
-    if (nextStore?.status !== "PUBLISHED") throw new CartVariantUnavailableError();
+    const nextStore = await this.stores.readStore(authoritative.storeId);
+    if (nextStore?.publicationStatus !== "PUBLISHED")
+      throw new CartVariantUnavailableError();
     const stock = await this.inventory.read(variantId);
     if (!stock || stock.onHand < input.quantity)
       throw new CartVariantUnavailableError();
@@ -82,12 +88,12 @@ export class CartService {
     }
     const selected = existingGuest ?? existingBuyer;
     if (selected && selected.storeId !== authoritative.storeId) {
-      const currentStore = await this.stores.findById(selected.storeId);
+      const currentStore = await this.stores.readStore(selected.storeId);
       throw new CartStoreReplacementRequiredError(
         selected.storeId,
         authoritative.storeId,
-        currentStore?.name,
-        nextStore.name,
+        currentStore?.displayIdentity.name,
+        nextStore.displayIdentity.name,
         selected.items.length,
       );
     }
@@ -105,6 +111,8 @@ export class CartService {
       expectedRevision: input.expectedRevision,
       idempotencyKey: parsedKey,
       requestHash: requestHash(input),
+      correlationId,
+      reviewSnapshot: this.reviewSnapshot(nextStore, [authoritative]),
       expiresAt: new Date(Date.now() + CART_LIFETIME_MS),
     });
     return {
@@ -113,9 +121,71 @@ export class CartService {
     };
   }
 
+  async removeItem(
+    identityId: string | undefined,
+    guestSecret: string | undefined,
+    variantId: string,
+    input: CartItemRemovalInput,
+    idempotencyKey: string,
+    correlationId: string,
+  ): Promise<Cart> {
+    const actor = identityId ? identityIdContract.parse(identityId) : undefined;
+    const stored = await this.repository.removeItem({
+      ...(actor ? { identityId: actor } : {}),
+      guestTokenHash: hashSecret(guestSecret ?? ""),
+      variantId: variantIdContract.parse(variantId),
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
+      requestHash: requestHash({ variantId, ...input }),
+      correlationId,
+    });
+    return this.toCart(stored, false);
+  }
+
+  async confirmReview(
+    identityId: string | undefined,
+    guestSecret: string | undefined,
+    input: CartReviewInput,
+    idempotencyKey: string,
+    correlationId: string,
+  ): Promise<Cart> {
+    const actor = identityId ? identityIdContract.parse(identityId) : undefined;
+    const stored = actor
+      ? await this.repository.readBuyer(actor)
+      : guestSecret
+        ? await this.repository.readGuest(hashSecret(guestSecret))
+        : undefined;
+    if (!stored) throw new CartRevisionConflictError();
+    const [store, ...products] = await Promise.all([
+      this.stores.readStore(stored.storeId),
+      ...stored.items.map((item) =>
+        this.products.readAuthoritativeVariant(item.variantId),
+      ),
+    ]);
+    if (!store) throw new CartVariantUnavailableError();
+    const reviewSnapshot = this.reviewSnapshot(
+      store,
+      products.filter((product): product is NonNullable<typeof product> =>
+        Boolean(product),
+      ),
+    );
+    const reviewed = await this.repository.confirmReview({
+      ...(actor ? { identityId: actor } : {}),
+      guestTokenHash: hashSecret(guestSecret ?? ""),
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
+      requestHash: requestHash(input),
+      correlationId,
+      reviewSnapshot,
+    });
+    return this.toCart(reviewed, false);
+  }
+
   async inspectAttachment(
     identityId: string,
     guestSecret: string | undefined,
+    idempotencyKey: string,
+    correlationId: string,
   ): Promise<CartAttachmentResult | { status: "EMPTY" }> {
     const actor = identityIdContract.parse(identityId);
     if (!guestSecret) {
@@ -124,10 +194,13 @@ export class CartService {
         ? { status: "ATTACHED", cart: await this.toCart(buyer, false) }
         : { status: "EMPTY" };
     }
-    const result = await this.repository.inspectAttachment(
-      actor,
-      hashSecret(guestSecret),
-    );
+    const result = await this.repository.inspectAttachment({
+      identityId: actor,
+      guestTokenHash: hashSecret(guestSecret),
+      idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
+      requestHash: requestHash({ action: "ATTACH_CART" }),
+      correlationId,
+    });
     if (result.status === "NONE") {
       return result.cart
         ? { status: "ATTACHED", cart: await this.toCart(result.cart, false) }
@@ -147,6 +220,7 @@ export class CartService {
     guestSecret: string | undefined,
     input: ReplaceCartStoreInput,
     idempotencyKey: string,
+    correlationId: string,
   ): Promise<{ cart: Cart; guestSecret?: string }> {
     const actor = identityId ? identityIdContract.parse(identityId) : undefined;
     if (!actor && !guestSecret) throw new CartRevisionConflictError();
@@ -154,11 +228,11 @@ export class CartService {
     const authoritative = await this.products.readAuthoritativeVariant(variantId);
     const [stock, store] = await Promise.all([
       this.inventory.read(variantId),
-      authoritative ? this.stores.findById(authoritative.storeId) : undefined,
+      authoritative ? this.stores.readStore(authoritative.storeId) : undefined,
     ]);
     if (
       !authoritative?.sellable ||
-      store?.status !== "PUBLISHED" ||
+      store?.publicationStatus !== "PUBLISHED" ||
       !stock ||
       stock.onHand < input.quantity
     ) {
@@ -181,6 +255,8 @@ export class CartService {
       expectedRevision: input.expectedRevision,
       idempotencyKey: parsedKey,
       requestHash: requestHash(input),
+      correlationId,
+      reviewSnapshot: this.reviewSnapshot(store, [authoritative]),
       expiresAt: new Date(Date.now() + CART_LIFETIME_MS),
     });
     return {
@@ -194,6 +270,7 @@ export class CartService {
     guestSecret: string | undefined,
     input: AttachCartInput,
     idempotencyKey: string,
+    correlationId: string,
   ): Promise<CartAttachmentResult> {
     if (!guestSecret) throw new CartResolutionRequiredError();
     const stored = await this.repository.resolveAttachment({
@@ -202,40 +279,79 @@ export class CartService {
       input,
       idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
       requestHash: requestHash(input),
+      correlationId,
     });
     return { status: "ATTACHED", cart: await this.toCart(stored, false) };
   }
 
   private async toCart(stored: StoredCart, requiresResolution: boolean): Promise<Cart> {
-    const store = await this.stores.findById(stored.storeId);
-    if (!store?.name) throw new CartVariantUnavailableError();
-    const items = await Promise.all(
+    const store = await this.stores.readStore(stored.storeId);
+    if (!store?.displayIdentity.name) throw new CartVariantUnavailableError();
+    const reviewChanges: CartReviewChange[] = [];
+    if (stored.reviewedPolicyRevision !== (store.returnPolicy?.revision ?? 0)) {
+      reviewChanges.push({ kind: "POLICY_CHANGED" });
+    }
+    if (stored.reviewedShippingHash !== shippingHash(store.shippingMethods)) {
+      reviewChanges.push({ kind: "SHIPPING_METHOD_CHANGED" });
+    }
+    const resolvedItems = await Promise.all(
       stored.items.map(async (item) => {
         const product = await this.products.readAuthoritativeVariant(item.variantId);
         if (!product) throw new CartVariantUnavailableError();
         const stock = await this.inventory.read(item.variantId);
+        const itemChanges: CartReviewChange[] = [];
+        if (item.reviewedPublicationVersion !== product.publicationVersion) {
+          itemChanges.push({ kind: "PRODUCT_CHANGED", variantId: item.variantId });
+        }
+        if (item.reviewedUnitPriceAmount !== product.unitPrice.amount) {
+          itemChanges.push({
+            kind: "PRICE_CHANGED",
+            variantId: item.variantId,
+            previousUnitPrice: {
+              amount: item.reviewedUnitPriceAmount,
+              currency: "IRR" as const,
+            },
+            currentUnitPrice: product.unitPrice,
+          });
+        }
+        const unavailable =
+          !product.sellable ||
+          store.publicationStatus !== "PUBLISHED" ||
+          (stock?.onHand ?? 0) < item.quantity;
+        if (unavailable) {
+          itemChanges.push({
+            kind: "VARIANT_UNAVAILABLE",
+            variantId: item.variantId,
+          });
+        }
         return {
-          productId: product.productId,
-          variantId: product.variantId,
-          name: product.name,
-          image: product.image,
-          quantity: item.quantity,
-          unitPrice: product.unitPrice,
-          availability:
-            !product.sellable || store.status !== "PUBLISHED"
-              ? ("UNAVAILABLE" as const)
-              : (stock?.onHand ?? 0) >= item.quantity
-                ? ("AVAILABLE" as const)
-                : ("OUT_OF_STOCK" as const),
+          changes: itemChanges,
+          cartItem: {
+            productId: product.productId,
+            variantId: product.variantId,
+            name: product.name,
+            image: product.image,
+            quantity: item.quantity,
+            unitPrice: product.unitPrice,
+            availability:
+              !product.sellable || store.publicationStatus !== "PUBLISHED"
+                ? ("UNAVAILABLE" as const)
+                : (stock?.onHand ?? 0) >= item.quantity
+                  ? ("AVAILABLE" as const)
+                  : ("OUT_OF_STOCK" as const),
+          },
         };
       }),
     );
+    reviewChanges.push(...resolvedItems.flatMap((item) => item.changes));
     return cartContract.parse({
       cartId: stored.cartId,
-      store: { storeId: stored.storeId, name: store.name },
+      store: { storeId: stored.storeId, name: store.displayIdentity.name },
       revision: stored.revision,
       requiresResolution,
-      items,
+      reviewRequired: reviewChanges.length > 0,
+      reviewChanges,
+      items: resolvedItems.map((item) => item.cartItem),
     });
   }
 
@@ -287,7 +403,26 @@ export class CartService {
   }
 
   private async storeSummary(storeId: StoreId) {
-    return (await this.stores.findById(storeId))?.name ?? "فروشگاه";
+    return (await this.stores.readStore(storeId))?.displayIdentity.name ?? "فروشگاه";
+  }
+
+  private reviewSnapshot(
+    store: NonNullable<Awaited<ReturnType<StoreAuthoritativeRead["readStore"]>>>,
+    products: Array<
+      NonNullable<
+        Awaited<ReturnType<ProductAuthoritativeRead["readAuthoritativeVariant"]>>
+      >
+    >,
+  ): CartReviewSnapshot {
+    return {
+      policyRevision: store.returnPolicy?.revision ?? 0,
+      shippingHash: shippingHash(store.shippingMethods),
+      items: products.map((product) => ({
+        variantId: product.variantId,
+        publicationVersion: product.publicationVersion,
+        unitPriceAmount: product.unitPrice.amount,
+      })),
+    };
   }
 }
 
@@ -303,6 +438,15 @@ function deriveReplacementSecret(guestSecret: string, idempotencyKey: string) {
   return createHmac("sha256", guestSecret)
     .update(`replace-store:${idempotencyKey}`)
     .digest("base64url");
+}
+
+function shippingHash(
+  value: ReadonlyArray<{ id: string; revision: number; enabled: boolean }>,
+) {
+  const canonical = [...value]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(({ id, revision, enabled }) => ({ id, revision, enabled }));
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 export type CartActor = IdentityId | undefined;

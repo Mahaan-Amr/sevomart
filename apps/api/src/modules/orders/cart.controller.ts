@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -18,7 +19,9 @@ import type { RuntimeEnvironment } from "@sevo/config";
 import {
   attachCartInputContract,
   cartIdempotencyKeyContract,
+  cartItemRemovalInputContract,
   cartMutationInputContract,
+  cartReviewInputContract,
   replaceCartStoreInputContract,
 } from "@sevo/contracts/orders/v1";
 import { variantIdContract } from "@sevo/contracts/platform/v1";
@@ -78,11 +81,74 @@ export class CartController {
         readCookie(request, "sevo_cart"),
         input.data,
         key,
+        request.id,
       );
       if (result.guestSecret) {
         response.header("set-cookie", this.cartCookie(result.guestSecret));
       }
       return result.cart;
+    } catch (error) {
+      return cartError(
+        error,
+        request.id,
+        this.carts,
+        identityId,
+        readCookie(request, "sevo_cart"),
+      );
+    }
+  }
+
+  @Delete("items/:variantId")
+  async removeItem(
+    @Param("variantId") rawVariantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") rawKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const variant = variantIdContract.safeParse(rawVariantId);
+    const input = cartItemRemovalInputContract.safeParse(body);
+    if (!variant.success || !input.success) throw validationError(request.id);
+    const key = requireIdempotencyKey(request.id, rawKey);
+    const identityId = await this.optionalIdentity(request);
+    try {
+      return await this.carts.removeItem(
+        identityId,
+        readCookie(request, "sevo_cart"),
+        variant.data,
+        input.data,
+        key,
+        request.id,
+      );
+    } catch (error) {
+      return cartError(
+        error,
+        request.id,
+        this.carts,
+        identityId,
+        readCookie(request, "sevo_cart"),
+      );
+    }
+  }
+
+  @Post("review")
+  @HttpCode(HttpStatus.OK)
+  async review(
+    @Body() body: unknown,
+    @Headers("idempotency-key") rawKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const input = cartReviewInputContract.safeParse(body);
+    if (!input.success) throw validationError(request.id);
+    const key = requireIdempotencyKey(request.id, rawKey);
+    const identityId = await this.optionalIdentity(request);
+    try {
+      return await this.carts.confirmReview(
+        identityId,
+        readCookie(request, "sevo_cart"),
+        input.data,
+        key,
+        request.id,
+      );
     } catch (error) {
       return cartError(
         error,
@@ -101,11 +167,13 @@ export class CartController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) response: FastifyReply,
   ) {
-    requireIdempotencyKey(request.id, rawKey);
+    const key = requireIdempotencyKey(request.id, rawKey);
     const identityId = await requireIdentity(request, this.sessions);
     const result = await this.carts.inspectAttachment(
       identityId,
       readCookie(request, "sevo_cart"),
+      key,
+      request.id,
     );
     if (result.status === "RESOLUTION_REQUIRED") {
       throw new HttpException(
@@ -141,6 +209,7 @@ export class CartController {
         readCookie(request, "sevo_cart"),
         input.data,
         key,
+        request.id,
       );
       if (result.guestSecret) {
         response.header("set-cookie", this.cartCookie(result.guestSecret));
@@ -175,6 +244,7 @@ export class CartController {
         readCookie(request, "sevo_cart"),
         input.data,
         key,
+        request.id,
       );
       response.header("set-cookie", this.clearCartCookie());
       return result;
@@ -258,6 +328,14 @@ async function cartError(
         message: "سبد در جای دیگری تغییر کرده است. نسخه تازه را ببینید.",
         correlationId,
         currentCart: current.cart,
+        ...(current.cart
+          ? {
+              resolution: {
+                action: "REVIEW_AND_RETRY",
+                expectedRevision: current.cart.revision,
+              },
+            }
+          : {}),
       },
       HttpStatus.CONFLICT,
     );

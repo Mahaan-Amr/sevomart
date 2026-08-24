@@ -2,6 +2,7 @@
 
 import {
   cartContract,
+  cartErrorContract,
   cartResolutionContract,
   type Cart,
   type CartConflict,
@@ -83,6 +84,61 @@ export function CartView() {
     }
   }
 
+  async function changeItem(variantId: string, quantity: number) {
+    if (!cart) return;
+    setPending(true);
+    const removing = quantity === 0;
+    const response = await fetch(`/api/cart/items/${variantId}`, {
+      method: removing ? "DELETE" : "PUT",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify(
+        removing
+          ? { expectedRevision: cart.revision }
+          : { variantId, quantity, expectedRevision: cart.revision },
+      ),
+    });
+    const body = await response.json();
+    const parsed = cartContract.safeParse(body);
+    if (response.ok && parsed.success) {
+      setCart(parsed.data);
+      setMessage(removing ? "کالا از سبد حذف شد." : "تعداد به‌روز شد.");
+    } else {
+      const conflict = cartErrorContract.safeParse(body);
+      if (conflict.success && conflict.data.currentCart) {
+        setCart(conflict.data.currentCart);
+        setMessage("سبد در tab دیگری تغییر کرده است. نسخه تازه را بررسی کنید.");
+      } else {
+        setMessage("سبد به‌روز نشد. دوباره تلاش کنید.");
+      }
+    }
+    setPending(false);
+  }
+
+  async function confirmReview() {
+    if (!cart) return;
+    setPending(true);
+    const response = await fetch("/api/cart/review", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ expectedRevision: cart.revision, confirmed: true }),
+    });
+    const parsed = cartContract.safeParse(await response.json());
+    if (response.ok && parsed.success) {
+      setCart(parsed.data);
+      setMessage("تغییرهای سبد تأیید شد.");
+    } else {
+      setMessage("سبد دوباره تغییر کرده است. نسخه تازه را ببینید.");
+      await load();
+    }
+    setPending(false);
+  }
+
   async function resolve(decision: "MERGE" | "KEEP_GUEST" | "KEEP_BUYER") {
     if (!conflict) return;
     setPending(true);
@@ -139,11 +195,46 @@ export function CartView() {
                     {item.availability !== "AVAILABLE" ? (
                       <em>موجودی این مورد تغییر کرده است.</em>
                     ) : null}
+                    <span className={styles.itemActions}>
+                      <button
+                        type="button"
+                        aria-label={`کم‌کردن تعداد ${item.name}`}
+                        disabled={pending || item.quantity <= 1}
+                        onClick={() => changeItem(item.variantId, item.quantity - 1)}
+                      >
+                        −
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`بیشترکردن تعداد ${item.name}`}
+                        disabled={pending || item.quantity >= 99}
+                        onClick={() => changeItem(item.variantId, item.quantity + 1)}
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`حذف ${item.name}`}
+                        disabled={pending}
+                        onClick={() => changeItem(item.variantId, 0)}
+                      >
+                        حذف
+                      </button>
+                    </span>
                   </span>
                   <strong>{formatIrrAsToman(item.unitPrice.amount)}</strong>
                 </li>
               ))}
             </ul>
+            {cart.reviewRequired ? (
+              <section className={styles.review} aria-labelledby="review-title">
+                <h2 id="review-title">سبد تغییر کرده است</h2>
+                <p>قیمت، موجودی یا شرایط فروشگاه را دوباره ببینید و تأیید کنید.</p>
+                <button type="button" disabled={pending} onClick={confirmReview}>
+                  تغییرها را دیدم
+                </button>
+              </section>
+            ) : null}
             {conflict ? (
               <ConflictChoice conflict={conflict} pending={pending} resolve={resolve} />
             ) : (
@@ -154,6 +245,9 @@ export function CartView() {
           </>
         )}
         {message ? <p role="status">{message}</p> : null}
+        <a className={styles.addressLink} href="/addresses">
+          مدیریت نشانی‌های تحویل
+        </a>
       </section>
     </main>
   );

@@ -1,16 +1,18 @@
 // Tables in this file are owned by the orders module.
 
 model OrderCart {
-  id         String          @id @db.Uuid
-  storeId    String          @map("store_id") @db.Uuid
-  identityId String?         @map("identity_id") @db.Uuid
-  status     String          @default("ACTIVE") @db.VarChar(16)
-  revision   Int             @default(0)
-  expiresAt  DateTime        @map("expires_at") @db.Timestamptz(3)
-  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime        @default(now()) @map("updated_at") @db.Timestamptz(3)
-  items      OrderCartItem[]
-  tokens     OrderCartAccessToken[]
+  id                     String          @id @db.Uuid
+  storeId                String          @map("store_id") @db.Uuid
+  identityId             String?         @map("identity_id") @db.Uuid
+  status                 String          @default("ACTIVE") @db.VarChar(16)
+  revision               Int             @default(0)
+  reviewedPolicyRevision Int             @default(0) @map("reviewed_policy_revision")
+  reviewedShippingHash   String          @default("") @map("reviewed_shipping_hash") @db.Char(64)
+  expiresAt              DateTime        @map("expires_at") @db.Timestamptz(3)
+  createdAt              DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime        @default(now()) @map("updated_at") @db.Timestamptz(3)
+  items                  OrderCartItem[]
+  tokens                 OrderCartAccessToken[]
 
   @@index([identityId, status])
   @@map("order_carts")
@@ -21,12 +23,28 @@ model OrderCartItem {
   variantId String    @map("variant_id") @db.Uuid
   productId String    @map("product_id") @db.Uuid
   quantity  Int
+  reviewedPublicationVersion Int @default(0) @map("reviewed_publication_version")
+  reviewedUnitPriceAmount Int @default(0) @map("reviewed_unit_price_amount")
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(3)
   cart      OrderCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
   @@id([cartId, variantId])
   @@map("order_cart_items")
+}
+
+model OrderCartAudit {
+  id              String   @id @db.Uuid
+  cartId          String   @map("cart_id") @db.Uuid
+  operation       String   @db.VarChar(48)
+  actorKind       String   @map("actor_kind") @db.VarChar(16)
+  actorIdentityId String?  @map("actor_identity_id") @db.Uuid
+  revision        Int
+  correlationId   String   @map("correlation_id") @db.VarChar(128)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([cartId, createdAt])
+  @@map("order_cart_audits")
 }
 
 model OrderCartAccessToken {
@@ -52,4 +70,58 @@ model OrderCartIdempotencyRecord {
 
   @@id([operation, scope, key])
   @@map("order_cart_idempotency_records")
+}
+
+model OrderSavedAddress {
+  id              String                      @id @db.Uuid
+  identityId      String                      @map("identity_id") @db.Uuid
+  currentRevision Int                         @default(1) @map("current_revision")
+  status          String                      @default("ACTIVE") @db.VarChar(16)
+  createdAt       DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                    @default(now()) @map("updated_at") @db.Timestamptz(3)
+  revisions       OrderSavedAddressRevision[]
+
+  @@index([identityId, status, updatedAt])
+  @@map("order_saved_addresses")
+}
+
+model OrderSavedAddressRevision {
+  addressId       String            @map("address_id") @db.Uuid
+  revision        Int
+  recipientName   String            @map("recipient_name") @db.VarChar(80)
+  recipientMobile String            @map("recipient_mobile") @db.VarChar(11)
+  provinceText    String            @map("province_text") @db.VarChar(80)
+  cityText        String            @map("city_text") @db.VarChar(80)
+  addressLine     String            @map("address_line") @db.VarChar(500)
+  postalCode      String?           @map("postal_code") @db.Char(10)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  address         OrderSavedAddress @relation(fields: [addressId], references: [id], onDelete: Restrict)
+
+  @@id([addressId, revision])
+  @@map("order_saved_address_revisions")
+}
+
+model OrderSavedAddressIdempotencyRecord {
+  operation    String   @db.VarChar(48)
+  identityId   String   @map("identity_id") @db.Uuid
+  key          String   @db.VarChar(200)
+  requestHash  String   @map("request_hash") @db.Char(64)
+  responseJson Json     @map("response_json") @db.JsonB
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, identityId, key])
+  @@map("order_saved_address_idempotency_records")
+}
+
+model OrderSavedAddressAudit {
+  id            String   @id @db.Uuid
+  addressId     String   @map("address_id") @db.Uuid
+  identityId    String   @map("identity_id") @db.Uuid
+  operation     String   @db.VarChar(24)
+  revision      Int
+  correlationId String   @map("correlation_id") @db.VarChar(128)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([addressId, createdAt])
+  @@map("order_saved_address_audits")
 }

@@ -15,6 +15,13 @@ const idempotencyHeader = [
   },
 ] as const;
 
+const noStoreHeader = {
+  "Cache-Control": {
+    description: "Sensitive buyer data must not be cached",
+    schema: { type: "string" as const },
+  },
+};
+
 const operations = [
   {
     operationId: "readCart",
@@ -42,6 +49,49 @@ const operations = [
     request: {
       schema: "CartMutationInput",
       example: ordersV1Examples.CartMutationInput,
+    },
+    responses: [
+      { status: 200, schema: "Cart" },
+      { status: 409, schema: "CartError" },
+      { status: 422, schema: "CartError" },
+      { status: 428, schema: "CartError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "removeCartItem",
+    method: "delete",
+    path: "/v1/cart/items/{variantId}",
+    tag: "orders",
+    auth: "none",
+    pathParameter: {
+      name: "variantId",
+      schema: "CartVariantId",
+      example: ordersV1Examples.CartVariantId,
+    },
+    headerParameters: idempotencyHeader,
+    request: {
+      schema: "CartItemRemovalInput",
+      example: ordersV1Examples.CartItemRemovalInput,
+    },
+    responses: [
+      { status: 200, schema: "Cart" },
+      { status: 409, schema: "CartError" },
+      { status: 422, schema: "CartError" },
+      { status: 428, schema: "CartError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "confirmCartReview",
+    method: "post",
+    path: "/v1/cart/review",
+    tag: "orders",
+    auth: "none",
+    headerParameters: idempotencyHeader,
+    request: {
+      schema: "CartReviewInput",
+      example: ordersV1Examples.CartReviewInput,
     },
     responses: [
       { status: 200, schema: "Cart" },
@@ -105,6 +155,90 @@ const operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    operationId: "listSavedAddresses",
+    method: "get",
+    path: "/v1/addresses",
+    tag: "orders",
+    auth: "identity-session",
+    responses: [
+      { status: 200, schema: "SavedAddressList", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "createSavedAddress",
+    method: "post",
+    path: "/v1/addresses",
+    tag: "orders",
+    auth: "identity-session",
+    headerParameters: idempotencyHeader,
+    request: {
+      schema: "CreateSavedAddressInput",
+      example: ordersV1Examples.CreateSavedAddressInput,
+    },
+    responses: [
+      { status: 201, schema: "SavedAddress", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 409, schema: "SavedAddressError" },
+      { status: 422, schema: "SavedAddressError" },
+      { status: 428, schema: "SavedAddressError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "updateSavedAddress",
+    method: "put",
+    path: "/v1/addresses/{addressId}",
+    tag: "orders",
+    auth: "identity-session",
+    pathParameter: {
+      name: "addressId",
+      schema: "SavedAddressId",
+      example: ordersV1Examples.SavedAddressId,
+    },
+    headerParameters: idempotencyHeader,
+    request: {
+      schema: "UpdateSavedAddressInput",
+      example: ordersV1Examples.UpdateSavedAddressInput,
+    },
+    responses: [
+      { status: 200, schema: "SavedAddress", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "SavedAddressError" },
+      { status: 409, schema: "SavedAddressError" },
+      { status: 422, schema: "SavedAddressError" },
+      { status: 428, schema: "SavedAddressError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "deleteSavedAddress",
+    method: "delete",
+    path: "/v1/addresses/{addressId}",
+    tag: "orders",
+    auth: "identity-session",
+    pathParameter: {
+      name: "addressId",
+      schema: "SavedAddressId",
+      example: ordersV1Examples.SavedAddressId,
+    },
+    headerParameters: idempotencyHeader,
+    request: {
+      schema: "DeleteSavedAddressInput",
+      example: ordersV1Examples.DeleteSavedAddressInput,
+    },
+    responses: [
+      { status: 204, noContent: true, headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "SavedAddressError" },
+      { status: 409, schema: "SavedAddressError" },
+      { status: 422, schema: "SavedAddressError" },
+      { status: 428, schema: "SavedAddressError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 export const contribute_orders_openApi: OpenApiContributor = (document) =>
@@ -116,7 +250,10 @@ export const contribute_orders_openApi: OpenApiContributor = (document) =>
     {
       descriptions: {
         200: "Cart state returned",
+        201: "Saved address created",
+        204: "Saved address removed from future selection",
         401: "Identity session is missing or invalid",
+        404: "Saved address is unavailable to this identity",
         409: "Cart state requires a fresh revision or explicit resolution",
         422: "Cart input is invalid or unavailable",
         428: "Idempotency precondition is missing",

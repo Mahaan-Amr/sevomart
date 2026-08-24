@@ -97,6 +97,17 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
 
+  const otherTab = await page.context().newPage();
+  await otherTab.goto("/cart");
+  await otherTab.getByRole("button", { name: "بیشترکردن تعداد فنجان سرامیکی" }).click();
+  await expect(otherTab.getByText("تعداد ۳")).toBeVisible();
+  await page.getByRole("button", { name: "حذف فنجان سرامیکی" }).click();
+  await expect(
+    page.getByText("سبد در tab دیگری تغییر کرده است. نسخه تازه را بررسی کنید."),
+  ).toBeVisible();
+  await expect(page.getByText("تعداد ۳")).toBeVisible();
+  await otherTab.close();
+
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
@@ -107,11 +118,24 @@ test("guest adds a product, signs in and continues the same cart", async ({
 
   await expect(page).toHaveURL(/\/cart\?continue=1$/);
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
-  await expect(page.getByText("تعداد ۲")).toBeVisible();
+  await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
   await expect(
     page.getByText("سبد به هویت سوو متصل شد و برای ادامه خرید آماده است."),
   ).toBeVisible();
+  await page.getByRole("link", { name: "مدیریت نشانی‌های تحویل" }).click();
+  await expect(page.getByRole("heading", { name: "نشانی تحویل" })).toBeVisible();
+  await page.getByLabel("نام گیرنده").fill("سارا احمدی");
+  await page.getByLabel("شماره موبایل گیرنده").fill("۰۹۱۲۳۴۵۶۷۸۹");
+  await page.getByLabel("استان").fill("تهران");
+  await page.getByLabel("شهر").fill("تهران");
+  await page.getByLabel("نشانی کامل").fill("خیابان آزادی، کوچه بهار، پلاک ۱۲");
+  await page.getByLabel("کدپستی (در صورت نیاز)").fill("۱۲۳۴۵۶۷۸۹۰");
+  await page.getByRole("button", { name: "ذخیره نشانی" }).click();
+  await expect(page.getByText("نشانی ذخیره شد.")).toBeVisible();
+  await expect(page.getByText("خیابان آزادی، کوچه بهار، پلاک ۱۲")).toBeVisible();
+  await assertNoHorizontalOverflow(page);
+  await assertInteractiveTargets(page);
 });
 
 test("same-store carts merge only after the buyer chooses merge", async ({

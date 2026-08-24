@@ -19,9 +19,15 @@ describe("OpenAPI guest cart and login attachment", () => {
     const expected = [
       ["get", "/v1/cart", "readCart", false],
       ["put", "/v1/cart/items/{variantId}", "upsertCartItem", false],
+      ["delete", "/v1/cart/items/{variantId}", "removeCartItem", false],
+      ["post", "/v1/cart/review", "confirmCartReview", false],
       ["post", "/v1/cart/store-replacement", "replaceCartStore", false],
       ["post", "/v1/cart/attach", "attachGuestCart", true],
       ["post", "/v1/cart/resolve", "resolveCartConflict", true],
+      ["get", "/v1/addresses", "listSavedAddresses", true],
+      ["post", "/v1/addresses", "createSavedAddress", true],
+      ["put", "/v1/addresses/{addressId}", "updateSavedAddress", true],
+      ["delete", "/v1/addresses/{addressId}", "deleteSavedAddress", true],
     ] as const;
 
     for (const [method, path, operationId, authenticated] of expected) {
@@ -31,9 +37,8 @@ describe("OpenAPI guest cart and login attachment", () => {
         authenticated ? [{ identitySession: [] }] : [],
       );
     }
-    for (const [method, path] of expected
-      .slice(1)
-      .map(([method, path]) => [method, path])) {
+    const writes = expected.filter(([method]) => method !== "get");
+    for (const [method, path] of writes.map(([method, path]) => [method, path])) {
       expect(document.paths[path][method].parameters).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: "Idempotency-Key", required: true }),

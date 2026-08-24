@@ -1,4 +1,5 @@
 import type { AttachCartInput } from "@sevo/contracts/orders/v1";
+import { randomUUID } from "node:crypto";
 import { cartIdContract, type CartId } from "@sevo/contracts/orders/v1";
 import {
   identityIdContract,
@@ -28,6 +29,10 @@ type CartRow = {
   variantId: string | null;
   productId: string | null;
   quantity: number | null;
+  reviewedPolicyRevision: number;
+  reviewedShippingHash: string;
+  reviewedPublicationVersion: number | null;
+  reviewedUnitPriceAmount: number | null;
 };
 
 export class PostgresCartRepository implements CartRepository {
@@ -75,10 +80,12 @@ export class PostgresCartRepository implements CartRepository {
         cartId = command.newCartId;
         await sql`
           insert into order_carts
-            (id, store_id, identity_id, status, revision, expires_at, updated_at)
+            (id, store_id, identity_id, status, revision,
+             reviewed_policy_revision, reviewed_shipping_hash, expires_at, updated_at)
           values
             (${cartId}, ${command.storeId}, ${command.identityId ?? null},
-             'ACTIVE', 0, ${command.expiresAt}, now())
+             'ACTIVE', 0, ${command.reviewSnapshot.policyRevision},
+             ${command.reviewSnapshot.shippingHash}, ${command.expiresAt}, now())
         `;
         if (!command.identityId) {
           await sql`
@@ -113,10 +120,13 @@ export class PostgresCartRepository implements CartRepository {
       }
       await sql`
         insert into order_cart_items
-          (cart_id, variant_id, product_id, quantity, updated_at)
+          (cart_id, variant_id, product_id, quantity,
+           reviewed_publication_version, reviewed_unit_price_amount, updated_at)
         values
           (${cartId}, ${command.variantId}, ${command.productId},
-           ${command.quantity}, now())
+           ${command.quantity},
+           ${command.reviewSnapshot.items[0]?.publicationVersion ?? 0},
+           ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0}, now())
         on conflict (cart_id, variant_id) do update set
           quantity = excluded.quantity, product_id = excluded.product_id,
           updated_at = excluded.updated_at
@@ -128,9 +138,122 @@ export class PostgresCartRepository implements CartRepository {
       `;
       const result = await this.#readById(sql, cartId);
       if (!result) throw new Error("Cart mutation did not persist a cart");
+      await writeCartAudit(sql, command, cartId, result.revision, "UPSERT_ITEM");
       await this.#completeIdempotency(
         sql,
         "MUTATE_CART",
+        scope,
+        command.idempotencyKey,
+        result,
+      );
+      return result;
+    });
+  }
+
+  async removeItem(command: {
+    identityId?: IdentityId;
+    guestTokenHash: string;
+    variantId: ReturnType<typeof variantIdContract.parse>;
+    expectedRevision: number;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+  }): Promise<StoredCart> {
+    return this.#sql.begin(async (sql) => {
+      const scope = command.identityId ?? command.guestTokenHash;
+      await advisoryLock(sql, `cart-mutation:${scope}`);
+      const replay = await this.#claimIdempotency(
+        sql,
+        "REMOVE_CART_ITEM",
+        scope,
+        command.idempotencyKey,
+        command.requestHash,
+      );
+      if (replay) return parseStoredCart(replay);
+      const current = command.identityId
+        ? await this.#readBuyer(sql, command.identityId, true)
+        : await this.#readGuest(sql, command.guestTokenHash, true);
+      if (!current || current.revision !== command.expectedRevision) {
+        throw new CartRevisionConflictError();
+      }
+      await sql`
+        delete from order_cart_items
+        where cart_id = ${current.cartId} and variant_id = ${command.variantId}
+      `;
+      await incrementRevision(sql, current.cartId);
+      const result = await this.#readById(sql, current.cartId);
+      if (!result) throw new Error("Cart was not found after item removal");
+      await writeCartAudit(
+        sql,
+        command,
+        current.cartId,
+        result.revision,
+        "REMOVE_ITEM",
+      );
+      await this.#completeIdempotency(
+        sql,
+        "REMOVE_CART_ITEM",
+        scope,
+        command.idempotencyKey,
+        result,
+      );
+      return result;
+    });
+  }
+
+  async confirmReview(command: {
+    identityId?: IdentityId;
+    guestTokenHash: string;
+    expectedRevision: number;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+    reviewSnapshot: import("../public").CartReviewSnapshot;
+  }): Promise<StoredCart> {
+    return this.#sql.begin(async (sql) => {
+      const scope = command.identityId ?? command.guestTokenHash;
+      await advisoryLock(sql, `cart-mutation:${scope}`);
+      const replay = await this.#claimIdempotency(
+        sql,
+        "CONFIRM_CART_REVIEW",
+        scope,
+        command.idempotencyKey,
+        command.requestHash,
+      );
+      if (replay) return parseStoredCart(replay);
+      const current = command.identityId
+        ? await this.#readBuyer(sql, command.identityId, true)
+        : await this.#readGuest(sql, command.guestTokenHash, true);
+      if (!current || current.revision !== command.expectedRevision) {
+        throw new CartRevisionConflictError();
+      }
+      await sql`
+        update order_carts set
+          reviewed_policy_revision = ${command.reviewSnapshot.policyRevision},
+          reviewed_shipping_hash = ${command.reviewSnapshot.shippingHash},
+          revision = revision + 1, updated_at = now()
+        where id = ${current.cartId}
+      `;
+      for (const item of command.reviewSnapshot.items) {
+        await sql`
+          update order_cart_items set
+            reviewed_publication_version = ${item.publicationVersion},
+            reviewed_unit_price_amount = ${item.unitPriceAmount}, updated_at = now()
+          where cart_id = ${current.cartId} and variant_id = ${item.variantId}
+        `;
+      }
+      const result = await this.#readById(sql, current.cartId);
+      if (!result) throw new Error("Cart was not found after review");
+      await writeCartAudit(
+        sql,
+        command,
+        current.cartId,
+        result.revision,
+        "CONFIRM_REVIEW",
+      );
+      await this.#completeIdempotency(
+        sql,
+        "CONFIRM_CART_REVIEW",
         scope,
         command.idempotencyKey,
         result,
@@ -167,17 +290,22 @@ export class PostgresCartRepository implements CartRepository {
       await terminalize(sql, current.cartId, "REPLACED");
       await sql`
         insert into order_carts
-          (id, store_id, identity_id, status, revision, expires_at, updated_at)
+          (id, store_id, identity_id, status, revision,
+           reviewed_policy_revision, reviewed_shipping_hash, expires_at, updated_at)
         values
           (${command.newCartId}, ${command.storeId}, ${command.identityId ?? null},
-           'ACTIVE', 1, ${command.expiresAt}, now())
+           'ACTIVE', 1, ${command.reviewSnapshot.policyRevision},
+           ${command.reviewSnapshot.shippingHash}, ${command.expiresAt}, now())
       `;
       await sql`
         insert into order_cart_items
-          (cart_id, variant_id, product_id, quantity, updated_at)
+          (cart_id, variant_id, product_id, quantity,
+           reviewed_publication_version, reviewed_unit_price_amount, updated_at)
         values
           (${command.newCartId}, ${command.variantId}, ${command.productId},
-           ${command.quantity}, now())
+           ${command.quantity},
+           ${command.reviewSnapshot.items[0]?.publicationVersion ?? 0},
+           ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0}, now())
       `;
       if (!command.identityId) {
         await sql`
@@ -190,6 +318,13 @@ export class PostgresCartRepository implements CartRepository {
       }
       const result = await this.#readById(sql, command.newCartId);
       if (!result) throw new Error("Replacement cart was not found");
+      await writeCartAudit(
+        sql,
+        command,
+        command.newCartId,
+        result.revision,
+        "REPLACE_STORE",
+      );
       await this.#completeIdempotency(
         sql,
         "REPLACE_CART_STORE",
@@ -201,23 +336,58 @@ export class PostgresCartRepository implements CartRepository {
     });
   }
 
-  async inspectAttachment(identityId: IdentityId, guestTokenHash: string) {
+  async inspectAttachment(command: {
+    identityId: IdentityId;
+    guestTokenHash: string;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+  }) {
     return this.#sql.begin(async (sql) => {
-      await advisoryLock(sql, `cart-attach:${identityId}`);
-      const guest = await this.#readGuest(sql, guestTokenHash, true);
-      const buyer = await this.#readBuyer(sql, identityId, true);
+      await advisoryLock(sql, `cart-attach:${command.identityId}`);
+      const replay = await this.#readIdempotency(
+        sql,
+        "ATTACH_CART",
+        command.identityId,
+        command.idempotencyKey,
+        command.requestHash,
+      );
+      if (replay) return { status: "ATTACHED" as const, cart: parseStoredCart(replay) };
+      const guest = await this.#readGuest(sql, command.guestTokenHash, true);
+      const buyer = await this.#readBuyer(sql, command.identityId, true);
       if (!guest) return { status: "NONE" as const, ...(buyer ? { cart: buyer } : {}) };
-      if (guest.identityId === identityId || guest.cartId === buyer?.cartId) {
+      if (guest.identityId === command.identityId || guest.cartId === buyer?.cartId) {
         return { status: "ATTACHED" as const, cart: guest };
       }
       if (buyer) return { status: "CONFLICT" as const, guest, buyer };
+      await this.#claimIdempotency(
+        sql,
+        "ATTACH_CART",
+        command.identityId,
+        command.idempotencyKey,
+        command.requestHash,
+      );
       await sql`
-        update order_carts set identity_id = ${identityId}, revision = revision + 1,
+        update order_carts set identity_id = ${command.identityId}, revision = revision + 1,
           updated_at = now() where id = ${guest.cartId}
       `;
       await revokeGuestToken(sql, guest.cartId);
       const attached = await this.#readById(sql, guest.cartId);
       if (!attached) throw new Error("Attached cart was not found");
+      await writeCartAudit(
+        sql,
+        command,
+        attached.cartId,
+        attached.revision,
+        "ATTACH_IDENTITY",
+      );
+      await this.#completeIdempotency(
+        sql,
+        "ATTACH_CART",
+        command.identityId,
+        command.idempotencyKey,
+        attached,
+      );
       return { status: "ATTACHED" as const, cart: attached };
     });
   }
@@ -228,6 +398,7 @@ export class PostgresCartRepository implements CartRepository {
     input: AttachCartInput;
     idempotencyKey: string;
     requestHash: string;
+    correlationId: string;
   }) {
     return this.#sql.begin(async (sql) => {
       await advisoryLock(sql, `cart-attach:${command.identityId}`);
@@ -260,9 +431,11 @@ export class PostgresCartRepository implements CartRepository {
           if (quantity > 99) throw new CartQuantityLimitError();
           await sql`
             insert into order_cart_items
-              (cart_id, variant_id, product_id, quantity, updated_at)
+              (cart_id, variant_id, product_id, quantity,
+               reviewed_publication_version, reviewed_unit_price_amount, updated_at)
             values
-              (${buyer.cartId}, ${item.variantId}, ${item.productId}, ${quantity}, now())
+              (${buyer.cartId}, ${item.variantId}, ${item.productId}, ${quantity},
+               ${item.reviewedPublicationVersion}, ${item.reviewedUnitPriceAmount}, now())
             on conflict (cart_id, variant_id) do update set
               quantity = excluded.quantity, product_id = excluded.product_id,
               updated_at = excluded.updated_at
@@ -291,6 +464,13 @@ export class PostgresCartRepository implements CartRepository {
         command.identityId,
         command.idempotencyKey,
         kept,
+      );
+      await writeCartAudit(
+        sql,
+        command,
+        kept.cartId,
+        kept.revision,
+        "RESOLVE_ATTACHMENT",
       );
       return kept;
     });
@@ -325,7 +505,11 @@ export class PostgresCartRepository implements CartRepository {
     const rows = await sql<CartRow[]>`
       select c.id as "cartId", c.store_id as "storeId",
         c.identity_id as "identityId", c.revision,
-        item.variant_id as "variantId", item.product_id as "productId", item.quantity
+        c.reviewed_policy_revision as "reviewedPolicyRevision",
+        c.reviewed_shipping_hash as "reviewedShippingHash",
+        item.variant_id as "variantId", item.product_id as "productId", item.quantity,
+        item.reviewed_publication_version as "reviewedPublicationVersion",
+        item.reviewed_unit_price_amount as "reviewedUnitPriceAmount"
       from order_carts c
       left join order_cart_items item on item.cart_id = c.id
       where c.id = ${cartId}
@@ -362,6 +546,24 @@ export class PostgresCartRepository implements CartRepository {
     return row.responseJson;
   }
 
+  async #readIdempotency(
+    sql: Sql,
+    operation: string,
+    scope: string,
+    key: string,
+    requestHash: string,
+  ): Promise<JSONValue | undefined> {
+    const rows = await sql<Array<{ requestHash: string; responseJson: JSONValue }>>`
+      select request_hash as "requestHash", response_json as "responseJson"
+      from order_cart_idempotency_records
+      where operation = ${operation} and scope = ${scope} and key = ${key}
+    `;
+    const row = rows[0];
+    if (!row) return undefined;
+    if (row.requestHash !== requestHash) throw new CartIdempotencyConflictError();
+    return row.responseJson;
+  }
+
   async #completeIdempotency(
     sql: Sql,
     operation: string,
@@ -390,6 +592,8 @@ function fromRows(rows: CartRow[]): StoredCart {
       ? { identityId: identityIdContract.parse(first.identityId) }
       : {}),
     revision: first.revision,
+    reviewedPolicyRevision: first.reviewedPolicyRevision,
+    reviewedShippingHash: first.reviewedShippingHash.trim(),
     items: rows.flatMap((row) =>
       row.variantId && row.productId && row.quantity
         ? [
@@ -397,6 +601,8 @@ function fromRows(rows: CartRow[]): StoredCart {
               variantId: variantIdContract.parse(row.variantId),
               productId: productIdContract.parse(row.productId),
               quantity: row.quantity,
+              reviewedPublicationVersion: row.reviewedPublicationVersion ?? 0,
+              reviewedUnitPriceAmount: row.reviewedUnitPriceAmount ?? 0,
             },
           ]
         : [],
@@ -413,10 +619,14 @@ function parseStoredCart(value: JSONValue): StoredCart {
       ? { identityId: identityIdContract.parse(object.identityId) }
       : {}),
     revision: Number(object.revision),
+    reviewedPolicyRevision: Number(object.reviewedPolicyRevision ?? 0),
+    reviewedShippingHash: String(object.reviewedShippingHash ?? ""),
     items: (object.items as Array<Record<string, unknown>>).map((item) => ({
       productId: productIdContract.parse(item.productId),
       variantId: variantIdContract.parse(item.variantId),
       quantity: Number(item.quantity),
+      reviewedPublicationVersion: Number(item.reviewedPublicationVersion ?? 0),
+      reviewedUnitPriceAmount: Number(item.reviewedUnitPriceAmount ?? 0),
     })),
   };
 }
@@ -444,5 +654,22 @@ async function incrementRevision(sql: Sql, cartId: CartId) {
   await sql`
     update order_carts set revision = revision + 1, updated_at = now()
     where id = ${cartId}
+  `;
+}
+
+async function writeCartAudit(
+  sql: Sql,
+  command: { identityId?: IdentityId; correlationId: string },
+  cartId: CartId,
+  revision: number,
+  operation: string,
+) {
+  await sql`
+    insert into order_cart_audits
+      (id, cart_id, operation, actor_kind, actor_identity_id, revision, correlation_id)
+    values
+      (${randomUUID()}, ${cartId}, ${operation},
+       ${command.identityId ? "IDENTITY" : "GUEST"},
+       ${command.identityId ?? null}, ${revision}, ${command.correlationId})
   `;
 }

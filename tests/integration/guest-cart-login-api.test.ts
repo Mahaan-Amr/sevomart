@@ -20,6 +20,7 @@ describe("guest cart and login attachment HTTP API", () => {
 
   beforeEach(async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`delete from order_cart_audits`;
     await sql`delete from order_cart_idempotency_records`;
     await sql`delete from order_carts`;
     await sql`delete from inventory_levels`;
@@ -219,6 +220,38 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(replayed.json()).toEqual(merged.json());
   });
 
+  it("idempotently audits direct guest cart attachment with its correlation", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const guest = await add(server, undefined, 2, 0);
+    const sessionCookie = await signIn(server);
+    const attachKey = crypto.randomUUID();
+    const correlationId = crypto.randomUUID();
+    const request = {
+      method: "POST" as const,
+      url: "/v1/cart/attach",
+      headers: {
+        cookie: `${sessionCookie}; ${guest.headers["set-cookie"]!}`,
+        "idempotency-key": attachKey,
+        "x-correlation-id": correlationId,
+      },
+      payload: {},
+    };
+    const attached = await server.inject(request);
+    const replayed = await server.inject(request);
+    expect(attached.statusCode).toBe(200);
+    expect(replayed.json()).toEqual(attached.json());
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const audits = await sql<Array<{ operation: string; correlationId: string }>>`
+      select operation, correlation_id as "correlationId" from order_cart_audits
+      where operation = 'ATTACH_IDENTITY'
+    `;
+    await sql.end();
+    expect(audits).toEqual([{ operation: "ATTACH_IDENTITY", correlationId }]);
+  });
+
   it("keeps the current store until the guest explicitly confirms replacement", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -301,6 +334,92 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(cartContract.parse(current.json().cart)).toMatchObject({
       revision: 2,
       items: [{ quantity: expect.any(Number) }],
+    });
+  });
+
+  it("returns a fresh snapshot and retry action when another tab removes an item", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+
+    const removed = await server.inject({
+      method: "DELETE",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { expectedRevision: 1 },
+    });
+    expect(removed.statusCode, JSON.stringify(removed.json())).toBe(200);
+
+    const stale = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 3, expectedRevision: 1 },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({
+      code: "CART_REVISION_CONFLICT",
+      currentCart: { revision: 2, items: [] },
+      resolution: { action: "REVIEW_AND_RETRY", expectedRevision: 2 },
+    });
+  });
+
+  it("requires a fresh review after product price or store policy changes", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+    expect(first.json()).toMatchObject({ reviewRequired: false, reviewChanges: [] });
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`update product_offers set amount = 4700000, revision = 2`;
+    await sql`
+      insert into product_publications
+        (product_id, publication_version, name, description, media_id, variant_id)
+      values
+        (${productId}, 2, 'فنجان سرامیکی تازه', 'فنجان دست‌ساز', ${mediaId}, ${variantId})
+    `;
+    await sql`
+      update product_products set publication_version = 2, revision = revision + 1
+      where id = ${productId}
+    `;
+    await sql`
+      update store_stores set return_policy = 'شرایط مرجوعی تازه فروشگاه',
+        return_policy_revision = 2, revision = revision + 1
+      where id = ${storeId}
+    `;
+    await sql.end();
+
+    const changed = await server.inject({
+      method: "GET",
+      url: "/v1/cart",
+      headers: { cookie },
+    });
+    expect(changed.statusCode).toBe(200);
+    expect(cartContract.parse(changed.json().cart)).toMatchObject({
+      revision: 1,
+      reviewRequired: true,
+      reviewChanges: expect.arrayContaining([
+        expect.objectContaining({ kind: "PRICE_CHANGED", variantId }),
+        { kind: "PRODUCT_CHANGED", variantId },
+        { kind: "POLICY_CHANGED" },
+      ]),
+    });
+
+    const reviewed = await server.inject({
+      method: "POST",
+      url: "/v1/cart/review",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(reviewed.statusCode, JSON.stringify(reviewed.json())).toBe(200);
+    expect(cartContract.parse(reviewed.json())).toMatchObject({
+      revision: 2,
+      reviewRequired: false,
+      reviewChanges: [],
     });
   });
 });
