@@ -15,6 +15,9 @@ x-app-environment: &app-environment
   OTEL_EXPORTER_OTLP_ENDPOINT: ""
   SELLER_APPROVAL_RECOVERY_SECRET: ${SELLER_APPROVAL_RECOVERY_SECRET:-sevo_local_seller_approval_recovery_secret}
   CART_TOKEN_DERIVATION_SECRET: ${CART_TOKEN_DERIVATION_SECRET:-sevo_local_cart_token_derivation_secret}
+  DISCOVERY_CURSOR_ACTIVE_KEY_ID: ${DISCOVERY_CURSOR_ACTIVE_KEY_ID:-local-v1}
+  DISCOVERY_CURSOR_KEYRING: '${DISCOVERY_CURSOR_KEYRING:-{"local-v1":"sevo_local_discovery_cursor_signing_secret"}}'
+  DISCOVERY_RANKING_SECRET: ${DISCOVERY_RANKING_SECRET:-sevo_local_discovery_ranking_seed_secret}
 
 services:
   postgres:

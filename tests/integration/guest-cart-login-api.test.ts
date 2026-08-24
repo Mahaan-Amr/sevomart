@@ -29,6 +29,7 @@ describe("guest cart and login attachment HTTP API", () => {
     await sql`delete from order_cart_idempotency_records`;
     await sql`delete from order_carts`;
     await sql`delete from inventory_levels`;
+    await sql`delete from product_state_transitions`;
     await sql`delete from product_products`;
     await sql`delete from store_stores`;
     await sql`
@@ -55,6 +56,11 @@ describe("guest cart and login attachment HTTP API", () => {
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${productId}, ${variantId}, 4500000, 'IRR', 1)
+    `;
+    await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key)
+      values (${variantId}, ${productId}, ${storeId}, 'simple', '')
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
@@ -85,6 +91,11 @@ describe("guest cart and login attachment HTTP API", () => {
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${other.productId}, ${other.variantId}, 3200000, 'IRR', 1)
+    `;
+    await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key)
+      values (${other.variantId}, ${other.productId}, ${other.storeId}, 'simple', '')
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
@@ -306,6 +317,7 @@ describe("guest cart and login attachment HTTP API", () => {
     const first = await add(server, undefined, 1, 0);
     const cookie = first.headers["set-cookie"]!;
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`delete from product_state_transitions where product_id = ${productId}`;
     await sql`delete from product_products where id = ${productId}`;
     await sql.end();
 

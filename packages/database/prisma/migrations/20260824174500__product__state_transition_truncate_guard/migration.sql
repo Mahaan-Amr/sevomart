@@ -1,0 +1,3 @@
+CREATE TRIGGER product_state_transitions_reject_truncate
+BEFORE TRUNCATE ON "product_state_transitions"
+FOR EACH STATEMENT EXECUTE FUNCTION product_reject_state_transition_change();

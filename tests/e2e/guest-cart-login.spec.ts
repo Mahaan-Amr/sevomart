@@ -76,6 +76,11 @@ test("guest adds a product, signs in and continues the same cart", async ({
       values (${ids.product}, ${ids.variant}, 4500000, 'IRR', 1)
     `;
     await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key)
+      values (${ids.variant}, ${ids.product}, ${ids.store}, 'simple', '')
+    `;
+    await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
       values (${ids.variant}, ${ids.store}, 8, 1)
     `;
@@ -203,10 +208,10 @@ test("same-store carts merge only after the buyer chooses merge", async ({
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toBeVisible();
   await expect(
-    page.getByText("سبد پیش از ورود ۱ کالا و سبد حساب شما ۱ کالا دارد."),
+    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
   ).toBeVisible();
   await expect(
-    page.getByText("پیش از ورود: ۲، حساب من: ۳، پس از ترکیب: ۵"),
+    page.getByText("پیش از ورود: ۲، هویت سوو من: ۳، پس از ترکیب: ۵"),
   ).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ترکیب دو سبد" }).click();
@@ -234,7 +239,7 @@ test("different-store carts change only after the buyer chooses which one to kee
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toHaveCount(0);
   await expect(
-    page.getByText("سبد پیش از ورود ۱ کالا و سبد حساب شما ۱ کالا دارد."),
+    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
   ).toBeVisible();
   await expect(page.getByText("کالای حساب")).toBeVisible();
   await page.getByRole("button", { name: "نگه‌داشتن سبد پیش از ورود" }).click();
@@ -325,6 +330,12 @@ async function seedCartConflict(
       await sql`
         insert into product_offers (product_id, variant_id, amount, currency, revision)
         values (${fixture.productId}, ${fixture.variantId}, 4500000, 'IRR', 1)
+      `;
+      await sql`
+        insert into product_variants
+          (id, product_id, store_id, client_key, combination_key)
+        values
+          (${fixture.variantId}, ${fixture.productId}, ${fixture.storeId}, 'simple', '')
       `;
       await sql`
         insert into inventory_levels (variant_id, store_id, on_hand, revision)

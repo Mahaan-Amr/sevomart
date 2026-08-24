@@ -83,7 +83,10 @@ export function composeCanonicalApiModules(
     ConversationsModule,
     ProblemFollowUpModule,
     ContentModule,
-    DiscoveryModule.register(environment, storeFollowingRepository),
+    DiscoveryModule.register(environment, {
+      followingRepository: storeFollowingRepository,
+      products: productRepository,
+    }),
     NotificationsModule,
     ReportingAnalyticsModule,
   ];

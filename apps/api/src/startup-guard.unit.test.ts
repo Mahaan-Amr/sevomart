@@ -67,6 +67,10 @@ describe("runtime trust guard", () => {
         MINIO_BUCKET: "production-media",
         SELLER_APPROVAL_RECOVERY_SECRET: "production-seller-approval-recovery-secret",
         CART_TOKEN_DERIVATION_SECRET: "production-cart-token-derivation-secret",
+        DISCOVERY_CURSOR_ACTIVE_KEY_ID: "current",
+        DISCOVERY_CURSOR_KEYRING:
+          '{"previous":"previous-production-cursor-signing-key","current":"current-production-cursor-signing-key"}',
+        DISCOVERY_RANKING_SECRET: "production-discovery-ranking-seed-secret",
       }),
     ).toMatchObject({ SEVO_RUNTIME_ENV: "production", MINIO_USE_SSL: true });
   });

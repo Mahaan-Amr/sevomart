@@ -270,7 +270,7 @@ describe("table ownership checker", () => {
 });
 
 describe("migration ownership checker", () => {
-  const modules = new Set(["orders", "inventory"]);
+  const modules = new Set(["orders", "inventory", "product"]);
 
   it("accepts a timestamped migration owned by a registered module", () => {
     expect(
@@ -303,5 +303,16 @@ describe("migration ownership checker", () => {
         modules,
       ),
     ).toEqual([expect.objectContaining({ rule: "migration-directory-convention" })]);
+  });
+
+  it("keeps the published product truncate-guard migration identity compatible", () => {
+    expect(
+      findMigrationOwnershipViolations(
+        [
+          "packages/database/prisma/migrations/20260824174500__product__state_transition_truncate_guard/migration.sql",
+        ],
+        modules,
+      ),
+    ).toEqual([]);
   });
 });

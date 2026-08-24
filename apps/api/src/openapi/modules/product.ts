@@ -36,6 +36,20 @@ const operations = [
     ],
   },
   {
+    operationId: "getSellerProduct",
+    method: "get",
+    path: "/v1/seller/products/{productId}",
+    tag: "product",
+    auth: "identity-session",
+    pathParameter: productIdParameter,
+    responses: [
+      { status: 200, schema: "SellerProductView" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "ProductNotFoundError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "replaceProductWorkingCopy",
     method: "put",
     path: "/v1/seller/products/{productId}/working-copy",
@@ -43,11 +57,53 @@ const operations = [
     auth: "identity-session",
     pathParameter: productIdParameter,
     request: {
-      schema: "ReplaceSimpleProductWorkingCopy",
-      example: productV1Examples.ReplaceSimpleProductWorkingCopy,
+      schema: "ReplaceProductWorkingCopy",
+      example: productV1Examples.ReplaceProductWorkingCopy,
     },
     responses: [
-      { status: 200, schema: "SimpleProductView" },
+      { status: 200, schema: "SellerProductView" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "ProductNotFoundError" },
+      { status: 409, schema: "ProductWriteConflictError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 428, schema: "ProductPreconditionRequiredError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "replaceVariantOffersBatch",
+    method: "put",
+    path: "/v1/seller/products/{productId}/offers",
+    tag: "product",
+    auth: "identity-session",
+    pathParameter: productIdParameter,
+    request: {
+      schema: "ReplaceProductOffersBatch",
+      example: productV1Examples.ReplaceProductOffersBatch,
+    },
+    responses: [
+      { status: 200, schema: "ProductBatchResult" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "ProductNotFoundError" },
+      { status: 409, schema: "ProductWriteConflictError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 428, schema: "ProductPreconditionRequiredError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "replaceProductInventoryBatch",
+    method: "put",
+    path: "/v1/seller/products/{productId}/inventory",
+    tag: "inventory",
+    auth: "identity-session",
+    pathParameter: productIdParameter,
+    request: {
+      schema: "ReplaceProductInventoryBatch",
+      example: productV1Examples.ReplaceProductInventoryBatch,
+    },
+    responses: [
+      { status: 200, schema: "ProductBatchResult" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 409, schema: "ProductWriteConflictError" },
@@ -64,7 +120,7 @@ const operations = [
     auth: "identity-session",
     pathParameter: productIdParameter,
     responses: [
-      { status: 200, schema: "SimpleProductPreview" },
+      { status: 200, schema: "ProductPreview" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 500, schema: "InternalServerError" },
@@ -82,7 +138,28 @@ const operations = [
       example: productV1Examples.PublishSimpleProductInput,
     },
     responses: [
-      { status: 200, schema: "PublicSimpleProduct" },
+      { status: 200, schema: "PublicProduct" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "ProductNotFoundError" },
+      { status: 409, schema: "ProductWriteConflictError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 428, schema: "ProductPreconditionRequiredError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "unpublishSellerProduct",
+    method: "post",
+    path: "/v1/seller/products/{productId}/unpublication",
+    tag: "product",
+    auth: "identity-session",
+    pathParameter: productIdParameter,
+    request: {
+      schema: "UnpublishProductInput",
+      example: productV1Examples.UnpublishProductInput,
+    },
+    responses: [
+      { status: 200, schema: "SellerProductView" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 409, schema: "ProductWriteConflictError" },
@@ -103,7 +180,7 @@ const operations = [
       example: storeV1Examples.StoreSlug,
     },
     responses: [
-      { status: 200, schema: "PublicSimpleProductList" },
+      { status: 200, schema: "PublicProductList" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -116,7 +193,7 @@ const operations = [
     auth: "none",
     pathParameter: productIdParameter,
     responses: [
-      { status: 200, schema: "PublicSimpleProduct" },
+      { status: 200, schema: "PublicProduct" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -167,7 +244,10 @@ export const contribute_product_openApi: OpenApiContributor = (document) => {
   ];
   for (const [method, path] of [
     ["put", "/v1/seller/products/{productId}/working-copy"],
+    ["put", "/v1/seller/products/{productId}/offers"],
+    ["put", "/v1/seller/products/{productId}/inventory"],
     ["post", "/v1/seller/products/{productId}/publications"],
+    ["post", "/v1/seller/products/{productId}/unpublication"],
   ] as const) {
     const operation = composed.paths[path]?.[method] as
       { parameters?: unknown[] } | undefined;

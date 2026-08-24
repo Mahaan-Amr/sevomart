@@ -1,6 +1,8 @@
 import {
   createSimpleProductInputContract,
   productPublishedV1Contract,
+  productPublishedV2Contract,
+  productUnpublishedV1Contract,
   publicSimpleProductContract,
   replaceSimpleProductWorkingCopyContract,
   simpleProductDraftContract,
@@ -137,6 +139,32 @@ describe("simple product v1 contract", () => {
       },
     });
     expect(event.payload).not.toHaveProperty("onHand");
+
+    const privacySafeEvent = productPublishedV2Contract.parse({
+      ...event,
+      eventType: "ProductPublished.v2",
+      payload: {
+        ...event.payload,
+        snapshot: { variantIds: [ids.variant] },
+      },
+    });
+    expect(JSON.stringify(privacySafeEvent.payload)).not.toMatch(
+      /onHand|sku|name|description|image|url/i,
+    );
+
+    const unpublished = productUnpublishedV1Contract.parse({
+      ...event,
+      eventType: "ProductUnpublished.v1",
+      aggregateVersion: 3,
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 1,
+      },
+    });
+    expect(JSON.stringify(unpublished.payload)).not.toMatch(
+      /reason|onHand|sku|name|description|image|url/i,
+    );
   });
 });
 

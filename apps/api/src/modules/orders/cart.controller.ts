@@ -37,6 +37,7 @@ import { requireIdempotencyKey } from "./orders-http";
 import {
   CartIdempotencyConflictError,
   CartIdempotencyInProgressError,
+  CartLineLimitError,
   CartQuantityLimitError,
   CartResolutionRequiredError,
   CartRevisionConflictError,
@@ -402,6 +403,16 @@ async function cartError(
       {
         code: "INVALID_QUANTITY",
         message: "تعداد مجاز بین ۱ تا ۹۹ است.",
+        correlationId,
+      },
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
+  }
+  if (error instanceof CartLineLimitError) {
+    throw new HttpException(
+      {
+        code: "CART_LIMIT_REACHED",
+        message: "سبد حداکثر می‌تواند ۱۰۰ گونه داشته باشد.",
         correlationId,
       },
       HttpStatus.UNPROCESSABLE_ENTITY,

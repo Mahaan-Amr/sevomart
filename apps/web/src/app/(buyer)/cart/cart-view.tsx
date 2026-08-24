@@ -300,12 +300,12 @@ function ConflictChoice({
     <section className={styles.conflict} aria-labelledby="conflict-title">
       <h2 id="conflict-title">کدام سبد را ادامه می‌دهید؟</h2>
       <p>
-        پیش از ورود سبد «{conflict.guest.storeName}» و در حساب شما سبد «
+        پیش از ورود سبد «{conflict.guest.storeName}» و در هویت سوو شما سبد «
         {conflict.buyer.storeName}» وجود دارد. تا انتخاب شما چیزی حذف نمی‌شود.
       </p>
       <p>
         سبد پیش از ورود {conflict.guest.itemCount.toLocaleString("fa-IR")} کالا و سبد
-        حساب شما {conflict.buyer.itemCount.toLocaleString("fa-IR")} کالا دارد.
+        هویت سوو شما {conflict.buyer.itemCount.toLocaleString("fa-IR")} کالا دارد.
       </p>
       {conflict.kind === "SAME_STORE" ? (
         <>
@@ -314,8 +314,8 @@ function ConflictChoice({
               <li key={item.variantId}>
                 <strong>{item.name}</strong>
                 <span>
-                  پیش از ورود: {item.guestQuantity.toLocaleString("fa-IR")}، حساب من:{" "}
-                  {item.buyerQuantity.toLocaleString("fa-IR")}، پس از ترکیب:{" "}
+                  پیش از ورود: {item.guestQuantity.toLocaleString("fa-IR")}، هویت سوو
+                  من: {item.buyerQuantity.toLocaleString("fa-IR")}، پس از ترکیب:{" "}
                   {item.mergedQuantity.toLocaleString("fa-IR")}
                 </span>
               </li>
@@ -347,7 +347,7 @@ function ConflictChoice({
         disabled={pending}
         onClick={() => resolve("KEEP_BUYER")}
       >
-        نگه‌داشتن سبد حساب من
+        نگه‌داشتن سبد هویت سوو من
       </button>
     </section>
   );

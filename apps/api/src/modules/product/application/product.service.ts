@@ -1,11 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  productPreviewContract,
+  publicProductListContract,
   publicSimpleProductListContract,
   simpleProductPreviewContract,
-  type PublicSimpleProduct,
+  type ReplaceProductInventoryBatch,
+  type ReplaceProductOffersBatch,
+  type ReplaceProductWorkingCopy,
+  type UnpublishProductInput,
   type ReplaceSimpleProductWorkingCopy,
-  type SimpleProductPreview,
   type SimpleProductView,
 } from "@sevo/contracts/product/v1";
 import {
@@ -85,11 +89,88 @@ export class ProductService {
     );
   }
 
-  async preview(
+  async replaceProductWorkingCopy(
     identityId: string,
     productId: ProductId,
-  ): Promise<SimpleProductPreview> {
+    input: ReplaceProductWorkingCopy,
+    write: WriteInput,
+  ) {
+    const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    for (const mediaId of input.workingCopy.orderedMediaIds) {
+      const asset = await this.media.inspect(mediaId);
+      if (
+        !asset ||
+        asset.ownerSellerId !== identityId ||
+        asset.ownerReferenceId !== productId ||
+        asset.purpose !== "PRODUCT_IMAGE"
+      ) {
+        throw new ProductNotReadyError();
+      }
+    }
+    return this.repository.replaceProductWorkingCopy(
+      productId,
+      store.storeId,
+      input,
+      context("REPLACE_WORKING_COPY", identityId, write, input),
+    );
+  }
+
+  async readSellerProduct(identityId: string, productId: ProductId) {
+    const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    const product =
+      (await this.repository.readProductOwned(productId, store.storeId)) ??
+      (await this.repository.readOwned(productId, store.storeId));
+    if (!product) throw new ProductNotFoundError();
+    return product;
+  }
+
+  async preview(identityId: string, productId: ProductId) {
     await this.requireActiveSeller(identityIdContract.parse(identityId));
+    const actorId = identityIdContract.parse(identityId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    const productView = await this.repository.readProductOwned(
+      productId,
+      store.storeId,
+    );
+    if (productView) {
+      const working = productView.workingCopy;
+      const inventoryIds = new Set(productView.inventory.map((row) => row.variantId));
+      const issues = !working
+        ? [{ path: "workingCopy", code: "REQUIRED" }]
+        : [
+            ...(working.name ? [] : [{ path: "details.name", code: "REQUIRED" }]),
+            ...(working.orderedMediaIds.length > 0
+              ? []
+              : [{ path: "images", code: "REQUIRED" }]),
+            ...(working.variants.length > 0
+              ? []
+              : [{ path: "sale.variants", code: "REQUIRED" }]),
+            ...working.variants.flatMap((variant, index) => [
+              ...(variant.price
+                ? []
+                : [{ path: `sale.variants.${index}.price`, code: "REQUIRED" }]),
+              ...(inventoryIds.has(variant.variantId)
+                ? []
+                : [{ path: `sale.variants.${index}.inventory`, code: "REQUIRED" }]),
+            ]),
+          ];
+      return productPreviewContract.parse({
+        product: productView,
+        ready: issues.length === 0,
+        issues,
+        projection:
+          issues.length === 0
+            ? await this.repository.previewProduct(productId, store.storeId)
+            : null,
+      });
+    }
     const product = await this.readOwned(identityId, productId);
     const issues = !product.workingCopy
       ? [{ path: "workingCopy", code: "REQUIRED" }]
@@ -110,13 +191,30 @@ export class ProductService {
     });
   }
 
-  async publish(
-    identityId: string,
-    productId: ProductId,
-    write: WriteInput,
-  ): Promise<PublicSimpleProduct> {
+  async publish(identityId: string, productId: ProductId, write: WriteInput) {
     const actorId = identityIdContract.parse(identityId);
     await this.requireActiveSeller(actorId);
+    const ownedStore = await this.stores.readOwnedStore(actorId);
+    if (!ownedStore) throw new ProductNotFoundError();
+    const productView = await this.repository.readProductOwned(
+      productId,
+      ownedStore.storeId,
+    );
+    if (productView) {
+      const preview = await this.preview(identityId, productId);
+      if (!("projection" in preview) || !preview.ready || !preview.projection) {
+        throw new ProductNotReadyError();
+      }
+      const store = await this.stores.requireOwnedSellable(actorId, ownedStore.storeId);
+      for (const mediaId of productView.workingCopy!.orderedMediaIds) {
+        await this.media.makePublic(mediaId, identityId);
+      }
+      return this.repository.publishProduct(
+        productId,
+        store.storeId,
+        context("PUBLISH_PRODUCT", identityId, write, { productId }),
+      );
+    }
     const owned = await this.readOwned(identityId, productId);
     if (
       !owned.workingCopy?.name ||
@@ -126,8 +224,6 @@ export class ProductService {
     ) {
       throw new ProductNotReadyError();
     }
-    const ownedStore = await this.stores.readOwnedStore(actorId);
-    if (!ownedStore) throw new ProductNotFoundError();
     const store = await this.stores.requireOwnedSellable(actorId, ownedStore.storeId);
     const mediaId = owned.workingCopy.orderedMediaIds[0]!;
     const asset = await this.media.inspect(mediaId);
@@ -147,12 +243,32 @@ export class ProductService {
     );
   }
 
+  async unpublish(
+    identityId: string,
+    productId: ProductId,
+    input: UnpublishProductInput,
+    write: WriteInput,
+  ) {
+    const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    return this.repository.unpublishProduct(
+      productId,
+      store.storeId,
+      input,
+      context("UNPUBLISH_PRODUCT", identityId, write, input),
+    );
+  }
+
   async readPublic(storeSlug: string, productId: ProductId) {
     const parsedSlug = storeSlugContract.safeParse(storeSlug);
     if (!parsedSlug.success) throw new ProductNotFoundError();
     const store = await this.stores.readPublishedStoreBySlug(parsedSlug.data);
     if (!store) throw new ProductNotFoundError();
-    const product = await this.repository.readPublished(productId, store.storeId);
+    const product =
+      (await this.repository.readPublishedProduct(productId, store.storeId)) ??
+      (await this.repository.readPublished(productId, store.storeId));
     if (!product) throw new ProductNotFoundError();
     return product;
   }
@@ -162,9 +278,47 @@ export class ProductService {
     if (!parsedSlug.success) throw new ProductNotFoundError();
     const store = await this.stores.readPublishedStoreBySlug(parsedSlug.data);
     if (!store) throw new ProductNotFoundError();
-    return publicSimpleProductListContract.parse({
-      products: await this.repository.listPublished(store.storeId),
-    });
+    const multivariant = await this.repository.listPublishedProducts(store.storeId);
+    const simple = await this.repository.listPublished(store.storeId);
+    return multivariant.length > 0
+      ? publicProductListContract.parse({ products: [...multivariant, ...simple] })
+      : publicSimpleProductListContract.parse({ products: simple });
+  }
+
+  async replaceOffersBatch(
+    identityId: string,
+    productId: ProductId,
+    input: ReplaceProductOffersBatch,
+    write: WriteInput,
+  ) {
+    const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    return this.repository.replaceOffersBatch(
+      productId,
+      store.storeId,
+      input,
+      context("REPLACE_OFFERS_BATCH", identityId, write, input),
+    );
+  }
+
+  async replaceInventoryBatch(
+    identityId: string,
+    productId: ProductId,
+    input: ReplaceProductInventoryBatch,
+    write: WriteInput,
+  ) {
+    const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    return this.repository.replaceInventoryBatch(
+      productId,
+      store.storeId,
+      input,
+      context("REPLACE_INVENTORY_BATCH", identityId, write, input),
+    );
   }
 
   private async readOwned(identityId: string, productId: ProductId) {

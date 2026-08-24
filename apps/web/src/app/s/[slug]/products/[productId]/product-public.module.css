@@ -58,7 +58,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #760b29;
+  color: var(--color-primary-dark);
 }
 
 .product {
@@ -118,6 +118,23 @@
 .payment {
   padding-block-start: 12px;
   border-block-start: 1px solid var(--color-divider);
+}
+
+.variants {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.variants li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 8px;
+  border-block-start: 1px solid var(--color-divider);
+  font-size: 12px;
 }
 
 .product footer {

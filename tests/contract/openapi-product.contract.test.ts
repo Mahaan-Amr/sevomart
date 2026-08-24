@@ -25,10 +25,23 @@ describe("OpenAPI simple product tracer", () => {
         "createProductImageUpload",
         true,
       ],
+      ["get", "/v1/seller/products/{productId}", "getSellerProduct", true],
       [
         "put",
         "/v1/seller/products/{productId}/working-copy",
         "replaceProductWorkingCopy",
+        true,
+      ],
+      [
+        "put",
+        "/v1/seller/products/{productId}/offers",
+        "replaceVariantOffersBatch",
+        true,
+      ],
+      [
+        "put",
+        "/v1/seller/products/{productId}/inventory",
+        "replaceProductInventoryBatch",
         true,
       ],
       ["get", "/v1/seller/products/{productId}/preview", "previewSellerProduct", true],
@@ -36,6 +49,12 @@ describe("OpenAPI simple product tracer", () => {
         "post",
         "/v1/seller/products/{productId}/publications",
         "publishSellerProduct",
+        true,
+      ],
+      [
+        "post",
+        "/v1/seller/products/{productId}/unpublication",
+        "unpublishSellerProduct",
         true,
       ],
       [
@@ -67,7 +86,10 @@ describe("OpenAPI simple product tracer", () => {
 
     for (const [method, path] of [
       ["put", "/v1/seller/products/{productId}/working-copy"],
+      ["put", "/v1/seller/products/{productId}/offers"],
+      ["put", "/v1/seller/products/{productId}/inventory"],
       ["post", "/v1/seller/products/{productId}/publications"],
+      ["post", "/v1/seller/products/{productId}/unpublication"],
     ] as const) {
       expect(document.paths[path][method].parameters).toEqual(
         expect.arrayContaining([

@@ -29,6 +29,28 @@ export interface InventoryAuthoring {
     variantId: VariantId,
   ): Promise<InventorySnapshot | undefined>;
   read(variantId: VariantId): Promise<InventorySnapshot | undefined>;
+  replaceBatchForProduct(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{
+      storeId: StoreId;
+      rows: ReadonlyArray<{
+        variantId: VariantId;
+        onHand: number;
+        expectedRevision: number;
+      }>;
+      reasonCode:
+        | "INITIAL_STOCK"
+        | "MANUAL_COUNT"
+        | "DAMAGED"
+        | "RETURNED_TO_STOCK"
+        | "CORRECTION";
+      actorId: IdentityId;
+      correlationId: string;
+    }>,
+  ): Promise<ReadonlyArray<InventorySnapshot & { variantId: VariantId }>>;
+  readMany(
+    variantIds: readonly VariantId[],
+  ): Promise<ReadonlyArray<InventorySnapshot & { variantId: VariantId }>>;
 }
 
 export class InventoryRevisionConflictError extends Error {
