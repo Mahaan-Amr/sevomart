@@ -37,6 +37,11 @@ const runtimeEnvironmentContract = z.object({
   MINIO_SECRET_KEY: z.string().min(8).default("sevo_local_password"),
   MINIO_BUCKET: z.string().min(3).default("sevo-media"),
   API_READINESS_URL: z.url().optional(),
+  INTERNAL_API_URL: z.url().default("http://127.0.0.1:3001"),
+  SELLER_APPROVAL_RECOVERY_SECRET: z
+    .string()
+    .min(32)
+    .default("sevo_local_seller_approval_recovery_secret"),
 });
 
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentContract>;
@@ -55,6 +60,8 @@ export function readRuntimeEnvironment(
       ) ||
       !environment.MINIO_USE_SSL ||
       environment.MINIO_BUCKET === "sevo-media" ||
+      environment.SELLER_APPROVAL_RECOVERY_SECRET ===
+        "sevo_local_seller_approval_recovery_secret" ||
       environment.DATABASE_URL.includes("sevo_local");
     if (unsafe) {
       throw new Error(

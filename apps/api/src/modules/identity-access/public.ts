@@ -179,3 +179,7 @@ export interface SellerApplicationReviewer {
     input: ApproveSellerApplication,
   ): Promise<ApproveSellerApplicationResult>;
 }
+
+export interface SellerApprovalRecovery {
+  recover(recoveryId: string): Promise<void>;
+}

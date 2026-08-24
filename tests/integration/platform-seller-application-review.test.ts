@@ -1,10 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
+import { DurableOutboxWorker } from "@sevo/outbox";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
+import { createSellerApprovalRecoveryHandler } from "../../apps/worker/src/modules/identity-access/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("platform seller application review API with PostgreSQL", () => {
@@ -25,12 +27,27 @@ describe("platform seller application review API with PostgreSQL", () => {
     await sql`truncate identity_platform_permission_audit`;
     await sql`delete from identity_platform_permission_grants`;
     await sql`delete from identity_seller_application_idempotency`;
+    await sql`delete from identity_seller_approval_recoveries`;
     await sql`truncate identity_seller_application_audit`;
     await sql`delete from identity_seller_application_decisions`;
     await sql`delete from identity_seller_application_revisions`;
     await sql`delete from identity_seller_applications`;
     await sql`delete from identity_seller_access`;
-    await sql`delete from platform_outbox_events where event_type like 'SellerApplication%'`;
+    await sql`
+      delete from platform_outbox_consumptions
+      where event_id in (
+        select event_id from platform_outbox_events
+        where event_type in ('SellerApprovalRecoveryRequested.v1',
+                             'SellerApplicationApproved.v1',
+                             'SellerAccessActivated.v1')
+      )
+    `;
+    await sql`
+      delete from platform_outbox_events
+      where event_type like 'SellerApplication%'
+         or event_type in ('SellerApprovalRecoveryRequested.v1',
+                           'SellerAccessActivated.v1')
+    `;
     await sql`delete from identity_sessions`;
     await sql`delete from identity_otp_challenges`;
     await sql`delete from identity_login_methods`;
@@ -243,7 +260,7 @@ describe("platform seller application review API with PostgreSQL", () => {
     }
   });
 
-  it("rolls back a provision failure, audits it, and completes a retry without duplicates", async () => {
+  it("recovers a provision crash through the durable Worker after an API restart", async () => {
     const app = await createApiApp(environment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
@@ -293,6 +310,7 @@ describe("platform seller application review API with PostgreSQL", () => {
           accessCount: number;
           storeCount: number;
           failedAuditCount: number;
+          recoveryStatus: string;
         }>
       >`
         select a.status,
@@ -302,27 +320,177 @@ describe("platform seller application review API with PostgreSQL", () => {
            where seller_id = ${applicantIdentityId}) as "storeCount",
           (select count(*)::int from identity_seller_application_audit au
            where au.target_id = a.id and au.action = 'ApproveSellerApplication.v1'
-             and au.result = 'FAILED') as "failedAuditCount"
+             and au.result = 'FAILED') as "failedAuditCount",
+          (select status from identity_seller_approval_recoveries r
+           where r.application_id = a.id) as "recoveryStatus"
         from identity_seller_applications a where a.id = ${applicationId}
       `;
       expect(rolledBack).toEqual([
-        { status: "SUBMITTED", accessCount: 0, storeCount: 0, failedAuditCount: 1 },
+        {
+          status: "SUBMITTED",
+          accessCount: 0,
+          storeCount: 0,
+          failedAuditCount: 1,
+          recoveryStatus: "PENDING",
+        },
       ]);
 
       await sql`drop trigger test_fail_store_provision on store_stores`;
       await sql`drop function test_fail_store_provision()`;
-      const retried = await server.inject({
-        method: "POST",
-        url: `/v1/platform/seller-applications/${applicationId}/approval`,
-        headers,
-        payload,
+      await app.close();
+      apps.splice(apps.indexOf(app), 1);
+      const restartedApp = await createApiApp(environment);
+      apps.push(restartedApp);
+      const restartedServer = restartedApp.getHttpAdapter().getInstance();
+      const recoveryHandler = createSellerApprovalRecoveryHandler(
+        async (recoveryId) => {
+          const response = await restartedServer.inject({
+            method: "POST",
+            url: `/v1/internal/seller-approval-recoveries/${recoveryId}`,
+            headers: {
+              "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
+            },
+          });
+          if (response.statusCode !== 204) {
+            throw new Error(`Recovery endpoint returned ${response.statusCode}`);
+          }
+        },
+      );
+      const worker = new DurableOutboxWorker(environment.DATABASE_URL, {
+        consumerName: "identity-seller-approval-recovery-integration-v1",
+        handlers: { "SellerApprovalRecoveryRequested.v1": recoveryHandler },
+        retryDelaysMs: [0],
       });
-      expect(retried.statusCode).toBe(200);
-      expect(retried.json()).toMatchObject({ applicationId, revision: 2 });
+      try {
+        expect(await worker.runOnce()).toBe("processed");
+      } finally {
+        await worker.close();
+      }
+      const recovered = await sql<
+        Array<{
+          status: string;
+          accessCount: number;
+          storeCount: number;
+          recoveryStatus: string;
+        }>
+      >`
+        select a.status,
+          (select count(*)::int from identity_seller_access
+           where identity_id = ${applicantIdentityId}) as "accessCount",
+          (select count(*)::int from store_memberships
+           where seller_id = ${applicantIdentityId}) as "storeCount",
+          (select status from identity_seller_approval_recoveries r
+           where r.application_id = a.id) as "recoveryStatus"
+        from identity_seller_applications a where a.id = ${applicationId}
+      `;
+      expect(recovered).toEqual([
+        {
+          status: "APPROVED",
+          accessCount: 1,
+          storeCount: 1,
+          recoveryStatus: "COMPLETED",
+        },
+      ]);
     } finally {
       await sql.unsafe(`
         drop trigger if exists test_fail_store_provision on store_stores;
         drop function if exists test_fail_store_provision();
+      `);
+      await sql.end();
+    }
+  });
+
+  it("rolls back every approval effect when an approval outbox event cannot commit", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const applicantCookie = await signIn(app, "09123456786");
+    const submitted = await server.inject({
+      method: "POST",
+      url: "/v1/seller-applications",
+      headers: { cookie: applicantCookie, "idempotency-key": randomUUID() },
+      payload: applicationPayload(),
+    });
+    const applicationId = submitted.json<{ applicationId: string }>().applicationId;
+    const applicantIdentityId = await identityIdForMobile("09123456786");
+    await signIn(app, "09123456785");
+    const agentIdentityId = await identityIdForMobile("09123456785");
+    const token = await seedPlatformSession(agentIdentityId);
+    await grantReviewPermission(agentIdentityId);
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await sql.unsafe(`
+        create function test_fail_approval_outbox() returns trigger
+        language plpgsql as $$
+        begin
+          if new.event_type = 'SellerApplicationApproved.v1' then
+            raise exception 'simulated approval outbox failure';
+          end if;
+          return new;
+        end $$;
+        create trigger test_fail_approval_outbox
+        before insert on platform_outbox_events
+        for each row execute function test_fail_approval_outbox();
+      `);
+      const failed = await server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers: {
+          cookie: platformCookie(token),
+          "idempotency-key": randomUUID(),
+        },
+        payload: {
+          expectedRevision: 1,
+          reasonCode: "ELIGIBILITY_CONFIRMED",
+          publicReason: "شرایط فروشندگی شما تأیید شد.",
+        },
+      });
+      expect(failed.statusCode).toBe(500);
+
+      const state = await sql<
+        Array<{
+          status: string;
+          accessCount: number;
+          storeCount: number;
+          decisionCount: number;
+          succeededAuditCount: number;
+          failedAuditCount: number;
+          approvalEventCount: number;
+        }>
+      >`
+        select a.status,
+          (select count(*)::int from identity_seller_access
+           where identity_id = ${applicantIdentityId}) as "accessCount",
+          (select count(*)::int from store_memberships
+           where seller_id = ${applicantIdentityId}) as "storeCount",
+          (select count(*)::int from identity_seller_application_decisions
+           where application_id = a.id and action = 'APPROVE') as "decisionCount",
+          (select count(*)::int from identity_seller_application_audit
+           where target_id = a.id and action = 'ApproveSellerApplication.v1'
+             and result = 'SUCCEEDED') as "succeededAuditCount",
+          (select count(*)::int from identity_seller_application_audit
+           where target_id = a.id and action = 'ApproveSellerApplication.v1'
+             and result = 'FAILED') as "failedAuditCount",
+          (select count(*)::int from platform_outbox_events
+           where event_type in ('SellerApplicationApproved.v1',
+                                'SellerAccessActivated.v1')) as "approvalEventCount"
+        from identity_seller_applications a where a.id = ${applicationId}
+      `;
+      expect(state).toEqual([
+        {
+          status: "SUBMITTED",
+          accessCount: 0,
+          storeCount: 0,
+          decisionCount: 0,
+          succeededAuditCount: 0,
+          failedAuditCount: 1,
+          approvalEventCount: 0,
+        },
+      ]);
+    } finally {
+      await sql.unsafe(`
+        drop trigger if exists test_fail_approval_outbox on platform_outbox_events;
+        drop function if exists test_fail_approval_outbox();
       `);
       await sql.end();
     }

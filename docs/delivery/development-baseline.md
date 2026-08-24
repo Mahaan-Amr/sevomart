@@ -83,3 +83,16 @@ tracer فعلی `StorePublished.v1` است: انتشار فروشگاه و outbo
 `reporting-store-publications-v1` projection خصوصی گزارش/آمار را با receipt
 idempotent به‌روز می‌کند. این projection آمار عمومی یا داده تازه‌ای به رابط اضافه
 نمی‌کند.
+
+تأیید فروشندگی پیش از اجرای transaction اتمیک، فقط شناسه بازیابی و command داخلی لازم
+را پایدار می‌کند. اگر API میان ثبت قصد و پایان provision متوقف شود، consumer
+`identity-seller-approval-recovery-v1` همان command را از راه endpoint داخلی محدود و
+idempotent ادامه می‌دهد. رخداد بازیابی متن درخواست یا دلیل را حمل نمی‌کند. ارتباط Worker
+با API از `INTERNAL_API_URL` و secret مشترک `SELLER_APPROVAL_RECOVERY_SECRET` استفاده
+می‌کند؛ مقدار محلی `.env.example` در production ممنوع است.
+
+برای migrationهای تأیید فروشندگی، هم مسیر native با
+`pnpm --filter @sevo/database exec prisma migrate deploy` سپس اجرای API/Worker از
+`pnpm dev`، و هم مسیر رسمی با `pnpm compose:up` بررسی می‌شوند. پذیرش این تغییر مستلزم
+سبزشدن health هر دو پردازش و پردازش یک recovery پس از restart API در تست integration
+است؛ این بررسی از ساخت imageهای جداگانه API، Worker و migrate نیز محافظت می‌کند.

@@ -175,3 +175,25 @@ model SellerApplicationAudit {
   @@index([targetId, occurredAt])
   @@map("identity_seller_application_audit")
 }
+
+model SellerApprovalRecovery {
+  id                 String    @id @db.Uuid
+  applicationId      String    @map("application_id") @db.Uuid
+  actorIdentityId    String    @map("actor_identity_id") @db.Uuid
+  expectedRevision   Int       @map("expected_revision")
+  reasonCode         String    @map("reason_code") @db.VarChar(48)
+  publicReason       String    @map("public_reason") @db.VarChar(1000)
+  internalNote       String?   @map("internal_note") @db.VarChar(2000)
+  correlationId      String    @map("correlation_id") @db.Uuid
+  idempotencyKey     String    @map("idempotency_key") @db.VarChar(128)
+  payloadHash        String    @map("payload_hash") @db.VarChar(64)
+  status             String    @db.VarChar(16)
+  attemptCount       Int       @default(0) @map("attempt_count")
+  lastAttemptAt      DateTime? @map("last_attempt_at") @db.Timestamptz(3)
+  completedAt        DateTime? @map("completed_at") @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([actorIdentityId, idempotencyKey])
+  @@index([applicationId, status])
+  @@map("identity_seller_approval_recoveries")
+}

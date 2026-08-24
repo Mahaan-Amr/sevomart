@@ -1,6 +1,7 @@
 import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 import type { OtpCode } from "@sevo/contracts/identity-access/v1";
+import type { Sql } from "postgres";
 
 import {
   createProductionOtpCode,
@@ -15,6 +16,7 @@ import {
   SELLER_APPLICATION_APPLICANT,
   SELLER_APPLICATION_REPOSITORY,
   SELLER_APPLICATION_REVIEWER,
+  SELLER_APPROVAL_RECOVERY,
   PLATFORM_AGENT_SESSION_AUTHORIZER,
   PLATFORM_AGENT_OTP_SERVICE,
 } from "./identity-access.tokens";
@@ -31,12 +33,17 @@ import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
 import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
-import type { ApprovedSellerStoreProvisioner } from "../store/public";
+import { SellerApprovalRecoveryController } from "./seller-approval-recovery.controller";
+import type {
+  ApprovedSellerStoreProvisioner,
+  OpaqueStoreTransactionContext,
+} from "../store/public";
 
 export type IdentityAccessModuleOptions = {
   otpProvider?: OtpProvider;
   repository?: IdentityAccessRepository;
   approvedSellerStoreProvisioner?: ApprovedSellerStoreProvisioner;
+  createStoreTransactionContext?: (transaction: Sql) => OpaqueStoreTransactionContext;
 };
 
 @Module({})
@@ -58,6 +65,7 @@ export class IdentityAccessModule {
         SellerApplicationController,
         PlatformSellerApplicationController,
         PlatformAgentAuthController,
+        SellerApprovalRecoveryController,
       ],
       providers: [
         { provide: RUNTIME_ENVIRONMENT, useValue: environment },
@@ -101,6 +109,7 @@ export class IdentityAccessModule {
           useValue: new PostgresSellerApplicationRepository(
             environment.DATABASE_URL,
             options.approvedSellerStoreProvisioner,
+            options.createStoreTransactionContext,
           ),
         },
         {
@@ -109,6 +118,10 @@ export class IdentityAccessModule {
         },
         {
           provide: SELLER_APPLICATION_REVIEWER,
+          useExisting: SELLER_APPLICATION_REPOSITORY,
+        },
+        {
+          provide: SELLER_APPROVAL_RECOVERY,
           useExisting: SELLER_APPLICATION_REPOSITORY,
         },
         {

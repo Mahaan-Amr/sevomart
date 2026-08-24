@@ -26,7 +26,11 @@ import {
   ProductModule,
 } from "../modules/product/composition";
 import { ReportingAnalyticsModule } from "../modules/reporting-analytics/composition";
-import { PostgresStoreRepository, StoreModule } from "../modules/store/composition";
+import {
+  createOpaqueStoreTransactionContext,
+  PostgresStoreRepository,
+  StoreModule,
+} from "../modules/store/composition";
 import { DevOtpProvider } from "../modules/notifications/composition";
 
 type NestModule = Type<unknown> | DynamicModule;
@@ -54,6 +58,9 @@ export function composeCanonicalApiModules(
       otpProvider,
       approvedSellerStoreProvisioner:
         identityOptions.approvedSellerStoreProvisioner ?? storeRepository,
+      createStoreTransactionContext:
+        identityOptions.createStoreTransactionContext ??
+        createOpaqueStoreTransactionContext,
     }),
     MediaModule.register(environment, undefined, async (mediaId) => {
       if (await storeRepository.isMediaPublished(mediaId)) return true;

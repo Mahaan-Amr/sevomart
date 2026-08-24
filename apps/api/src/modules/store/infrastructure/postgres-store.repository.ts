@@ -19,6 +19,7 @@ import {
   type StoreShippingMethod,
   type StoreWriteContext,
 } from "../public";
+import { readOpaqueStoreTransaction } from "./opaque-store-transaction";
 
 type StoreDatabaseShippingMethod = Omit<StoreShippingMethod, "fixedFeeAmount"> & {
   fixedFeeAmount: number | string;
@@ -77,10 +78,7 @@ export class PostgresStoreRepository
     correlationId: string;
     transactionContext: OpaqueStoreTransactionContext;
   }) {
-    const sql = command.transactionContext.transaction as Sql;
-    if (command.transactionContext.kind !== "opaque-store-transaction") {
-      throw new Error("Approved seller store transaction context is invalid");
-    }
+    const sql = readOpaqueStoreTransaction(command.transactionContext);
     await sql`
       select pg_advisory_xact_lock(
         hashtextextended(${`approved-seller-store:${command.identityId}`}, 0)

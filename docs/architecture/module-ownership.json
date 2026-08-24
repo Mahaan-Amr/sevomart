@@ -26,6 +26,7 @@
     "identity_seller_application_decisions": "identity-access",
     "identity_seller_application_idempotency": "identity-access",
     "identity_seller_application_audit": "identity-access",
+    "identity_seller_approval_recoveries": "identity-access",
     "identity_platform_permission_grants": "identity-access",
     "identity_platform_permission_audit": "identity-access",
     "identity_seller_access": "identity-access",

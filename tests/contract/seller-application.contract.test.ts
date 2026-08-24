@@ -6,6 +6,7 @@ import {
   rejectSellerApplicationContract,
   requestSellerApplicationInformationContract,
   sellerAccessActivatedEventContract,
+  sellerApprovalRecoveryRequestedEventContract,
   sellerApplicationEventContract,
   sellerApplicationInputContract,
   sellerApplicationStatusContract,
@@ -183,6 +184,7 @@ describe("seller application v1 contract", () => {
       aggregateVersion: 2,
       occurredAt: "2026-08-24T08:05:00.000Z",
       correlationId: "592b7574-c60d-42dd-b91d-1603092b9835",
+      causationId: "592b7574-c60d-42dd-b91d-1603092b9835",
       actor: {
         type: "IDENTITY",
         id: "9921f18f-187f-40dd-a389-1626156366f8",
@@ -203,6 +205,7 @@ describe("seller application v1 contract", () => {
       aggregateVersion: 1,
       occurredAt: "2026-08-24T08:05:00.000Z",
       correlationId: "592b7574-c60d-42dd-b91d-1603092b9835",
+      causationId: "592b7574-c60d-42dd-b91d-1603092b9835",
       actor: {
         type: "IDENTITY",
         id: "9921f18f-187f-40dd-a389-1626156366f8",
@@ -216,6 +219,32 @@ describe("seller application v1 contract", () => {
     });
 
     expect(JSON.stringify([approval.payload, access.payload])).not.toMatch(
+      /applicantName|proposedStoreName|goodsAreaText|currentSalesMethod|publicReason|internalNote/i,
+    );
+  });
+
+  it("publishes a private recovery signal with identifiers only", () => {
+    const event = sellerApprovalRecoveryRequestedEventContract.parse({
+      version: 1,
+      eventId: "7ef2709b-066f-4d6e-82f6-791c75a46fc7",
+      eventType: "SellerApprovalRecoveryRequested.v1",
+      aggregateId: "8ef2709b-066f-4d6e-82f6-791c75a46fc7",
+      aggregateVersion: 1,
+      occurredAt: "2026-08-24T08:05:00.000Z",
+      correlationId: "592b7574-c60d-42dd-b91d-1603092b9835",
+      causationId: "592b7574-c60d-42dd-b91d-1603092b9835",
+      actor: {
+        type: "IDENTITY",
+        id: "9921f18f-187f-40dd-a389-1626156366f8",
+      },
+      payload: {
+        recoveryId: "8ef2709b-066f-4d6e-82f6-791c75a46fc7",
+        applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+        actorKind: "PLATFORM_AGENT",
+      },
+    });
+
+    expect(JSON.stringify(event.payload)).not.toMatch(
       /applicantName|proposedStoreName|goodsAreaText|currentSalesMethod|publicReason|internalNote/i,
     );
   });

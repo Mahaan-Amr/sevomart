@@ -314,6 +314,20 @@ export const sellerAccessActivatedEventContract = eventEnvelopeV1Contract
   })
   .strict();
 
+export const sellerApprovalRecoveryRequestedEventContract = eventEnvelopeV1Contract
+  .extend({
+    eventType: z.literal("SellerApprovalRecoveryRequested.v1"),
+    actor: z.object({ type: z.literal("IDENTITY"), id: identityIdContract }).strict(),
+    payload: z
+      .object({
+        recoveryId: z.string().uuid(),
+        applicationId: sellerApplicationIdContract,
+        actorKind: z.literal("PLATFORM_AGENT"),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const otpRequestContract = z.object({
   mobile: iranianMobileContract,
 });

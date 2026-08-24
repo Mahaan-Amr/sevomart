@@ -10,6 +10,7 @@ const developmentEnvironment = {
   API_BASE_URL: process.env.API_BASE_URL ?? "http://127.0.0.1:3201",
   API_READINESS_URL:
     process.env.API_READINESS_URL ?? "http://127.0.0.1:3201/health/ready",
+  INTERNAL_API_URL: process.env.INTERNAL_API_URL ?? "http://127.0.0.1:3201",
 };
 
 if (!pnpmEntryPoint) {
