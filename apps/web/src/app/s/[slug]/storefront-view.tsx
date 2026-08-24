@@ -1,6 +1,9 @@
 import Link from "next/link";
 import type { PublicStore } from "@sevo/contracts/store/v1";
-import type { PublicSimpleProductSummary } from "@sevo/contracts/product/v1";
+import type {
+  PublicProductSummary,
+  PublicSimpleProductSummary,
+} from "@sevo/contracts/product/v1";
 import type { CSSProperties, ReactNode } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
@@ -119,7 +122,7 @@ export function ReadyStorefront({
   autoFollow = false,
 }: {
   store: PublicStore;
-  products?: PublicSimpleProductSummary[];
+  products?: Array<PublicSimpleProductSummary | PublicProductSummary>;
   autoFollow?: boolean;
 }) {
   const identityStyle = { "--store-accent": store.themeColor } as CSSProperties;
@@ -185,7 +188,7 @@ export function ReadyStorefront({
                 <img src={`/api/store/media/${product.image.id}`} alt={product.name} />
                 <span>
                   <strong>{product.name}</strong>
-                  <small>{formatIrrAsToman(product.price.amount)}</small>
+                  <small>{formatSummaryPrice(product)}</small>
                   <em>{product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}</em>
                 </span>
               </Link>
@@ -196,4 +199,14 @@ export function ReadyStorefront({
       <TrustDetails store={store} />
     </StorefrontFrame>
   );
+}
+
+function formatSummaryPrice(
+  product: PublicSimpleProductSummary | PublicProductSummary,
+) {
+  if (!("priceRange" in product)) return formatIrrAsToman(product.price.amount);
+  const { minimum, maximum } = product.priceRange;
+  return minimum.amount === maximum.amount
+    ? formatIrrAsToman(minimum.amount)
+    : `از ${formatIrrAsToman(minimum.amount)}`;
 }

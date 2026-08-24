@@ -27,6 +27,14 @@ corrected. `docker compose up --build --wait` applied all 21 migrations and brou
 API, Web, and worker to healthy status; native `pnpm dev` reported no pending
 migrations and brought API, Web, and worker to ready state.
 
+Issue 84 verification (2026-08-24): the multivariant `product` migration relaxes
+legacy one-variant constraints and adds variant identity, immutable snapshot and SKU
+history storage without removing existing rows; it needs no compatibility window and
+uses a forward fix if deployment must be corrected. `docker compose up --build
+--wait` applied all 22 migrations and brought API, Web, and worker to healthy state;
+native `pnpm dev` reported no pending migrations and brought Web, API, and worker to
+ready state.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

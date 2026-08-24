@@ -1,143 +1,212 @@
 "use client";
 
 import {
+  productPreviewContract,
+  productViewContract,
+  publicProductContract,
+  type ProductView,
+  type PublicProduct,
+} from "@sevo/contracts/product/v1";
+import {
   MEDIA_UPLOAD_ACCEPTED_TYPES,
   MEDIA_UPLOAD_MAX_BYTES,
   mediaReferenceContract,
   type MediaId,
 } from "@sevo/contracts/media/v1";
-import {
-  publicSimpleProductContract,
-  simpleProductPreviewContract,
-  simpleProductViewContract,
-  type PublicSimpleProduct,
-  type SimpleProductView,
-} from "@sevo/contracts/product/v1";
-import { storeDraftContract } from "@sevo/contracts/store/v1";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
 import styles from "./simple-product-builder.module.css";
 
-type Step = "details" | "image" | "sale" | "review" | "published";
+type Step = "details" | "variants" | "sale" | "review" | "published";
+type AxisValue = { clientKey: string; name: string };
+type Axis = { clientKey: string; name: string; values: AxisValue[] };
+type VariantDraft = {
+  clientKey: string;
+  combination: Array<{ axisClientKey: string; valueClientKey: string }>;
+};
+type SaleRow = {
+  variantId?: string;
+  priceToman: string;
+  sku: string;
+  onHand: string;
+  inventoryRevision: number;
+};
+type IdempotentRequest = { payload: string; key: string };
+type RequestRef = { current: IdempotentRequest | undefined };
+
+const PRODUCT_ID_STORAGE = "sevo-product-authoring-id";
+const CREATE_KEY_STORAGE = "sevo-product-authoring-create-key";
 
 export function SimpleProductBuilder() {
   const [step, setStep] = useState<Step>("details");
   const [productId, setProductId] = useState("");
-  const [storeSlug, setStoreSlug] = useState("");
   const [revision, setRevision] = useState(0);
+  const [storeSlug, setStoreSlug] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [image, setImage] = useState<File>();
   const [mediaId, setMediaId] = useState<MediaId>();
-  const [priceToman, setPriceToman] = useState("");
-  const [inventory, setInventory] = useState("");
-  const [inventoryRevision, setInventoryRevision] = useState(0);
-  const [preview, setPreview] = useState<PublicSimpleProduct>();
+  const [image, setImage] = useState<File>();
+  const [kind, setKind] = useState<"simple" | "multi">("simple");
+  const [axes, setAxes] = useState<Axis[]>([]);
+  const [saleRows, setSaleRows] = useState<Record<string, SaleRow>>({});
+  const [preview, setPreview] = useState<PublicProduct>();
+  const [issues, setIssues] = useState<Array<{ path: string; code: string }>>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const saveRequest = useRef<IdempotentRequest | undefined>(undefined);
   const publishRequest = useRef<IdempotentRequest | undefined>(undefined);
+  const variants = useMemo(
+    () => buildVariants(kind === "simple" ? [] : axes),
+    [axes, kind],
+  );
 
   useEffect(() => {
     void initialize();
   }, []);
 
+  useEffect(() => {
+    setSaleRows((current) =>
+      Object.fromEntries(
+        variants.map((variant) => [
+          variant.clientKey,
+          current[variant.clientKey] ?? {
+            priceToman: "",
+            sku: "",
+            onHand: "0",
+            inventoryRevision: 0,
+          },
+        ]),
+      ),
+    );
+  }, [variants]);
+
   async function initialize() {
+    setLoading(true);
     try {
-      const [createdResponse, storeResponse] = await Promise.all([
-        fetch("/api/store/seller/products", {
-          method: "POST",
-          headers: writeHeaders(0, persistentCreateKey()),
-          body: JSON.stringify({}),
-        }),
-        fetch("/api/store/seller/store/draft", { cache: "no-store" }),
-      ]);
-      if (createdResponse.status === 401 || storeResponse.status === 401) {
-        window.location.assign("/seller/login?returnTo=%2Fseller%2Fproducts%2Fnew");
-        return;
-      }
-      const created = simpleProductViewContract.safeParse(await createdResponse.json());
-      const store = storeDraftContract.safeParse(await storeResponse.json());
+      const slugResponse = await fetch("/api/store/seller/stores/me", {
+        cache: "no-store",
+      });
+      if (redirectIfUnauthorized(slugResponse)) return;
+      const slugBody: unknown = await slugResponse.json();
       if (
-        !createdResponse.ok ||
-        !created.success ||
-        !store.success ||
-        !store.data.slug
+        slugResponse.ok &&
+        typeof slugBody === "object" &&
+        slugBody !== null &&
+        "slug" in slugBody &&
+        typeof slugBody.slug === "string"
       ) {
-        throw new Error("Product builder initialization failed");
+        setStoreSlug(slugBody.slug);
       }
-      setProductId(created.data.productId);
-      setRevision(created.data.revision);
-      setStoreSlug(store.data.slug);
-      const previewResponse = await fetch(
-        `/api/store/seller/products/${created.data.productId}/preview`,
-        { cache: "no-store" },
-      );
-      if (previewResponse.ok) {
-        const current = simpleProductPreviewContract.safeParse(
-          await previewResponse.json(),
-        );
-        if (current.success) hydrateDraft(current.data.product);
+      const savedProductId = sessionStorage.getItem(PRODUCT_ID_STORAGE);
+      if (savedProductId) {
+        const response = await fetch(`/api/store/seller/products/${savedProductId}`, {
+          cache: "no-store",
+        });
+        if (redirectIfUnauthorized(response)) return;
+        if (response.ok) {
+          const parsed = productViewContract.safeParse(await response.json());
+          if (parsed.success) {
+            setProductId(parsed.data.productId);
+            hydrate(parsed.data);
+            return;
+          }
+        }
+        sessionStorage.removeItem(PRODUCT_ID_STORAGE);
+        sessionStorage.removeItem(CREATE_KEY_STORAGE);
       }
-    } catch {
-      setMessage("ساخت پیش‌نویس کالا انجام نشد. دوباره تلاش کنید.");
+      const response = await fetch("/api/store/seller/products", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": persistentCreateKey(),
+        },
+        body: "{}",
+      });
+      if (redirectIfUnauthorized(response)) return;
+      const body: unknown = await response.json();
+      if (
+        !response.ok ||
+        typeof body !== "object" ||
+        body === null ||
+        !("productId" in body) ||
+        typeof body.productId !== "string"
+      ) {
+        throw new Error(humanError(body, "پیش‌نویس کالا ساخته نشد."));
+      }
+      setProductId(body.productId);
+      sessionStorage.setItem(PRODUCT_ID_STORAGE, body.productId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "پیش‌نویس کالا ساخته نشد.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function continueFromImage() {
-    if (!image && !mediaId) {
-      setMessage("یک تصویر برای کالا انتخاب کنید.");
-      return;
-    }
-    setPending(true);
-    setMessage("");
-    try {
-      const uploaded = image ? await uploadProductImage(productId, image) : mediaId!;
-      setMediaId(uploaded);
-      await saveWorkingCopy({ mediaId: uploaded });
-      setStep("sale");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "بارگذاری تصویر انجام نشد.");
-    } finally {
-      setPending(false);
-    }
+  function hydrate(product: ProductView) {
+    setRevision(product.revision);
+    if (!product.workingCopy) return;
+    setName(product.workingCopy.name ?? "");
+    setDescription(product.workingCopy.description);
+    setMediaId(product.workingCopy.orderedMediaIds[0]);
+    setAxes(product.workingCopy.axes);
+    setKind(product.workingCopy.axes.length === 0 ? "simple" : "multi");
+    const inventory = new Map(
+      product.inventory.map((row) => [row.variantId, row] as const),
+    );
+    setSaleRows(
+      Object.fromEntries(
+        product.workingCopy.variants.map((variant) => {
+          const stock = inventory.get(variant.variantId);
+          return [
+            variant.clientKey,
+            {
+              variantId: variant.variantId,
+              priceToman: variant.price ? String(variant.price.amount / 10) : "",
+              sku: variant.sku ?? "",
+              onHand: String(stock?.onHand ?? 0),
+              inventoryRevision: stock?.revision ?? 0,
+            },
+          ];
+        }),
+      ),
+    );
   }
 
-  async function continueFromDetails() {
-    setPending(true);
-    setMessage("");
-    try {
-      await saveWorkingCopy();
-      setStep("image");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "ذخیره مشخصات انجام نشد.");
-    } finally {
-      setPending(false);
+  async function saveWorkingCopy(options: { uploadImage?: boolean } = {}) {
+    let effectiveMediaId = mediaId;
+    if (options.uploadImage && image) {
+      effectiveMediaId = await uploadProductImage(productId, image);
+      setMediaId(effectiveMediaId);
     }
-  }
-
-  async function saveWorkingCopy(overrides: { mediaId?: MediaId } = {}) {
-    const effectiveMediaId = overrides.mediaId ?? mediaId;
-    const toman = Number(priceToman);
-    const onHand = Number(inventory);
-    const hasPrice = Number.isSafeInteger(toman) && toman > 0;
-    const hasInventory = inventory !== "" && Number.isInteger(onHand) && onHand >= 0;
+    const currentVariants = buildVariants(kind === "simple" ? [] : axes);
     const payload = {
       expectedRevision: revision,
       workingCopy: {
-        name: name.trim() || null,
-        description: description.trim(),
+        name: name.trim().length >= 2 ? name : null,
+        description,
         orderedMediaIds: effectiveMediaId ? [effectiveMediaId] : [],
-        variant: {
-          clientKey: "simple",
-          price: hasPrice ? { amount: toman * 10, currency: "IRR" as const } : null,
-        },
+        axes: kind === "simple" ? [] : axes,
+        variants: currentVariants.map((variant) => {
+          const sale = saleRows[variant.clientKey];
+          return {
+            ...variant,
+            price: tomanToMoney(sale?.priceToman ?? ""),
+            sku: sale?.sku.trim() || null,
+          };
+        }),
       },
-      inventory: hasInventory ? { onHand, expectedRevision: inventoryRevision } : null,
+      inventory: {
+        rows: currentVariants.map((variant) => {
+          const sale = saleRows[variant.clientKey];
+          return {
+            variantClientKey: variant.clientKey,
+            onHand: parseStock(sale?.onHand ?? "0"),
+            expectedRevision: sale?.inventoryRevision ?? 0,
+          };
+        }),
+      },
     };
     const response = await fetch(
       `/api/store/seller/products/${productId}/working-copy`,
@@ -148,89 +217,77 @@ export function SimpleProductBuilder() {
       },
     );
     const body: unknown = await response.json();
-    const saved = simpleProductViewContract.safeParse(body);
-    if (!response.ok || !saved.success || !saved.data.workingCopy) {
-      throw new Error(humanError(body, "ذخیره اطلاعات کالا انجام نشد."));
+    const parsed = productViewContract.safeParse(body);
+    if (!response.ok || !parsed.success) {
+      throw new Error(humanError(body, "ذخیره پیش‌نویس انجام نشد."));
     }
-    setRevision(saved.data.revision);
-    setInventoryRevision(saved.data.inventory?.revision ?? 0);
-    saveRequest.current = undefined;
-    return saved.data;
+    hydrate(parsed.data);
+    return parsed.data;
   }
 
-  function hydrateDraft(product: SimpleProductView) {
-    setRevision(product.revision);
-    if (!product.workingCopy) return;
-    setName(product.workingCopy.name ?? "");
-    setDescription(product.workingCopy.description);
-    setMediaId(product.workingCopy.orderedMediaIds[0]);
-    setPriceToman(
-      product.workingCopy.variant.price
-        ? String(product.workingCopy.variant.price.amount / 10)
-        : "",
-    );
-    setInventory(product.inventory ? String(product.inventory.onHand) : "");
-    setInventoryRevision(product.inventory?.revision ?? 0);
+  async function continueFromDetails() {
+    if (name.trim().length < 2)
+      return setMessage("نام کالا باید دست‌کم دو نویسه باشد.");
+    if (!mediaId && !image) return setMessage("یک تصویر برای کالا انتخاب کنید.");
+    await runPending(async () => {
+      await saveWorkingCopy({ uploadImage: true });
+      setStep("variants");
+    });
+  }
+
+  async function continueFromVariants() {
+    if (kind === "multi" && !validAxes(axes)) {
+      return setMessage("برای هر محور یک نام و دست‌کم یک مقدار وارد کنید.");
+    }
+    if (variants.length === 0 || variants.length > 50) {
+      return setMessage("تعداد گونه‌ها باید بین ۱ تا ۵۰ باشد.");
+    }
+    await runPending(async () => {
+      await saveWorkingCopy();
+      setStep("sale");
+    });
   }
 
   async function saveAndPreview() {
-    const toman = Number(priceToman);
-    const onHand = Number(inventory);
-    if (!Number.isSafeInteger(toman) || toman <= 0) {
-      setMessage("قیمت معتبر را به تومان وارد کنید.");
-      return;
-    }
-    if (!Number.isInteger(onHand) || onHand < 0) {
-      setMessage("موجودی باید عدد صحیح و نامنفی باشد.");
-      return;
-    }
-    if (!mediaId) return;
-    setPending(true);
-    setMessage("");
-    try {
-      const saved = await saveWorkingCopy();
-      if (
-        !saved.workingCopy?.name ||
-        !saved.workingCopy.variant.price ||
-        !saved.inventory
-      ) {
-        throw new Error("اطلاعات کالا هنوز کامل نیست.");
+    for (const variant of variants) {
+      const sale = saleRows[variant.clientKey];
+      if (!tomanToMoney(sale?.priceToman ?? "")) {
+        return setMessage("قیمت همه گونه‌ها باید عدد صحیح و مثبت باشد.");
       }
-      const previewResponse = await fetch(
-        `/api/store/seller/products/${productId}/preview`,
-        { cache: "no-store" },
-      );
-      const productPreview = simpleProductPreviewContract.safeParse(
-        await previewResponse.json(),
-      );
-      if (
-        !previewResponse.ok ||
-        !productPreview.success ||
-        !productPreview.data.ready
-      ) {
-        throw new Error("پیش‌نمایش کالا آماده نیست.");
+      if (!Number.isInteger(Number(sale?.onHand)) || Number(sale?.onHand) < 0) {
+        return setMessage("موجودی همه گونه‌ها باید عدد صحیح و نامنفی باشد.");
       }
-      setPreview({
-        productId: saved.productId,
-        name: saved.workingCopy.name,
-        description: saved.workingCopy.description,
-        image: { id: mediaId, url: `/v1/media/${mediaId}` },
-        price: saved.workingCopy.variant.price,
-        availability: saved.inventory.onHand > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
-        publicationVersion: 1,
+    }
+    await runPending(async () => {
+      await saveWorkingCopy();
+      const response = await fetch(`/api/store/seller/products/${productId}/preview`, {
+        cache: "no-store",
       });
+      const body: unknown = await response.json();
+      const parsed = productPreviewContract.safeParse(body);
+      if (!response.ok || !parsed.success) {
+        throw new Error(humanError(body, "پیش‌نمایش آماده نشد."));
+      }
+      setIssues(parsed.data.issues);
+      if (!parsed.data.ready || !parsed.data.projection) {
+        setPreview(undefined);
+        setStep("review");
+        throw new Error("بخش‌های مشخص‌شده را کامل کنید.");
+      }
+      setPreview(parsed.data.projection);
       setStep("review");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "پیش‌نمایش آماده نشد.");
-    } finally {
-      setPending(false);
-    }
+    });
+  }
+
+  async function backTo(next: Step) {
+    await runPending(async () => {
+      if (step !== "review") await saveWorkingCopy();
+      setStep(next);
+    });
   }
 
   async function publish() {
-    setPending(true);
-    setMessage("");
-    try {
+    await runPending(async () => {
       const payload = { expectedRevision: revision, confirmed: true };
       const response = await fetch(
         `/api/store/seller/products/${productId}/publications`,
@@ -240,28 +297,36 @@ export function SimpleProductBuilder() {
           body: JSON.stringify(payload),
         },
       );
-      const published = publicSimpleProductContract.safeParse(await response.json());
-      if (!response.ok || !published.success) {
-        throw new Error("انتشار کالا انجام نشد. اطلاعات را دوباره بررسی کنید.");
+      const body: unknown = await response.json();
+      const parsed = publicProductContract.safeParse(body);
+      if (!response.ok || !parsed.success) {
+        throw new Error(humanError(body, "انتشار کالا انجام نشد."));
       }
-      setPreview(published.data);
+      setPreview(parsed.data);
+      sessionStorage.removeItem(PRODUCT_ID_STORAGE);
       sessionStorage.removeItem(CREATE_KEY_STORAGE);
       setStep("published");
+    });
+  }
+
+  async function runPending(action: () => Promise<void>) {
+    setPending(true);
+    setMessage("");
+    try {
+      await action();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "انتشار کالا انجام نشد.");
+      setMessage(error instanceof Error ? error.message : "تغییر ذخیره نشد.");
     } finally {
       setPending(false);
     }
   }
 
-  if (loading) {
+  if (loading)
     return (
       <main className={styles.page} aria-busy="true">
         <p>در حال آماده‌کردن پیش‌نویس کالا…</p>
       </main>
     );
-  }
-
   if (!productId) {
     return (
       <main className={styles.page}>
@@ -269,24 +334,20 @@ export function SimpleProductBuilder() {
           <span className={styles.brand}>سوو</span>
           <h1>پیش‌نویس کالا آماده نشد</h1>
           <p>{message || "کمی بعد دوباره تلاش کنید."}</p>
-          <button
-            className={styles.primaryButton}
-            onClick={() => window.location.reload()}
-          >
+          <button className={styles.primaryButton} onClick={() => location.reload()}>
             دوباره تلاش کنید
           </button>
         </section>
       </main>
     );
   }
-
   if (step === "published") {
     return (
       <main className={styles.page}>
         <section className={styles.workspace}>
           <span className={styles.brand}>سوو</span>
           <h1>کالا منتشر شد</h1>
-          <p>خریدار حالا قیمت و وضعیت موجودی این کالا را در فروشگاه می‌بیند.</p>
+          <p>آخرین نسخه کالا با قیمت و وضعیت موجودی جاری در فروشگاه دیده می‌شود.</p>
           <a
             className={styles.primaryButton}
             href={`/s/${storeSlug}/products/${productId}`}
@@ -305,105 +366,67 @@ export function SimpleProductBuilder() {
           <span className={styles.brand}>سوو</span>
           <span className={styles.progress}>{stepLabel(step)} از ۴</span>
         </header>
-
         {step === "details" ? (
-          <>
-            <h1>مشخصات کالا</h1>
-            <p>نام و توضیحی را بنویسید که خریدار برای شناخت کالا نیاز دارد.</p>
-            <label className={styles.field}>
-              <span>نام کالا</span>
-              <input value={name} onChange={(event) => setName(event.target.value)} />
-            </label>
-            <label className={styles.field}>
-              <span>توضیح کالا</span>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-              />
-            </label>
-            <button
-              className={styles.primaryButton}
-              disabled={name.trim().length < 2}
-              onClick={continueFromDetails}
-            >
-              ادامه
-            </button>
-          </>
+          <DetailsStep
+            name={name}
+            description={description}
+            image={image}
+            hasSavedImage={Boolean(mediaId)}
+            pending={pending}
+            onName={setName}
+            onDescription={setDescription}
+            onImage={setImage}
+            onContinue={continueFromDetails}
+          />
         ) : null}
-
-        {step === "image" ? (
-          <>
-            <h1>تصویر کالا</h1>
-            <p>یک تصویر روشن انتخاب کنید؛ اصل فایل خصوصی می‌ماند.</p>
-            <label className={styles.filePicker}>
-              <span>تصویر کالا</span>
-              <input
-                type="file"
-                accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
-                onChange={(event) => setImage(event.target.files?.[0])}
-              />
-              <small>{image?.name ?? "تصویری انتخاب نشده است"}</small>
-            </label>
-            <div className={styles.actions}>
-              <button
-                className={styles.secondaryButton}
-                onClick={() => setStep("details")}
-              >
-                برگشت
-              </button>
-              <button
-                className={styles.primaryButton}
-                disabled={pending}
-                onClick={continueFromImage}
-              >
-                {pending ? "در حال بارگذاری…" : "ادامه"}
-              </button>
-            </div>
-          </>
+        {step === "variants" ? (
+          <VariantsStep
+            kind={kind}
+            axes={axes}
+            variantCount={variants.length}
+            pending={pending}
+            onKind={(nextKind) => {
+              setKind(nextKind);
+              if (nextKind === "multi" && axes.length === 0) setAxes([newAxis()]);
+            }}
+            onAxes={setAxes}
+            onBack={() => backTo("details")}
+            onContinue={continueFromVariants}
+          />
         ) : null}
-
         {step === "sale" ? (
-          <>
-            <h1>فروش کالا</h1>
-            <p>قیمت را به تومان و موجودی واقعی را وارد کنید.</p>
-            <label className={styles.field}>
-              <span>قیمت به تومان</span>
-              <input
-                inputMode="numeric"
-                value={priceToman}
-                onChange={(event) => setPriceToman(event.target.value)}
-              />
-            </label>
-            <label className={styles.field}>
-              <span>موجودی</span>
-              <input
-                inputMode="numeric"
-                value={inventory}
-                onChange={(event) => setInventory(event.target.value)}
-              />
-            </label>
-            <div className={styles.actions}>
-              <button
-                className={styles.secondaryButton}
-                onClick={() => setStep("image")}
-              >
-                برگشت
-              </button>
-              <button
-                className={styles.primaryButton}
-                disabled={pending}
-                onClick={saveAndPreview}
-              >
-                {pending ? "در حال ذخیره…" : "دیدن پیش‌نمایش"}
-              </button>
-            </div>
-          </>
+          <SaleStep
+            axes={kind === "simple" ? [] : axes}
+            variants={variants}
+            rows={saleRows}
+            pending={pending}
+            onRows={setSaleRows}
+            onBack={() => backTo("variants")}
+            onContinue={saveAndPreview}
+          />
         ) : null}
-
-        {step === "review" && preview ? (
+        {step === "review" ? (
           <>
-            <h1>بازبینی کالا</h1>
-            <ProductPreview product={preview} />
+            <h1>{preview ? "پیش‌نمایش کالا" : "کالا هنوز آماده انتشار نیست"}</h1>
+            {preview ? <ProductPreview product={preview} /> : null}
+            {issues.length > 0 ? (
+              <ul className={styles.issues}>
+                {issues.map((issue) => {
+                  const guidance = readinessGuidance(issue.path);
+                  return (
+                    <li key={`${issue.path}-${issue.code}`}>
+                      <span>{guidance.message}</span>
+                      <button
+                        className={styles.textButton}
+                        onClick={() => setStep(guidance.step)}
+                      >
+                        {guidance.action}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
             <div className={styles.actions}>
               <button
                 className={styles.secondaryButton}
@@ -411,17 +434,18 @@ export function SimpleProductBuilder() {
               >
                 برگشت و ویرایش
               </button>
-              <button
-                className={styles.primaryButton}
-                disabled={pending}
-                onClick={publish}
-              >
-                {pending ? "در حال انتشار…" : "انتشار کالا"}
-              </button>
+              {preview ? (
+                <button
+                  className={styles.primaryButton}
+                  disabled={pending}
+                  onClick={publish}
+                >
+                  {pending ? "در حال انتشار…" : "انتشار کالا"}
+                </button>
+              ) : null}
             </div>
           </>
         ) : null}
-
         <p className={styles.message} role="alert">
           {message}
         </p>
@@ -430,29 +454,443 @@ export function SimpleProductBuilder() {
   );
 }
 
-function ProductPreview({ product }: { product: PublicSimpleProduct }) {
+function DetailsStep(props: {
+  name: string;
+  description: string;
+  image?: File;
+  hasSavedImage: boolean;
+  pending: boolean;
+  onName: (value: string) => void;
+  onDescription: (value: string) => void;
+  onImage: (value?: File) => void;
+  onContinue: () => void;
+}) {
+  return (
+    <>
+      <h1>مشخصات کالا</h1>
+      <p>نام، توضیح و تصویر اصلی را وارد کنید؛ اصل تصویر خصوصی می‌ماند.</p>
+      <label className={styles.field}>
+        <span>نام کالا</span>
+        <input
+          value={props.name}
+          maxLength={120}
+          onChange={(event) => props.onName(event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        <span>توضیح کالا</span>
+        <textarea
+          value={props.description}
+          maxLength={2000}
+          onChange={(event) => props.onDescription(event.target.value)}
+        />
+      </label>
+      <label className={styles.filePicker}>
+        <span>تصویر کالا</span>
+        <input
+          type="file"
+          accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
+          onChange={(event) => props.onImage(event.target.files?.[0])}
+        />
+        <small>
+          {props.image?.name ??
+            (props.hasSavedImage ? "تصویر ذخیره شده است" : "تصویری انتخاب نشده است")}
+        </small>
+      </label>
+      <button
+        className={styles.primaryButton}
+        disabled={props.pending || props.name.trim().length < 2}
+        onClick={props.onContinue}
+      >
+        {props.pending ? "در حال ذخیره…" : "ادامه"}
+      </button>
+    </>
+  );
+}
+
+function VariantsStep(props: {
+  kind: "simple" | "multi";
+  axes: Axis[];
+  variantCount: number;
+  pending: boolean;
+  onKind: (kind: "simple" | "multi") => void;
+  onAxes: (axes: Axis[]) => void;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <>
+      <h1>گونه‌های کالا</h1>
+      <p>
+        اگر خریدار باید رنگ، اندازه یا انتخاب دیگری داشته باشد، چندگونه را انتخاب کنید.
+      </p>
+      <div className={styles.choiceGroup} role="radiogroup" aria-label="ساختار گونه‌ها">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={props.kind === "simple"}
+          className={props.kind === "simple" ? styles.choiceActive : styles.choice}
+          onClick={() => props.onKind("simple")}
+        >
+          یک گونه
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={props.kind === "multi"}
+          className={props.kind === "multi" ? styles.choiceActive : styles.choice}
+          onClick={() => props.onKind("multi")}
+        >
+          چندگونه
+        </button>
+      </div>
+      {props.kind === "multi" ? (
+        <div className={styles.axisList}>
+          {props.axes.map((axis, axisIndex) => (
+            <fieldset className={styles.axis} key={axis.clientKey}>
+              <legend>محور {axisIndex + 1}</legend>
+              <label className={styles.field}>
+                <span>نام محور</span>
+                <input
+                  aria-label={`نام محور ${axisIndex + 1}`}
+                  value={axis.name}
+                  onChange={(event) =>
+                    props.onAxes(
+                      updateAxis(props.axes, axisIndex, {
+                        ...axis,
+                        name: event.target.value,
+                      }),
+                    )
+                  }
+                  placeholder="مثلاً رنگ"
+                />
+              </label>
+              {axis.values.map((value, valueIndex) => (
+                <div className={styles.inlineField} key={value.clientKey}>
+                  <label className={styles.field}>
+                    <span>مقدار {valueIndex + 1}</span>
+                    <input
+                      aria-label={`مقدار ${valueIndex + 1} محور ${axisIndex + 1}`}
+                      value={value.name}
+                      onChange={(event) => {
+                        const values = axis.values.map((candidate, index) =>
+                          index === valueIndex
+                            ? { ...candidate, name: event.target.value }
+                            : candidate,
+                        );
+                        props.onAxes(
+                          updateAxis(props.axes, axisIndex, { ...axis, values }),
+                        );
+                      }}
+                      placeholder="مثلاً زرشکی"
+                    />
+                  </label>
+                  {axis.values.length > 1 ? (
+                    <button
+                      type="button"
+                      className={styles.textButton}
+                      aria-label={`حذف مقدار ${valueIndex + 1} محور ${axisIndex + 1}`}
+                      onClick={() =>
+                        props.onAxes(
+                          updateAxis(props.axes, axisIndex, {
+                            ...axis,
+                            values: axis.values.filter(
+                              (_, index) => index !== valueIndex,
+                            ),
+                          }),
+                        )
+                      }
+                    >
+                      حذف
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+              <button
+                type="button"
+                className={styles.textButton}
+                onClick={() =>
+                  props.onAxes(
+                    updateAxis(props.axes, axisIndex, {
+                      ...axis,
+                      values: [...axis.values, newAxisValue()],
+                    }),
+                  )
+                }
+              >
+                افزودن مقدار
+              </button>
+            </fieldset>
+          ))}
+          {props.axes.length < 2 ? (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => props.onAxes([...props.axes, newAxis()])}
+            >
+              افزودن محور دوم
+            </button>
+          ) : null}
+          {props.axes.length > 1 ? (
+            <button
+              type="button"
+              className={styles.textButton}
+              onClick={() => props.onAxes(props.axes.slice(0, -1))}
+            >
+              حذف محور دوم
+            </button>
+          ) : null}
+          <p className={styles.count} aria-live="polite">
+            {props.variantCount.toLocaleString("fa-IR")} گونه ساخته می‌شود
+          </p>
+        </div>
+      ) : null}
+      <div className={styles.actions}>
+        <button
+          className={styles.secondaryButton}
+          disabled={props.pending}
+          onClick={props.onBack}
+        >
+          برگشت
+        </button>
+        <button
+          className={styles.primaryButton}
+          disabled={props.pending}
+          onClick={props.onContinue}
+        >
+          {props.pending ? "در حال ذخیره…" : "ادامه"}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function SaleStep(props: {
+  axes: Axis[];
+  variants: VariantDraft[];
+  rows: Record<string, SaleRow>;
+  pending: boolean;
+  onRows: (rows: Record<string, SaleRow>) => void;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <>
+      <h1>فروش کالا</h1>
+      <p>قیمت، شناسه اختیاری و موجودی هر گونه را یک‌جا ثبت کنید.</p>
+      <div className={styles.variantList}>
+        {props.variants.map((variant, index) => {
+          const row = props.rows[variant.clientKey] ?? {
+            priceToman: "",
+            sku: "",
+            onHand: "0",
+            inventoryRevision: 0,
+          };
+          const label = variantLabel(variant, props.axes) || "گونه اصلی";
+          const update = (next: Partial<SaleRow>) =>
+            props.onRows({ ...props.rows, [variant.clientKey]: { ...row, ...next } });
+          return (
+            <fieldset className={styles.variant} key={variant.clientKey}>
+              <legend>{label}</legend>
+              <label className={styles.field}>
+                <span>قیمت به تومان</span>
+                <input
+                  aria-label={`قیمت ${label}`}
+                  inputMode="numeric"
+                  value={row.priceToman}
+                  onChange={(event) => update({ priceToman: event.target.value })}
+                />
+              </label>
+              <label className={styles.field}>
+                <span>شناسه فروشنده (اختیاری)</span>
+                <input
+                  aria-label={`شناسه فروشنده ${label}`}
+                  value={row.sku}
+                  onChange={(event) => update({ sku: event.target.value })}
+                />
+              </label>
+              <label className={styles.field}>
+                <span>موجودی</span>
+                <input
+                  aria-label={`موجودی ${label}`}
+                  inputMode="numeric"
+                  value={row.onHand}
+                  onChange={(event) => update({ onHand: event.target.value })}
+                />
+              </label>
+              <span className={styles.rowNumber}>گونه {index + 1}</span>
+            </fieldset>
+          );
+        })}
+      </div>
+      <div className={styles.actions}>
+        <button
+          className={styles.secondaryButton}
+          disabled={props.pending}
+          onClick={props.onBack}
+        >
+          برگشت
+        </button>
+        <button
+          className={styles.primaryButton}
+          disabled={props.pending}
+          onClick={props.onContinue}
+        >
+          {props.pending ? "در حال ذخیره…" : "دیدن پیش‌نمایش"}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function ProductPreview({ product }: { product: PublicProduct }) {
   return (
     <article className={styles.preview}>
-      <img src={`/api/store/media/${product.image.id}`} alt={product.name} />
+      <img src={`/api/store/media/${product.images[0]!.id}`} alt={product.name} />
       <div>
         <h2>{product.name}</h2>
         <p>{product.description}</p>
-        <strong>{formatIrrAsToman(product.price.amount)}</strong>
+        <strong>{formatPriceRange(product)}</strong>
         <span className={styles.availability}>
           {product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
         </span>
+        {product.variants.length > 1 ? (
+          <ul className={styles.previewVariants}>
+            {product.variants.map((variant) => (
+              <li key={variant.variantId}>
+                <span>{variant.combination.map((part) => part.value).join("، ")}</span>
+                <span>
+                  {formatIrrAsToman(variant.price.amount)} ·{" "}
+                  {variant.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </article>
   );
 }
 
+function buildVariants(axes: Axis[]): VariantDraft[] {
+  if (axes.length === 0) return [{ clientKey: "simple", combination: [] }];
+  if (axes.some((axis) => axis.values.length === 0)) return [];
+  return axes.reduce<VariantDraft[]>(
+    (variants, axis) =>
+      variants.flatMap((variant) =>
+        axis.values.map((value) => ({
+          clientKey: `variant:${[...variant.combination.map((entry) => entry.valueClientKey), value.clientKey].sort().join(":")}`,
+          combination: [
+            ...variant.combination,
+            { axisClientKey: axis.clientKey, valueClientKey: value.clientKey },
+          ],
+        })),
+      ),
+    [{ clientKey: "variant", combination: [] }],
+  );
+}
+
+function variantLabel(variant: VariantDraft, axes: Axis[]) {
+  return variant.combination
+    .map(
+      (selection) =>
+        axes
+          .find((axis) => axis.clientKey === selection.axisClientKey)
+          ?.values.find((value) => value.clientKey === selection.valueClientKey)?.name,
+    )
+    .filter(Boolean)
+    .join("، ");
+}
+function newAxis(): Axis {
+  return { clientKey: crypto.randomUUID(), name: "", values: [newAxisValue()] };
+}
+function newAxisValue(): AxisValue {
+  return { clientKey: crypto.randomUUID(), name: "" };
+}
+function updateAxis(axes: Axis[], index: number, axis: Axis) {
+  return axes.map((candidate, candidateIndex) =>
+    candidateIndex === index ? axis : candidate,
+  );
+}
+function validAxes(axes: Axis[]) {
+  const normalize = (value: string) =>
+    value.trim().replace(/\s+/gu, " ").toLocaleLowerCase("fa");
+  const unique = (values: string[]) => new Set(values).size === values.length;
+  return (
+    axes.length > 0 &&
+    unique(axes.map((axis) => axis.clientKey)) &&
+    unique(axes.map((axis) => normalize(axis.name))) &&
+    axes.every(
+      (axis) =>
+        axis.name.trim() &&
+        axis.values.length > 0 &&
+        axis.values.every((value) => value.name.trim()) &&
+        unique(axis.values.map((value) => value.clientKey)) &&
+        unique(axis.values.map((value) => normalize(value.name))),
+    )
+  );
+}
+
+function readinessGuidance(path: string): {
+  step: Step;
+  message: string;
+  action: string;
+} {
+  if (path === "workingCopy" || path.startsWith("details.") || path === "images") {
+    return {
+      step: "details",
+      message:
+        path === "images"
+          ? "یک تصویر برای کالا انتخاب کنید."
+          : "نام کالا را کامل کنید.",
+      action: "رفتن به مشخصات",
+    };
+  }
+  if (path.startsWith("variants.")) {
+    return {
+      step: "variants",
+      message: "گونه‌ها و گزینه‌های آن‌ها را کامل کنید.",
+      action: "رفتن به گونه‌ها",
+    };
+  }
+  return {
+    step: "sale",
+    message: path.endsWith(".price")
+      ? "برای این گونه قیمت وارد کنید."
+      : path.endsWith(".inventory")
+        ? "موجودی این گونه را ثبت کنید."
+        : "اطلاعات فروش گونه‌ها را کامل کنید.",
+    action: "رفتن به فروش و موجودی",
+  };
+}
+
+function redirectIfUnauthorized(response: Response) {
+  if (response.status !== 401) return false;
+  window.location.assign("/seller/login?returnTo=%2Fseller%2Fproducts%2Fnew");
+  return true;
+}
+function tomanToMoney(value: string) {
+  if (!/^\d+$/u.test(value)) return null;
+  const amount = Number(value) * 10;
+  return Number.isSafeInteger(amount) && amount > 0
+    ? { amount, currency: "IRR" as const }
+    : null;
+}
+function parseStock(value: string) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+function formatPriceRange(product: PublicProduct) {
+  return product.priceRange.minimum.amount === product.priceRange.maximum.amount
+    ? formatIrrAsToman(product.priceRange.minimum.amount)
+    : `از ${formatIrrAsToman(product.priceRange.minimum.amount)} تا ${formatIrrAsToman(product.priceRange.maximum.amount)}`;
+}
+
 async function uploadProductImage(productId: string, file: File): Promise<MediaId> {
-  if (file.size > MEDIA_UPLOAD_MAX_BYTES) {
+  if (file.size > MEDIA_UPLOAD_MAX_BYTES)
     throw new Error("حجم تصویر باید حداکثر ۱۰ مگابایت باشد.");
-  }
-  if (!(MEDIA_UPLOAD_ACCEPTED_TYPES as readonly string[]).includes(file.type)) {
+  if (!(MEDIA_UPLOAD_ACCEPTED_TYPES as readonly string[]).includes(file.type))
     throw new Error("فقط تصویر JPEG، PNG یا WebP پذیرفته می‌شود.");
-  }
   const form = new FormData();
   form.set("purpose", "PRODUCT_IMAGE");
   form.set("file", file, file.name);
@@ -462,23 +900,10 @@ async function uploadProductImage(productId: string, file: File): Promise<MediaI
   });
   const body: unknown = await response.json();
   const parsed = mediaReferenceContract.safeParse(body);
-  if (!response.ok || !parsed.success) {
-    throw new Error(
-      typeof body === "object" &&
-        body !== null &&
-        "message" in body &&
-        typeof body.message === "string"
-        ? body.message
-        : "بارگذاری تصویر انجام نشد.",
-    );
-  }
+  if (!response.ok || !parsed.success)
+    throw new Error(humanError(body, "بارگذاری تصویر انجام نشد."));
   return parsed.data.id;
 }
-
-type IdempotentRequest = { payload: string; key: string };
-type RequestRef = { current: IdempotentRequest | undefined };
-
-const CREATE_KEY_STORAGE = "sevo-simple-product-create-key";
 
 function persistentCreateKey() {
   const existing = sessionStorage.getItem(CREATE_KEY_STORAGE);
@@ -487,7 +912,6 @@ function persistentCreateKey() {
   sessionStorage.setItem(CREATE_KEY_STORAGE, created);
   return created;
 }
-
 function requestKey(reference: RequestRef, payload: unknown) {
   const serialized = JSON.stringify(payload);
   if (reference.current?.payload === serialized) return reference.current.key;
@@ -495,7 +919,6 @@ function requestKey(reference: RequestRef, payload: unknown) {
   reference.current = { payload: serialized, key };
   return key;
 }
-
 function writeHeaders(revision: number, idempotencyKey: string) {
   return {
     "content-type": "application/json",
@@ -503,17 +926,15 @@ function writeHeaders(revision: number, idempotencyKey: string) {
     "if-match": `"${revision}"`,
   };
 }
-
 function stepLabel(step: Step) {
   return step === "details"
     ? "۱"
-    : step === "image"
+    : step === "variants"
       ? "۲"
       : step === "sale"
         ? "۳"
         : "۴";
 }
-
 function humanError(body: unknown, fallback: string) {
   return typeof body === "object" &&
     body !== null &&

@@ -19,6 +19,9 @@ import {
   productIdempotencyKeyContract,
   productRevisionTagContract,
   publishSimpleProductInputContract,
+  replaceProductInventoryBatchContract,
+  replaceProductOffersBatchContract,
+  replaceProductWorkingCopyContract,
   replaceSimpleProductWorkingCopyContract,
 } from "@sevo/contracts/product/v1";
 import { productIdContract } from "@sevo/contracts/platform/v1";
@@ -34,6 +37,8 @@ import { StoreNotSellableError } from "../store/public";
 import { ProductService } from "./application/product.service";
 import {
   ProductIdempotencyConflictError,
+  DuplicateSkuError,
+  InvalidVariantError,
   ProductNotFoundError,
   ProductNotReadyError,
   ProductRevisionConflictError,
@@ -82,20 +87,85 @@ export class ProductController {
   ) {
     const identityId = await requireIdentity(request, this.sessions);
     const productId = parseProductId(rawProductId, request.id);
-    const parsed = replaceSimpleProductWorkingCopyContract.safeParse(body);
+    const multivariant = replaceProductWorkingCopyContract.safeParse(body);
+    const simple = replaceSimpleProductWorkingCopyContract.safeParse(body);
+    if (!multivariant.success && !simple.success) throw validationError(request.id);
+    const write = requireWrite(request.id, idempotencyKey, ifMatch);
+    const parsed = multivariant.success ? multivariant.data : simple.data!;
+    if (parsed.expectedRevision !== write.expectedRevision) {
+      throw preconditionError(request.id);
+    }
+    const product = multivariant.success
+      ? await this.handle(request, () =>
+          this.products.replaceProductWorkingCopy(
+            identityId,
+            productId,
+            multivariant.data,
+            { correlationId: request.id, ...write },
+          ),
+        )
+      : await this.handle(request, () =>
+          this.products.replaceWorkingCopy(identityId, productId, simple.data!, {
+            correlationId: request.id,
+            ...write,
+          }),
+        );
+    response.header("etag", `"${product.revision}"`);
+    return product;
+  }
+
+  @Put("seller/products/:productId/offers")
+  async replaceOffersBatch(
+    @Param("productId") rawProductId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const identityId = await requireIdentity(request, this.sessions);
+    const productId = parseProductId(rawProductId, request.id);
+    const parsed = replaceProductOffersBatchContract.safeParse(body);
     if (!parsed.success) throw validationError(request.id);
     const write = requireWrite(request.id, idempotencyKey, ifMatch);
     if (parsed.data.expectedRevision !== write.expectedRevision) {
       throw preconditionError(request.id);
     }
-    const product = await this.handle(request, () =>
-      this.products.replaceWorkingCopy(identityId, productId, parsed.data, {
+    const result = await this.handle(request, () =>
+      this.products.replaceOffersBatch(identityId, productId, parsed.data, {
         correlationId: request.id,
         ...write,
       }),
     );
-    response.header("etag", `"${product.revision}"`);
-    return product;
+    response.header("etag", `"${result.productRevision}"`);
+    return result;
+  }
+
+  @Put("seller/products/:productId/inventory")
+  async replaceInventoryBatch(
+    @Param("productId") rawProductId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const identityId = await requireIdentity(request, this.sessions);
+    const productId = parseProductId(rawProductId, request.id);
+    const parsed = replaceProductInventoryBatchContract.safeParse(body);
+    if (!parsed.success) throw validationError(request.id);
+    const write = requireWrite(request.id, idempotencyKey, ifMatch);
+    if (parsed.data.expectedRevision !== write.expectedRevision) {
+      throw preconditionError(request.id);
+    }
+    const result = await this.handle(request, () =>
+      this.products.replaceInventoryBatch(identityId, productId, parsed.data, {
+        correlationId: request.id,
+        ...write,
+      }),
+    );
+    response.header("etag", `"${result.productRevision}"`);
+    return result;
   }
 
   @Get("seller/products/:productId/preview")
@@ -106,6 +176,21 @@ export class ProductController {
     const identityId = await requireIdentity(request, this.sessions);
     const productId = parseProductId(rawProductId, request.id);
     return this.handle(request, () => this.products.preview(identityId, productId));
+  }
+
+  @Get("seller/products/:productId")
+  async readSellerProduct(
+    @Param("productId") rawProductId: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const identityId = await requireIdentity(request, this.sessions);
+    const productId = parseProductId(rawProductId, request.id);
+    const product = await this.handle(request, () =>
+      this.products.readSellerProduct(identityId, productId),
+    );
+    response.header("etag", `"${product.revision}"`);
+    return product;
   }
 
   @Post("seller/products/:productId/publications")
@@ -204,6 +289,26 @@ export class ProductController {
           {
             code: "IDEMPOTENCY_CONFLICT",
             message: "این شناسه درخواست قبلاً برای تغییر دیگری استفاده شده است.",
+            correlationId: request.id,
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (error instanceof InvalidVariantError) {
+        throw new HttpException(
+          {
+            code: "INVALID_VARIANT",
+            message: "ترکیب یا شناسه گونه معتبر نیست.",
+            correlationId: request.id,
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      if (error instanceof DuplicateSkuError) {
+        throw new HttpException(
+          {
+            code: "DUPLICATE_SKU",
+            message: "این شناسه فروشنده قبلاً در فروشگاه استفاده شده است.",
             correlationId: request.id,
           },
           HttpStatus.CONFLICT,

@@ -1,6 +1,8 @@
 import { publicStoreContract, type PublicStore } from "@sevo/contracts/store/v1";
 import {
+  publicProductListContract,
   publicSimpleProductListContract,
+  type PublicProductSummary,
   type PublicSimpleProductSummary,
 } from "@sevo/contracts/product/v1";
 import { notFound } from "next/navigation";
@@ -16,7 +18,11 @@ import {
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
 
 type StorefrontResult =
-  | { state: "ready"; store: PublicStore; products: PublicSimpleProductSummary[] }
+  | {
+      state: "ready";
+      store: PublicStore;
+      products: Array<PublicSimpleProductSummary | PublicProductSummary>;
+    }
   | { state: "not-found" }
   | { state: "error" };
 
@@ -47,14 +53,16 @@ async function readPublishedStore(
       },
     );
     if (!productsResponse.ok) return { state: "error" };
-    const products = publicSimpleProductListContract.safeParse(
-      await productsResponse.json(),
-    );
-    if (!products.success) return { state: "error" };
+    const productsBody: unknown = await productsResponse.json();
+    const products = publicProductListContract.safeParse(productsBody);
+    const simpleProducts = publicSimpleProductListContract.safeParse(productsBody);
+    if (!products.success && !simpleProducts.success) return { state: "error" };
     return {
       state: "ready",
       store: parsed.data,
-      products: products.data.products,
+      products: products.success
+        ? products.data.products
+        : simpleProducts.data!.products,
     };
   } catch {
     return { state: "error" };

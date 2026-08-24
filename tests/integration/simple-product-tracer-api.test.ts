@@ -1,4 +1,7 @@
 import {
+  productPreviewContract,
+  productViewContract,
+  publicProductContract,
   publicSimpleProductContract,
   simpleProductDraftContract,
   simpleProductPreviewContract,
@@ -188,7 +191,7 @@ describe("simple product tracer HTTP API", () => {
     try {
       const events = await sql<Array<{ count: number }>>`
         select count(*)::int as count from platform_outbox_events
-        where event_type = 'ProductPublished.v1'
+        where event_type = 'ProductPublished.v2'
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
       expect(events[0]?.count).toBe(1);
@@ -236,6 +239,288 @@ describe("simple product tracer HTTP API", () => {
     });
 
     expect(response.statusCode).toBe(403);
+  });
+
+  it("keeps deterministic variant identities and applies offer and inventory batches atomically", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const cookie = await signIn(server);
+    await publishStore(server, cookie);
+
+    const created = await server.inject({
+      method: "POST",
+      url: "/v1/seller/products",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {},
+    });
+    const productId = created.json<{ productId: string }>().productId;
+    const mediaId = await uploadProductImage(server, cookie, productId);
+    const workingCopy = {
+      name: "پیراهن روزمره",
+      description: "پارچه نرم و مناسب استفاده روزانه",
+      orderedMediaIds: [mediaId],
+      axes: [
+        {
+          clientKey: "color",
+          name: "رنگ",
+          values: [{ clientKey: "red", name: "قرمز" }],
+        },
+        {
+          clientKey: "size",
+          name: "اندازه",
+          values: [
+            { clientKey: "small", name: "کوچک" },
+            { clientKey: "large", name: "بزرگ" },
+          ],
+        },
+      ],
+      variants: [
+        {
+          clientKey: "red-small",
+          combination: [
+            { axisClientKey: "color", valueClientKey: "red" },
+            { axisClientKey: "size", valueClientKey: "small" },
+          ],
+          price: { amount: 7_500_000, currency: "IRR" },
+          sku: "SHIRT-R-S",
+        },
+        {
+          clientKey: "red-large",
+          combination: [
+            { axisClientKey: "color", valueClientKey: "red" },
+            { axisClientKey: "size", valueClientKey: "large" },
+          ],
+          price: { amount: 7_900_000, currency: "IRR" },
+          sku: "SHIRT-R-L",
+        },
+      ],
+    };
+    const savedResponse = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 0),
+      payload: {
+        expectedRevision: 0,
+        workingCopy,
+        inventory: {
+          rows: [
+            { variantClientKey: "red-small", onHand: 4, expectedRevision: 0 },
+            { variantClientKey: "red-large", onHand: 0, expectedRevision: 0 },
+          ],
+        },
+      },
+    });
+    expect(savedResponse.statusCode).toBe(200);
+    const saved = productViewContract.parse(savedResponse.json());
+    const variantIds = saved.workingCopy!.variants.map((variant) => variant.variantId);
+
+    const resavedResponse = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 1),
+      payload: {
+        expectedRevision: 1,
+        workingCopy: {
+          ...workingCopy,
+          axes: [...workingCopy.axes].reverse(),
+          variants: [...workingCopy.variants].reverse().map((variant) => ({
+            ...variant,
+            combination: [...variant.combination].reverse(),
+          })),
+        },
+        inventory: null,
+      },
+    });
+    const resaved = productViewContract.parse(resavedResponse.json());
+    expect(
+      Object.fromEntries(
+        resaved.workingCopy!.variants.map((variant) => [
+          variant.clientKey,
+          variant.variantId,
+        ]),
+      ),
+    ).toEqual(
+      Object.fromEntries(
+        saved.workingCopy!.variants.map((variant) => [
+          variant.clientKey,
+          variant.variantId,
+        ]),
+      ),
+    );
+
+    const offers = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/offers`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 2),
+      payload: {
+        expectedRevision: 2,
+        rows: resaved.workingCopy!.variants.map((variant, index) => ({
+          variantId: variant.variantId,
+          price: { amount: 8_000_000 + index * 400_000, currency: "IRR" },
+          sku: variant.sku,
+          expectedRevision: variant.offerRevision,
+        })),
+      },
+    });
+    expect(offers.statusCode).toBe(200);
+
+    const inventory = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/inventory`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 3),
+      payload: {
+        expectedRevision: 3,
+        reasonCode: "MANUAL_COUNT",
+        rows: saved.inventory.map((row) => ({
+          variantId: row.variantId,
+          onHand: row.onHand + 2,
+          expectedRevision: row.revision,
+        })),
+      },
+    });
+    expect(inventory.statusCode).toBe(200);
+
+    const rejectedInventory = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/inventory`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 4),
+      payload: {
+        expectedRevision: 4,
+        reasonCode: "MANUAL_COUNT",
+        rows: saved.inventory.map((row, index) => ({
+          variantId: row.variantId,
+          onHand: 99,
+          expectedRevision: index === 0 ? row.revision + 1 : 999,
+        })),
+      },
+    });
+    expect(rejectedInventory.statusCode).toBe(409);
+
+    const preview = await server.inject({
+      method: "GET",
+      url: `/v1/seller/products/${productId}/preview`,
+      headers: { cookie },
+    });
+    const ready = productPreviewContract.parse(preview.json());
+    expect(ready).toMatchObject({ ready: true, issues: [] });
+    expect(ready.product.inventory.map((row) => row.onHand).sort()).toEqual([2, 6]);
+
+    const published = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 4),
+      payload: { expectedRevision: 4, confirmed: true },
+    });
+    expect(published.statusCode).toBe(200);
+    const publicProduct = publicProductContract.parse(published.json());
+    expect(publicProduct.priceRange).toMatchObject({
+      minimum: { amount: 8_000_000 },
+      maximum: { amount: 8_400_000 },
+    });
+    expect(publicProduct.variants.map((variant) => variant.availability)).toEqual([
+      "AVAILABLE",
+      "AVAILABLE",
+    ]);
+    expect(JSON.stringify(publicProduct)).not.toMatch(/sku|onHand/i);
+
+    const editedWorkingCopy = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 5),
+      payload: {
+        expectedRevision: 5,
+        workingCopy: { ...workingCopy, name: "پیراهن نسخه کاری" },
+        inventory: null,
+      },
+    });
+    expect(editedWorkingCopy.statusCode).toBe(200);
+    const unchangedPublic = await server.inject({
+      method: "GET",
+      url: `/v1/stores/product-tracer-store/products/${productId}`,
+    });
+    expect(publicProductContract.parse(unchangedPublic.json()).name).toBe(
+      "پیراهن روزمره",
+    );
+
+    const changedOffers = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/offers`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 6),
+      payload: {
+        expectedRevision: 6,
+        rows: ready.product.workingCopy!.variants.map((variant, index) => ({
+          variantId: variant.variantId,
+          price: { amount: 8_100_000 + index * 400_000, currency: "IRR" },
+          sku: variant.sku,
+          expectedRevision: 2,
+        })),
+      },
+    });
+    expect(changedOffers.statusCode).toBe(200);
+
+    const soldOut = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/inventory`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 7),
+      payload: {
+        expectedRevision: 7,
+        reasonCode: "MANUAL_COUNT",
+        rows: ready.product.inventory.map((row) => ({
+          variantId: row.variantId,
+          onHand: 0,
+          expectedRevision: row.revision,
+        })),
+      },
+    });
+    expect(soldOut.statusCode).toBe(200);
+
+    const refreshedPublic = publicProductContract.parse(
+      (
+        await server.inject({
+          method: "GET",
+          url: `/v1/stores/product-tracer-store/products/${productId}`,
+        })
+      ).json(),
+    );
+    expect(refreshedPublic).toMatchObject({
+      name: "پیراهن روزمره",
+      availability: "OUT_OF_STOCK",
+      priceRange: {
+        minimum: { amount: 8_100_000 },
+        maximum: { amount: 8_500_000 },
+      },
+    });
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      const publicationEvents = await sql<Array<{ payload: unknown }>>`
+        select payload from platform_outbox_events
+        where aggregate_id = ${productId}::uuid
+          and event_type = 'ProductPublished.v2'
+      `;
+      expect(publicationEvents).toHaveLength(1);
+      expect(publicationEvents[0]?.payload).toMatchObject({
+        snapshot: { variantIds: expect.arrayContaining(variantIds) },
+      });
+      expect(JSON.stringify(publicationEvents[0]?.payload)).not.toMatch(
+        /پیراهن|sku|onHand|name|description|image|url/i,
+      );
+      const eventCounts = await sql<Array<{ eventType: string; count: number }>>`
+        select event_type as "eventType", count(*)::int as count
+        from platform_outbox_events
+        where aggregate_id in ${sql(variantIds)}
+          and event_type in ('VariantPriceChanged.v1', 'VariantAvailabilityChanged.v1')
+        group by event_type
+        order by event_type
+      `;
+      expect(eventCounts).toEqual([
+        { eventType: "VariantAvailabilityChanged.v1", count: 2 },
+        { eventType: "VariantPriceChanged.v1", count: 2 },
+      ]);
+    } finally {
+      await sql.end();
+    }
   });
 });
 

@@ -1,4 +1,9 @@
-import { publicSimpleProductContract } from "@sevo/contracts/product/v1";
+import {
+  publicProductContract,
+  publicSimpleProductContract,
+  type PublicProduct,
+  type PublicSimpleProduct,
+} from "@sevo/contracts/product/v1";
 import { notFound } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
@@ -23,16 +28,31 @@ export default async function PublicProductPage({
         </a>
         <img
           className={styles.image}
-          src={`/api/store/media/${product.image.id}`}
+          src={`/api/store/media/${productImageId(product)}`}
           alt={product.name}
         />
         <section className={styles.details}>
           <h1>{product.name}</h1>
           <p>{product.description}</p>
-          <strong>{formatIrrAsToman(product.price.amount)}</strong>
+          <strong>{formatProductPrice(product)}</strong>
           <span className={styles.availability}>
             {product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
           </span>
+          {"variants" in product && product.variants.length > 1 ? (
+            <ul className={styles.variants} aria-label="گونه‌های کالا">
+              {product.variants.map((variant) => (
+                <li key={variant.variantId}>
+                  <span>
+                    {variant.combination.map((part) => part.value).join("، ")}
+                  </span>
+                  <span>
+                    {formatIrrAsToman(variant.price.amount)} ·{" "}
+                    {variant.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <p className={styles.payment}>
             روش پرداخت و شرایط مرجوعی پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
@@ -50,9 +70,24 @@ async function readProduct(slug: string, productId: string) {
       { cache: "no-store", headers: { "x-correlation-id": crypto.randomUUID() } },
     );
     if (!response.ok) return undefined;
-    const parsed = publicSimpleProductContract.safeParse(await response.json());
-    return parsed.success ? parsed.data : undefined;
+    const body: unknown = await response.json();
+    const multivariant = publicProductContract.safeParse(body);
+    if (multivariant.success) return multivariant.data;
+    const simple = publicSimpleProductContract.safeParse(body);
+    return simple.success ? simple.data : undefined;
   } catch {
     return undefined;
   }
+}
+
+function productImageId(product: PublicProduct | PublicSimpleProduct) {
+  return "images" in product ? product.images[0]!.id : product.image.id;
+}
+
+function formatProductPrice(product: PublicProduct | PublicSimpleProduct) {
+  if (!("priceRange" in product)) return formatIrrAsToman(product.price.amount);
+  const { minimum, maximum } = product.priceRange;
+  return minimum.amount === maximum.amount
+    ? formatIrrAsToman(minimum.amount)
+    : `از ${formatIrrAsToman(minimum.amount)} تا ${formatIrrAsToman(maximum.amount)}`;
 }
