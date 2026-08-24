@@ -19,7 +19,7 @@ CREATE TABLE "identity_seller_approval_recoveries" (
     FOREIGN KEY ("application_id") REFERENCES "identity_seller_applications"("id")
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "identity_seller_approval_recoveries_status_check"
-    CHECK ("status" IN ('PENDING', 'COMPLETED')),
+    CHECK ("status" IN ('PENDING', 'COMPLETED', 'CANCELLED')),
   CONSTRAINT "identity_seller_approval_recoveries_attempt_count_check"
     CHECK ("attempt_count" >= 0)
 );

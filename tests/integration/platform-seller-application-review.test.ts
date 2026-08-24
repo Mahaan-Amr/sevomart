@@ -427,6 +427,161 @@ describe("platform seller application review API with PostgreSQL", () => {
     }
   });
 
+  it("cancels a revoked recovery without starving the next valid approval", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const firstApplicantCookie = await signIn(app, "09123456786");
+    const secondApplicantCookie = await signIn(app, "09123456787");
+    const firstApplicationId = (
+      await server.inject({
+        method: "POST",
+        url: "/v1/seller-applications",
+        headers: {
+          cookie: firstApplicantCookie,
+          "idempotency-key": randomUUID(),
+        },
+        payload: { ...applicationPayload(), proposedStoreName: "خانه اول" },
+      })
+    ).json<{ applicationId: string }>().applicationId;
+    const secondApplicationId = (
+      await server.inject({
+        method: "POST",
+        url: "/v1/seller-applications",
+        headers: {
+          cookie: secondApplicantCookie,
+          "idempotency-key": randomUUID(),
+        },
+        payload: { ...applicationPayload(), proposedStoreName: "خانه دوم" },
+      })
+    ).json<{ applicationId: string }>().applicationId;
+
+    await signIn(app, "09123456785");
+    await signIn(app, "09123456788");
+    const revokedAgentId = await identityIdForMobile("09123456785");
+    const activeAgentId = await identityIdForMobile("09123456788");
+    await grantReviewPermission(revokedAgentId);
+    await grantReviewPermission(activeAgentId);
+    const revokedToken = await seedPlatformSession(revokedAgentId);
+    const activeToken = await seedPlatformSession(activeAgentId);
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await sql.unsafe(`
+        create function test_fail_store_provision() returns trigger
+        language plpgsql as $$ begin raise exception 'simulated provision crash'; end $$;
+        create trigger test_fail_store_provision
+        before insert on store_stores
+        for each row execute function test_fail_store_provision();
+      `);
+      for (const [applicationId, token] of [
+        [firstApplicationId, revokedToken],
+        [secondApplicationId, activeToken],
+      ] as const) {
+        const response = await server.inject({
+          method: "POST",
+          url: `/v1/platform/seller-applications/${applicationId}/approval`,
+          headers: {
+            cookie: platformCookie(token),
+            "idempotency-key": randomUUID(),
+          },
+          payload: {
+            expectedRevision: 1,
+            reasonCode: "ELIGIBILITY_CONFIRMED",
+            publicReason: "شرایط فروشندگی شما تأیید شد.",
+          },
+        });
+        expect(response.statusCode).toBe(500);
+      }
+      await revokeReviewPermission(revokedAgentId);
+      await sql`drop trigger test_fail_store_provision on store_stores`;
+      await sql`drop function test_fail_store_provision()`;
+
+      const stopWorker = startSellerApprovalRecoveryPoller(
+        {
+          async nextPending() {
+            const response = await server.inject({
+              method: "GET",
+              url: "/v1/internal/seller-approval-recoveries/pending",
+              headers: {
+                "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
+              },
+            });
+            return response.json<{ recoveryId: string | null }>().recoveryId;
+          },
+          async recover(recoveryId) {
+            const response = await server.inject({
+              method: "POST",
+              url: `/v1/internal/seller-approval-recoveries/${recoveryId}`,
+              headers: {
+                "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
+              },
+            });
+            if (response.statusCode !== 204) {
+              throw new Error(`Recovery endpoint returned ${response.statusCode}`);
+            }
+          },
+        },
+        1,
+      );
+      try {
+        await waitUntil(async () => {
+          const rows = await sql<Array<{ status: string; count: number }>>`
+            select status, count(*)::int as count
+            from identity_seller_approval_recoveries
+            group by status
+          `;
+          return (
+            rows.some((row) => row.status === "CANCELLED" && row.count === 1) &&
+            rows.some((row) => row.status === "COMPLETED" && row.count === 1)
+          );
+        });
+      } finally {
+        await stopWorker();
+      }
+
+      const outcomes = await sql<
+        Array<{
+          applicationId: string;
+          applicationStatus: string;
+          recoveryStatus: string;
+          deniedAuditCount: number;
+        }>
+      >`
+        select a.id as "applicationId", a.status as "applicationStatus",
+          r.status as "recoveryStatus",
+          (select count(*)::int from identity_seller_application_audit au
+           where au.target_id = a.id and au.action = 'ApproveSellerApplication.v1'
+             and au.result = 'DENIED') as "deniedAuditCount"
+        from identity_seller_applications a
+        join identity_seller_approval_recoveries r on r.application_id = a.id
+        where a.id in (${firstApplicationId}, ${secondApplicationId})
+        order by a.id
+      `;
+      expect(outcomes).toEqual(
+        expect.arrayContaining([
+          {
+            applicationId: firstApplicationId,
+            applicationStatus: "SUBMITTED",
+            recoveryStatus: "CANCELLED",
+            deniedAuditCount: 1,
+          },
+          {
+            applicationId: secondApplicationId,
+            applicationStatus: "APPROVED",
+            recoveryStatus: "COMPLETED",
+            deniedAuditCount: 0,
+          },
+        ]),
+      );
+    } finally {
+      await sql.unsafe(`
+        drop trigger if exists test_fail_store_provision on store_stores;
+        drop function if exists test_fail_store_provision();
+      `);
+      await sql.end();
+    }
+  });
+
   it("rolls back every approval effect when an approval outbox event cannot commit", async () => {
     const app = await createApiApp(environment);
     apps.push(app);

@@ -112,7 +112,7 @@ type SellerApprovalRecoveryRow = {
   correlationId: string;
   idempotencyKey: string;
   payloadHash: string;
-  status: "PENDING" | "COMPLETED";
+  status: "PENDING" | "COMPLETED" | "CANCELLED";
 };
 
 const SUBMIT_OPERATION = "SubmitSellerApplication.v1";
@@ -367,7 +367,7 @@ export class PostgresSellerApplicationRepository
       where id = ${recoveryId}::uuid
     `;
     const recovery = rows[0];
-    if (!recovery || recovery.status === "COMPLETED") return;
+    if (!recovery || recovery.status !== "PENDING") return;
     const input = {
       expectedRevision: recovery.expectedRevision,
       reasonCode: recovery.reasonCode,
@@ -385,17 +385,45 @@ export class PostgresSellerApplicationRepository
       set attempt_count = attempt_count + 1, last_attempt_at = now()
       where id = ${recoveryId}::uuid and status = 'PENDING'
     `;
-    await this.#approve(
-      {
-        identityId: recovery.actorIdentityId,
-        audience: "PLATFORM_AGENT",
-        permission: "SELLER_APPLICATION_REVIEW",
-        correlationId: recovery.correlationId,
-        idempotencyKey: recovery.idempotencyKey,
-      },
-      recovery.applicationId,
-      input,
-    );
+    const context = {
+      identityId: recovery.actorIdentityId,
+      audience: "PLATFORM_AGENT" as const,
+      permission: "SELLER_APPLICATION_REVIEW" as const,
+      correlationId: recovery.correlationId,
+      idempotencyKey: recovery.idempotencyKey,
+    };
+    try {
+      await this.#approve(context, recovery.applicationId, input);
+    } catch (error) {
+      if (!isTerminalApprovalRecoveryError(error)) throw error;
+      await this.#sql.begin(async (sql) => {
+        const cancelled = await sql<Array<{ recoveryId: string }>>`
+          update identity_seller_approval_recoveries
+          set status = 'CANCELLED', completed_at = now()
+          where id = ${recoveryId}::uuid and status = 'PENDING'
+          returning id as "recoveryId"
+        `;
+        if (!cancelled[0]) return;
+        const [application] = await readPlatformApplicationRows(
+          sql,
+          recovery.applicationId,
+        );
+        if (!application) return;
+        await insertPlatformAudit(sql, {
+          context,
+          applicationId: recovery.applicationId,
+          action: APPROVE_OPERATION,
+          result: reviewFailureResult(error) ?? "CONFLICT",
+          previousStatus: application.status,
+          nextStatus: application.status,
+          previousRevision: application.aggregateVersion,
+          nextRevision: application.aggregateVersion,
+          reasonCode: null,
+          idempotencyKey: context.idempotencyKey,
+          occurredAt: new Date(),
+        });
+      });
+    }
   }
 
   async nextPending(): Promise<string | null> {
@@ -512,19 +540,7 @@ export class PostgresSellerApplicationRepository
     error: unknown,
     recordUnexpectedFailure = false,
   ): Promise<void> {
-    const result =
-      error instanceof SellerApplicationSelfReviewForbiddenError
-        ? "DENIED"
-        : error instanceof PlatformPermissionRequiredError
-          ? "DENIED"
-          : error instanceof SellerApplicationRevisionConflictError ||
-              error instanceof InvalidSellerApplicationTransitionError
-            ? "CONFLICT"
-            : error instanceof SellerAccessExistsError
-              ? "CONFLICT"
-              : recordUnexpectedFailure
-                ? "FAILED"
-                : undefined;
+    const result = reviewFailureResult(error, recordUnexpectedFailure);
     if (!result) return;
     await this.#sql.begin((sql) =>
       readPlatformApplicationRows(sql, applicationId).then(([application]) => {
@@ -1520,6 +1536,39 @@ function canonicalJson(value: unknown): string {
 
 function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function isTerminalApprovalRecoveryError(error: unknown): boolean {
+  return (
+    error instanceof PlatformPermissionRequiredError ||
+    error instanceof SellerApplicationNotFoundError ||
+    error instanceof SellerApplicationRevisionConflictError ||
+    error instanceof SellerApplicationSelfReviewForbiddenError ||
+    error instanceof InvalidSellerApplicationTransitionError ||
+    error instanceof SellerAccessExistsError ||
+    error instanceof SellerApplicationIdempotencyConflictError
+  );
+}
+
+function reviewFailureResult(
+  error: unknown,
+  recordUnexpectedFailure = false,
+): "DENIED" | "CONFLICT" | "FAILED" | undefined {
+  if (
+    error instanceof SellerApplicationSelfReviewForbiddenError ||
+    error instanceof PlatformPermissionRequiredError
+  ) {
+    return "DENIED";
+  }
+  if (
+    error instanceof SellerApplicationRevisionConflictError ||
+    error instanceof InvalidSellerApplicationTransitionError ||
+    error instanceof SellerAccessExistsError ||
+    error instanceof SellerApplicationIdempotencyConflictError
+  ) {
+    return "CONFLICT";
+  }
+  return recordUnexpectedFailure ? "FAILED" : undefined;
 }
 
 async function insertPlatformAudit(

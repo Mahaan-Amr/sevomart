@@ -91,7 +91,9 @@ Worker یک command با وضعیت `PENDING` را از endpoint داخلی مح
 بازیابی است و poller خطای موقت را بدون سقف تلاش دوباره امتحان می‌کند. داده درخواست از
 مرز polling عبور نمی‌کند. ارتباط Worker با API از `INTERNAL_API_URL` و secret مشترک
 `SELLER_APPROVAL_RECOVERY_SECRET` استفاده می‌کند؛ مقدار محلی `.env.example` در production
-ممنوع است.
+ممنوع است. اگر بازبینی در زمان بازیابی دیگر مجاز نباشد—برای نمونه مجوز عامل لغو شده
+باشد—همان ماژول recovery را با audit شکست به `CANCELLED` می‌برد تا command نامعتبر
+دوباره اجرا نشود و بازیابی‌های بعدی متوقف نمانند.
 
 برای migrationهای تأیید فروشندگی، هم مسیر native با
 `pnpm --filter @sevo/database exec prisma migrate deploy` سپس اجرای API/Worker از
