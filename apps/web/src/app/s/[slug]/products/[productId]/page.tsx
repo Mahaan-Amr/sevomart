@@ -2,6 +2,7 @@ import { publicSimpleProductContract } from "@sevo/contracts/product/v1";
 import { notFound } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
+import { AddToCart } from "./add-to-cart";
 import styles from "./product-public.module.css";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
@@ -33,6 +34,10 @@ export default async function PublicProductPage({
           <span className={styles.availability}>
             {product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
           </span>
+          <AddToCart
+            variantId={product.variantId}
+            available={product.availability === "AVAILABLE"}
+          />
           <p className={styles.payment}>
             روش پرداخت و شرایط مرجوعی پیش از ثبت سفارش نمایش داده می‌شود.
           </p>

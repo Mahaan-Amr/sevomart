@@ -10,7 +10,12 @@ import {
   type ReplaceSimpleProductWorkingCopy,
   type SimpleProductView,
 } from "@sevo/contracts/product/v1";
-import { storeIdContract, variantIdContract } from "@sevo/contracts/platform/v1";
+import {
+  productIdContract,
+  storeIdContract,
+  variantIdContract,
+  type VariantId,
+} from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
@@ -298,6 +303,47 @@ export class PostgresProductRepository implements ProductRepository {
     return rows[0] ? storeIdContract.parse(rows[0].storeId) : undefined;
   }
 
+  async readAuthoritativeVariant(variantId: VariantId) {
+    const rows = await this.#sql<
+      Array<{
+        productId: string;
+        storeId: string;
+        variantId: string;
+        name: string;
+        mediaId: string;
+        amount: number | string;
+        publicationVersion: number;
+        sellable: boolean;
+      }>
+    >`
+      select p.id as "productId", p.store_id as "storeId",
+        publication.variant_id as "variantId", publication.name,
+        publication.media_id as "mediaId", offer.amount,
+        p.publication_version as "publicationVersion",
+        (p.state = 'PUBLISHED') as sellable
+      from product_products p
+      join product_publications publication
+        on publication.product_id = p.id
+       and publication.publication_version = p.publication_version
+      join product_offers offer
+        on offer.product_id = p.id and offer.variant_id = publication.variant_id
+      where publication.variant_id = ${variantId}::uuid
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row) return undefined;
+    return {
+      productId: productIdContract.parse(row.productId),
+      variantId: variantIdContract.parse(row.variantId),
+      storeId: storeIdContract.parse(row.storeId),
+      name: row.name,
+      image: { id: row.mediaId, url: `/v1/media/${row.mediaId}` },
+      unitPrice: { amount: Number(row.amount), currency: "IRR" as const },
+      publicationVersion: row.publicationVersion,
+      sellable: row.sellable,
+    } as const;
+  }
+
   async #toPublic(row: PublicationRow) {
     const inventory = await this.inventory.read(variantIdContract.parse(row.variantId));
     if (!inventory) {
@@ -415,6 +461,7 @@ export class PostgresProductRepository implements ProductRepository {
 function toPublicProduct(row: PublicationRow, onHand: number) {
   return publicSimpleProductContract.parse({
     productId: row.productId,
+    variantId: row.variantId,
     name: row.name,
     description: row.description,
     image: { id: row.mediaId, url: `/v1/media/${row.mediaId}` },

@@ -5,6 +5,7 @@ import type {
   SimpleProductView,
 } from "@sevo/contracts/product/v1";
 import type {
+  MoneyV1,
   IdentityId,
   ProductId,
   StoreId,
@@ -20,7 +21,24 @@ export type ProductWriteContext = Readonly<{
   expectedRevision: number;
 }>;
 
-export interface ProductRepository {
+export type ProductAuthoritativeVariant = Readonly<{
+  productId: ProductId;
+  variantId: VariantId;
+  storeId: StoreId;
+  name: string;
+  image: { id: string; url: string };
+  unitPrice: MoneyV1;
+  publicationVersion: number;
+  sellable: boolean;
+}>;
+
+export interface ProductAuthoritativeRead {
+  readAuthoritativeVariant(
+    variantId: VariantId,
+  ): Promise<ProductAuthoritativeVariant | undefined>;
+}
+
+export interface ProductRepository extends ProductAuthoritativeRead {
   create(
     productId: ProductId,
     storeId: StoreId,

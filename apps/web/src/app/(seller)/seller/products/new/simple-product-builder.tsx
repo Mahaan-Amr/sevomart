@@ -212,6 +212,7 @@ export function SimpleProductBuilder() {
       }
       setPreview({
         productId: saved.productId,
+        variantId: saved.workingCopy.variant.variantId,
         name: saved.workingCopy.name,
         description: saved.workingCopy.description,
         image: { id: mediaId, url: `/v1/media/${mediaId}` },
