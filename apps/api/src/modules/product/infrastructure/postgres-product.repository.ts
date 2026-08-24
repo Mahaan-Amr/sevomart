@@ -5,9 +5,11 @@ import {
   publicSimpleProductContract,
   simpleProductDraftContract,
   simpleProductEmptyDraftContract,
+  simpleProductIncompleteDraftContract,
   type ReplaceSimpleProductWorkingCopy,
   type SimpleProductView,
 } from "@sevo/contracts/product/v1";
+import { storeIdContract, variantIdContract } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
@@ -90,35 +92,42 @@ export class PostgresProductRepository implements ProductRepository {
           );
         }
         const variantId = current.variantId ?? proposedVariantId;
-        const inventory = await this.inventory.replaceForProduct(sql, {
-          storeId,
-          variantId,
-          onHand: input.inventory.onHand,
-          expectedRevision: input.inventory.expectedRevision,
-        });
+        const inventory = input.inventory
+          ? await this.inventory.replaceForProduct(sql, {
+              storeId: storeIdContract.parse(storeId),
+              variantId: variantIdContract.parse(variantId),
+              onHand: input.inventory.onHand,
+              expectedRevision: input.inventory.expectedRevision,
+            })
+          : await this.inventory.readInTransaction(
+              sql,
+              variantIdContract.parse(variantId),
+            );
         await sql`
           insert into product_working_copies
             (product_id, name, description, media_id, variant_id)
           values
             (${productId}, ${input.workingCopy.name}, ${input.workingCopy.description},
-             ${input.workingCopy.orderedMediaIds[0]!}, ${variantId})
+             ${input.workingCopy.orderedMediaIds[0] ?? null}, ${variantId})
           on conflict (product_id) do update set
             name = excluded.name, description = excluded.description,
             media_id = excluded.media_id, variant_id = excluded.variant_id
         `;
-        await sql`
-          insert into product_offers (product_id, variant_id, amount, currency, revision)
-          values (${productId}, ${variantId},
-            ${input.workingCopy.variant.price.amount}, 'IRR', 1)
-          on conflict (product_id) do update set
-            amount = excluded.amount, revision = product_offers.revision + 1
-        `;
+        if (input.workingCopy.variant.price) {
+          await sql`
+            insert into product_offers (product_id, variant_id, amount, currency, revision)
+            values (${productId}, ${variantId},
+              ${input.workingCopy.variant.price.amount}, 'IRR', 1)
+            on conflict (product_id) do update set
+              amount = excluded.amount, revision = product_offers.revision + 1
+          `;
+        }
         const revision = current.revision + 1;
         await sql`
           update product_products set revision = ${revision}, updated_at = now()
           where id = ${productId}
         `;
-        return simpleProductDraftContract.parse({
+        const view = {
           productId,
           state: current.state,
           revision,
@@ -129,8 +138,14 @@ export class PostgresProductRepository implements ProductRepository {
             orderedMediaIds: input.workingCopy.orderedMediaIds,
             variant: { variantId, price: input.workingCopy.variant.price },
           },
-          inventory,
-        });
+          inventory: inventory ?? null,
+        };
+        return input.workingCopy.name &&
+          input.workingCopy.orderedMediaIds.length === 1 &&
+          input.workingCopy.variant.price &&
+          inventory
+          ? simpleProductDraftContract.parse(view)
+          : simpleProductIncompleteDraftContract.parse(view);
       }),
     );
   }
@@ -160,7 +175,7 @@ export class PostgresProductRepository implements ProductRepository {
         }
         const inventory = await this.inventory.readInTransaction(
           sql,
-          current.variantId,
+          variantIdContract.parse(current.variantId),
         );
         if (!inventory) throw new Error("Product inventory is not provisioned");
         const publicationVersion = current.publicationVersion + 1;
@@ -258,11 +273,11 @@ export class PostgresProductRepository implements ProductRepository {
       where publication.media_id = ${mediaId}::uuid and p.state = 'PUBLISHED'
       limit 1
     `;
-    return rows[0]?.storeId;
+    return rows[0] ? storeIdContract.parse(rows[0].storeId) : undefined;
   }
 
   async #toPublic(row: PublicationRow) {
-    const inventory = await this.inventory.read(row.variantId);
+    const inventory = await this.inventory.read(variantIdContract.parse(row.variantId));
     if (!inventory) {
       throw new Error("Published product inventory is missing");
     }
@@ -270,7 +285,7 @@ export class PostgresProductRepository implements ProductRepository {
   }
 
   async #toView(row: ProductRow): Promise<SimpleProductView> {
-    if (!row.variantId || row.amount === null || !row.name || !row.mediaId) {
+    if (!row.variantId) {
       return simpleProductEmptyDraftContract.parse({
         productId: row.productId,
         state: "DRAFT",
@@ -280,9 +295,9 @@ export class PostgresProductRepository implements ProductRepository {
         inventory: null,
       });
     }
-    const inventory = await this.inventory.read(row.variantId);
-    if (!inventory) throw new Error("Product inventory is missing");
-    return simpleProductDraftContract.parse({
+    const inventory =
+      (await this.inventory.read(variantIdContract.parse(row.variantId))) ?? null;
+    const view = {
       productId: row.productId,
       state: row.state,
       revision: row.revision,
@@ -290,14 +305,20 @@ export class PostgresProductRepository implements ProductRepository {
       workingCopy: {
         name: row.name,
         description: row.description ?? "",
-        orderedMediaIds: [row.mediaId],
+        orderedMediaIds: row.mediaId ? [row.mediaId] : [],
         variant: {
           variantId: row.variantId,
-          price: { amount: Number(row.amount), currency: "IRR" },
+          price:
+            row.amount === null
+              ? null
+              : { amount: Number(row.amount), currency: "IRR" as const },
         },
       },
       inventory,
-    });
+    };
+    return row.name && row.mediaId && row.amount !== null && inventory
+      ? simpleProductDraftContract.parse(view)
+      : simpleProductIncompleteDraftContract.parse(view);
   }
 
   async #lockOwned(sql: Sql, productId: string, storeId: string) {

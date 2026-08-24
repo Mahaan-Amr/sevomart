@@ -19,9 +19,9 @@ model Product {
 
 model ProductWorkingCopy {
   productId   String   @id @map("product_id") @db.Uuid
-  name        String   @db.VarChar(120)
+  name        String?  @db.VarChar(120)
   description String   @db.VarChar(2000)
-  mediaId     String   @map("media_id") @db.Uuid
+  mediaId     String?  @map("media_id") @db.Uuid
   variantId   String   @unique @map("variant_id") @db.Uuid
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 

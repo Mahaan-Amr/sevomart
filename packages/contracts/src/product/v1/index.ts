@@ -26,13 +26,13 @@ export const replaceSimpleProductWorkingCopyContract = z
     expectedRevision: z.int().nonnegative(),
     workingCopy: z
       .object({
-        name: z.string().trim().min(2).max(120),
+        name: z.string().trim().min(2).max(120).nullable(),
         description: z.string().trim().max(2_000).default(""),
-        orderedMediaIds: z.array(mediaIdContract).length(1),
+        orderedMediaIds: z.array(mediaIdContract).max(1),
         variant: z
           .object({
             clientKey: z.string().min(1).max(100),
-            price: productPriceContract,
+            price: productPriceContract.nullable(),
           })
           .strict(),
       })
@@ -42,7 +42,8 @@ export const replaceSimpleProductWorkingCopyContract = z
         onHand: z.int().nonnegative(),
         expectedRevision: z.int().nonnegative(),
       })
-      .strict(),
+      .strict()
+      .nullable(),
   })
   .strict();
 
@@ -84,8 +85,35 @@ export const simpleProductEmptyDraftContract = z
   })
   .strict();
 
+export const simpleProductIncompleteDraftContract = z
+  .object({
+    productId: productIdContract,
+    state: z.enum(["DRAFT", "PUBLISHED"]),
+    revision: z.int().positive(),
+    publicationVersion: z.int().nonnegative(),
+    workingCopy: z
+      .object({
+        name: z.string().min(2).max(120).nullable(),
+        description: z.string().max(2_000),
+        orderedMediaIds: z.array(mediaIdContract).max(1),
+        variant: z
+          .object({
+            variantId: variantIdContract,
+            price: productPriceContract.nullable(),
+          })
+          .strict(),
+      })
+      .strict(),
+    inventory: z
+      .object({ onHand: z.int().nonnegative(), revision: z.int().nonnegative() })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
 export const simpleProductViewContract = z.union([
   simpleProductEmptyDraftContract,
+  simpleProductIncompleteDraftContract,
   simpleProductDraftContract,
 ]);
 

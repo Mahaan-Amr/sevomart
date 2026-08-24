@@ -15,6 +15,7 @@ describe("simple product tracer HTTP API", () => {
 
   beforeEach(async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`update identity_seller_access set status = 'ACTIVE'`;
     await sql`delete from store_idempotency_records`;
     await sql`delete from store_stores`;
     await sql.end();
@@ -42,12 +43,39 @@ describe("simple product tracer HTTP API", () => {
     expect(created.statusCode).toBe(201);
     const emptyDraft = created.json<{ productId: string }>();
 
-    const saved = await server.inject({
+    const partial = await server.inject({
       method: "PUT",
       url: `/v1/seller/products/${emptyDraft.productId}/working-copy`,
       headers: writeHeaders(cookie, crypto.randomUUID(), 0),
       payload: {
         expectedRevision: 0,
+        workingCopy: {
+          name: "فنجان سرامیکی",
+          description: "فنجان دست‌ساز مناسب نوشیدنی گرم",
+          orderedMediaIds: [],
+          variant: { clientKey: "simple", price: null },
+        },
+        inventory: null,
+      },
+    });
+    expect(partial.statusCode).toBe(200);
+
+    const partialPreview = await server.inject({
+      method: "GET",
+      url: `/v1/seller/products/${emptyDraft.productId}/preview`,
+      headers: { cookie },
+    });
+    expect(simpleProductPreviewContract.parse(partialPreview.json())).toMatchObject({
+      ready: false,
+      issues: expect.arrayContaining([{ path: "image", code: "REQUIRED" }]),
+    });
+
+    const saved = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${emptyDraft.productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 1),
+      payload: {
+        expectedRevision: 1,
         workingCopy: {
           name: "فنجان سرامیکی",
           description: "فنجان دست‌ساز مناسب نوشیدنی گرم",
@@ -78,8 +106,8 @@ describe("simple product tracer HTTP API", () => {
     const publicationRequest = {
       method: "POST" as const,
       url: `/v1/seller/products/${emptyDraft.productId}/publications`,
-      headers: writeHeaders(cookie, publishKey, 1),
-      payload: { expectedRevision: 1, confirmed: true },
+      headers: writeHeaders(cookie, publishKey, 2),
+      payload: { expectedRevision: 2, confirmed: true },
     };
     const published = await server.inject(publicationRequest);
     expect(published.statusCode).toBe(200);
@@ -113,6 +141,28 @@ describe("simple product tracer HTTP API", () => {
       await sql.end();
     }
   });
+
+  it("rejects product writes when the seller access is no longer active", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const cookie = await signIn(server);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`update identity_seller_access set status = 'SUSPENDED'`;
+    } finally {
+      await sql.end();
+    }
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/v1/seller/products",
+      headers: writeHeaders(cookie, crypto.randomUUID(), 0),
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
 });
 
 type TestServer =
@@ -136,6 +186,17 @@ async function signIn(server: TestServer) {
       code: "111111",
     },
   });
+  const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  try {
+    await sql`
+      insert into identity_seller_access (id, identity_id, status)
+      select ${crypto.randomUUID()}::uuid, identity_id, 'ACTIVE'
+      from identity_login_methods where mobile = '09123456789'
+      on conflict (identity_id) do update set status = 'ACTIVE'
+    `;
+  } finally {
+    await sql.end();
+  }
   return verified.headers["set-cookie"]!;
 }
 

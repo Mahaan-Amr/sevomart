@@ -1,9 +1,7 @@
-import {
-  publicSimpleProductContract,
-  type PublicSimpleProduct,
-} from "@sevo/contracts/product/v1";
+import { publicSimpleProductContract } from "@sevo/contracts/product/v1";
 import { notFound } from "next/navigation";
 
+import { formatIrrAsToman } from "../../../../../lib/format-money";
 import styles from "./product-public.module.css";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
@@ -31,7 +29,7 @@ export default async function PublicProductPage({
         <section className={styles.details}>
           <h1>{product.name}</h1>
           <p>{product.description}</p>
-          <strong>{formatToman(product.price.amount)}</strong>
+          <strong>{formatIrrAsToman(product.price.amount)}</strong>
           <span className={styles.availability}>
             {product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
           </span>
@@ -57,8 +55,4 @@ async function readProduct(slug: string, productId: string) {
   } catch {
     return undefined;
   }
-}
-
-function formatToman(amount: PublicSimpleProduct["price"]["amount"]) {
-  return `${new Intl.NumberFormat("fa-IR").format(amount / 10)} تومان`;
 }

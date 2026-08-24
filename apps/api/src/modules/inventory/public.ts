@@ -1,4 +1,5 @@
 import type { Sql } from "postgres";
+import type { StoreId, VariantId } from "@sevo/contracts/platform/v1";
 
 export type InventorySnapshot = Readonly<{
   onHand: number;
@@ -9,17 +10,17 @@ export interface InventoryAuthoring {
   replaceForProduct(
     transaction: Sql,
     command: Readonly<{
-      storeId: string;
-      variantId: string;
+      storeId: StoreId;
+      variantId: VariantId;
       onHand: number;
       expectedRevision: number;
     }>,
   ): Promise<InventorySnapshot>;
   readInTransaction(
     transaction: Sql,
-    variantId: string,
+    variantId: VariantId,
   ): Promise<InventorySnapshot | undefined>;
-  read(variantId: string): Promise<InventorySnapshot | undefined>;
+  read(variantId: VariantId): Promise<InventorySnapshot | undefined>;
 }
 
 export class InventoryRevisionConflictError extends Error {

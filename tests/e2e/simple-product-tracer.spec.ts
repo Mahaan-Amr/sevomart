@@ -27,6 +27,7 @@ test("seller publishes a simple product that a guest sees on the storefront", as
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByRole("link", { name: "ادامه کار" })).toBeVisible();
 
   const sql = postgres(databaseUrl, { max: 1 });
   try {
@@ -35,6 +36,11 @@ test("seller publishes a simple product that a guest sees on the storefront", as
       where mobile = ${mobile}
     `;
     const identityId = identities[0]!.identityId;
+    await sql`
+      insert into identity_seller_access (id, identity_id, status)
+      values (${randomUUID()}, ${identityId}::uuid, 'ACTIVE')
+      on conflict (identity_id) do update set status = 'ACTIVE'
+    `;
     await sql`
       delete from store_stores where id in (
         select store_id from store_memberships where seller_id = ${identityId}::uuid
@@ -96,6 +102,10 @@ test("seller publishes a simple product that a guest sees on the storefront", as
   await expect(page.getByRole("heading", { name: "بازبینی کالا" })).toBeVisible();
   await expect(page.getByText("۴۵۰٬۰۰۰ تومان")).toBeVisible();
   await expect(page.getByText("موجود")).toBeVisible();
+  await page.getByRole("button", { name: "برگشت و ویرایش" }).click();
+  await page.getByLabel("قیمت به تومان").fill("460000");
+  await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  await expect(page.getByText("۴۶۰٬۰۰۰ تومان")).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
   await page.getByRole("button", { name: "انتشار کالا" }).focus();
@@ -108,7 +118,7 @@ test("seller publishes a simple product that a guest sees on the storefront", as
   await expect(storefrontProduct).toBeVisible();
   await storefrontProduct.click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
-  await expect(page.getByText("۴۵۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("۴۶۰٬۰۰۰ تومان")).toBeVisible();
   await expect(page.getByText("موجود")).toBeVisible();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
   await expect(page.locator("img")).toHaveJSProperty("complete", true);

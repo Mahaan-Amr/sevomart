@@ -3,6 +3,7 @@ import type { PublicStore } from "@sevo/contracts/store/v1";
 import type { PublicSimpleProduct } from "@sevo/contracts/product/v1";
 import type { CSSProperties, ReactNode } from "react";
 
+import { formatIrrAsToman } from "../../../lib/format-money";
 import styles from "./storefront.module.css";
 
 export function StorefrontPageFrame({ children }: { children: ReactNode }) {
@@ -172,7 +173,7 @@ export function ReadyStorefront({
                 <img src={`/api/store/media/${product.image.id}`} alt={product.name} />
                 <span>
                   <strong>{product.name}</strong>
-                  <small>{formatToman(product.price.amount)}</small>
+                  <small>{formatIrrAsToman(product.price.amount)}</small>
                   <em>{product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}</em>
                 </span>
               </Link>
@@ -183,8 +184,4 @@ export function ReadyStorefront({
       <TrustDetails store={store} />
     </StorefrontFrame>
   );
-}
-
-function formatToman(amount: number) {
-  return `${new Intl.NumberFormat("fa-IR").format(amount / 10)} تومان`;
 }

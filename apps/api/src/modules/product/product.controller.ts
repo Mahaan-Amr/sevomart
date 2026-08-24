@@ -37,6 +37,7 @@ import {
   ProductNotFoundError,
   ProductNotReadyError,
   ProductRevisionConflictError,
+  SellerAccessInactiveError,
 } from "./public";
 import { PRODUCT_SERVICE } from "./product.tokens";
 
@@ -153,6 +154,16 @@ export class ProductController {
       return await operation();
     } catch (error) {
       if (error instanceof ProductNotFoundError) return productNotFound(request.id);
+      if (error instanceof SellerAccessInactiveError) {
+        throw new HttpException(
+          {
+            code: "SELLER_ACCESS_INACTIVE",
+            message: "دسترسی فروشندگی شما فعال نیست.",
+            correlationId: request.id,
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
       if (error instanceof ProductNotReadyError) {
         throw new HttpException(
           {

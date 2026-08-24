@@ -62,6 +62,21 @@ describe("simple product v1 contract", () => {
     ).toBe(false);
   });
 
+  it("accepts a cumulative incomplete working copy between authoring steps", () => {
+    expect(
+      replaceSimpleProductWorkingCopyContract.parse({
+        expectedRevision: 0,
+        workingCopy: {
+          name: "فنجان سرامیکی",
+          description: "",
+          orderedMediaIds: [],
+          variant: { clientKey: "simple", price: null },
+        },
+        inventory: null,
+      }),
+    ).toBeDefined();
+  });
+
   it("separates the private draft from the public projection", () => {
     const draft = simpleProductDraftContract.parse({
       productId: ids.product,

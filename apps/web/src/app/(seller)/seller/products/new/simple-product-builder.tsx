@@ -11,10 +11,12 @@ import {
   simpleProductPreviewContract,
   simpleProductViewContract,
   type PublicSimpleProduct,
+  type SimpleProductView,
 } from "@sevo/contracts/product/v1";
 import { storeDraftContract } from "@sevo/contracts/store/v1";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { formatIrrAsToman } from "../../../../../lib/format-money";
 import styles from "./simple-product-builder.module.css";
 
 type Step = "details" | "image" | "sale" | "review" | "published";
@@ -30,10 +32,13 @@ export function SimpleProductBuilder() {
   const [mediaId, setMediaId] = useState<MediaId>();
   const [priceToman, setPriceToman] = useState("");
   const [inventory, setInventory] = useState("");
+  const [inventoryRevision, setInventoryRevision] = useState(0);
   const [preview, setPreview] = useState<PublicSimpleProduct>();
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const saveRequest = useRef<IdempotentRequest | undefined>(undefined);
+  const publishRequest = useRef<IdempotentRequest | undefined>(undefined);
 
   useEffect(() => {
     void initialize();
@@ -44,7 +49,7 @@ export function SimpleProductBuilder() {
       const [createdResponse, storeResponse] = await Promise.all([
         fetch("/api/store/seller/products", {
           method: "POST",
-          headers: writeHeaders(0),
+          headers: writeHeaders(0, persistentCreateKey()),
           body: JSON.stringify({}),
         }),
         fetch("/api/store/seller/store/draft", { cache: "no-store" }),
@@ -66,6 +71,16 @@ export function SimpleProductBuilder() {
       setProductId(created.data.productId);
       setRevision(created.data.revision);
       setStoreSlug(store.data.slug);
+      const previewResponse = await fetch(
+        `/api/store/seller/products/${created.data.productId}/preview`,
+        { cache: "no-store" },
+      );
+      if (previewResponse.ok) {
+        const current = simpleProductPreviewContract.safeParse(
+          await previewResponse.json(),
+        );
+        if (current.success) hydrateDraft(current.data.product);
+      }
     } catch {
       setMessage("ساخت پیش‌نویس کالا انجام نشد. دوباره تلاش کنید.");
     } finally {
@@ -74,21 +89,88 @@ export function SimpleProductBuilder() {
   }
 
   async function continueFromImage() {
-    if (!image) {
+    if (!image && !mediaId) {
       setMessage("یک تصویر برای کالا انتخاب کنید.");
       return;
     }
     setPending(true);
     setMessage("");
     try {
-      const uploaded = await uploadProductImage(image);
+      const uploaded = image ? await uploadProductImage(image) : mediaId!;
       setMediaId(uploaded);
+      await saveWorkingCopy({ mediaId: uploaded });
       setStep("sale");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "بارگذاری تصویر انجام نشد.");
     } finally {
       setPending(false);
     }
+  }
+
+  async function continueFromDetails() {
+    setPending(true);
+    setMessage("");
+    try {
+      await saveWorkingCopy();
+      setStep("image");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "ذخیره مشخصات انجام نشد.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function saveWorkingCopy(overrides: { mediaId?: MediaId } = {}) {
+    const effectiveMediaId = overrides.mediaId ?? mediaId;
+    const toman = Number(priceToman);
+    const onHand = Number(inventory);
+    const hasPrice = Number.isSafeInteger(toman) && toman > 0;
+    const hasInventory = inventory !== "" && Number.isInteger(onHand) && onHand >= 0;
+    const payload = {
+      expectedRevision: revision,
+      workingCopy: {
+        name: name.trim() || null,
+        description: description.trim(),
+        orderedMediaIds: effectiveMediaId ? [effectiveMediaId] : [],
+        variant: {
+          clientKey: "simple",
+          price: hasPrice ? { amount: toman * 10, currency: "IRR" as const } : null,
+        },
+      },
+      inventory: hasInventory ? { onHand, expectedRevision: inventoryRevision } : null,
+    };
+    const response = await fetch(
+      `/api/store/seller/products/${productId}/working-copy`,
+      {
+        method: "PUT",
+        headers: writeHeaders(revision, requestKey(saveRequest, payload)),
+        body: JSON.stringify(payload),
+      },
+    );
+    const body: unknown = await response.json();
+    const saved = simpleProductViewContract.safeParse(body);
+    if (!response.ok || !saved.success || !saved.data.workingCopy) {
+      throw new Error(humanError(body, "ذخیره اطلاعات کالا انجام نشد."));
+    }
+    setRevision(saved.data.revision);
+    setInventoryRevision(saved.data.inventory?.revision ?? 0);
+    saveRequest.current = undefined;
+    return saved.data;
+  }
+
+  function hydrateDraft(product: SimpleProductView) {
+    setRevision(product.revision);
+    if (!product.workingCopy) return;
+    setName(product.workingCopy.name ?? "");
+    setDescription(product.workingCopy.description);
+    setMediaId(product.workingCopy.orderedMediaIds[0]);
+    setPriceToman(
+      product.workingCopy.variant.price
+        ? String(product.workingCopy.variant.price.amount / 10)
+        : "",
+    );
+    setInventory(product.inventory ? String(product.inventory.onHand) : "");
+    setInventoryRevision(product.inventory?.revision ?? 0);
   }
 
   async function saveAndPreview() {
@@ -106,32 +188,14 @@ export function SimpleProductBuilder() {
     setPending(true);
     setMessage("");
     try {
-      const savedResponse = await fetch(
-        `/api/store/seller/products/${productId}/working-copy`,
-        {
-          method: "PUT",
-          headers: writeHeaders(revision),
-          body: JSON.stringify({
-            expectedRevision: revision,
-            workingCopy: {
-              name: name.trim(),
-              description: description.trim(),
-              orderedMediaIds: [mediaId],
-              variant: {
-                clientKey: "simple",
-                price: { amount: toman * 10, currency: "IRR" },
-              },
-            },
-            inventory: { onHand, expectedRevision: 0 },
-          }),
-        },
-      );
-      const savedBody: unknown = await savedResponse.json();
-      const saved = simpleProductViewContract.safeParse(savedBody);
-      if (!savedResponse.ok || !saved.success || !saved.data.workingCopy) {
-        throw new Error(humanError(savedBody, "ذخیره اطلاعات کالا انجام نشد."));
+      const saved = await saveWorkingCopy();
+      if (
+        !saved.workingCopy?.name ||
+        !saved.workingCopy.variant.price ||
+        !saved.inventory
+      ) {
+        throw new Error("اطلاعات کالا هنوز کامل نیست.");
       }
-      setRevision(saved.data.revision);
       const previewResponse = await fetch(
         `/api/store/seller/products/${productId}/preview`,
         { cache: "no-store" },
@@ -147,12 +211,12 @@ export function SimpleProductBuilder() {
         throw new Error("پیش‌نمایش کالا آماده نیست.");
       }
       setPreview({
-        productId: saved.data.productId,
-        name: saved.data.workingCopy.name,
-        description: saved.data.workingCopy.description,
+        productId: saved.productId,
+        name: saved.workingCopy.name,
+        description: saved.workingCopy.description,
         image: { id: mediaId, url: `/v1/media/${mediaId}` },
-        price: saved.data.workingCopy.variant.price,
-        availability: saved.data.inventory.onHand > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
+        price: saved.workingCopy.variant.price,
+        availability: saved.inventory.onHand > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
         publicationVersion: 1,
       });
       setStep("review");
@@ -167,12 +231,13 @@ export function SimpleProductBuilder() {
     setPending(true);
     setMessage("");
     try {
+      const payload = { expectedRevision: revision, confirmed: true };
       const response = await fetch(
         `/api/store/seller/products/${productId}/publications`,
         {
           method: "POST",
-          headers: writeHeaders(revision),
-          body: JSON.stringify({ expectedRevision: revision, confirmed: true }),
+          headers: writeHeaders(revision, requestKey(publishRequest, payload)),
+          body: JSON.stringify(payload),
         },
       );
       const published = publicSimpleProductContract.safeParse(await response.json());
@@ -180,6 +245,7 @@ export function SimpleProductBuilder() {
         throw new Error("انتشار کالا انجام نشد. اطلاعات را دوباره بررسی کنید.");
       }
       setPreview(published.data);
+      sessionStorage.removeItem(CREATE_KEY_STORAGE);
       setStep("published");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "انتشار کالا انجام نشد.");
@@ -258,7 +324,7 @@ export function SimpleProductBuilder() {
             <button
               className={styles.primaryButton}
               disabled={name.trim().length < 2}
-              onClick={() => setStep("image")}
+              onClick={continueFromDetails}
             >
               ادامه
             </button>
@@ -371,7 +437,7 @@ function ProductPreview({ product }: { product: PublicSimpleProduct }) {
       <div>
         <h2>{product.name}</h2>
         <p>{product.description}</p>
-        <strong>{formatToman(product.price.amount)}</strong>
+        <strong>{formatIrrAsToman(product.price.amount)}</strong>
         <span className={styles.availability}>
           {product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
         </span>
@@ -409,16 +475,33 @@ async function uploadProductImage(file: File): Promise<MediaId> {
   return parsed.data.id;
 }
 
-function writeHeaders(revision: number) {
-  return {
-    "content-type": "application/json",
-    "idempotency-key": crypto.randomUUID(),
-    "if-match": `"${revision}"`,
-  };
+type IdempotentRequest = { payload: string; key: string };
+type RequestRef = { current: IdempotentRequest | undefined };
+
+const CREATE_KEY_STORAGE = "sevo-simple-product-create-key";
+
+function persistentCreateKey() {
+  const existing = sessionStorage.getItem(CREATE_KEY_STORAGE);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  sessionStorage.setItem(CREATE_KEY_STORAGE, created);
+  return created;
 }
 
-function formatToman(amount: number) {
-  return `${new Intl.NumberFormat("fa-IR").format(amount / 10)} تومان`;
+function requestKey(reference: RequestRef, payload: unknown) {
+  const serialized = JSON.stringify(payload);
+  if (reference.current?.payload === serialized) return reference.current.key;
+  const key = crypto.randomUUID();
+  reference.current = { payload: serialized, key };
+  return key;
+}
+
+function writeHeaders(revision: number, idempotencyKey: string) {
+  return {
+    "content-type": "application/json",
+    "idempotency-key": idempotencyKey,
+    "if-match": `"${revision}"`,
+  };
 }
 
 function stepLabel(step: Step) {

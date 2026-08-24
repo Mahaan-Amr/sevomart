@@ -8,14 +8,21 @@ import {
   type SimpleProductPreview,
   type SimpleProductView,
 } from "@sevo/contracts/product/v1";
-import { identityIdContract } from "@sevo/contracts/platform/v1";
+import {
+  identityIdContract,
+  productIdContract,
+  variantIdContract,
+  type ProductId,
+} from "@sevo/contracts/platform/v1";
 import { storeSlugContract } from "@sevo/contracts/store/v1";
 
+import type { SellerAccessRead } from "../../identity-access/public";
 import type { MediaStorage } from "../../media/public";
 import type { StoreAuthoritativeRead } from "../../store/public";
 import {
   ProductNotFoundError,
   ProductNotReadyError,
+  SellerAccessInactiveError,
   type ProductRepository,
   type ProductWriteContext,
 } from "../public";
@@ -31,13 +38,15 @@ export class ProductService {
     private readonly repository: ProductRepository,
     private readonly stores: StoreAuthoritativeRead,
     private readonly media: MediaStorage,
+    private readonly sellerAccess: SellerAccessRead,
   ) {}
 
   async create(identityId: string, write: WriteInput): Promise<SimpleProductView> {
     const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
     const store = await this.stores.readOwnedStore(actorId);
     if (!store) throw new ProductNotFoundError();
-    const productId = randomUUID();
+    const productId = productIdContract.parse(randomUUID());
     return this.repository.create(
       productId,
       store.storeId,
@@ -47,36 +56,51 @@ export class ProductService {
 
   async replaceWorkingCopy(
     identityId: string,
-    productId: string,
+    productId: ProductId,
     input: ReplaceSimpleProductWorkingCopy,
     write: WriteInput,
   ) {
     const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
     const store = await this.stores.readOwnedStore(actorId);
     if (!store) throw new ProductNotFoundError();
-    const mediaId = input.workingCopy.orderedMediaIds[0]!;
-    const asset = await this.media.inspect(mediaId);
-    if (
-      !asset ||
-      asset.ownerSellerId !== identityId ||
-      asset.purpose !== "PRODUCT_IMAGE"
-    ) {
-      throw new ProductNotReadyError();
+    const mediaId = input.workingCopy.orderedMediaIds[0];
+    if (mediaId) {
+      const asset = await this.media.inspect(mediaId);
+      if (
+        !asset ||
+        asset.ownerSellerId !== identityId ||
+        asset.purpose !== "PRODUCT_IMAGE"
+      ) {
+        throw new ProductNotReadyError();
+      }
     }
     return this.repository.replaceWorkingCopy(
       productId,
       store.storeId,
-      randomUUID(),
+      variantIdContract.parse(randomUUID()),
       input,
       context("REPLACE_WORKING_COPY", identityId, write, input),
     );
   }
 
-  async preview(identityId: string, productId: string): Promise<SimpleProductPreview> {
+  async preview(
+    identityId: string,
+    productId: ProductId,
+  ): Promise<SimpleProductPreview> {
     const product = await this.readOwned(identityId, productId);
-    const issues = product.workingCopy
-      ? []
-      : [{ path: "workingCopy", code: "REQUIRED" }];
+    const issues = !product.workingCopy
+      ? [{ path: "workingCopy", code: "REQUIRED" }]
+      : [
+          ...(product.workingCopy.name ? [] : [{ path: "name", code: "REQUIRED" }]),
+          ...(product.workingCopy.orderedMediaIds.length === 1
+            ? []
+            : [{ path: "image", code: "REQUIRED" }]),
+          ...(product.workingCopy.variant.price
+            ? []
+            : [{ path: "price", code: "REQUIRED" }]),
+          ...(product.inventory ? [] : [{ path: "inventory", code: "REQUIRED" }]),
+        ];
     return simpleProductPreviewContract.parse({
       product,
       ready: issues.length === 0,
@@ -86,12 +110,20 @@ export class ProductService {
 
   async publish(
     identityId: string,
-    productId: string,
+    productId: ProductId,
     write: WriteInput,
   ): Promise<PublicSimpleProduct> {
-    const owned = await this.readOwned(identityId, productId);
-    if (!owned.workingCopy) throw new ProductNotReadyError();
     const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const owned = await this.readOwned(identityId, productId);
+    if (
+      !owned.workingCopy?.name ||
+      owned.workingCopy.orderedMediaIds.length !== 1 ||
+      !owned.workingCopy.variant.price ||
+      !owned.inventory
+    ) {
+      throw new ProductNotReadyError();
+    }
     const ownedStore = await this.stores.readOwnedStore(actorId);
     if (!ownedStore) throw new ProductNotFoundError();
     const store = await this.stores.requireOwnedSellable(actorId, ownedStore.storeId);
@@ -112,7 +144,7 @@ export class ProductService {
     );
   }
 
-  async readPublic(storeSlug: string, productId: string) {
+  async readPublic(storeSlug: string, productId: ProductId) {
     const parsedSlug = storeSlugContract.safeParse(storeSlug);
     if (!parsedSlug.success) throw new ProductNotFoundError();
     const store = await this.stores.readPublishedStoreBySlug(parsedSlug.data);
@@ -132,7 +164,7 @@ export class ProductService {
     });
   }
 
-  private async readOwned(identityId: string, productId: string) {
+  private async readOwned(identityId: string, productId: ProductId) {
     const store = await this.stores.readOwnedStore(
       identityIdContract.parse(identityId),
     );
@@ -140,6 +172,14 @@ export class ProductService {
     const product = await this.repository.readOwned(productId, store.storeId);
     if (!product) throw new ProductNotFoundError();
     return product;
+  }
+
+  private async requireActiveSeller(
+    identityId: ReturnType<typeof identityIdContract.parse>,
+  ) {
+    if (!(await this.sellerAccess.isActiveSeller(identityId))) {
+      throw new SellerAccessInactiveError();
+    }
   }
 }
 
@@ -151,7 +191,7 @@ function context(
 ): ProductWriteContext {
   return {
     operation,
-    actorId,
+    actorId: identityIdContract.parse(actorId),
     correlationId: write.correlationId,
     idempotencyKey: write.idempotencyKey,
     expectedRevision: write.expectedRevision,
