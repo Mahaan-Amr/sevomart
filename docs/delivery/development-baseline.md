@@ -72,7 +72,11 @@ log، trace، fixture یا Issue ثبت شود.
 تغییر دامنه‌ای مهم، رخداد نسخه‌دار و بدون PII را با `@sevo/outbox` در همان
 transaction PostgreSQL ثبت می‌کند. Worker در هر دو مسیر `pnpm dev` و
 `pnpm compose:up` اجرا می‌شود و رکوردهای آماده را با lease claim می‌کند. تحویل
-حداقل یک‌بار است؛ consumer باید اثر دامنه و receipt را در یک transaction بنویسد.
+حداقل یک‌بار است؛ consumer باید اثر دامنه و receipt را در یک transaction بنویسد. تنها
+استثنا، orchestrationای است که اثر را از مرز HTTP یک ماژول مالک درخواست می‌کند: آن
+endpoint باید command را از journal پایدار بخواند، اجرای تکراری را idempotent کند و
+پایان اثر را پیش از پاسخ موفق ثبت کند. در این حالت crash میان پاسخ endpoint و ثبت
+receipt فقط باعث تکرار بی‌اثر command می‌شود و outbox تا دریافت پاسخ موفق READY می‌ماند.
 
 retry با backoff محدود انجام می‌شود. پس از پایان تلاش‌ها، رکورد با وضعیت `FAILED`،
 تعداد تلاش، زمان شکست و دسته خطا در `platform_outbox_events` باقی می‌ماند؛ payload
@@ -89,7 +93,10 @@ idempotent به‌روز می‌کند. این projection آمار عمومی ی
 `identity-seller-approval-recovery-v1` همان command را از راه endpoint داخلی محدود و
 idempotent ادامه می‌دهد. رخداد بازیابی متن درخواست یا دلیل را حمل نمی‌کند. ارتباط Worker
 با API از `INTERNAL_API_URL` و secret مشترک `SELLER_APPROVAL_RECOVERY_SECRET` استفاده
-می‌کند؛ مقدار محلی `.env.example` در production ممنوع است.
+می‌کند؛ مقدار محلی `.env.example` در production ممنوع است. این consumer همان استثنای
+orchestration بالاست: receipt و transaction تأیید جدا هستند، اما journal بازیابی با وضعیت
+`PENDING`، idempotency تأیید و ثبت `COMPLETED` در transaction نهایی، تکرار پس از crash را
+بی‌اثر و قابل ممیزی نگه می‌دارند.
 
 برای migrationهای تأیید فروشندگی، هم مسیر native با
 `pnpm --filter @sevo/database exec prisma migrate deploy` سپس اجرای API/Worker از
