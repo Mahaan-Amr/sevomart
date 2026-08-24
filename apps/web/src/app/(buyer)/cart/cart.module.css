@@ -79,6 +79,22 @@
   gap: 4px;
 }
 
+.itemActions {
+  display: flex;
+  gap: 8px;
+}
+
+.panel .itemActions button {
+  width: auto;
+  min-width: 40px;
+  min-height: 40px;
+  margin-top: 0;
+  padding-inline: 10px;
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
 .items small,
 .items em {
   color: var(--color-muted);
@@ -87,6 +103,25 @@
 
 .items em {
   color: var(--color-primary-dark);
+}
+
+.itemChanges,
+.quantityComparison {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding-inline-start: 20px;
+  color: var(--color-primary-dark);
+  font-size: 14px;
+}
+
+.quantityComparison {
+  margin-block: 12px;
+}
+
+.quantityComparison li {
+  display: grid;
+  gap: 2px;
 }
 
 .panel button {
@@ -149,6 +184,27 @@
 
 .conflict h2 {
   font-size: 18px;
+}
+
+.review {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 14px;
+  background: var(--color-cover-start);
+}
+
+.review h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.addressLink {
+  display: inline-flex;
+  min-height: 40px;
+  margin-top: 16px;
+  align-items: center;
+  color: var(--color-primary-dark);
 }
 
 @media (max-width: 420px) {

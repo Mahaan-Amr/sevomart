@@ -2,7 +2,9 @@ import {
   attachCartInputContract,
   cartConflictContract,
   cartContract,
+  cartItemRemovalInputContract,
   cartMutationInputContract,
+  cartReviewInputContract,
 } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
 
@@ -47,6 +49,15 @@ describe("Cart.v1 contract", () => {
       store: { storeId: ids.store, name: "خانه فنجان" },
       revision: 1,
       requiresResolution: false,
+      reviewRequired: true,
+      reviewChanges: [
+        {
+          kind: "PRICE_CHANGED",
+          variantId: ids.variant,
+          previousUnitPrice: { amount: 4_300_000, currency: "IRR" },
+          currentUnitPrice: { amount: 4_500_000, currency: "IRR" },
+        },
+      ],
       items: [
         {
           productId: ids.product,
@@ -62,6 +73,16 @@ describe("Cart.v1 contract", () => {
 
     expect(cart.items[0]?.unitPrice.amount).toBe(4_500_000);
     expect(cart.items[0]).not.toHaveProperty("onHand");
+    expect(cart.reviewRequired).toBe(true);
+  });
+
+  it("requires the current revision for removal and explicit review", () => {
+    expect(cartItemRemovalInputContract.parse({ expectedRevision: 4 })).toEqual({
+      expectedRevision: 4,
+    });
+    expect(
+      cartReviewInputContract.parse({ expectedRevision: 4, confirmed: true }),
+    ).toEqual({ expectedRevision: 4, confirmed: true });
   });
 
   it("models explicit same-store merge and different-store selection", () => {

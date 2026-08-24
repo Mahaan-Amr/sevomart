@@ -3,7 +3,9 @@ import type {
   Cart,
   CartConflict,
   CartId,
-  RemoveCartItemInput,
+  CreateSavedAddressInput,
+  SavedAddress,
+  SavedAddressId,
 } from "@sevo/contracts/orders/v1";
 import type {
   IdentityId,
@@ -16,6 +18,8 @@ export type StoredCartItem = Readonly<{
   productId: ProductId;
   variantId: VariantId;
   quantity: number;
+  reviewedPublicationVersion: number;
+  reviewedUnitPriceAmount: number;
 }>;
 
 export type StoredCart = Readonly<{
@@ -23,7 +27,19 @@ export type StoredCart = Readonly<{
   storeId: StoreId;
   identityId?: IdentityId;
   revision: number;
+  reviewedPolicyRevision: number;
+  reviewedShippingHash: string;
   items: readonly StoredCartItem[];
+}>;
+
+export type CartReviewSnapshot = Readonly<{
+  policyRevision: number;
+  shippingHash: string;
+  items: ReadonlyArray<{
+    variantId: VariantId;
+    publicationVersion: number;
+    unitPriceAmount: number;
+  }>;
 }>;
 
 export type CartMutationCommand = Readonly<{
@@ -38,31 +54,72 @@ export type CartMutationCommand = Readonly<{
   expectedRevision: number;
   idempotencyKey: string;
   requestHash: string;
+  correlationId: string;
+  reviewSnapshot: CartReviewSnapshot;
   expiresAt: Date;
 }>;
 
 export interface CartRepository {
   readGuest(tokenHash: string): Promise<StoredCart | undefined>;
   readBuyer(identityId: IdentityId): Promise<StoredCart | undefined>;
+  replayFailure?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+  }): Promise<void>;
+  replayResponse?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+  }): Promise<unknown | undefined>;
+  recordResponse?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+    response: unknown;
+  }): Promise<void>;
+  recordFailure?(command: {
+    operation: string;
+    scope: string;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+    error: unknown;
+  }): Promise<void>;
   mutate(command: CartMutationCommand): Promise<StoredCart>;
-  remove(command: {
+  removeItem(command: {
     identityId?: IdentityId;
     guestTokenHash: string;
     variantId: VariantId;
-    input: RemoveCartItemInput;
+    expectedRevision: number;
     idempotencyKey: string;
     requestHash: string;
-    expiresAt: Date;
+    correlationId: string;
+  }): Promise<StoredCart>;
+  confirmReview(command: {
+    identityId?: IdentityId;
+    guestTokenHash: string;
+    expectedRevision: number;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+    reviewSnapshot: CartReviewSnapshot;
   }): Promise<StoredCart>;
   replaceStore(
     command: CartMutationCommand & {
       replacementTokenHash: string;
     },
   ): Promise<StoredCart>;
-  inspectAttachment(
-    identityId: IdentityId,
-    guestTokenHash: string,
-  ): Promise<
+  inspectAttachment(command: {
+    identityId: IdentityId;
+    guestTokenHash: string;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+  }): Promise<
     | { status: "NONE"; cart?: StoredCart }
     | { status: "ATTACHED"; cart: StoredCart }
     | { status: "CONFLICT"; guest: StoredCart; buyer: StoredCart }
@@ -73,7 +130,39 @@ export interface CartRepository {
     input: AttachCartInput;
     idempotencyKey: string;
     requestHash: string;
+    correlationId: string;
   }): Promise<StoredCart>;
+}
+
+export type StoredSavedAddress = SavedAddress & { identityId: IdentityId };
+
+export interface SavedAddressRepository {
+  list(identityId: IdentityId): Promise<SavedAddress[]>;
+  create(command: {
+    addressId: SavedAddressId;
+    identityId: IdentityId;
+    input: CreateSavedAddressInput;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+  }): Promise<SavedAddress>;
+  update(command: {
+    addressId: SavedAddressId;
+    identityId: IdentityId;
+    input: CreateSavedAddressInput;
+    expectedRevision: number;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+  }): Promise<SavedAddress>;
+  delete(command: {
+    addressId: SavedAddressId;
+    identityId: IdentityId;
+    expectedRevision: number;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+  }): Promise<void>;
 }
 
 export type CartReadResult = { cart: Cart | null };
@@ -83,9 +172,18 @@ export type CartAttachmentResult =
 
 export class CartRevisionConflictError extends Error {
   readonly code = "CART_REVISION_CONFLICT" as const;
+  constructor(
+    readonly current?: StoredCart,
+    readonly currentCart?: Cart | null,
+  ) {
+    super("Cart revision does not match");
+  }
 }
 export class CartIdempotencyConflictError extends Error {
   readonly code = "IDEMPOTENCY_CONFLICT" as const;
+}
+export class CartIdempotencyInProgressError extends Error {
+  readonly code = "IDEMPOTENCY_IN_PROGRESS" as const;
 }
 export class CartStoreReplacementRequiredError extends Error {
   readonly code = "STORE_REPLACEMENT_CONFIRMATION_REQUIRED" as const;
@@ -108,7 +206,21 @@ export class CartVariantUnavailableError extends Error {
 export class CartQuantityLimitError extends Error {
   readonly code = "INVALID_QUANTITY" as const;
 }
-
 export class CartLineLimitError extends Error {
   readonly code = "CART_LIMIT_REACHED" as const;
+}
+export class SavedAddressNotFoundError extends Error {
+  readonly code = "ADDRESS_NOT_FOUND" as const;
+}
+export class SavedAddressRevisionConflictError extends Error {
+  readonly code = "ADDRESS_REVISION_CONFLICT" as const;
+  constructor(readonly current?: SavedAddress) {
+    super("Saved address revision does not match");
+  }
+}
+export class SavedAddressIdempotencyConflictError extends Error {
+  readonly code = "IDEMPOTENCY_CONFLICT" as const;
+}
+export class SavedAddressIdempotencyInProgressError extends Error {
+  readonly code = "IDEMPOTENCY_IN_PROGRESS" as const;
 }

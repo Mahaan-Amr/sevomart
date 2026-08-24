@@ -20,9 +20,14 @@ describe("OpenAPI guest cart and login attachment", () => {
       ["get", "/v1/cart", "readCart", false],
       ["put", "/v1/cart/items/{variantId}", "upsertCartItem", false],
       ["delete", "/v1/cart/items/{variantId}", "removeCartItem", false],
+      ["post", "/v1/cart/review", "confirmCartReview", false],
       ["post", "/v1/cart/store-replacement", "replaceCartStore", false],
       ["post", "/v1/cart/attach", "attachGuestCart", true],
-      ["post", "/v1/cart/identity-resolution", "resolveCartConflict", true],
+      ["post", "/v1/cart/resolve", "resolveCartConflict", true],
+      ["get", "/v1/addresses", "listSavedAddresses", true],
+      ["post", "/v1/addresses", "createSavedAddress", true],
+      ["put", "/v1/addresses/{addressId}", "updateSavedAddress", true],
+      ["delete", "/v1/addresses/{addressId}", "deleteSavedAddress", true],
     ] as const;
 
     for (const [method, path, operationId, authenticated] of expected) {
@@ -32,14 +37,43 @@ describe("OpenAPI guest cart and login attachment", () => {
         authenticated ? [{ identitySession: [] }] : [],
       );
     }
-    for (const [method, path] of expected
-      .slice(1)
-      .map(([method, path]) => [method, path])) {
+    const writes = expected.filter(([method]) => method !== "get");
+    for (const [method, path] of writes.map(([method, path]) => [method, path])) {
       expect(document.paths[path][method].parameters).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: "Idempotency-Key", required: true }),
         ]),
       );
     }
+    expect(
+      document.paths["/v1/addresses"].post.responses["409"].headers,
+    ).toHaveProperty("Retry-After");
+    for (const [method, path] of writes
+      .filter(([, path]) => path.startsWith("/v1/cart"))
+      .map(([method, path]) => [method, path])) {
+      expect(document.paths[path][method].responses["409"].headers).toHaveProperty(
+        "Retry-After",
+      );
+    }
+    expect(document.paths["/v1/cart/attach"].post.responses["409"].content).toEqual(
+      expect.objectContaining({
+        "application/json": expect.objectContaining({
+          schema: expect.objectContaining({
+            $ref: expect.stringContaining("CartAttachConflict"),
+          }),
+        }),
+      }),
+    );
+    expect(document.paths["/v1/cart/items/{variantId}"].put.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "X-Sevo-Guest-Scope",
+          required: false,
+        }),
+      ]),
+    );
+    expect(document.components.schemas.CartError.properties.code.enum).toContain(
+      "GUEST_SCOPE_REQUIRED",
+    );
   });
 });

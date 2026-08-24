@@ -18,9 +18,10 @@ import { ApiExcludeController } from "@nestjs/swagger";
 import type { RuntimeEnvironment } from "@sevo/config";
 import {
   attachCartInputContract,
-  cartIdempotencyKeyContract,
+  cartGuestScopeContract,
+  cartItemRemovalInputContract,
   cartMutationInputContract,
-  removeCartItemInputContract,
+  cartReviewInputContract,
   replaceCartStoreInputContract,
 } from "@sevo/contracts/orders/v1";
 import { variantIdContract } from "@sevo/contracts/platform/v1";
@@ -32,8 +33,10 @@ import {
   type IdentitySessionReader,
 } from "../identity-access/public";
 import { CartService } from "./application/cart.service";
+import { requireIdempotencyKey } from "./orders-http";
 import {
   CartIdempotencyConflictError,
+  CartIdempotencyInProgressError,
   CartLineLimitError,
   CartQuantityLimitError,
   CartResolutionRequiredError,
@@ -60,24 +63,78 @@ export class CartController {
     return this.carts.read(identityId, readCookie(request, "sevo_cart"));
   }
 
+  @Put("items/:variantId")
+  async mutate(
+    @Param("variantId") rawVariantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") rawKey: string | undefined,
+    @Headers("x-sevo-guest-scope") guestScope: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const variant = variantIdContract.safeParse(rawVariantId);
+    const input = cartMutationInputContract.safeParse(body);
+    if (!variant.success || !input.success || variant.data !== input.data.variantId) {
+      throw validationError(request.id);
+    }
+    const key = requireIdempotencyKey(request.id, rawKey);
+    const identityId = await this.optionalIdentity(request);
+    const guestSecret = readCookie(request, "sevo_cart");
+    const parsedGuestScope = cartGuestScopeContract.safeParse(guestScope);
+    if (!identityId && !guestSecret && !parsedGuestScope.success) {
+      throw new HttpException(
+        {
+          code: "GUEST_SCOPE_REQUIRED",
+          message: "شناسه مهمان برای ساخت سبد لازم است. صفحه را تازه کنید.",
+          correlationId: request.id,
+        },
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    try {
+      const result = await this.carts.mutate(
+        identityId,
+        guestSecret,
+        input.data,
+        key,
+        request.id,
+        parsedGuestScope.success ? parsedGuestScope.data : undefined,
+      );
+      if (result.guestSecret) {
+        response.header("set-cookie", this.cartCookie(result.guestSecret));
+      }
+      return result.cart;
+    } catch (error) {
+      return cartError(
+        error,
+        request.id,
+        this.carts,
+        identityId,
+        readCookie(request, "sevo_cart"),
+      );
+    }
+  }
+
   @Delete("items/:variantId")
-  async remove(
+  async removeItem(
     @Param("variantId") rawVariantId: string,
     @Body() body: unknown,
     @Headers("idempotency-key") rawKey: string | undefined,
     @Req() request: FastifyRequest,
   ) {
     const variant = variantIdContract.safeParse(rawVariantId);
-    const input = removeCartItemInputContract.safeParse(body);
+    const input = cartItemRemovalInputContract.safeParse(body);
     if (!variant.success || !input.success) throw validationError(request.id);
+    const key = requireIdempotencyKey(request.id, rawKey);
     const identityId = await this.optionalIdentity(request);
     try {
-      return await this.carts.remove(
+      return await this.carts.removeItem(
         identityId,
         readCookie(request, "sevo_cart"),
         variant.data,
         input.data,
-        requireIdempotencyKey(request.id, rawKey),
+        key,
+        request.id,
       );
     } catch (error) {
       return cartError(
@@ -90,32 +147,25 @@ export class CartController {
     }
   }
 
-  @Put("items/:variantId")
-  async mutate(
-    @Param("variantId") rawVariantId: string,
+  @Post("review")
+  @HttpCode(HttpStatus.OK)
+  async review(
     @Body() body: unknown,
     @Headers("idempotency-key") rawKey: string | undefined,
     @Req() request: FastifyRequest,
-    @Res({ passthrough: true }) response: FastifyReply,
   ) {
-    const variant = variantIdContract.safeParse(rawVariantId);
-    const input = cartMutationInputContract.safeParse(body);
-    if (!variant.success || !input.success || variant.data !== input.data.variantId) {
-      throw validationError(request.id);
-    }
+    const input = cartReviewInputContract.safeParse(body);
+    if (!input.success) throw validationError(request.id);
     const key = requireIdempotencyKey(request.id, rawKey);
     const identityId = await this.optionalIdentity(request);
     try {
-      const result = await this.carts.mutate(
+      return await this.carts.confirmReview(
         identityId,
         readCookie(request, "sevo_cart"),
         input.data,
         key,
+        request.id,
       );
-      if (result.guestSecret) {
-        response.header("set-cookie", this.cartCookie(result.guestSecret));
-      }
-      return result.cart;
     } catch (error) {
       return cartError(
         error,
@@ -134,12 +184,20 @@ export class CartController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) response: FastifyReply,
   ) {
-    requireIdempotencyKey(request.id, rawKey);
+    const key = requireIdempotencyKey(request.id, rawKey);
     const identityId = await requireIdentity(request, this.sessions);
-    const result = await this.carts.inspectAttachment(
-      identityId,
-      readCookie(request, "sevo_cart"),
-    );
+    const guestSecret = readCookie(request, "sevo_cart");
+    let result: Awaited<ReturnType<CartService["inspectAttachment"]>>;
+    try {
+      result = await this.carts.inspectAttachment(
+        identityId,
+        guestSecret,
+        key,
+        request.id,
+      );
+    } catch (error) {
+      return cartError(error, request.id, this.carts, identityId, guestSecret);
+    }
     if (result.status === "RESOLUTION_REQUIRED") {
       throw new HttpException(
         {
@@ -174,6 +232,7 @@ export class CartController {
         readCookie(request, "sevo_cart"),
         input.data,
         key,
+        request.id,
       );
       if (result.guestSecret) {
         response.header("set-cookie", this.cartCookie(result.guestSecret));
@@ -190,7 +249,7 @@ export class CartController {
     }
   }
 
-  @Post("identity-resolution")
+  @Post("resolve")
   @HttpCode(HttpStatus.OK)
   async resolve(
     @Body() body: unknown,
@@ -208,6 +267,7 @@ export class CartController {
         readCookie(request, "sevo_cart"),
         input.data,
         key,
+        request.id,
       );
       response.header("set-cookie", this.clearCartCookie());
       return result;
@@ -250,21 +310,6 @@ function readCookie(request: FastifyRequest, name: string) {
     .join("=");
 }
 
-function requireIdempotencyKey(correlationId: string, value: string | undefined) {
-  const key = cartIdempotencyKeyContract.safeParse(value);
-  if (!key.success) {
-    throw new HttpException(
-      {
-        code: "PRECONDITION_REQUIRED",
-        message: "شناسه یکتای درخواست لازم است.",
-        correlationId,
-      },
-      HttpStatus.PRECONDITION_REQUIRED,
-    );
-  }
-  return key.data;
-}
-
 function validationError(correlationId: string) {
   return new HttpException(
     {
@@ -283,14 +328,28 @@ async function cartError(
   identityId: string | undefined,
   guestSecret: string | undefined,
 ): Promise<never> {
+  correlationId = replayedCorrelationId(error) ?? correlationId;
   if (error instanceof CartRevisionConflictError) {
-    const current = await carts.read(identityId, guestSecret);
+    const currentCart =
+      error.currentCart !== undefined
+        ? error.currentCart
+        : error.current
+          ? await carts.present(error.current)
+          : (await carts.read(identityId, guestSecret)).cart;
     throw new HttpException(
       {
         code: "CART_REVISION_CONFLICT",
         message: "سبد در جای دیگری تغییر کرده است. نسخه تازه را ببینید.",
         correlationId,
-        currentCart: current.cart,
+        currentCart,
+        ...(currentCart
+          ? {
+              resolution: {
+                action: "REVIEW_AND_RETRY",
+                expectedRevision: currentCart.revision,
+              },
+            }
+          : {}),
       },
       HttpStatus.CONFLICT,
     );
@@ -299,6 +358,13 @@ async function cartError(
     throw conflict(
       "IDEMPOTENCY_CONFLICT",
       "این شناسه درخواست قبلاً برای تغییر دیگری استفاده شده است.",
+      correlationId,
+    );
+  }
+  if (error instanceof CartIdempotencyInProgressError) {
+    throw conflict(
+      "IDEMPOTENCY_IN_PROGRESS",
+      "این درخواست هنوز در حال انجام است. کمی بعد دوباره تلاش کنید.",
       correlationId,
     );
   }
@@ -353,6 +419,17 @@ async function cartError(
     );
   }
   throw error;
+}
+
+function replayedCorrelationId(error: unknown): string | undefined {
+  if (
+    error instanceof Error &&
+    "replayedCorrelationId" in error &&
+    typeof error.replayedCorrelationId === "string"
+  ) {
+    return error.replayedCorrelationId;
+  }
+  return undefined;
 }
 
 function conflict(code: string, message: string, correlationId: string) {

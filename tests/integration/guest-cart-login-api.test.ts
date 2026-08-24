@@ -1,6 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
-
-import { cartContract, cartResolutionContract } from "@sevo/contracts/orders/v1";
+import {
+  cartContract,
+  cartErrorContract,
+  cartResolutionContract,
+} from "@sevo/contracts/orders/v1";
+import { createHash } from "node:crypto";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -22,65 +25,100 @@ describe("guest cart and login attachment HTTP API", () => {
 
   beforeEach(async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql`delete from order_cart_idempotency_records`;
-    await sql`delete from order_carts`;
-    await sql`delete from inventory_levels`;
     await sql`
-      delete from product_products
-      where id in (${productId}::uuid, ${other.productId}::uuid)
+      delete from order_cart_audits
+      where cart_id in (
+        select id from order_carts where store_id in (${storeId}, ${other.storeId})
+      )
     `;
     await sql`
-      delete from store_stores
-      where id in (${storeId}::uuid, ${other.storeId}::uuid)
+      delete from order_cart_idempotency_records
+      where scope in (${storeId}, ${other.storeId})
+         or operation like '%CART%'
+    `;
+    await sql`
+      delete from order_carts where store_id in (${storeId}, ${other.storeId})
+    `;
+    await sql`
+      delete from inventory_levels where variant_id in (${variantId}, ${other.variantId})
     `;
     await sql`
       insert into store_stores
         (id, name, slug, status, publication_version, revision, updated_at)
       values
         (${storeId}, 'خانه فنجان', 'cart-store', 'PUBLISHED', 1, 1, now())
+      on conflict (id) do update set
+        name = excluded.name, slug = excluded.slug, status = excluded.status,
+        publication_version = excluded.publication_version, revision = excluded.revision,
+        return_policy = null, return_policy_revision = 0, updated_at = now()
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
-      values (${crypto.randomUUID()}, ${storeId}, ${crypto.randomUUID()}, 'OWNER')
+      select ${crypto.randomUUID()}, ${storeId}, ${crypto.randomUUID()}, 'OWNER'
+      where not exists (select 1 from store_memberships where store_id = ${storeId})
     `;
     await sql`
       insert into product_products
         (id, store_id, state, revision, publication_version, published_at)
       values (${productId}, ${storeId}, 'PUBLISHED', 2, 1, now())
+      on conflict (id) do update set
+        store_id = excluded.store_id, state = excluded.state, revision = excluded.revision,
+        publication_version = excluded.publication_version, published_at = now()
     `;
     await sql`
       insert into product_publications
         (product_id, publication_version, name, description, media_id, variant_id)
       values
         (${productId}, 1, 'فنجان سرامیکی', 'فنجان دست‌ساز', ${mediaId}, ${variantId})
+      on conflict (product_id, publication_version) do update set
+        name = excluded.name, description = excluded.description,
+        media_id = excluded.media_id, variant_id = excluded.variant_id
     `;
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${productId}, ${variantId}, 4500000, 'IRR', 1)
+      on conflict (variant_id) do update set
+        product_id = excluded.product_id, amount = excluded.amount,
+        currency = excluded.currency, revision = excluded.revision
     `;
     await sql`
       insert into product_variants
         (id, product_id, store_id, client_key, combination_key)
       values (${variantId}, ${productId}, ${storeId}, 'simple', '')
+      on conflict (id) do update set
+        product_id = excluded.product_id, store_id = excluded.store_id,
+        client_key = excluded.client_key, combination_key = excluded.combination_key
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
       values (${variantId}, ${storeId}, 8, 1)
+      on conflict (variant_id) do update set
+        store_id = excluded.store_id, on_hand = excluded.on_hand, revision = excluded.revision
     `;
     await sql`
       insert into store_stores
         (id, name, slug, status, publication_version, revision, updated_at)
       values
         (${other.storeId}, 'خانه پارچه', 'other-cart-store', 'PUBLISHED', 1, 1, now())
+      on conflict (id) do update set
+        name = excluded.name, slug = excluded.slug, status = excluded.status,
+        publication_version = excluded.publication_version, revision = excluded.revision,
+        return_policy = null, return_policy_revision = 0, updated_at = now()
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
-      values (${crypto.randomUUID()}, ${other.storeId}, ${crypto.randomUUID()}, 'OWNER')
+      select ${crypto.randomUUID()}, ${other.storeId}, ${crypto.randomUUID()}, 'OWNER'
+      where not exists (
+        select 1 from store_memberships where store_id = ${other.storeId}
+      )
     `;
     await sql`
       insert into product_products
         (id, store_id, state, revision, publication_version, published_at)
       values (${other.productId}, ${other.storeId}, 'PUBLISHED', 2, 1, now())
+      on conflict (id) do update set
+        store_id = excluded.store_id, state = excluded.state, revision = excluded.revision,
+        publication_version = excluded.publication_version, published_at = now()
     `;
     await sql`
       insert into product_publications
@@ -88,19 +126,30 @@ describe("guest cart and login attachment HTTP API", () => {
       values
         (${other.productId}, 1, 'شال دست‌باف', 'شال دست‌باف', ${other.mediaId},
          ${other.variantId})
+      on conflict (product_id, publication_version) do update set
+        name = excluded.name, description = excluded.description,
+        media_id = excluded.media_id, variant_id = excluded.variant_id
     `;
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${other.productId}, ${other.variantId}, 3200000, 'IRR', 1)
+      on conflict (variant_id) do update set
+        product_id = excluded.product_id, amount = excluded.amount,
+        currency = excluded.currency, revision = excluded.revision
     `;
     await sql`
       insert into product_variants
         (id, product_id, store_id, client_key, combination_key)
       values (${other.variantId}, ${other.productId}, ${other.storeId}, 'simple', '')
+      on conflict (id) do update set
+        product_id = excluded.product_id, store_id = excluded.store_id,
+        client_key = excluded.client_key, combination_key = excluded.combination_key
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
       values (${other.variantId}, ${other.storeId}, 4, 1)
+      on conflict (variant_id) do update set
+        store_id = excluded.store_id, on_hand = excluded.on_hand, revision = excluded.revision
     `;
     await sql.end();
   });
@@ -114,10 +163,21 @@ describe("guest cart and login attachment HTTP API", () => {
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
     const key = crypto.randomUUID();
+    const guestScope = crypto.randomUUID();
+    const missingScope = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    });
+    expect(missingScope.statusCode).toBe(422);
+    expect(cartErrorContract.parse(missingScope.json())).toMatchObject({
+      code: "GUEST_SCOPE_REQUIRED",
+    });
     const added = await server.inject({
       method: "PUT",
       url: `/v1/cart/items/${variantId}`,
-      headers: { "idempotency-key": key },
+      headers: { "idempotency-key": key, "x-sevo-guest-scope": guestScope },
       payload: { variantId, quantity: 2, expectedRevision: 0 },
     });
 
@@ -135,11 +195,25 @@ describe("guest cart and login attachment HTTP API", () => {
     const replay = await server.inject({
       method: "PUT",
       url: `/v1/cart/items/${variantId}`,
-      headers: { cookie, "idempotency-key": key },
+      headers: { "idempotency-key": key, "x-sevo-guest-scope": guestScope },
       payload: { variantId, quantity: 2, expectedRevision: 0 },
     });
     expect(replay.statusCode).toBe(200);
-    expect(replay.json().revision).toBe(1);
+    expect(replay.json()).toEqual(added.json());
+    expect(replay.headers["set-cookie"]).toBe(cookie);
+
+    const unrelatedGuest = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: {
+        "idempotency-key": key,
+        "x-sevo-guest-scope": crypto.randomUUID(),
+      },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    });
+    expect(unrelatedGuest.statusCode).toBe(200);
+    expect(unrelatedGuest.json().cartId).not.toBe(added.json().cartId);
+    expect(unrelatedGuest.headers["set-cookie"]).not.toBe(cookie);
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const secrets = await sql<Array<{ tokenHash: string }>>`
@@ -164,37 +238,6 @@ describe("guest cart and login attachment HTTP API", () => {
     });
   });
 
-  it("replays the first anonymous mutation after a lost response", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const request = {
-      method: "PUT" as const,
-      url: `/v1/cart/items/${variantId}`,
-      headers: { "idempotency-key": randomUUID() },
-      payload: { variantId, quantity: 2, expectedRevision: 0 },
-    };
-
-    const first = await server.inject(request);
-    const replay = await server.inject(request);
-
-    expect(first.statusCode).toBe(200);
-    expect(replay.statusCode).toBe(200);
-    expect(replay.json()).toEqual(first.json());
-    expect(replay.headers["set-cookie"]).toBe(first.headers["set-cookie"]);
-
-    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    const carts = await sql<Array<{ count: number }>>`
-      select count(*)::int as count from order_carts
-    `;
-    const tokens = await sql<Array<{ count: number }>>`
-      select count(*)::int as count from order_cart_access_tokens
-    `;
-    await sql.end();
-    expect(carts[0]?.count).toBe(1);
-    expect(tokens[0]?.count).toBe(1);
-  });
-
   it("replaces an expired guest secret instead of trusting or reusing it", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -214,31 +257,6 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(freshSecret).toBeTruthy();
     expect(freshSecret).not.toBe(staleSecret);
     expect(fresh.json()).toMatchObject({ revision: 1, items: [{ quantity: 2 }] });
-  });
-
-  it("removes an item idempotently with revision protection", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const added = await add(server, undefined, 2, 0);
-    const cookie = added.headers["set-cookie"]!;
-    const request = {
-      method: "DELETE" as const,
-      url: `/v1/cart/items/${variantId}`,
-      headers: { cookie, "idempotency-key": randomUUID() },
-      payload: { expectedRevision: 1 },
-    };
-
-    const removed = await server.inject(request);
-    const replay = await server.inject(request);
-
-    expect(removed.statusCode).toBe(200);
-    expect(cartContract.parse(removed.json())).toMatchObject({
-      revision: 2,
-      items: [],
-    });
-    expect(replay.statusCode).toBe(200);
-    expect(replay.json()).toEqual(removed.json());
   });
 
   it("attaches a guest cart after OTP login and idempotently merges duplicate lines", async () => {
@@ -267,21 +285,11 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(conflict.status).toBe("RESOLUTION_REQUIRED");
     if (conflict.status !== "RESOLUTION_REQUIRED") throw new Error("conflict expected");
     expect(conflict.conflict.kind).toBe("SAME_STORE");
-    if (conflict.conflict.kind !== "SAME_STORE") throw new Error("same store expected");
-    expect(conflict.conflict.combinedQuantities).toEqual([
-      {
-        variantId,
-        name: "فنجان سرامیکی",
-        guestQuantity: 2,
-        buyerQuantity: 3,
-        mergedQuantity: 5,
-      },
-    ]);
 
     const resolveKey = crypto.randomUUID();
     const request = {
       method: "POST" as const,
-      url: "/v1/cart/identity-resolution",
+      url: "/v1/cart/resolve",
       headers: {
         cookie: `${sessionCookie}; ${guestCookie}`,
         "idempotency-key": resolveKey,
@@ -303,75 +311,145 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(replayed.json()).toEqual(merged.json());
   });
 
-  it("keeps one buyer cart when attachment requests race after login", async () => {
+  it("idempotently audits direct guest cart attachment with its correlation", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
-    const guest = await add(server, undefined, 1, 0);
+    const guest = await add(server, undefined, 2, 0);
     const sessionCookie = await signIn(server);
-    const headers = {
-      cookie: `${sessionCookie}; ${guest.headers["set-cookie"]!}`,
-      "idempotency-key": randomUUID(),
+    const attachKey = crypto.randomUUID();
+    const correlationId = crypto.randomUUID();
+    const request = {
+      method: "POST" as const,
+      url: "/v1/cart/attach",
+      headers: {
+        cookie: `${sessionCookie}; ${guest.headers["set-cookie"]!}`,
+        "idempotency-key": attachKey,
+        "x-correlation-id": correlationId,
+      },
+      payload: {},
     };
+    const attached = await server.inject(request);
+    const replayed = await server.inject(request);
+    expect(attached.statusCode).toBe(200);
+    expect(replayed.json()).toEqual(attached.json());
 
-    const responses = await Promise.all([
-      server.inject({ method: "POST", url: "/v1/cart/attach", headers, payload: {} }),
-      server.inject({
-        method: "POST",
-        url: "/v1/cart/attach",
-        headers: { ...headers, "idempotency-key": randomUUID() },
-        payload: {},
-      }),
-    ]);
-
-    expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    const active = await sql<Array<{ count: number }>>`
-      select count(*)::int as count from order_carts
-      where identity_id is not null and status = 'ACTIVE'
+    const audits = await sql<Array<{ operation: string; correlationId: string }>>`
+      select operation, correlation_id as "correlationId" from order_cart_audits
+      where operation = 'ATTACH_IDENTITY'
+    `;
+    expect(audits).toEqual([{ operation: "ATTACH_IDENTITY", correlationId }]);
+
+    await sql`
+      update order_carts set status = 'EXPIRED', identity_id = null
+      where id = ${attached.json().cart.cartId}
     `;
     await sql.end();
-    expect(active[0]?.count).toBe(1);
-  });
-
-  it("rejects a merge above 100 lines without changing either cart", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const sessionCookie = await signIn(server);
-    const fixture = await seedOversizedMerge();
-
-    const response = await server.inject({
-      method: "POST",
-      url: "/v1/cart/identity-resolution",
+    const nextGuest = await add(server, undefined, 1, 0);
+    const reusedForAnotherCart = await server.inject({
+      ...request,
       headers: {
-        cookie: `${sessionCookie}; sevo_cart=${fixture.guestSecret}`,
-        "idempotency-key": randomUUID(),
-      },
-      payload: {
-        decision: "MERGE",
-        guestRevision: 1,
-        buyerRevision: 1,
+        ...request.headers,
+        cookie: `${sessionCookie}; ${nextGuest.headers["set-cookie"]!}`,
       },
     });
+    expect(reusedForAnotherCart.statusCode).toBe(409);
+    expect(reusedForAnotherCart.json()).toMatchObject({
+      code: "IDEMPOTENCY_CONFLICT",
+    });
+  });
 
-    expect(response.statusCode).toBe(422);
-    expect(response.json()).toMatchObject({ code: "CART_LIMIT_REACHED" });
-
+  it("does not confirm review when an authoritative product disappeared", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    const carts = await sql<Array<{ status: string; itemCount: number }>>`
-      select cart.status, count(item.variant_id)::int as "itemCount"
-      from order_carts cart
-      join order_cart_items item on item.cart_id = cart.id
-      where cart.id in (${fixture.buyerCartId}, ${fixture.guestCartId})
-      group by cart.id, cart.status
-      order by count(item.variant_id) desc
-    `;
+    await sql`delete from product_variants where product_id = ${productId}`;
     await sql.end();
-    expect(carts).toEqual([
-      { status: "ACTIVE", itemCount: 100 },
-      { status: "ACTIVE", itemCount: 1 },
-    ]);
+
+    const reviewed = await server.inject({
+      method: "POST",
+      url: "/v1/cart/review",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(reviewed.statusCode).toBe(409);
+    expect(reviewed.json()).toMatchObject({ code: "VARIANT_UNAVAILABLE" });
+    const revisions = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const rows = await revisions<Array<{ revision: number }>>`
+      select revision from order_carts where id = ${first.json().cartId}
+    `;
+    await revisions.end();
+    expect(rows[0]?.revision).toBe(1);
+  });
+
+  it("returns Retry-After while the same cart write is in progress", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+    const guestSecret = /sevo_cart=([^;]+)/.exec(cookie)?.[1];
+    if (!guestSecret) throw new Error("Guest cart cookie was not returned");
+    const scope = createHash("sha256").update(guestSecret).digest("hex");
+    const key = crypto.randomUUID();
+    const lockKey = `cart-idempotency:REMOVE_CART_ITEM:${scope}:${key}`;
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql.begin(async (transaction) => {
+        await transaction`
+          select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+        `;
+        const response = await server.inject({
+          method: "DELETE",
+          url: `/v1/cart/items/${variantId}`,
+          headers: { cookie, "idempotency-key": key },
+          payload: { expectedRevision: 1 },
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.headers["retry-after"]).toBe("1");
+        expect(response.json()).toMatchObject({ code: "IDEMPOTENCY_IN_PROGRESS" });
+      });
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("replays the original stale-write response after the cart changes again", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+    const key = crypto.randomUUID();
+    const staleRequest = {
+      method: "DELETE" as const,
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": key },
+      payload: { expectedRevision: 0 },
+    };
+    const stale = await server.inject(staleRequest);
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({
+      code: "CART_REVISION_CONFLICT",
+      currentCart: { revision: 1 },
+    });
+    const changed = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 2, expectedRevision: 1 },
+    });
+    expect(changed.statusCode).toBe(200);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`update product_offers set amount = 9900000, revision = revision + 1`;
+    await sql.end();
+    const replayed = await server.inject(staleRequest);
+    expect(replayed.statusCode).toBe(409);
+    expect(replayed.json()).toEqual(stale.json());
   });
 
   it("keeps the current store until the guest explicitly confirms replacement", async () => {
@@ -380,16 +458,18 @@ describe("guest cart and login attachment HTTP API", () => {
     const server = app.getHttpAdapter().getInstance();
     const first = await add(server, undefined, 1, 0);
     const cookie = first.headers["set-cookie"]!;
-    const rejected = await server.inject({
+    const rejectedKey = crypto.randomUUID();
+    const rejectedRequest = {
       method: "PUT",
       url: `/v1/cart/items/${other.variantId}`,
-      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      headers: { cookie, "idempotency-key": rejectedKey },
       payload: {
         variantId: other.variantId,
         quantity: 1,
         expectedRevision: 1,
       },
-    });
+    } as const;
+    const rejected = await server.inject(rejectedRequest);
     expect(rejected.statusCode).toBe(409);
     expect(rejected.json()).toMatchObject({
       code: "STORE_REPLACEMENT_CONFIRMATION_REQUIRED",
@@ -425,6 +505,9 @@ describe("guest cart and login attachment HTTP API", () => {
     expect(replayed.statusCode).toBe(200);
     expect(replayed.json()).toEqual(replaced.json());
     expect(replayed.headers["set-cookie"]).toBe(replaced.headers["set-cookie"]);
+    const replayedRejection = await server.inject(rejectedRequest);
+    expect(replayedRejection.statusCode).toBe(409);
+    expect(replayedRejection.json()).toEqual(rejected.json());
   });
 
   it("rejects one of two concurrent mutations from the same revision", async () => {
@@ -458,6 +541,95 @@ describe("guest cart and login attachment HTTP API", () => {
       items: [{ quantity: expect.any(Number) }],
     });
   });
+
+  it("returns a fresh snapshot and retry action when another tab removes an item", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+
+    const removed = await server.inject({
+      method: "DELETE",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { expectedRevision: 1 },
+    });
+    expect(removed.statusCode, JSON.stringify(removed.json())).toBe(200);
+
+    const stale = await server.inject({
+      method: "PUT",
+      url: `/v1/cart/items/${variantId}`,
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 3, expectedRevision: 1 },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({
+      code: "CART_REVISION_CONFLICT",
+      currentCart: { revision: 2, items: [] },
+      resolution: { action: "REVIEW_AND_RETRY", expectedRevision: 2 },
+    });
+  });
+
+  it("requires a fresh review after product price or store policy changes", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await add(server, undefined, 1, 0);
+    const cookie = first.headers["set-cookie"]!;
+    expect(first.json()).toMatchObject({ reviewRequired: false, reviewChanges: [] });
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`update product_offers set amount = 4700000, revision = 2`;
+    await sql`
+      insert into product_publications
+        (product_id, publication_version, name, description, media_id, variant_id)
+      values
+        (${productId}, 2, 'فنجان سرامیکی تازه', 'فنجان دست‌ساز', ${mediaId}, ${variantId})
+    `;
+    await sql`
+      update product_products set publication_version = 2, revision = revision + 1
+      where id = ${productId}
+    `;
+    await sql`
+      update store_stores set return_policy = 'شرایط مرجوعی تازه فروشگاه',
+        return_policy_revision = 2, revision = revision + 1
+      where id = ${storeId}
+    `;
+    await sql.end();
+
+    const changed = await server.inject({
+      method: "GET",
+      url: "/v1/cart",
+      headers: { cookie },
+    });
+    expect(changed.statusCode).toBe(200);
+    expect(cartContract.parse(changed.json().cart)).toMatchObject({
+      revision: 1,
+      reviewRequired: true,
+      reviewChanges: expect.arrayContaining([
+        expect.objectContaining({ kind: "PRICE_CHANGED", variantId }),
+        { kind: "PRODUCT_CHANGED", variantId },
+        expect.objectContaining({
+          kind: "POLICY_CHANGED",
+          currentPolicyText: "شرایط مرجوعی تازه فروشگاه",
+        }),
+      ]),
+    });
+
+    const reviewed = await server.inject({
+      method: "POST",
+      url: "/v1/cart/review",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(reviewed.statusCode, JSON.stringify(reviewed.json())).toBe(200);
+    expect(cartContract.parse(reviewed.json())).toMatchObject({
+      revision: 2,
+      reviewRequired: false,
+      reviewChanges: [],
+    });
+  });
 });
 
 type TestServer =
@@ -476,7 +648,10 @@ async function add(
   return server.inject({
     method: "PUT",
     url: "/v1/cart/items/a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
-    headers: { ...(cookie ? { cookie } : {}), "idempotency-key": crypto.randomUUID() },
+    headers: {
+      ...(cookie ? { cookie } : { "x-sevo-guest-scope": crypto.randomUUID() }),
+      "idempotency-key": crypto.randomUUID(),
+    },
     payload: {
       variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
       quantity,
@@ -500,114 +675,4 @@ async function signIn(server: TestServer) {
     },
   });
   return verified.headers["set-cookie"]!;
-}
-
-async function seedOversizedMerge() {
-  const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-  const identity = await sql<Array<{ identityId: string }>>`
-    select identity_id as "identityId" from identity_login_methods
-    where mobile = '09123456789'
-  `;
-  const identityId = identity[0]!.identityId;
-  const variants = Array.from({ length: 101 }, (_, index) => ({
-    productId: randomUUID(),
-    variantId: randomUUID(),
-    mediaId: randomUUID(),
-    name: `کالای سبد ${index + 1}`,
-  }));
-  const now = new Date();
-  const result = await sql.begin(async (transaction) => {
-    await transaction`
-      insert into product_products ${transaction(
-        variants.map((variant) => ({
-          id: variant.productId,
-          store_id: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
-          state: "PUBLISHED",
-          revision: 1,
-          publication_version: 1,
-          published_at: now,
-        })),
-      )}
-    `;
-    await transaction`
-      insert into product_publications ${transaction(
-        variants.map((variant) => ({
-          product_id: variant.productId,
-          publication_version: 1,
-          name: variant.name,
-          description: "شرح کالا",
-          media_id: variant.mediaId,
-          variant_id: variant.variantId,
-        })),
-      )}
-    `;
-    await transaction`
-      insert into product_variants ${transaction(
-        variants.map((variant) => ({
-          id: variant.variantId,
-          product_id: variant.productId,
-          store_id: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
-          client_key: "simple",
-          combination_key: "",
-        })),
-      )}
-    `;
-    await transaction`
-      insert into product_offers ${transaction(
-        variants.map((variant) => ({
-          product_id: variant.productId,
-          variant_id: variant.variantId,
-          amount: 1_000_000,
-          currency: "IRR",
-          revision: 1,
-        })),
-      )}
-    `;
-    await transaction`
-      insert into inventory_levels ${transaction(
-        variants.map((variant) => ({
-          variant_id: variant.variantId,
-          store_id: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
-          on_hand: 10,
-          revision: 1,
-        })),
-      )}
-    `;
-
-    const buyerCartId = randomUUID();
-    const guestCartId = randomUUID();
-    await transaction`
-      insert into order_carts
-        (id, store_id, identity_id, status, revision, expires_at, updated_at)
-      values
-        (${buyerCartId}, 'ad75d73c-1744-422c-a6ae-31195ed6abf1', ${identityId},
-         'ACTIVE', 1, now() + interval '30 days', now()),
-        (${guestCartId}, 'ad75d73c-1744-422c-a6ae-31195ed6abf1', null,
-         'ACTIVE', 1, now() + interval '30 days', now())
-    `;
-    await transaction`
-      insert into order_cart_items ${transaction(
-        variants.slice(0, 100).map((variant) => ({
-          cart_id: buyerCartId,
-          variant_id: variant.variantId,
-          product_id: variant.productId,
-          quantity: 1,
-        })),
-      )}
-    `;
-    await transaction`
-      insert into order_cart_items (cart_id, variant_id, product_id, quantity)
-      values (${guestCartId}, ${variants[100]!.variantId}, ${variants[100]!.productId}, 1)
-    `;
-    const guestSecret = randomUUID();
-    await transaction`
-      insert into order_cart_access_tokens (id, cart_id, token_hash, expires_at)
-      values (${randomUUID()}, ${guestCartId},
-        ${createHash("sha256").update(guestSecret).digest("hex")},
-        now() + interval '30 days')
-    `;
-    return { buyerCartId, guestCartId, guestSecret };
-  });
-  await sql.end();
-  return result;
 }

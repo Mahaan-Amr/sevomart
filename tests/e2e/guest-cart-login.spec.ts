@@ -5,6 +5,7 @@ import postgres from "postgres";
 
 import {
   assertInteractiveTargets,
+  assertMinimumContrast,
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
 import {
@@ -102,6 +103,17 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
 
+  const otherTab = await page.context().newPage();
+  await otherTab.goto("/cart");
+  await otherTab.getByRole("button", { name: "بیشترکردن تعداد فنجان سرامیکی" }).click();
+  await expect(otherTab.getByText("تعداد ۳")).toBeVisible();
+  await page.getByRole("button", { name: "حذف فنجان سرامیکی" }).click();
+  await expect(
+    page.getByText("سبد در جای دیگری تغییر کرده است. نسخه تازه را بررسی کنید."),
+  ).toBeVisible();
+  await expect(page.getByText("تعداد ۳")).toBeVisible();
+  await otherTab.close();
+
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
@@ -112,14 +124,70 @@ test("guest adds a product, signs in and continues the same cart", async ({
 
   await expect(page).toHaveURL(/\/cart\?continue=1$/);
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
-  await expect(page.getByText("تعداد ۲")).toBeVisible();
+  await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
   await expect(
     page.getByText("سبد به هویت سوو متصل شد و برای ادامه خرید آماده است."),
   ).toBeVisible();
-  await page.getByRole("button", { name: "حذف فنجان سرامیکی از سبد" }).click();
-  await expect(page.getByText("کالا از سبد حذف شد.")).toBeVisible();
-  await expect(page.getByText("فنجان سرامیکی")).toHaveCount(0);
+  const reviewSql = postgres(databaseUrl, { max: 1 });
+  try {
+    await reviewSql`
+      update product_offers set amount = 5000000, revision = revision + 1
+      where variant_id = ${ids.variant}
+    `;
+    await reviewSql`
+      update store_stores set
+        return_policy = 'تا هفت روز پس از تحویل می‌توانید درخواست مرجوعی ثبت کنید.',
+        return_policy_revision = return_policy_revision + 1,
+        revision = revision + 1
+      where id = ${ids.store}
+    `;
+  } finally {
+    await reviewSql.end();
+  }
+  await page.reload();
+  await expect(
+    page.getByText("قیمت از ۴۵۰٬۰۰۰ تومان به ۵۰۰٬۰۰۰ تومان تغییر کرده است."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("تا هفت روز پس از تحویل می‌توانید درخواست مرجوعی ثبت کنید."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "تغییرها را دیدم" }).click();
+  await expect(page.getByText("تغییرهای سبد تأیید شد.")).toBeVisible();
+  await page.getByRole("link", { name: "مدیریت نشانی‌های تحویل" }).click();
+  await expect(page.getByRole("heading", { name: "نشانی تحویل" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await page.getByLabel("نام گیرنده").focus();
+  await expect(page.getByLabel("نام گیرنده")).toBeFocused();
+  expect(
+    await page
+      .getByLabel("نام گیرنده")
+      .evaluate((element) => getComputedStyle(element).outlineStyle),
+  ).not.toBe("none");
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("شماره موبایل گیرنده")).toBeFocused();
+  await page.getByLabel("نام گیرنده").fill("سارا احمدی");
+  await page.getByLabel("شماره موبایل گیرنده").fill("۰۹۱۲۳۴۵۶۷۸۹");
+  await page.getByLabel("استان").fill("تهران");
+  await page.getByLabel("شهر").fill("تهران");
+  const longAddress =
+    "خیابان آزادی، بعد از میدان اصلی، کوچه بهار، ساختمان سپید، ورودی دوم، طبقه چهارم، واحد دوازده، زنگ احمدی";
+  await page.getByLabel("نشانی کامل").fill(longAddress);
+  await page.getByLabel("کدپستی (در صورت نیاز)").fill("۱۲۳۴۵۶۷۸۹۰");
+  await page.getByRole("button", { name: "ذخیره نشانی" }).click();
+  await expect(page.getByText("نشانی ذخیره شد.")).toBeVisible();
+  await expect(page.getByText(longAddress).first()).toBeVisible();
+  await assertNoHorizontalOverflow(page);
+  await assertInteractiveTargets(page);
+  await assertMinimumContrast(page.locator("main input, main textarea, main button"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await page
+      .getByLabel("نام گیرنده")
+      .evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).transitionDuration),
+      ),
+  ).toBeLessThan(0.001);
 });
 
 test("same-store carts merge only after the buyer chooses merge", async ({
@@ -139,9 +207,12 @@ test("same-store carts merge only after the buyer chooses merge", async ({
     page.getByRole("heading", { name: "کدام سبد را ادامه می‌دهید؟" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toBeVisible();
-  await expect(page.getByText("سبد پیش از ورود", { exact: true })).toBeVisible();
-  await expect(page.getByText("سبد حساب من", { exact: true })).toBeVisible();
-  await expect(page.getByText(/پیش از ورود ۲، حساب من ۳، پس از ترکیب ۵/)).toBeVisible();
+  await expect(
+    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("پیش از ورود: ۲، هویت سوو من: ۳، پس از ترکیب: ۵"),
+  ).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ترکیب دو سبد" }).click();
   await expect(page.getByText("تعداد ۵")).toBeVisible();
@@ -167,6 +238,9 @@ test("different-store carts change only after the buyer chooses which one to kee
     page.getByRole("heading", { name: "کدام سبد را ادامه می‌دهید؟" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toHaveCount(0);
+  await expect(
+    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
+  ).toBeVisible();
   await expect(page.getByText("کالای حساب")).toBeVisible();
   await page.getByRole("button", { name: "نگه‌داشتن سبد پیش از ورود" }).click();
   await expect(page.getByText("کالای مهمان")).toBeVisible();

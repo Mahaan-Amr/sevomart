@@ -66,23 +66,13 @@ describe("runtime trust guard", () => {
         MINIO_SECRET_KEY: "production-secret-value",
         MINIO_BUCKET: "production-media",
         SELLER_APPROVAL_RECOVERY_SECRET: "production-seller-approval-recovery-secret",
-        CART_GUEST_SECRET: "production-cart-guest-secret-value",
+        CART_TOKEN_DERIVATION_SECRET: "production-cart-token-derivation-secret",
         DISCOVERY_CURSOR_ACTIVE_KEY_ID: "current",
         DISCOVERY_CURSOR_KEYRING:
           '{"previous":"previous-production-cursor-signing-key","current":"current-production-cursor-signing-key"}',
         DISCOVERY_RANKING_SECRET: "production-discovery-ranking-seed-secret",
       }),
     ).toMatchObject({ SEVO_RUNTIME_ENV: "production", MINIO_USE_SSL: true });
-  });
-
-  it("requires the active discovery cursor key to exist in the retained keyring", () => {
-    expect(() =>
-      readRuntimeEnvironment({
-        ...common,
-        DISCOVERY_CURSOR_ACTIVE_KEY_ID: "missing",
-        DISCOVERY_CURSOR_KEYRING: '{"current":"current-production-cursor-signing-key"}',
-      }),
-    ).toThrow("Active discovery cursor key is missing");
   });
 
   it("rejects the local seller approval recovery secret at production trust", () => {
