@@ -409,6 +409,11 @@ function ApplicationStatus({
             ثبت درخواست تازه
           </button>
         ) : null}
+        {application.status === "APPROVED" ? (
+          <a className={styles.primaryAction} href="/seller/store">
+            رفتن به فضای فروشنده
+          </a>
+        ) : null}
         <a className={styles.leave} href="/">
           بازگشت به سوو
         </a>

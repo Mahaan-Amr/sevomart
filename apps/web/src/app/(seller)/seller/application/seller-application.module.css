@@ -103,6 +103,8 @@
   color: var(--color-on-primary);
   font: inherit;
   font-weight: 600;
+  text-align: center;
+  text-decoration: none;
   cursor: pointer;
 }
 

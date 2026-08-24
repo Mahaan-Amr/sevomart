@@ -7,7 +7,6 @@ import {
   platformSellerApplicationViewContract,
   platformSellerApplicationDecisionEventContract,
   sellerAccessActivatedEventContract,
-  sellerApprovalRecoveryRequestedEventContract,
   sellerApplicationViewContract,
   type ApproveSellerApplication,
   type ApproveSellerApplicationResult,
@@ -399,6 +398,17 @@ export class PostgresSellerApplicationRepository
     );
   }
 
+  async nextPending(): Promise<string | null> {
+    const rows = await this.#sql<Array<{ recoveryId: string }>>`
+      select id as "recoveryId"
+      from identity_seller_approval_recoveries
+      where status = 'PENDING'
+      order by created_at, id
+      limit 1
+    `;
+    return rows[0]?.recoveryId ?? null;
+  }
+
   async #prepareApprovalRecovery(
     context: SellerApplicationReviewContext,
     applicationId: string,
@@ -467,7 +477,6 @@ export class PostgresSellerApplicationRepository
       if (access[0]) throw new SellerAccessExistsError();
 
       const recoveryId = randomUUID();
-      const eventId = randomUUID();
       const occurredAt = new Date();
       await sql`
         insert into identity_seller_approval_recoveries
@@ -480,28 +489,6 @@ export class PostgresSellerApplicationRepository
            ${input.internalNote ?? null}, ${context.correlationId},
            ${context.idempotencyKey}, ${payloadHash}, 'PENDING', ${occurredAt})
       `;
-      await enqueueOutboxEvent(
-        sql,
-        sellerApprovalRecoveryRequestedEventContract.parse({
-          version: 1,
-          eventId,
-          eventType: "SellerApprovalRecoveryRequested.v1",
-          aggregateId: recoveryId,
-          aggregateVersion: 1,
-          occurredAt: occurredAt.toISOString(),
-          correlationId: context.correlationId,
-          causationId: context.correlationId,
-          actor: {
-            type: "IDENTITY",
-            id: identityIdContract.parse(context.identityId),
-          },
-          payload: {
-            recoveryId,
-            applicationId,
-            actorKind: "PLATFORM_AGENT",
-          },
-        }),
-      );
     });
   }
 

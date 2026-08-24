@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import {
   Controller,
   Headers,
+  Get,
   HttpCode,
   HttpException,
   HttpStatus,
@@ -29,19 +30,32 @@ export class SellerApprovalRecoveryController {
     private readonly environment: RuntimeEnvironment,
   ) {}
 
+  @Get("pending")
+  async nextPending(
+    @Headers("x-sevo-worker-secret") secret: string | undefined,
+  ): Promise<{ recoveryId: string | null }> {
+    this.#assertAuthorized(secret);
+    const recoveryId = await this.recovery.nextPending();
+    return { recoveryId };
+  }
+
   @Post(":recoveryId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async recover(
     @Param("recoveryId") recoveryId: string,
     @Headers("x-sevo-worker-secret") secret: string | undefined,
   ): Promise<void> {
-    if (!sameSecret(secret, this.environment.SELLER_APPROVAL_RECOVERY_SECRET)) {
-      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
-    }
+    this.#assertAuthorized(secret);
     if (!UUID_PATTERN.test(recoveryId)) {
       throw new HttpException("Not found", HttpStatus.NOT_FOUND);
     }
     await this.recovery.recover(recoveryId);
+  }
+
+  #assertAuthorized(secret: string | undefined): void {
+    if (!sameSecret(secret, this.environment.SELLER_APPROVAL_RECOVERY_SECRET)) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
   }
 }
 

@@ -181,5 +181,6 @@ export interface SellerApplicationReviewer {
 }
 
 export interface SellerApprovalRecovery {
+  nextPending(): Promise<string | null>;
   recover(recoveryId: string): Promise<void>;
 }

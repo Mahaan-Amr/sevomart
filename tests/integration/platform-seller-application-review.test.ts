@@ -1,12 +1,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
-import { DurableOutboxWorker } from "@sevo/outbox";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
-import { createSellerApprovalRecoveryHandler } from "../../apps/worker/src/modules/identity-access/index";
+import { startSellerApprovalRecoveryPoller } from "../../apps/worker/src/modules/identity-access/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("platform seller application review API with PostgreSQL", () => {
@@ -37,16 +36,14 @@ describe("platform seller application review API with PostgreSQL", () => {
       delete from platform_outbox_consumptions
       where event_id in (
         select event_id from platform_outbox_events
-        where event_type in ('SellerApprovalRecoveryRequested.v1',
-                             'SellerApplicationApproved.v1',
+        where event_type in ('SellerApplicationApproved.v1',
                              'SellerAccessActivated.v1')
       )
     `;
     await sql`
       delete from platform_outbox_events
       where event_type like 'SellerApplication%'
-         or event_type in ('SellerApprovalRecoveryRequested.v1',
-                           'SellerAccessActivated.v1')
+         or event_type = 'SellerAccessActivated.v1'
     `;
     await sql`delete from identity_sessions`;
     await sql`delete from identity_otp_challenges`;
@@ -339,32 +336,62 @@ describe("platform seller application review API with PostgreSQL", () => {
       await sql`drop function test_fail_store_provision()`;
       await app.close();
       apps.splice(apps.indexOf(app), 1);
-      const restartedApp = await createApiApp(environment);
-      apps.push(restartedApp);
-      const restartedServer = restartedApp.getHttpAdapter().getInstance();
-      const recoveryHandler = createSellerApprovalRecoveryHandler(
-        async (recoveryId) => {
-          const response = await restartedServer.inject({
-            method: "POST",
-            url: `/v1/internal/seller-approval-recoveries/${recoveryId}`,
-            headers: {
-              "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
-            },
-          });
-          if (response.statusCode !== 204) {
-            throw new Error(`Recovery endpoint returned ${response.statusCode}`);
-          }
+      let restartedApp: Awaited<ReturnType<typeof createApiApp>> | undefined;
+      let unavailableAttempts = 0;
+      const stopWorker = startSellerApprovalRecoveryPoller(
+        {
+          async nextPending() {
+            if (!restartedApp) {
+              unavailableAttempts += 1;
+              throw new Error("API unavailable");
+            }
+            const response = await restartedApp
+              .getHttpAdapter()
+              .getInstance()
+              .inject({
+                method: "GET",
+                url: "/v1/internal/seller-approval-recoveries/pending",
+                headers: {
+                  "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
+                },
+              });
+            if (response.statusCode !== 200) {
+              throw new Error(`Recovery poll returned ${response.statusCode}`);
+            }
+            return response.json<{ recoveryId: string | null }>().recoveryId;
+          },
+          async recover(recoveryId) {
+            if (!restartedApp) throw new Error("API unavailable");
+            const response = await restartedApp
+              .getHttpAdapter()
+              .getInstance()
+              .inject({
+                method: "POST",
+                url: `/v1/internal/seller-approval-recoveries/${recoveryId}`,
+                headers: {
+                  "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
+                },
+              });
+            if (response.statusCode !== 204) {
+              throw new Error(`Recovery endpoint returned ${response.statusCode}`);
+            }
+          },
         },
+        1,
       );
-      const worker = new DurableOutboxWorker(environment.DATABASE_URL, {
-        consumerName: "identity-seller-approval-recovery-integration-v1",
-        handlers: { "SellerApprovalRecoveryRequested.v1": recoveryHandler },
-        retryDelaysMs: [0],
-      });
       try {
-        expect(await worker.runOnce()).toBe("processed");
+        await waitUntil(() => unavailableAttempts > 5);
+        restartedApp = await createApiApp(environment);
+        apps.push(restartedApp);
+        await waitUntil(async () => {
+          const rows = await sql<Array<{ status: string }>>`
+            select status from identity_seller_approval_recoveries
+            where application_id = ${applicationId}
+          `;
+          return rows[0]?.status === "COMPLETED";
+        });
       } finally {
-        await worker.close();
+        await stopWorker();
       }
       const recovered = await sql<
         Array<{
@@ -1220,4 +1247,15 @@ function platformQueueResponse(value: unknown) {
     }>;
     nextCursor: string | null;
   };
+}
+
+async function waitUntil(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await predicate())) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }

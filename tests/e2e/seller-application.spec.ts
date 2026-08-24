@@ -109,6 +109,37 @@ test("an information-request draft survives a reload without losing applicant ed
   await expect(field).toHaveValue("فروش حضوری و ثبت سفارش در پیام‌رسان");
 });
 
+test("an approved applicant enters the unpublished seller workspace", async ({
+  page,
+}, testInfo) => {
+  const mobile =
+    sellerApplicationDraftTestMobiles[visualProjectIndex(testInfo.project.name)]!;
+  await page.route("**/api/seller-applications/mine", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [approvedApplication()], nextCursor: null }),
+    }),
+  );
+  await page.route("**/api/store/seller/store/draft", (route) =>
+    route.fulfill({ status: 404, contentType: "application/json", body: "{}" }),
+  );
+
+  await page.goto("/seller/login?returnTo=%2Fseller%2Fapplication");
+  await page.getByLabel("شماره موبایل").fill(mobile);
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByRole("button", { name: "ورود" }).click();
+  await page.getByRole("link", { name: "ادامه کار" }).click();
+  await expect(page.getByText("درخواست شما تأیید شد.")).toBeVisible();
+  await page.getByRole("link", { name: "رفتن به فضای فروشنده" }).click();
+
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await expect(page.getByRole("heading", { name: "ساخت فروشگاه" })).toBeVisible();
+  await expect(page.getByLabel("نام فروشگاه")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toHaveCount(0);
+});
+
 function informationRequestApplication() {
   const submittedAt = "2026-08-24T08:00:00.000Z";
   return {
@@ -141,6 +172,44 @@ function informationRequestApplication() {
         publicReason: "لطفاً روش فعلی فروش را روشن‌تر بنویسید.",
         reasonCode: "INFORMATION_INCOMPLETE",
         requestedFields: ["currentSalesMethod"],
+        occurredAt: "2026-08-24T09:00:00.000Z",
+      },
+    ],
+  } as const;
+}
+
+function approvedApplication() {
+  const submittedAt = "2026-08-24T08:00:00.000Z";
+  return {
+    applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
+    status: "APPROVED",
+    currentRevision: 1,
+    currentPayload: {
+      applicantName: "نگار محمدی",
+      proposedStoreName: "خانه ماه",
+      goodsAreaText: "سفال دست‌ساز",
+      currentSalesMethod: "فروش از راه اینستاگرام",
+    },
+    nextStep: "START_SELLER_WORKSPACE",
+    createdAt: submittedAt,
+    lastSubmittedAt: submittedAt,
+    timeline: [
+      {
+        revision: 1,
+        status: "SUBMITTED",
+        title: "درخواست ثبت شد",
+        publicReason: null,
+        reasonCode: null,
+        requestedFields: [],
+        occurredAt: submittedAt,
+      },
+      {
+        revision: 2,
+        status: "APPROVED",
+        title: "درخواست تأیید شد",
+        publicReason: "شرایط فروشندگی شما تأیید شد.",
+        reasonCode: "ELIGIBILITY_CONFIRMED",
+        requestedFields: [],
         occurredAt: "2026-08-24T09:00:00.000Z",
       },
     ],

@@ -1,42 +1,84 @@
-import { sellerApprovalRecoveryRequestedEventContract } from "@sevo/contracts/identity-access/v1";
-import { DurableOutboxWorker, type OutboxEventHandler } from "@sevo/outbox";
-
 import type { WorkerHandler } from "../public";
 
-export function createSellerApprovalRecoveryHandler(
-  recover: (recoveryId: string) => Promise<void>,
-): OutboxEventHandler {
-  return async (event) => {
-    const requested = sellerApprovalRecoveryRequestedEventContract.parse(event);
-    await recover(requested.payload.recoveryId);
+type RecoveryRequests = {
+  nextPending(signal: AbortSignal): Promise<string | null>;
+  recover(recoveryId: string, signal: AbortSignal): Promise<void>;
+};
+
+export function startSellerApprovalRecoveryPoller(
+  requests: RecoveryRequests,
+  retryDelayMs = 1_000,
+): () => Promise<void> {
+  let stopped = false;
+  let activeRequest: AbortController | undefined;
+  let finishDelay: (() => void) | undefined;
+
+  const wait = () =>
+    new Promise<void>((resolve) => {
+      finishDelay = resolve;
+      setTimeout(resolve, retryDelayMs);
+    }).finally(() => {
+      finishDelay = undefined;
+    });
+
+  const run = async () => {
+    while (!stopped) {
+      activeRequest = new AbortController();
+      try {
+        const recoveryId = await requests.nextPending(activeRequest.signal);
+        if (recoveryId) await requests.recover(recoveryId, activeRequest.signal);
+      } catch {
+        // The durable PENDING journal row is the retry queue. Temporary API
+        // failures remain recoverable until the owning module records completion.
+      } finally {
+        activeRequest = undefined;
+      }
+      if (!stopped) await wait();
+    }
+  };
+  const running = run();
+
+  return async () => {
+    stopped = true;
+    activeRequest?.abort();
+    finishDelay?.();
+    await running;
   };
 }
 
 const sellerApprovalRecoveryWorker: WorkerHandler = {
   async start(environment) {
-    const handler = createSellerApprovalRecoveryHandler(async (recoveryId) => {
-      const response = await fetch(
-        new URL(
-          `/v1/internal/seller-approval-recoveries/${recoveryId}`,
-          environment.INTERNAL_API_URL,
-        ),
-        {
-          method: "POST",
-          headers: {
-            "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
-          },
+    const request = async (path: string, signal: AbortSignal, method = "GET") => {
+      const response = await fetch(new URL(path, environment.INTERNAL_API_URL), {
+        method,
+        signal,
+        headers: {
+          "x-sevo-worker-secret": environment.SELLER_APPROVAL_RECOVERY_SECRET,
         },
-      );
+      });
       if (!response.ok) {
         throw new Error(`Seller approval recovery failed with ${response.status}`);
       }
+      return response;
+    };
+
+    return startSellerApprovalRecoveryPoller({
+      async nextPending(signal) {
+        const response = await request(
+          "/v1/internal/seller-approval-recoveries/pending",
+          signal,
+        );
+        const body = (await response.json()) as { recoveryId?: unknown } | undefined;
+        return typeof body?.recoveryId === "string" ? body.recoveryId : null;
+      },
+      async recover(recoveryId, signal) {
+        await request(
+          `/v1/internal/seller-approval-recoveries/${recoveryId}`,
+          signal,
+          "POST",
+        );
+      },
     });
-    const worker = new DurableOutboxWorker(environment.DATABASE_URL, {
-      consumerName: "identity-seller-approval-recovery-v1",
-      handlers: { "SellerApprovalRecoveryRequested.v1": handler },
-    });
-    await worker.start();
-    return () => worker.close();
   },
 };
 
