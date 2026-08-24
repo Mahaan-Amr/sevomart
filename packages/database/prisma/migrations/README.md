@@ -43,6 +43,14 @@ uses a forward fix if deployment must be corrected. `docker compose up --build
 native `pnpm dev` reported no pending migrations and brought Web, API, and worker to
 ready state.
 
+Issue 85 verification (2026-08-24): the `product` lifecycle migration extends the
+existing state check with `UNPUBLISHED` and adds an append-only state-transition
+audit without rewriting product or publication rows. It needs no compatibility
+window and uses a forward fix if deployment must be corrected. `docker compose up
+--build --wait` applied all 27 migrations and brought API, Web, and worker to healthy
+state; native `pnpm dev` reported no pending migrations and brought API, Web, and
+worker to ready state.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

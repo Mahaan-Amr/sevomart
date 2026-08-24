@@ -4,6 +4,7 @@ import {
   productBatchResultContract,
   productViewContract,
   productPublishedV2Contract,
+  productUnpublishedV1Contract,
   productCombinationKey,
   publicProductContract,
   publicProductSummaryContract,
@@ -18,6 +19,7 @@ import {
   type ReplaceProductInventoryBatch,
   type ReplaceProductOffersBatch,
   type ReplaceProductWorkingCopy,
+  type UnpublishProductInput,
   type ProductView,
   type PublicProduct,
   type SimpleProductView,
@@ -26,6 +28,8 @@ import {
   productIdContract,
   storeIdContract,
   variantIdContract,
+  type ProductId,
+  type StoreId,
   type VariantId,
 } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
@@ -41,6 +45,7 @@ import {
   InvalidVariantError,
   ProductNotFoundError,
   ProductRevisionConflictError,
+  ProductInvalidTransitionError,
   type ProductRepository,
   type ProductWriteContext,
 } from "../public";
@@ -48,7 +53,7 @@ import {
 type ProductRow = {
   productId: string;
   storeId: string;
-  state: "DRAFT" | "PUBLISHED";
+  state: "DRAFT" | "PUBLISHED" | "UNPUBLISHED";
   revision: number;
   publicationVersion: number;
   name: string | null;
@@ -797,6 +802,65 @@ export class PostgresProductRepository implements ProductRepository {
           }),
         );
         return projection;
+      }),
+    );
+  }
+
+  async unpublishProduct(
+    productId: ProductId,
+    storeId: StoreId,
+    input: UnpublishProductInput,
+    context: ProductWriteContext,
+  ) {
+    return this.#sql.begin((sql) =>
+      this.#idempotentWrite(sql, context, async () => {
+        const current = await this.#lockProductBase(sql, productId, storeId);
+        this.#requireRevision(current, context.expectedRevision);
+        if (current.state !== "PUBLISHED") {
+          throw new ProductInvalidTransitionError();
+        }
+        const revision = current.revision + 1;
+        await sql`
+          update product_products set state = 'UNPUBLISHED', revision = ${revision},
+            updated_at = now()
+          where id = ${productId}
+        `;
+        await sql`
+          insert into product_state_transitions
+            (id, product_id, store_id, actor_identity_id, previous_state, next_state,
+             previous_revision, next_revision, reason_code, correlation_id)
+          values
+            (${this.createId()}, ${productId}, ${storeId}, ${context.actorId},
+             'PUBLISHED', 'UNPUBLISHED', ${current.revision}, ${revision},
+             ${input.reasonCode}, ${context.correlationId})
+        `;
+        await enqueueOutboxEvent(
+          sql,
+          productUnpublishedV1Contract.parse({
+            version: 1,
+            eventId: this.createId(),
+            eventType: "ProductUnpublished.v1",
+            aggregateId: productId,
+            aggregateVersion: revision,
+            occurredAt: new Date().toISOString(),
+            correlationId: context.correlationId,
+            actor: { type: "IDENTITY", id: context.actorId },
+            payload: {
+              storeId,
+              productId,
+              publicationVersion: current.publicationVersion,
+            },
+          }),
+        );
+        const productView = await this.#readProductViewInTransaction(
+          sql,
+          productId,
+          storeId,
+        );
+        if (productView) return productView;
+        const simpleRow = await this.#readRow(sql, productId, storeId);
+        if (!simpleRow) throw new ProductNotFoundError();
+        return this.#toView(simpleRow);
       }),
     );
   }

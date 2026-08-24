@@ -25,8 +25,14 @@ describe("guest cart and login attachment HTTP API", () => {
     await sql`delete from order_cart_idempotency_records`;
     await sql`delete from order_carts`;
     await sql`delete from inventory_levels`;
-    await sql`delete from product_products`;
-    await sql`delete from store_stores`;
+    await sql`
+      delete from product_products
+      where id in (${productId}::uuid, ${other.productId}::uuid)
+    `;
+    await sql`
+      delete from store_stores
+      where id in (${storeId}::uuid, ${other.storeId}::uuid)
+    `;
     await sql`
       insert into store_stores
         (id, name, slug, status, publication_version, revision, updated_at)

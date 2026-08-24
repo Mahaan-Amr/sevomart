@@ -6,6 +6,7 @@ import type {
   ReplaceProductInventoryBatch,
   ReplaceProductOffersBatch,
   ReplaceProductWorkingCopy,
+  UnpublishProductInput,
   PublicSimpleProduct,
   PublicSimpleProductSummary,
   ReplaceSimpleProductWorkingCopy,
@@ -25,7 +26,8 @@ export type ProductWriteContext = Readonly<{
     | "REPLACE_WORKING_COPY"
     | "REPLACE_OFFERS_BATCH"
     | "REPLACE_INVENTORY_BATCH"
-    | "PUBLISH_PRODUCT";
+    | "PUBLISH_PRODUCT"
+    | "UNPUBLISH_PRODUCT";
   actorId: IdentityId;
   correlationId: string;
   idempotencyKey: string;
@@ -106,6 +108,12 @@ export interface ProductRepository extends ProductAuthoritativeRead {
     storeId: StoreId,
     context: ProductWriteContext,
   ): Promise<PublicProduct>;
+  unpublishProduct(
+    productId: ProductId,
+    storeId: StoreId,
+    input: UnpublishProductInput,
+    context: ProductWriteContext,
+  ): Promise<ProductView | SimpleProductView>;
   readPublishedProduct(
     productId: ProductId,
     storeId: StoreId,
@@ -118,6 +126,7 @@ export class ProductNotReadyError extends Error {}
 export class SellerAccessInactiveError extends Error {}
 export class InvalidVariantError extends Error {}
 export class DuplicateSkuError extends Error {}
+export class ProductInvalidTransitionError extends Error {}
 
 export class ProductRevisionConflictError extends Error {
   readonly code = "REVISION_CONFLICT" as const;

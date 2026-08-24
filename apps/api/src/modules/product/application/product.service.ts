@@ -8,6 +8,7 @@ import {
   type ReplaceProductInventoryBatch,
   type ReplaceProductOffersBatch,
   type ReplaceProductWorkingCopy,
+  type UnpublishProductInput,
   type ReplaceSimpleProductWorkingCopy,
   type SimpleProductView,
 } from "@sevo/contracts/product/v1";
@@ -239,6 +240,24 @@ export class ProductService {
       productId,
       store.storeId,
       context("PUBLISH_PRODUCT", identityId, write, { productId }),
+    );
+  }
+
+  async unpublish(
+    identityId: string,
+    productId: ProductId,
+    input: UnpublishProductInput,
+    write: WriteInput,
+  ) {
+    const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    return this.repository.unpublishProduct(
+      productId,
+      store.storeId,
+      input,
+      context("UNPUBLISH_PRODUCT", identityId, write, input),
     );
   }
 

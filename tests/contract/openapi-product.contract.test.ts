@@ -52,6 +52,12 @@ describe("OpenAPI simple product tracer", () => {
         true,
       ],
       [
+        "post",
+        "/v1/seller/products/{productId}/unpublication",
+        "unpublishSellerProduct",
+        true,
+      ],
+      [
         "get",
         "/v1/stores/{storeSlug}/products/{productId}",
         "getPublishedStoreProduct",
@@ -83,6 +89,7 @@ describe("OpenAPI simple product tracer", () => {
       ["put", "/v1/seller/products/{productId}/offers"],
       ["put", "/v1/seller/products/{productId}/inventory"],
       ["post", "/v1/seller/products/{productId}/publications"],
+      ["post", "/v1/seller/products/{productId}/unpublication"],
     ] as const) {
       expect(document.paths[path][method].parameters).toEqual(
         expect.arrayContaining([

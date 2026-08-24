@@ -187,6 +187,35 @@ describe("simple product tracer HTTP API", () => {
     expect(guestList.statusCode).toBe(200);
     expect(guestList.json().products[0]).not.toHaveProperty("description");
 
+    const unpublished = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${emptyDraft.productId}/unpublication`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 5),
+      payload: { expectedRevision: 5, reasonCode: "SELLER_REQUEST" },
+    });
+    expect(unpublished.statusCode).toBe(200);
+    expect(unpublished.json()).toMatchObject({
+      state: "UNPUBLISHED",
+      revision: 6,
+      publicationVersion: 1,
+    });
+    expect(
+      (
+        await server.inject({
+          method: "GET",
+          url: `/v1/stores/product-tracer-store/products/${emptyDraft.productId}`,
+        })
+      ).statusCode,
+    ).toBe(404);
+    const republished = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${emptyDraft.productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 6),
+      payload: { expectedRevision: 6, confirmed: true },
+    });
+    expect(republished.statusCode).toBe(200);
+    expect(republished.json()).toMatchObject({ publicationVersion: 2 });
+
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
       const events = await sql<Array<{ count: number }>>`
@@ -194,7 +223,13 @@ describe("simple product tracer HTTP API", () => {
         where event_type = 'ProductPublished.v2'
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
-      expect(events[0]?.count).toBe(1);
+      expect(events[0]?.count).toBe(2);
+      const unpublicationEvents = await sql<Array<{ count: number }>>`
+        select count(*)::int as count from platform_outbox_events
+        where event_type = 'ProductUnpublished.v1'
+          and aggregate_id = ${emptyDraft.productId}::uuid
+      `;
+      expect(unpublicationEvents[0]?.count).toBe(1);
       const adjustments = await sql<
         Array<{ reasonCode: string; previousOnHand: number; nextOnHand: number }>
       >`
@@ -424,17 +459,23 @@ describe("simple product tracer HTTP API", () => {
     ]);
     expect(JSON.stringify(publicProduct)).not.toMatch(/sku|onHand/i);
 
-    const editedWorkingCopy = await server.inject({
-      method: "PUT",
-      url: `/v1/seller/products/${productId}/working-copy`,
-      headers: writeHeaders(cookie, crypto.randomUUID(), 5),
-      payload: {
-        expectedRevision: 5,
-        workingCopy: { ...workingCopy, name: "پیراهن نسخه کاری" },
-        inventory: null,
-      },
-    });
-    expect(editedWorkingCopy.statusCode).toBe(200);
+    const concurrentEdits = await Promise.all(
+      ["پیراهن نسخه کاری الف", "پیراهن نسخه کاری ب"].map((name) =>
+        server.inject({
+          method: "PUT",
+          url: `/v1/seller/products/${productId}/working-copy`,
+          headers: writeHeaders(cookie, crypto.randomUUID(), 5),
+          payload: {
+            expectedRevision: 5,
+            workingCopy: { ...workingCopy, name },
+            inventory: null,
+          },
+        }),
+      ),
+    );
+    expect(concurrentEdits.map((response) => response.statusCode).sort()).toEqual([
+      200, 409,
+    ]);
     const unchangedPublic = await server.inject({
       method: "GET",
       url: `/v1/stores/product-tracer-store/products/${productId}`,
@@ -459,21 +500,25 @@ describe("simple product tracer HTTP API", () => {
     });
     expect(changedOffers.statusCode).toBe(200);
 
-    const soldOut = await server.inject({
-      method: "PUT",
-      url: `/v1/seller/products/${productId}/inventory`,
-      headers: writeHeaders(cookie, crypto.randomUUID(), 7),
-      payload: {
-        expectedRevision: 7,
-        reasonCode: "MANUAL_COUNT",
-        rows: ready.product.inventory.map((row) => ({
-          variantId: row.variantId,
-          onHand: 0,
-          expectedRevision: row.revision,
-        })),
-      },
-    });
-    expect(soldOut.statusCode).toBe(200);
+    const stockRace = await Promise.all(
+      [crypto.randomUUID(), crypto.randomUUID()].map((key) =>
+        server.inject({
+          method: "PUT",
+          url: `/v1/seller/products/${productId}/inventory`,
+          headers: writeHeaders(cookie, key, 7),
+          payload: {
+            expectedRevision: 7,
+            reasonCode: "MANUAL_COUNT",
+            rows: ready.product.inventory.map((row) => ({
+              variantId: row.variantId,
+              onHand: 0,
+              expectedRevision: row.revision,
+            })),
+          },
+        }),
+      ),
+    );
+    expect(stockRace.map((response) => response.statusCode).sort()).toEqual([200, 409]);
 
     const refreshedPublic = publicProductContract.parse(
       (
@@ -492,6 +537,79 @@ describe("simple product tracer HTTP API", () => {
       },
     });
 
+    const unpublishKey = crypto.randomUUID();
+    const unpublicationRequest = {
+      method: "POST" as const,
+      url: `/v1/seller/products/${productId}/unpublication`,
+      headers: writeHeaders(cookie, unpublishKey, 8),
+      payload: { expectedRevision: 8, reasonCode: "SELLER_REQUEST" },
+    };
+    const unpublished = await server.inject(unpublicationRequest);
+    expect(unpublished.statusCode).toBe(200);
+    expect(unpublished.json()).toMatchObject({
+      productId,
+      state: "UNPUBLISHED",
+      revision: 9,
+      publicationVersion: 1,
+    });
+    expect((await server.inject(unpublicationRequest)).json()).toEqual(
+      unpublished.json(),
+    );
+    expect(
+      (
+        await server.inject({
+          method: "GET",
+          url: `/v1/stores/product-tracer-store/products/${productId}`,
+        })
+      ).statusCode,
+    ).toBe(404);
+
+    const incompleteRepublishDraft = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 9),
+      payload: {
+        expectedRevision: 9,
+        workingCopy: { ...workingCopy, name: null },
+        inventory: null,
+      },
+    });
+    expect(incompleteRepublishDraft.statusCode).toBe(200);
+    const rejectedRepublish = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 10),
+      payload: { expectedRevision: 10, confirmed: true },
+    });
+    expect(rejectedRepublish.statusCode).toBe(422);
+    expect(rejectedRepublish.json()).toMatchObject({
+      code: "PUBLICATION_NOT_READY",
+    });
+    const readyRepublishDraft = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 10),
+      payload: {
+        expectedRevision: 10,
+        workingCopy: { ...workingCopy, name: "پیراهن بازنشرشده" },
+        inventory: null,
+      },
+    });
+    expect(readyRepublishDraft.statusCode).toBe(200);
+
+    const republished = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 11),
+      payload: { expectedRevision: 11, confirmed: true },
+    });
+    expect(republished.statusCode).toBe(200);
+    expect(publicProductContract.parse(republished.json())).toMatchObject({
+      name: "پیراهن بازنشرشده",
+      publicationVersion: 2,
+      availability: "OUT_OF_STOCK",
+    });
+
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
       const publicationEvents = await sql<Array<{ payload: unknown }>>`
@@ -499,12 +617,46 @@ describe("simple product tracer HTTP API", () => {
         where aggregate_id = ${productId}::uuid
           and event_type = 'ProductPublished.v2'
       `;
-      expect(publicationEvents).toHaveLength(1);
+      expect(publicationEvents).toHaveLength(2);
       expect(publicationEvents[0]?.payload).toMatchObject({
         snapshot: { variantIds: expect.arrayContaining(variantIds) },
       });
       expect(JSON.stringify(publicationEvents[0]?.payload)).not.toMatch(
         /پیراهن|sku|onHand|name|description|image|url/i,
+      );
+      const unpublicationEvents = await sql<Array<{ payload: unknown }>>`
+        select payload from platform_outbox_events
+        where aggregate_id = ${productId}::uuid
+          and event_type = 'ProductUnpublished.v1'
+      `;
+      expect(unpublicationEvents).toEqual([
+        { payload: { storeId: expect.any(String), productId, publicationVersion: 1 } },
+      ]);
+      const lifecycleAudit = await sql<
+        Array<{
+          previousState: string;
+          nextState: string;
+          reasonCode: string;
+          previousRevision: number;
+          nextRevision: number;
+        }>
+      >`
+        select previous_state as "previousState", next_state as "nextState",
+          reason_code as "reasonCode", previous_revision as "previousRevision",
+          next_revision as "nextRevision"
+        from product_state_transitions where product_id = ${productId}::uuid
+      `;
+      expect(lifecycleAudit).toEqual([
+        {
+          previousState: "PUBLISHED",
+          nextState: "UNPUBLISHED",
+          reasonCode: "SELLER_REQUEST",
+          previousRevision: 8,
+          nextRevision: 9,
+        },
+      ]);
+      await expect(sql`truncate table product_state_transitions`).rejects.toThrow(
+        "product_state_transitions is append-only",
       );
       const eventCounts = await sql<Array<{ eventType: string; count: number }>>`
         select event_type as "eventType", count(*)::int as count

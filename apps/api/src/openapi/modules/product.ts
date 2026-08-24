@@ -43,7 +43,7 @@ const operations = [
     auth: "identity-session",
     pathParameter: productIdParameter,
     responses: [
-      { status: 200, schema: "ProductView" },
+      { status: 200, schema: "SellerProductView" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 500, schema: "InternalServerError" },
@@ -61,7 +61,7 @@ const operations = [
       example: productV1Examples.ReplaceProductWorkingCopy,
     },
     responses: [
-      { status: 200, schema: "ProductView" },
+      { status: 200, schema: "SellerProductView" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 409, schema: "ProductWriteConflictError" },
@@ -139,6 +139,27 @@ const operations = [
     },
     responses: [
       { status: 200, schema: "PublicProduct" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "ProductNotFoundError" },
+      { status: 409, schema: "ProductWriteConflictError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 428, schema: "ProductPreconditionRequiredError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "unpublishSellerProduct",
+    method: "post",
+    path: "/v1/seller/products/{productId}/unpublication",
+    tag: "product",
+    auth: "identity-session",
+    pathParameter: productIdParameter,
+    request: {
+      schema: "UnpublishProductInput",
+      example: productV1Examples.UnpublishProductInput,
+    },
+    responses: [
+      { status: 200, schema: "SellerProductView" },
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProductNotFoundError" },
       { status: 409, schema: "ProductWriteConflictError" },
@@ -226,6 +247,7 @@ export const contribute_product_openApi: OpenApiContributor = (document) => {
     ["put", "/v1/seller/products/{productId}/offers"],
     ["put", "/v1/seller/products/{productId}/inventory"],
     ["post", "/v1/seller/products/{productId}/publications"],
+    ["post", "/v1/seller/products/{productId}/unpublication"],
   ] as const) {
     const operation = composed.paths[path]?.[method] as
       { parameters?: unknown[] } | undefined;
