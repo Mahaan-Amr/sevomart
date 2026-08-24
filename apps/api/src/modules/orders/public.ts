@@ -3,6 +3,7 @@ import type {
   Cart,
   CartConflict,
   CartId,
+  RemoveCartItemInput,
 } from "@sevo/contracts/orders/v1";
 import type {
   IdentityId,
@@ -44,6 +45,15 @@ export interface CartRepository {
   readGuest(tokenHash: string): Promise<StoredCart | undefined>;
   readBuyer(identityId: IdentityId): Promise<StoredCart | undefined>;
   mutate(command: CartMutationCommand): Promise<StoredCart>;
+  remove(command: {
+    identityId?: IdentityId;
+    guestTokenHash: string;
+    variantId: VariantId;
+    input: RemoveCartItemInput;
+    idempotencyKey: string;
+    requestHash: string;
+    expiresAt: Date;
+  }): Promise<StoredCart>;
   replaceStore(
     command: CartMutationCommand & {
       replacementTokenHash: string;
@@ -97,4 +107,8 @@ export class CartVariantUnavailableError extends Error {
 }
 export class CartQuantityLimitError extends Error {
   readonly code = "INVALID_QUANTITY" as const;
+}
+
+export class CartLineLimitError extends Error {
+  readonly code = "CART_LIMIT_REACHED" as const;
 }

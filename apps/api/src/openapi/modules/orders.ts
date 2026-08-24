@@ -52,6 +52,30 @@ const operations = [
     ],
   },
   {
+    operationId: "removeCartItem",
+    method: "delete",
+    path: "/v1/cart/items/{variantId}",
+    tag: "orders",
+    auth: "none",
+    pathParameter: {
+      name: "variantId",
+      schema: "CartVariantId",
+      example: ordersV1Examples.CartVariantId,
+    },
+    headerParameters: idempotencyHeader,
+    request: {
+      schema: "RemoveCartItemInput",
+      example: ordersV1Examples.RemoveCartItemInput,
+    },
+    responses: [
+      { status: 200, schema: "Cart" },
+      { status: 409, schema: "CartError" },
+      { status: 422, schema: "CartError" },
+      { status: 428, schema: "CartError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "replaceCartStore",
     method: "post",
     path: "/v1/cart/store-replacement",
@@ -88,7 +112,7 @@ const operations = [
   {
     operationId: "resolveCartConflict",
     method: "post",
-    path: "/v1/cart/resolve",
+    path: "/v1/cart/identity-resolution",
     tag: "orders",
     auth: "identity-session",
     headerParameters: idempotencyHeader,

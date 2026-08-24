@@ -42,6 +42,7 @@ export class OrdersModule {
               options.products,
               options.inventory,
               options.stores,
+              environment.CART_GUEST_SECRET,
             ),
         },
       ],

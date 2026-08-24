@@ -19,9 +19,10 @@ describe("OpenAPI guest cart and login attachment", () => {
     const expected = [
       ["get", "/v1/cart", "readCart", false],
       ["put", "/v1/cart/items/{variantId}", "upsertCartItem", false],
+      ["delete", "/v1/cart/items/{variantId}", "removeCartItem", false],
       ["post", "/v1/cart/store-replacement", "replaceCartStore", false],
       ["post", "/v1/cart/attach", "attachGuestCart", true],
-      ["post", "/v1/cart/resolve", "resolveCartConflict", true],
+      ["post", "/v1/cart/identity-resolution", "resolveCartConflict", true],
     ] as const;
 
     for (const [method, path, operationId, authenticated] of expected) {

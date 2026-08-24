@@ -58,7 +58,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #760b29;
+  color: var(--color-primary-dark);
 }
 
 .product {

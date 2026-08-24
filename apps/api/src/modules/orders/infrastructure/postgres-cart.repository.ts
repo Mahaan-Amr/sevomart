@@ -11,6 +11,7 @@ import postgres, { type JSONValue, type Sql } from "postgres";
 
 import {
   CartIdempotencyConflictError,
+  CartLineLimitError,
   CartQuantityLimitError,
   CartResolutionRequiredError,
   CartRevisionConflictError,
@@ -109,7 +110,7 @@ export class PostgresCartRepository implements CartRepository {
         ) as exists
       `;
       if ((counts[0]?.count ?? 0) >= 100 && !existing[0]?.exists) {
-        throw new CartQuantityLimitError();
+        throw new CartLineLimitError();
       }
       await sql`
         insert into order_cart_items
@@ -201,6 +202,46 @@ export class PostgresCartRepository implements CartRepository {
     });
   }
 
+  async remove(command: Parameters<CartRepository["remove"]>[0]) {
+    return this.#sql.begin(async (sql) => {
+      const scope = command.identityId ?? command.guestTokenHash;
+      await advisoryLock(sql, `cart-mutation:${scope}`);
+      const replay = await this.#claimIdempotency(
+        sql,
+        "REMOVE_CART_ITEM",
+        scope,
+        command.idempotencyKey,
+        command.requestHash,
+      );
+      if (replay) return parseStoredCart(replay);
+      const current = command.identityId
+        ? await this.#readBuyer(sql, command.identityId, true)
+        : await this.#readGuest(sql, command.guestTokenHash, true);
+      if (!current || current.revision !== command.input.expectedRevision) {
+        throw new CartRevisionConflictError();
+      }
+      await sql`
+        delete from order_cart_items
+        where cart_id = ${current.cartId} and variant_id = ${command.variantId}
+      `;
+      await sql`
+        update order_carts set revision = revision + 1,
+          expires_at = ${command.expiresAt}, updated_at = now()
+        where id = ${current.cartId}
+      `;
+      const result = await this.#readById(sql, current.cartId);
+      if (!result) throw new Error("Cart removal did not persist a cart");
+      await this.#completeIdempotency(
+        sql,
+        "REMOVE_CART_ITEM",
+        scope,
+        command.idempotencyKey,
+        result,
+      );
+      return result;
+    });
+  }
+
   async inspectAttachment(identityId: IdentityId, guestTokenHash: string) {
     return this.#sql.begin(async (sql) => {
       await advisoryLock(sql, `cart-attach:${identityId}`);
@@ -252,6 +293,11 @@ export class PostgresCartRepository implements CartRepository {
       let kept: StoredCart;
       if (command.input.decision === "MERGE") {
         if (guest.storeId !== buyer.storeId) throw new CartResolutionRequiredError();
+        const mergedLineCount = new Set([
+          ...guest.items.map((item) => item.variantId),
+          ...buyer.items.map((item) => item.variantId),
+        ]).size;
+        if (mergedLineCount > 100) throw new CartLineLimitError();
         for (const item of guest.items) {
           const current = buyer.items.find(
             (candidate) => candidate.variantId === item.variantId,

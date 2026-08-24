@@ -53,7 +53,7 @@ function isAllowed(segments: readonly string[]) {
   return (
     path === "" ||
     path === "attach" ||
-    path === "resolve" ||
+    path === "identity-resolution" ||
     path === "store-replacement" ||
     /^items\/[0-9a-f-]{36}$/.test(path)
   );

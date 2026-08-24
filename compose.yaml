@@ -14,6 +14,7 @@ x-app-environment: &app-environment
   MINIO_BUCKET: ${MINIO_BUCKET:-sevo-media}
   OTEL_EXPORTER_OTLP_ENDPOINT: ""
   SELLER_APPROVAL_RECOVERY_SECRET: ${SELLER_APPROVAL_RECOVERY_SECRET:-sevo_local_seller_approval_recovery_secret}
+  CART_GUEST_SECRET: ${CART_GUEST_SECRET:-sevo_local_cart_guest_secret_value}
 
 services:
   postgres:

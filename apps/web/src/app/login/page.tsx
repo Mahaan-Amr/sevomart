@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { readIdentitySession } from "../../lib/identity-api-proxy";
-import { SellerLogin } from "../(seller)/seller/login/seller-login";
+import { IdentityLogin } from "./identity-login";
 
 export default async function LoginPage({
   searchParams,
@@ -19,7 +19,7 @@ export default async function LoginPage({
   if (session) redirect(returnTo);
 
   return (
-    <SellerLogin
+    <IdentityLogin
       initiallySignedIn={false}
       returnTo={returnTo}
       cancelTo={cancelTo}
