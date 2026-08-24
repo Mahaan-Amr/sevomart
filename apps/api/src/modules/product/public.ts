@@ -121,6 +121,17 @@ export interface ProductRepository extends ProductAuthoritativeRead {
   listPublishedProducts(storeId: StoreId): Promise<PublicProductSummary[]>;
 }
 
+export interface ProductAuthoritativeRead {
+  readPublishedProduct(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicProduct | undefined>;
+  readPublished(
+    productId: ProductId,
+    storeId: StoreId,
+  ): Promise<PublicSimpleProduct | undefined>;
+}
+
 export class ProductNotFoundError extends Error {}
 export class ProductNotReadyError extends Error {}
 export class SellerAccessInactiveError extends Error {}

@@ -46,7 +46,7 @@ CREATE TABLE "discovery_product_feed_version_buffers" (
   CONSTRAINT "discovery_product_feed_version_buffers_pkey"
     PRIMARY KEY ("product_id", "publication_version", "version_kind"),
   CONSTRAINT "discovery_product_feed_version_buffers_kind_check"
-    CHECK ("version_kind" IN ('OFFER', 'AVAILABILITY')),
+    CHECK ("version_kind" IN ('OFFER', 'AVAILABILITY', 'PUBLICATION')),
   CONSTRAINT "discovery_product_feed_version_buffers_version_check"
     CHECK ("publication_version" > 0 AND "version" >= 0)
 );
@@ -60,4 +60,4 @@ CREATE TABLE "discovery_projection_status" (
 
 INSERT INTO "discovery_projection_status"
   ("projection_name", "healthy", "reason", "updated_at")
-VALUES ('public-feed-v1', TRUE, NULL, CURRENT_TIMESTAMP);
+VALUES ('public-feed-v1', FALSE, 'BOOTSTRAPPING', CURRENT_TIMESTAMP);

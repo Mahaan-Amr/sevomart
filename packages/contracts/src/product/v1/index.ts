@@ -808,6 +808,7 @@ export type PublicSimpleProductSummary = z.infer<
 >;
 export type ProductPublishedV1 = z.infer<typeof productPublishedV1Contract>;
 export type ProductPublishedV2 = z.infer<typeof productPublishedV2Contract>;
+export type ProductUnpublishedV1 = z.infer<typeof productUnpublishedV1Contract>;
 export type VariantPriceChangedV1 = z.infer<typeof variantPriceChangedV1Contract>;
 export type VariantAvailabilityChangedV1 = z.infer<
   typeof variantAvailabilityChangedV1Contract

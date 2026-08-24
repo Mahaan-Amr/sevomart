@@ -174,6 +174,16 @@ export const discoveryV1Paths = {
   deactivateStoreFollow: (storeId: string) => `/v1/me/follows/${storeId}`,
 } as const;
 
+export const discoveryFeedProjectionEventTypes = [
+  "StorePublished.v1",
+  "StoreUnpublished.v1",
+  "ProductPublished.v1",
+  "ProductPublished.v2",
+  "ProductUnpublished.v1",
+  "VariantPriceChanged.v1",
+  "VariantAvailabilityChanged.v1",
+] as const;
+
 export const discoveryV1Schemas = {
   DiscoveryFeedCursor: discoveryFeedCursorContract,
   DiscoveryFeedLimit: discoveryFeedLimitContract,

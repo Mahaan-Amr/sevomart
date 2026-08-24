@@ -1,14 +1,17 @@
 import {
   productPublishedV1Contract,
   productPublishedV2Contract,
+  productUnpublishedV1Contract,
   variantAvailabilityChangedV1Contract,
   variantPriceChangedV1Contract,
 } from "@sevo/contracts/product/v1";
+import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import {
   storePublishedV1Contract,
   storeUnpublishedV1Contract,
 } from "@sevo/contracts/store/v1";
 import type { OutboxEventHandler } from "@sevo/outbox";
+import postgres from "postgres";
 
 type ProductProjectionRow = {
   publicationVersion: number;
@@ -38,7 +41,10 @@ export const projectDiscoveryStoreEvent: OutboxEventHandler = async (event, sql)
     where store_id = ${changed.payload.storeId}
     for update
   `;
-  if ((current[0]?.aggregateVersion ?? 0) >= changed.aggregateVersion) return;
+  if ((current[0]?.aggregateVersion ?? 0) >= changed.aggregateVersion) {
+    await reconcileProjectionHealth(sql, changed.occurredAt);
+    return;
+  }
 
   await sql`
     insert into discovery_store_feed_projections
@@ -53,7 +59,7 @@ export const projectDiscoveryStoreEvent: OutboxEventHandler = async (event, sql)
       publication_version = excluded.publication_version,
       updated_at = excluded.updated_at
   `;
-  await markProjectionUpdated(sql, changed.occurredAt);
+  await reconcileProjectionHealth(sql, changed.occurredAt);
 };
 
 export const projectDiscoveryProductEvent: OutboxEventHandler = async (event, sql) => {
@@ -71,9 +77,10 @@ export const projectDiscoveryProductEvent: OutboxEventHandler = async (event, sq
         ? productPublishedV1Contract.parse(event)
         : productPublishedV2Contract.parse(event);
     await projectPublication(published, sql);
-    return;
-  }
-  if (event.eventType === "VariantPriceChanged.v1") {
+  } else if (event.eventType === "ProductUnpublished.v1") {
+    const unpublished = productUnpublishedV1Contract.parse(event);
+    await projectUnpublication(unpublished, sql);
+  } else if (event.eventType === "VariantPriceChanged.v1") {
     const price = variantPriceChangedV1Contract.parse(event);
     await projectVersion(
       price.payload.productId,
@@ -83,17 +90,18 @@ export const projectDiscoveryProductEvent: OutboxEventHandler = async (event, sq
       price.occurredAt,
       sql,
     );
-    return;
+  } else {
+    const availability = variantAvailabilityChangedV1Contract.parse(event);
+    await projectVersion(
+      availability.payload.productId,
+      availability.payload.publicationVersion,
+      "AVAILABILITY",
+      availability.payload.availabilityVersion,
+      availability.occurredAt,
+      sql,
+    );
   }
-  const availability = variantAvailabilityChangedV1Contract.parse(event);
-  await projectVersion(
-    availability.payload.productId,
-    availability.payload.publicationVersion,
-    "AVAILABILITY",
-    availability.payload.availabilityVersion,
-    availability.occurredAt,
-    sql,
-  );
+  await reconcileProjectionHealth(sql, event.occurredAt);
 };
 
 async function projectPublication(
@@ -133,7 +141,6 @@ async function projectPublication(
         product_aggregate_version = ${published.aggregateVersion},
         publication_version = ${published.payload.publicationVersion},
         published = true,
-        first_published_at = least(first_published_at, ${occurredAt}),
         eligible_since = case when published then eligible_since else ${occurredAt} end,
         offer_version = greatest(offer_version, ${published.payload.offerVersion}),
         availability_version = greatest(
@@ -142,23 +149,49 @@ async function projectPublication(
         updated_at = ${occurredAt}
       where product_id = ${published.payload.productId}
     `;
-  } else {
-    const updated = await sql`
-      update discovery_product_feed_projections
-      set first_published_at = least(first_published_at, ${occurredAt})
-      where product_id = ${published.payload.productId}
-        and first_published_at > ${occurredAt}
-      returning product_id
-    `;
-    if (updated.length === 0) return;
-  }
+  } else return;
 
   await applyBufferedVersions(
     published.payload.productId,
     published.payload.publicationVersion,
     sql,
   );
-  await markProjectionUpdated(sql, published.occurredAt);
+}
+
+async function projectUnpublication(
+  unpublished: ReturnType<typeof productUnpublishedV1Contract.parse>,
+  sql: Parameters<OutboxEventHandler>[1],
+) {
+  const rows = await sql<Array<{ aggregateVersion: number }>>`
+    select product_aggregate_version as "aggregateVersion"
+    from discovery_product_feed_projections
+    where product_id = ${unpublished.payload.productId}
+    for update
+  `;
+  const current = rows[0];
+  if (current && current.aggregateVersion >= unpublished.aggregateVersion) return;
+  if (current) {
+    await sql`
+    update discovery_product_feed_projections set
+      product_aggregate_version = ${unpublished.aggregateVersion},
+      publication_version = ${unpublished.payload.publicationVersion},
+      published = false,
+      updated_at = ${unpublished.occurredAt}
+    where product_id = ${unpublished.payload.productId}
+    `;
+    return;
+  }
+
+  await sql`
+    insert into discovery_product_feed_version_buffers
+      (product_id, publication_version, version_kind, version, updated_at)
+    values (${unpublished.payload.productId}, ${unpublished.payload.publicationVersion},
+      'PUBLICATION', ${unpublished.aggregateVersion}, ${unpublished.occurredAt})
+    on conflict (product_id, publication_version, version_kind) do update set
+      version = greatest(discovery_product_feed_version_buffers.version,
+        excluded.version),
+      updated_at = excluded.updated_at
+  `;
 }
 
 async function projectVersion(
@@ -194,14 +227,13 @@ async function projectVersion(
   }
   if (publicationVersion < current.publicationVersion) return;
   const column = kind === "OFFER" ? "offer_version" : "availability_version";
-  const updated = await sql.unsafe(
+  await sql.unsafe(
     `update discovery_product_feed_projections
      set ${column} = $1, updated_at = $2
      where product_id = $3 and ${column} < $1
      returning product_id`,
     [version, occurredAt, productId],
   );
-  if (updated.length > 0) await markProjectionUpdated(sql, occurredAt);
 }
 
 async function applyBufferedVersions(
@@ -209,12 +241,34 @@ async function applyBufferedVersions(
   publicationVersion: number,
   sql: Parameters<OutboxEventHandler>[1],
 ) {
-  const buffers = await sql<Array<{ kind: "OFFER" | "AVAILABILITY"; version: number }>>`
-    select version_kind as kind, version
+  const buffers = await sql<
+    Array<{
+      kind: "OFFER" | "AVAILABILITY" | "PUBLICATION";
+      version: number;
+      publicationVersion: number;
+      updatedAt: Date;
+    }>
+  >`
+    select version_kind as kind, version,
+      publication_version as "publicationVersion", updated_at as "updatedAt"
     from discovery_product_feed_version_buffers
     where product_id = ${productId} and publication_version = ${publicationVersion}
   `;
   for (const buffer of buffers) {
+    if (buffer.kind === "PUBLICATION") {
+      await sql`
+        update discovery_product_feed_projections set
+          product_aggregate_version = greatest(product_aggregate_version,
+            ${buffer.version}),
+          publication_version = greatest(publication_version,
+            ${buffer.publicationVersion}),
+          published = false,
+          updated_at = greatest(updated_at, ${buffer.updatedAt})
+        where product_id = ${productId}
+          and product_aggregate_version < ${buffer.version}
+      `;
+      continue;
+    }
     const column = buffer.kind === "OFFER" ? "offer_version" : "availability_version";
     await sql.unsafe(
       `update discovery_product_feed_projections
@@ -229,14 +283,53 @@ async function applyBufferedVersions(
   `;
 }
 
-async function markProjectionUpdated(
+export async function reconcileDiscoveryProjectionHealth(databaseUrl: string) {
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    const status = await sql.begin((transaction) =>
+      reconcileProjectionHealth(transaction, new Date().toISOString()),
+    );
+    console.log(
+      JSON.stringify({
+        level: status.healthy ? "info" : "warn",
+        message: "discovery_projection_health_reconciled",
+        healthy: status.healthy,
+        reason: status.reason,
+      }),
+    );
+  } finally {
+    await sql.end();
+  }
+}
+
+async function reconcileProjectionHealth(
   sql: Parameters<OutboxEventHandler>[1],
   occurredAt: string,
 ) {
+  const rows = await sql<Array<{ pendingEvents: number; unresolvedBuffers: number }>>`
+    select
+      (select count(*)::int
+       from platform_outbox_events event
+       left join platform_outbox_consumptions consumption
+         on consumption.event_id = event.event_id
+        and consumption.consumer_name = 'discovery-public-feed-v1'
+       where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
+         and consumption.event_id is null) as "pendingEvents",
+      (select count(*)::int
+       from discovery_product_feed_version_buffers) as "unresolvedBuffers"
+  `;
+  const counts = rows[0] ?? { pendingEvents: 1, unresolvedBuffers: 1 };
+  const reason =
+    counts.unresolvedBuffers > 0
+      ? "UNRESOLVED_BUFFERS"
+      : counts.pendingEvents > 0
+        ? "PENDING_EVENTS"
+        : null;
   await sql`
     update discovery_projection_status
-    set healthy = true, reason = null,
+    set healthy = ${reason === null}, reason = ${reason},
       updated_at = greatest(updated_at, ${occurredAt})
     where projection_name = 'public-feed-v1'
   `;
+  return { healthy: reason === null, reason };
 }

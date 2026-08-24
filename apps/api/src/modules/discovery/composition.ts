@@ -2,6 +2,7 @@ import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
 import { STORE_AUTHORITATIVE_READ, type StoreAuthoritativeRead } from "../store/public";
+import type { ProductAuthoritativeRead } from "../product/public";
 import { StoreFollowingService } from "./application/store-following.service";
 import { DiscoveryFeedService } from "./application/discovery-feed.service";
 import { DiscoveryController } from "./discovery.controller";
@@ -17,14 +18,13 @@ import { PostgresStoreFollowingRepository } from "./infrastructure/postgres-stor
 import {
   STORE_FOLLOW_REPOSITORY,
   type DiscoveryFeedRepository,
-  type DiscoveryProductRead,
   type StoreFollowRepository,
 } from "./public";
 
 export type DiscoveryModuleOptions = {
   followingRepository?: StoreFollowRepository;
   feedRepository?: DiscoveryFeedRepository;
-  products: DiscoveryProductRead;
+  products: ProductAuthoritativeRead;
 };
 
 @Module({})
@@ -64,7 +64,7 @@ export class DiscoveryModule {
           useFactory: (
             feeds: DiscoveryFeedRepository,
             stores: StoreAuthoritativeRead,
-            products: DiscoveryProductRead,
+            products: ProductAuthoritativeRead,
           ) =>
             new DiscoveryFeedService(
               feeds,

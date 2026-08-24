@@ -4,6 +4,7 @@ import { discoveryFeedPageV1Contract } from "@sevo/contracts/discovery/v1";
 import { productIdContract, storeIdContract } from "@sevo/contracts/platform/v1";
 
 import type { StoreAuthoritativeRead } from "../../store/public";
+import type { ProductAuthoritativeRead } from "../../product/public";
 import { DiscoveryCursorCodec, type DiscoveryCursorPayload } from "./discovery-cursor";
 import {
   compareDiscoveryKeys,
@@ -15,7 +16,6 @@ import {
   type DiscoveryFeed,
   type DiscoveryFeedProjectionCandidate,
   type DiscoveryFeedRepository,
-  type DiscoveryProductRead,
 } from "../public";
 
 const RANKING_VERSION = 1;
@@ -28,7 +28,7 @@ export class DiscoveryFeedService implements DiscoveryFeed {
   constructor(
     private readonly repository: DiscoveryFeedRepository,
     private readonly stores: StoreAuthoritativeRead,
-    private readonly products: DiscoveryProductRead,
+    private readonly products: ProductAuthoritativeRead,
     cursorKeys: {
       activeKeyId: string;
       keys: Readonly<Record<string, string>>;
@@ -65,7 +65,7 @@ export class DiscoveryFeedService implements DiscoveryFeed {
     );
     const enriched = [];
     for (const candidate of ranked) {
-      const item = await this.#enrich(candidate, projection.candidates);
+      const item = await this.#enrich(candidate);
       if (item) enriched.push({ item, key: candidate.key });
     }
     const selected = enriched.slice(0, pageSize);
@@ -100,14 +100,8 @@ export class DiscoveryFeedService implements DiscoveryFeed {
     };
   }
 
-  async #enrich(
-    ranked: RankedDiscoveryCandidate,
-    candidates: readonly DiscoveryFeedProjectionCandidate[],
-  ) {
-    const projection = candidates.find(
-      ({ productId }) => productId === ranked.productId,
-    );
-    if (!projection) return undefined;
+  async #enrich(ranked: RankedDiscoveryCandidate<DiscoveryFeedProjectionCandidate>) {
+    const projection = ranked.candidate;
     const productId = productIdContract.parse(ranked.productId);
     const storeId = storeIdContract.parse(ranked.storeId);
     const [store, detailedProduct] = await Promise.all([

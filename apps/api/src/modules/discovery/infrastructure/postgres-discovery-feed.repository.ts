@@ -1,11 +1,18 @@
 import postgres, { type Sql } from "postgres";
+import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 
 import type {
   DiscoveryFeedProjectionCandidate,
   DiscoveryFeedRepository,
 } from "../public";
 
-type StatusRow = { healthy: boolean; reason: string | null; updatedAt: Date };
+type StatusRow = {
+  healthy: boolean;
+  reason: string | null;
+  updatedAt: Date;
+  pendingEvents: number;
+  unresolvedBuffers: number;
+};
 
 export class PostgresDiscoveryFeedRepository implements DiscoveryFeedRepository {
   readonly #sql: Sql;
@@ -16,9 +23,18 @@ export class PostgresDiscoveryFeedRepository implements DiscoveryFeedRepository 
 
   async readPublicSnapshot(snapshotAt: Date) {
     const statusRows = await this.#sql<StatusRow[]>`
-      select healthy, reason, updated_at as "updatedAt"
-      from discovery_projection_status
-      where projection_name = 'public-feed-v1'
+      select status.healthy, status.reason, status.updated_at as "updatedAt",
+        (select count(*)::int
+         from platform_outbox_events event
+         left join platform_outbox_consumptions consumption
+           on consumption.event_id = event.event_id
+          and consumption.consumer_name = 'discovery-public-feed-v1'
+         where event.event_type in ${this.#sql(discoveryFeedProjectionEventTypes)}
+           and consumption.event_id is null) as "pendingEvents",
+        (select count(*)::int
+         from discovery_product_feed_version_buffers) as "unresolvedBuffers"
+      from discovery_projection_status status
+      where status.projection_name = 'public-feed-v1'
     `;
     const status = statusRows[0];
     if (!status) {
@@ -29,10 +45,15 @@ export class PostgresDiscoveryFeedRepository implements DiscoveryFeedRepository 
         candidates: [],
       };
     }
-    if (!status.healthy) {
+    if (!status.healthy || status.pendingEvents > 0 || status.unresolvedBuffers > 0) {
       return {
         healthy: false,
-        ...(status.reason ? { reason: status.reason } : {}),
+        reason:
+          status.unresolvedBuffers > 0
+            ? "UNRESOLVED_BUFFERS"
+            : status.pendingEvents > 0
+              ? "PENDING_EVENTS"
+              : (status.reason ?? "UNHEALTHY"),
         projectionUpdatedAt: status.updatedAt,
         candidates: [],
       };

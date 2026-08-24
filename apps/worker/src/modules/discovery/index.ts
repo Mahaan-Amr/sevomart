@@ -5,6 +5,7 @@ import type { WorkerHandler } from "../public";
 import {
   projectDiscoveryProductEvent,
   projectDiscoveryStoreEvent,
+  reconcileDiscoveryProjectionHealth,
 } from "./project-public-feed";
 
 export const projectIdentityStatusForFollowerCount: OutboxEventHandler = async (
@@ -94,11 +95,13 @@ const publicDiscoveryProjectionWorker: WorkerHandler = {
         "StoreUnpublished.v1": projectDiscoveryStoreEvent,
         "ProductPublished.v1": projectDiscoveryProductEvent,
         "ProductPublished.v2": projectDiscoveryProductEvent,
+        "ProductUnpublished.v1": projectDiscoveryProductEvent,
         "VariantPriceChanged.v1": projectDiscoveryProductEvent,
         "VariantAvailabilityChanged.v1": projectDiscoveryProductEvent,
       },
     });
     await worker.start();
+    await reconcileDiscoveryProjectionHealth(environment.DATABASE_URL);
     return () => worker.close();
   },
 };

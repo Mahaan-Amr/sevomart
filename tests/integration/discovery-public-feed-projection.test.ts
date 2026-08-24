@@ -1,5 +1,6 @@
 import {
   productPublishedV2Contract,
+  productUnpublishedV1Contract,
   variantAvailabilityChangedV1Contract,
   variantPriceChangedV1Contract,
 } from "@sevo/contracts/product/v1";
@@ -72,7 +73,7 @@ describe("public discovery event projection", () => {
     });
   });
 
-  it("buffers early offer and availability versions and preserves first publication", async () => {
+  it("buffers early versions and keeps the ranking timestamp immutable", async () => {
     const price = variantPriceChangedV1Contract.parse({
       ...envelope("VariantPriceChanged.v1", ids.product, 5, "2026-08-24T10:05:00.000Z"),
       payload: {
@@ -154,9 +155,54 @@ describe("public discovery event projection", () => {
       productAggregateVersion: 4,
       offerVersion: 5,
       availabilityVersion: 7,
-      firstPublishedAt: new Date("2026-08-17T08:00:00.000Z"),
+      firstPublishedAt: new Date("2026-08-24T10:10:00.000Z"),
       eligibleSince: new Date("2026-08-24T10:10:00.000Z"),
     });
+    expect(
+      await sql`select * from discovery_product_feed_version_buffers`,
+    ).toHaveLength(0);
+  });
+
+  it("buffers an early unpublish and applies its tombstone after publication", async () => {
+    const unpublished = productUnpublishedV1Contract.parse({
+      ...envelope("ProductUnpublished.v1", ids.product, 3, "2026-08-24T10:20:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 1,
+      },
+    });
+    const published = productPublishedV2Contract.parse({
+      ...envelope("ProductPublished.v2", ids.product, 2, "2026-08-24T10:00:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 1,
+        snapshot: { variantIds: [ids.variant] },
+        offerVersion: 1,
+        availabilityVersion: 1,
+      },
+    });
+
+    await sql.begin((transaction) =>
+      projectDiscoveryProductEvent(unpublished, transaction),
+    );
+    const [bufferedHealth] = await sql<Array<{ healthy: boolean; reason: string }>>`
+      select healthy, reason from discovery_projection_status
+      where projection_name = 'public-feed-v1'
+    `;
+    expect(bufferedHealth).toEqual({ healthy: false, reason: "UNRESOLVED_BUFFERS" });
+
+    await sql.begin((transaction) =>
+      projectDiscoveryProductEvent(published, transaction),
+    );
+    const [row] = await sql<
+      Array<{ published: boolean; productAggregateVersion: number }>
+    >`
+      select published, product_aggregate_version as "productAggregateVersion"
+      from discovery_product_feed_projections where product_id = ${ids.product}
+    `;
+    expect(row).toEqual({ published: false, productAggregateVersion: 3 });
     expect(
       await sql`select * from discovery_product_feed_version_buffers`,
     ).toHaveLength(0);

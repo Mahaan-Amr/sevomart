@@ -4,8 +4,7 @@ import type {
   StoreFollowViewV1,
   ViewerStoreFollowV1,
 } from "@sevo/contracts/discovery/v1";
-import type { PublicProduct, PublicSimpleProduct } from "@sevo/contracts/product/v1";
-import type { IdentityId, ProductId, StoreId } from "@sevo/contracts/platform/v1";
+import type { IdentityId, StoreId } from "@sevo/contracts/platform/v1";
 
 export const STORE_FOLLOWING = Symbol("STORE_FOLLOWING");
 export const STORE_FOLLOW_REPOSITORY = Symbol("STORE_FOLLOW_REPOSITORY");
@@ -28,17 +27,6 @@ export interface DiscoveryFeedRepository {
     projectionUpdatedAt: Date;
     candidates: DiscoveryFeedProjectionCandidate[];
   }>;
-}
-
-export interface DiscoveryProductRead {
-  readPublishedProduct(
-    productId: ProductId,
-    storeId: StoreId,
-  ): Promise<PublicProduct | undefined>;
-  readPublished(
-    productId: ProductId,
-    storeId: StoreId,
-  ): Promise<PublicSimpleProduct | undefined>;
 }
 
 export interface DiscoveryFeed {

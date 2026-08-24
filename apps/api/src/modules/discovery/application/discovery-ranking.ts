@@ -15,14 +15,15 @@ export type DiscoveryRankingKey = Readonly<{
   productId: string;
 }>;
 
-export type RankedDiscoveryCandidate = DiscoveryRankingCandidate &
-  Readonly<{ key: DiscoveryRankingKey }>;
+export type RankedDiscoveryCandidate<
+  TCandidate extends DiscoveryRankingCandidate = DiscoveryRankingCandidate,
+> = TCandidate & Readonly<{ candidate: TCandidate; key: DiscoveryRankingKey }>;
 
-export function rankDiscoveryCandidates(
-  candidates: readonly DiscoveryRankingCandidate[],
+export function rankDiscoveryCandidates<TCandidate extends DiscoveryRankingCandidate>(
+  candidates: readonly TCandidate[],
   options: Readonly<{ snapshotAt: Date; dailySeed: string }>,
-): RankedDiscoveryCandidate[] {
-  const grouped = new Map<string, DiscoveryRankingCandidate[]>();
+): RankedDiscoveryCandidate<TCandidate>[] {
+  const grouped = new Map<string, TCandidate[]>();
   for (const candidate of candidates) {
     const bucket = freshnessBucket(candidate.firstPublishedAt, options.snapshotAt);
     const groupKey = `${bucket}:${candidate.storeId}`;
@@ -31,7 +32,7 @@ export function rankDiscoveryCandidates(
     grouped.set(groupKey, group);
   }
 
-  const ranked: RankedDiscoveryCandidate[] = [];
+  const ranked: RankedDiscoveryCandidate<TCandidate>[] = [];
   for (const group of grouped.values()) {
     group.sort((left, right) => {
       const time = right.firstPublishedAt.getTime() - left.firstPublishedAt.getTime();
@@ -40,6 +41,7 @@ export function rankDiscoveryCandidates(
     for (const [storeOrdinal, candidate] of group.entries()) {
       ranked.push({
         ...candidate,
+        candidate,
         key: {
           bucket: freshnessBucket(candidate.firstPublishedAt, options.snapshotAt),
           storeOrdinal,

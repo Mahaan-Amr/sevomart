@@ -1,5 +1,6 @@
 import { productPublishedV2Contract } from "@sevo/contracts/product/v1";
 import { storePublishedV1Contract } from "@sevo/contracts/store/v1";
+import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -50,41 +51,38 @@ describe("public discovery feed HTTP API", () => {
     const server = app.getHttpAdapter().getInstance();
     const cookie = await signIn(server);
 
-    const guest = await server.inject({
-      method: "GET",
-      url: "/v1/feeds/discovery?limit=1",
-    });
-    const buyer = await server.inject({
-      method: "GET",
-      url: "/v1/feeds/discovery?limit=1",
-      headers: { cookie },
-    });
-    expect(guest.statusCode).toBe(200);
-    expect(buyer.json().items).toEqual(guest.json().items);
-    expect(guest.headers["cache-control"]).toContain("public");
-    expect(guest.headers).toHaveProperty("x-projection-lag-ms");
-    expect(JSON.stringify(guest.json())).not.toMatch(
+    const readAllPages = async (sessionCookie?: string) => {
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      let firstResponse: Awaited<ReturnType<typeof server.inject>> | undefined;
+      do {
+        const page = await server.inject({
+          method: "GET",
+          url: `/v1/feeds/discovery?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+          ...(sessionCookie ? { headers: { cookie: sessionCookie } } : {}),
+        });
+        firstResponse ??= page;
+        expect(page.statusCode).toBe(200);
+        const body = page.json<{
+          items: Array<{ productId: string }>;
+          nextCursor?: string;
+        }>();
+        seen.push(...body.items.map(({ productId }) => productId));
+        cursor = body.nextCursor;
+      } while (cursor);
+      return { seen, firstResponse: firstResponse! };
+    };
+
+    const guest = await readAllPages();
+    const buyer = await readAllPages(cookie);
+    expect(buyer.seen).toEqual(guest.seen);
+    expect(guest.firstResponse.headers["cache-control"]).toContain("public");
+    expect(guest.firstResponse.headers).toHaveProperty("x-projection-lag-ms");
+    expect(JSON.stringify(guest.firstResponse.json())).not.toMatch(
       /identity|viewer|follow|viewCount|like|score/i,
     );
-
-    const seen: string[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await server.inject({
-        method: "GET",
-        url: `/v1/feeds/discovery?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
-      });
-      expect(page.statusCode).toBe(200);
-      const body = page.json<{
-        items: Array<{ productId: string }>;
-        nextCursor?: string;
-      }>();
-      seen.push(...body.items.map(({ productId }) => productId));
-      cursor = body.nextCursor;
-    } while (cursor);
-
-    expect(seen).toHaveLength(3);
-    expect(new Set(seen).size).toBe(3);
+    expect(guest.seen).toHaveLength(3);
+    expect(new Set(guest.seen).size).toBe(3);
   });
 
   it("skips a product that stops being authoritative after the snapshot", async () => {
@@ -131,12 +129,15 @@ describe("public discovery feed HTTP API", () => {
     expect(invalid.json()).toMatchObject({ code: "INVALID_CURSOR" });
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql`
-      update discovery_projection_status
-      set healthy = false, reason = 'VERSION_GAP'
-      where projection_name = 'public-feed-v1'
-    `;
-    await sql.end();
+    const pending = storePublishedV1Contract.parse({
+      ...envelope("StorePublished.v1", storeId, 2, "2026-08-24T10:00:00.000Z"),
+      payload: {
+        storeId,
+        publicationStatus: "PUBLISHED",
+        publicationVersion: 1,
+      },
+    });
+    await sql.begin((transaction) => enqueueOutboxEvent(transaction, pending));
     const unavailable = await server.inject({
       method: "GET",
       url: "/v1/feeds/discovery",
@@ -147,6 +148,8 @@ describe("public discovery feed HTTP API", () => {
       code: "PROJECTION_UNAVAILABLE",
       message: expect.stringContaining("دوباره تلاش کنید"),
     });
+    await sql`delete from platform_outbox_events where event_id = ${pending.eventId}`;
+    await sql.end();
   });
 });
 
