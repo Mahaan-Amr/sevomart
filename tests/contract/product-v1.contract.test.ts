@@ -99,6 +99,7 @@ describe("simple product v1 contract", () => {
 
     const publicProduct = publicSimpleProductContract.parse({
       productId: ids.product,
+      variantId: ids.variant,
       name: draft.workingCopy.name,
       description: draft.workingCopy.description,
       image: { id: ids.media, url: `/v1/media/${ids.media}` },

@@ -7,6 +7,7 @@ import {
 import { notFound } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
+import { AddToCart } from "./add-to-cart";
 import styles from "./product-public.module.css";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
@@ -49,9 +50,25 @@ export default async function PublicProductPage({
                     {formatIrrAsToman(variant.price.amount)} ·{" "}
                     {variant.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
                   </span>
+                  <AddToCart
+                    variantId={variant.variantId}
+                    available={variant.availability === "AVAILABLE"}
+                  />
                 </li>
               ))}
             </ul>
+          ) : null}
+          {"variants" in product && product.variants.length === 1 ? (
+            <AddToCart
+              variantId={product.variants[0]!.variantId}
+              available={product.variants[0]!.availability === "AVAILABLE"}
+            />
+          ) : null}
+          {"variantId" in product ? (
+            <AddToCart
+              variantId={product.variantId}
+              available={product.availability === "AVAILABLE"}
+            />
           ) : null}
           <p className={styles.payment}>
             روش پرداخت و شرایط مرجوعی پیش از ثبت سفارش نمایش داده می‌شود.

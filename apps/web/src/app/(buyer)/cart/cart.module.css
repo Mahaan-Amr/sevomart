@@ -1,0 +1,137 @@
+.page {
+  min-height: 100vh;
+  padding: 24px 16px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.panel {
+  width: min(100%, 560px);
+  margin-inline: auto;
+  padding: 24px;
+  border-radius: 22px;
+  background: var(--color-background);
+  box-shadow: var(--elevation-raised);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  min-width: 40px;
+  min-height: 40px;
+  color: var(--color-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.panel h1 {
+  margin: 12px 0 4px;
+  font-size: 24px;
+}
+
+.store {
+  margin: 0 0 16px;
+  color: var(--color-muted);
+}
+
+.items {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.items li {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.items img {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.items span {
+  display: grid;
+  gap: 4px;
+}
+
+.items small,
+.items em {
+  color: var(--color-muted);
+  font-style: normal;
+}
+
+.items em {
+  color: var(--color-primary-dark);
+}
+
+.panel button {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panel button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+.panel button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.conflict {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-divider);
+
+  .panel .secondaryAction {
+    border: 1px solid var(--color-primary);
+    background: transparent;
+    color: var(--color-primary-dark);
+  }
+}
+
+.conflict h2 {
+  font-size: 18px;
+}
+
+@media (max-width: 420px) {
+  .panel {
+    padding: 20px 16px;
+  }
+
+  .items li {
+    grid-template-columns: 56px 1fr;
+  }
+
+  .items img {
+    width: 56px;
+    height: 56px;
+  }
+
+  .items strong {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel button {
+    transition: none;
+  }
+}

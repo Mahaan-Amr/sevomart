@@ -74,7 +74,11 @@ export function composeCanonicalApiModules(
     }),
     ProductModule.register(environment, { repository: productRepository }),
     InventoryModule,
-    OrdersModule,
+    OrdersModule.register(environment, {
+      products: productRepository,
+      inventory: inventoryAuthoring,
+      stores: storeRepository,
+    }),
     PaymentsModule,
     FulfillmentModule,
     ConversationsModule,

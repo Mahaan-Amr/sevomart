@@ -22,7 +22,12 @@ import {
   type PublicProduct,
   type SimpleProductView,
 } from "@sevo/contracts/product/v1";
-import { storeIdContract, variantIdContract } from "@sevo/contracts/platform/v1";
+import {
+  productIdContract,
+  storeIdContract,
+  variantIdContract,
+  type VariantId,
+} from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
@@ -769,6 +774,71 @@ export class PostgresProductRepository implements ProductRepository {
       .map(toPublicMultivariantSummary);
   }
 
+  async readAuthoritativeVariant(variantId: VariantId) {
+    const rows = await this.#sql<
+      Array<{
+        productId: string;
+        storeId: string;
+        name: string;
+        mediaId: string;
+        amount: number | string;
+        publicationVersion: number;
+        snapshot: JSONValue | null;
+      }>
+    >`
+      select product.id as "productId", product.store_id as "storeId",
+        publication.name, publication.media_id as "mediaId", offer.amount,
+        product.publication_version as "publicationVersion", publication.snapshot
+      from product_products product
+      join product_publications publication
+        on publication.product_id = product.id
+       and publication.publication_version = product.publication_version
+      join product_offers offer
+        on offer.product_id = product.id and offer.variant_id = ${variantId}::uuid
+      where product.state = 'PUBLISHED'
+        and (
+          publication.variant_id = ${variantId}::uuid
+          or (
+            publication.snapshot is not null
+            and publication.snapshot -> 'variants' @>
+              jsonb_build_array(jsonb_build_object('variantId', ${variantId}::text))
+          )
+        )
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row) return undefined;
+    if (!row.snapshot) {
+      return {
+        productId: productIdContract.parse(row.productId),
+        variantId,
+        storeId: storeIdContract.parse(row.storeId),
+        name: row.name,
+        image: { id: row.mediaId, url: `/v1/media/${row.mediaId}` },
+        unitPrice: { amount: Number(row.amount), currency: "IRR" as const },
+        publicationVersion: row.publicationVersion,
+        sellable: true,
+      } as const;
+    }
+    const product = await this.#refreshPublicProduct(
+      publicProductContract.parse(row.snapshot),
+    );
+    const variant = product.variants.find(
+      (candidate) => candidate.variantId === variantId,
+    );
+    if (!variant) return undefined;
+    return {
+      productId: productIdContract.parse(row.productId),
+      variantId: variantIdContract.parse(variant.variantId),
+      storeId: storeIdContract.parse(row.storeId),
+      name: product.name,
+      image: product.images[0]!,
+      unitPrice: variant.price,
+      publicationVersion: product.publicationVersion,
+      sellable: true,
+    } as const;
+  }
+
   async #refreshPublicProduct(product: PublicProduct) {
     const variantIds = product.variants.map((variant) => variant.variantId);
     const offers = await this.#sql<
@@ -1119,6 +1189,7 @@ function toPublicMultivariantSummary(product: PublicProduct) {
 function toPublicProduct(row: PublicationRow, onHand: number) {
   return publicSimpleProductContract.parse({
     productId: row.productId,
+    variantId: row.variantId,
     name: row.name,
     description: row.description,
     image: { id: row.mediaId, url: `/v1/media/${row.mediaId}` },
