@@ -101,7 +101,7 @@ export class CartService {
         if (nextStore?.publicationStatus !== "PUBLISHED")
           throw new CartVariantUnavailableError();
         const stock = await this.inventory.read(variantId);
-        if (!stock || stock.onHand < input.quantity)
+        if (!stock || stock.available < input.quantity)
           throw new CartVariantUnavailableError();
 
         const existingGuest = suppliedGuest;
@@ -316,7 +316,7 @@ export class CartService {
           !authoritative?.sellable ||
           store?.publicationStatus !== "PUBLISHED" ||
           !stock ||
-          stock.onHand < input.quantity
+          stock.available < input.quantity
         ) {
           throw new CartVariantUnavailableError();
         }
@@ -459,7 +459,7 @@ export class CartService {
         const unavailable =
           !product.sellable ||
           store.publicationStatus !== "PUBLISHED" ||
-          (stock?.onHand ?? 0) < item.quantity;
+          (stock?.available ?? 0) < item.quantity;
         if (unavailable) {
           itemChanges.push({
             kind: "VARIANT_UNAVAILABLE",
@@ -478,7 +478,7 @@ export class CartService {
             availability:
               !product.sellable || store.publicationStatus !== "PUBLISHED"
                 ? ("UNAVAILABLE" as const)
-                : (stock?.onHand ?? 0) >= item.quantity
+                : (stock?.available ?? 0) >= item.quantity
                   ? ("AVAILABLE" as const)
                   : ("OUT_OF_STOCK" as const),
           },

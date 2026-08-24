@@ -8,6 +8,8 @@ export type InventoryTransactionContext = Readonly<{
 
 export type InventorySnapshot = Readonly<{
   onHand: number;
+  reserved: number;
+  available: number;
   revision: number;
 }>;
 
@@ -51,6 +53,23 @@ export interface InventoryAuthoring {
   readMany(
     variantIds: readonly VariantId[],
   ): Promise<ReadonlyArray<InventorySnapshot & { variantId: VariantId }>>;
+  reserveForOrder(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{
+      reservationId: string;
+      orderId: string;
+      storeId: StoreId;
+      expiresAt: Date;
+      items: ReadonlyArray<{ variantId: VariantId; quantity: number }>;
+    }>,
+  ): Promise<void>;
+}
+
+export class InventoryReservationUnavailableError extends Error {
+  readonly code = "OUT_OF_STOCK" as const;
+  constructor(readonly variantId: VariantId) {
+    super("Inventory is not available for reservation");
+  }
 }
 
 export class InventoryRevisionConflictError extends Error {

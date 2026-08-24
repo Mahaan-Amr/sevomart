@@ -24,6 +24,9 @@ describe("OpenAPI guest cart and login attachment", () => {
       ["post", "/v1/cart/store-replacement", "replaceCartStore", false],
       ["post", "/v1/cart/attach", "attachGuestCart", true],
       ["post", "/v1/cart/resolve", "resolveCartConflict", true],
+      ["get", "/v1/checkout/options", "readCheckoutOptions", true],
+      ["post", "/v1/checkout/prepare", "prepareCheckout", true],
+      ["post", "/v1/orders", "createOrder", true],
       ["get", "/v1/addresses", "listSavedAddresses", true],
       ["post", "/v1/addresses", "createSavedAddress", true],
       ["put", "/v1/addresses/{addressId}", "updateSavedAddress", true],
@@ -37,7 +40,9 @@ describe("OpenAPI guest cart and login attachment", () => {
         authenticated ? [{ identitySession: [] }] : [],
       );
     }
-    const writes = expected.filter(([method]) => method !== "get");
+    const writes = expected.filter(
+      ([method, path]) => method !== "get" && path !== "/v1/checkout/prepare",
+    );
     for (const [method, path] of writes.map(([method, path]) => [method, path])) {
       expect(document.paths[path][method].parameters).toEqual(
         expect.arrayContaining([

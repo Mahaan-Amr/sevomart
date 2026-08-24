@@ -28,6 +28,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
     product: randomUUID(),
     variant: randomUUID(),
     media: randomUUID(),
+    shipping: randomUUID(),
   };
   const slug = `guest-cart-${projectIndex}`;
   const sql = postgres(databaseUrl, { max: 1 });
@@ -36,6 +37,37 @@ test("guest adds a product, signs in and continues the same cart", async ({
       select id as "storeId" from store_stores where slug = ${slug}
     `;
     for (const previous of previousStores) {
+      await sql`
+        delete from order_delivery_snapshots where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from order_shipping_snapshots where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from order_policy_snapshots where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from order_items where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from inventory_reservation_lines where reservation_id in
+          (select id from inventory_reservations where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`delete from inventory_reservations where store_id = ${previous.storeId}::uuid`;
+      await sql`
+        update order_checkout_preparations set consumed_order_id = null
+        where cart_id in
+          (select id from order_carts where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`delete from order_orders where store_id = ${previous.storeId}::uuid`;
+      await sql`
+        delete from order_checkout_preparations where cart_id in
+          (select id from order_carts where store_id = ${previous.storeId}::uuid)
+      `;
       await sql`delete from order_carts where store_id = ${previous.storeId}::uuid`;
       await sql`delete from product_products where store_id = ${previous.storeId}::uuid`;
       await sql`delete from store_stores where id = ${previous.storeId}::uuid`;
@@ -51,9 +83,22 @@ test("guest adds a product, signs in and continues the same cart", async ({
     }
     await sql`
       insert into store_stores
-        (id, name, slug, status, publication_version, revision, updated_at)
+        (id, name, slug, return_policy, return_policy_revision,
+         settlement_kind, settlement_status, settlement_verified_at,
+         status, publication_version, revision, updated_at)
       values
-        (${ids.store}, 'خانه فنجان', ${slug}, 'PUBLISHED', 1, 1, now())
+        (${ids.store}, 'خانه فنجان', ${slug},
+         'تا هفت روز امکان درخواست مرجوعی دارید.', 1,
+         'TEST', 'TEST_VERIFIED', now(), 'PUBLISHED', 1, 1, now())
+    `;
+    await sql`
+      insert into store_shipping_methods
+        (id, store_id, position, revision, code, label, fixed_fee_amount,
+         estimated_delivery_text, enabled, requires_delivery_address,
+         requires_postal_code)
+      values
+        (${ids.shipping}, ${ids.store}, 0, 1, 'NATIONAL_POST', 'پست پیشتاز',
+         500000, '۳ تا ۵ روز کاری', true, true, true)
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
@@ -183,6 +228,17 @@ test("guest adds a product, signs in and continues the same cart", async ({
         Number.parseFloat(getComputedStyle(element).transitionDuration),
       ),
   ).toBeLessThan(0.001);
+
+  await page.getByRole("link", { name: "بازگشت به سبد" }).click();
+  await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
+  await page.getByRole("link", { name: "رفتن به مرور نهایی سفارش" }).click();
+  await expect(page.getByRole("heading", { name: "مرور نهایی سفارش" })).toBeVisible();
+  await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
+  await expect(page.getByRole("heading", { name: "تسویه مستقیم" })).toBeVisible();
+  await expect(page.getByText("بازپرداخت را تضمین نمی‌کند.")).toBeVisible();
+  await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
+  await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
+  await assertNoHorizontalOverflow(page);
 });
 
 test("same-store carts merge only after the buyer chooses merge", async ({

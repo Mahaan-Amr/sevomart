@@ -55,6 +55,13 @@ existing state check with `UNPUBLISHED` and adds an append-only state-transition
 audit without rewriting product or publication rows. It needs no compatibility
 window and uses a forward fix if deployment must be corrected.
 
+Issue 88 adds inventory-owned expiring reservations and orders-owned checkout,
+immutable snapshot and idempotency tables. Both migrations are additive, require no
+compatibility window and use a forward fix if deployment must be corrected. Local
+Compose and PostgreSQL integration verification remain pending because the Docker
+daemon was unavailable during implementation; schema validation and all checks that
+do not require Docker were run.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

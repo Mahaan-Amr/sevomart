@@ -5,22 +5,32 @@ import type { InventoryAuthoring } from "../inventory/public";
 import type { ProductAuthoritativeRead } from "../product/public";
 import { STORE_AUTHORITATIVE_READ, type StoreAuthoritativeRead } from "../store/public";
 import { CartService } from "./application/cart.service";
+import { CheckoutService } from "./application/checkout.service";
 import { SavedAddressService } from "./application/saved-address.service";
 import { CartController } from "./cart.controller";
+import { CheckoutController } from "./checkout.controller";
+import { PostgresCheckoutRepository } from "./infrastructure/postgres-checkout.repository";
 import { PostgresCartRepository } from "./infrastructure/postgres-cart.repository";
 import { PostgresSavedAddressRepository } from "./infrastructure/postgres-saved-address.repository";
 import {
   CART_REPOSITORY,
   CART_SERVICE,
+  CHECKOUT_REPOSITORY,
+  CHECKOUT_SERVICE,
   SAVED_ADDRESS_REPOSITORY,
   SAVED_ADDRESS_SERVICE,
 } from "./orders.tokens";
-import type { CartRepository, SavedAddressRepository } from "./public";
+import type {
+  CartRepository,
+  CheckoutRepository,
+  SavedAddressRepository,
+} from "./public";
 import { SavedAddressController } from "./saved-address.controller";
 
 export type OrdersModuleOptions = {
   repository?: CartRepository;
   savedAddressRepository?: SavedAddressRepository;
+  checkoutRepository?: CheckoutRepository;
   products: ProductAuthoritativeRead;
   inventory: InventoryAuthoring;
 };
@@ -33,13 +43,42 @@ export class OrdersModule {
   ): DynamicModule {
     return {
       module: OrdersModule,
-      controllers: [CartController, SavedAddressController],
+      controllers: [CartController, SavedAddressController, CheckoutController],
       providers: [
         { provide: "ORDERS_RUNTIME_ENVIRONMENT", useValue: environment },
         {
           provide: CART_REPOSITORY,
           useValue:
             options.repository ?? new PostgresCartRepository(environment.DATABASE_URL),
+        },
+        {
+          provide: CHECKOUT_REPOSITORY,
+          useValue:
+            options.checkoutRepository ??
+            new PostgresCheckoutRepository(environment.DATABASE_URL, options.inventory),
+        },
+        {
+          provide: CHECKOUT_SERVICE,
+          inject: [
+            CHECKOUT_REPOSITORY,
+            CART_REPOSITORY,
+            SAVED_ADDRESS_REPOSITORY,
+            STORE_AUTHORITATIVE_READ,
+          ],
+          useFactory: (
+            repository: CheckoutRepository,
+            carts: CartRepository,
+            addresses: SavedAddressRepository,
+            stores: StoreAuthoritativeRead,
+          ) =>
+            new CheckoutService(
+              repository,
+              carts,
+              addresses,
+              options.products,
+              options.inventory,
+              stores,
+            ),
         },
         {
           provide: CART_SERVICE,
@@ -72,3 +111,4 @@ export class OrdersModule {
 
 export { PostgresCartRepository } from "./infrastructure/postgres-cart.repository";
 export { PostgresSavedAddressRepository } from "./infrastructure/postgres-saved-address.repository";
+export { PostgresCheckoutRepository } from "./infrastructure/postgres-checkout.repository";

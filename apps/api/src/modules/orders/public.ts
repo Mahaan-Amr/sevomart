@@ -3,7 +3,12 @@ import type {
   Cart,
   CartConflict,
   CartId,
+  CheckoutChange,
+  CheckoutPreparation,
   CreateSavedAddressInput,
+  CreateOrderInput,
+  Order,
+  PrepareCheckoutInput,
   SavedAddress,
   SavedAddressId,
 } from "@sevo/contracts/orders/v1";
@@ -165,6 +170,28 @@ export interface SavedAddressRepository {
   }): Promise<void>;
 }
 
+export interface CheckoutRepository {
+  savePreparation(command: {
+    identityId: IdentityId;
+    input: PrepareCheckoutInput;
+    preparation: CheckoutPreparation;
+  }): Promise<CheckoutPreparation>;
+  readPreparation(
+    identityId: IdentityId,
+    checkoutRevision: string,
+  ): Promise<CheckoutPreparation | undefined>;
+  createOrder(command: {
+    identityId: IdentityId;
+    orderId: string;
+    reservationId: string;
+    input: CreateOrderInput;
+    idempotencyKey: string;
+    requestHash: string;
+    correlationId: string;
+    reservationExpiresAt: Date;
+  }): Promise<Order>;
+}
+
 export type CartReadResult = { cart: Cart | null };
 export type CartAttachmentResult =
   | { status: "ATTACHED"; cart: Cart }
@@ -220,4 +247,26 @@ export class SavedAddressIdempotencyConflictError extends Error {
 }
 export class SavedAddressIdempotencyInProgressError extends Error {
   readonly code = "IDEMPOTENCY_IN_PROGRESS" as const;
+}
+
+export class CheckoutChangedError extends Error {
+  readonly code = "CART_CHANGED" as const;
+  constructor(readonly changes: CheckoutChange[]) {
+    super("Checkout inputs changed");
+  }
+}
+export class CheckoutRevisionExpiredError extends Error {
+  readonly code = "CHECKOUT_REVISION_EXPIRED" as const;
+}
+export class CheckoutNotReadyError extends Error {
+  readonly code = "CHECKOUT_NOT_READY" as const;
+}
+export class CheckoutAddressInvalidError extends Error {
+  readonly code = "ADDRESS_INVALID" as const;
+}
+export class CheckoutShippingUnavailableError extends Error {
+  readonly code = "SHIPPING_METHOD_UNAVAILABLE" as const;
+}
+export class CheckoutIdempotencyConflictError extends Error {
+  readonly code = "IDEMPOTENCY_CONFLICT" as const;
 }
