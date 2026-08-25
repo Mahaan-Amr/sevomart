@@ -154,6 +154,13 @@ export class PostgresProductRepository implements ProductRepository {
           );
         }
         const variantId = current.variantId ?? proposedVariantId;
+        if (!current.variantId) {
+          await sql`
+            insert into product_variants
+              (id, product_id, store_id, client_key, combination_key, retired)
+            values (${variantId}, ${productId}, ${storeId}, 'simple', '', false)
+          `;
+        }
         const inventoryTransaction = sql as unknown as InventoryTransactionContext;
         const inventory = input.inventory
           ? await this.inventory.replaceForProduct(inventoryTransaction, {
@@ -266,6 +273,10 @@ export class PostgresProductRepository implements ProductRepository {
             publication_version = ${publicationVersion}, published_at = now(),
             updated_at = now()
           where id = ${productId}
+        `;
+        await sql`
+          update product_variants set ever_published = true
+          where id = ${current.variantId}
         `;
         const publicProduct = toPublicProduct(
           {

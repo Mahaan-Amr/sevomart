@@ -93,6 +93,9 @@ describe("simple product tracer HTTP API", () => {
     });
     expect(saved.statusCode).toBe(200);
     expect(simpleProductDraftContract.safeParse(saved.json()).success).toBe(true);
+    expect(await simpleVariantState(emptyDraft.productId)).toEqual([
+      { clientKey: "simple", everPublished: false },
+    ]);
 
     const cleared = await server.inject({
       method: "PUT",
@@ -167,6 +170,9 @@ describe("simple product tracer HTTP API", () => {
       availability: "AVAILABLE",
       publicationVersion: 1,
     });
+    expect(await simpleVariantState(emptyDraft.productId)).toEqual([
+      { clientKey: "simple", everPublished: true },
+    ]);
 
     const replayed = await server.inject(publicationRequest);
     expect(replayed.statusCode).toBe(200);
@@ -709,6 +715,18 @@ async function signIn(server: TestServer) {
     await sql.end();
   }
   return verified.headers["set-cookie"]!;
+}
+
+async function simpleVariantState(productId: string) {
+  const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  try {
+    return await sql<Array<{ clientKey: string; everPublished: boolean }>>`
+      select client_key as "clientKey", ever_published as "everPublished"
+      from product_variants where product_id = ${productId}
+    `;
+  } finally {
+    await sql.end();
+  }
 }
 
 async function publishStore(server: TestServer, cookie: string) {

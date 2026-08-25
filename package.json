@@ -33,9 +33,10 @@
     "test:unit": "vitest run --config vitest.config.ts",
     "test:contract": "pnpm build:packages && vitest run --config vitest.contract.config.ts",
     "test:integration": "pnpm build:packages && node scripts/run-integration-tests.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/run-e2e-tests.mjs",
     "e2e:api": "node scripts/run-e2e-api.mjs",
     "e2e:web": "node scripts/run-e2e-web.mjs",
+    "e2e:worker": "node scripts/run-e2e-worker.mjs",
     "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",
     "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm test:integration"
   },

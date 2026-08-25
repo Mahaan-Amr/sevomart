@@ -28,11 +28,18 @@
 | `pnpm test:unit`        | قراردادهای کوچک بدون I/O                                                                 |
 | `pnpm test:contract`    | fake آداپترها و compatibility قرارداد                                                    |
 | `pnpm test:integration` | API و سپس هر ماژول روی PostgreSQL واقعی؛ در محیط محلی پایگاه داده را خودکار بالا می‌آورد |
-| `pnpm test:e2e`         | مسیر موبایل و RTL در Chromium                                                            |
+| `pnpm test:e2e`         | مسیرهای واقعی موبایل/دسکتاپ و RTL در Chromium روی PostgreSQL و MinIO موقت و جدا          |
 | `pnpm quality`          | کنترل سریع پیش از commit                                                                 |
 | `pnpm test`             | همه سطح‌های آزمون                                                                        |
 
 تست integration یک query واقعی روی PostgreSQL اجرا می‌کند و بدون اتصال سالم پاس نمی‌شود.
+در اجرای محلی، integration از پروژهٔ disposable با نام `sevomart-integration` و E2E از
+پروژهٔ disposable با نام `sevomart-e2e` استفاده می‌کند؛ هر دو پس از پایان، فقط volumeهای
+دقیق همان پروژه را حذف می‌کنند. E2E با PostgreSQL روی پورت `8432` و MinIO روی پورت‌های
+`10200/10201` اجرا می‌شود تا داده و پورت‌های runtime توسعه دست‌نخورده بمانند. آرگومان‌های
+Playwright نیز قابل عبورند؛ برای نمونه
+`pnpm test:e2e -- tests/e2e/store-following.spec.ts` فقط همان فایل را اجرا می‌کند.
+
 در CI، `DATABASE_URL` به سرویس PostgreSQL همان job اشاره می‌کند. CI همین فرمان‌ها را با نصب قفل‌شده و `pnpm audit --prod` اجرا می‌کند. imageهای web، API و
 worker از Dockerfileهای مستقل ولی با context ریشه ساخته می‌شوند.
 

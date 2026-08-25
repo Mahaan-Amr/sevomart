@@ -10,6 +10,9 @@ import {
   storefrontTestMobiles,
   paymentBuyerTestMobiles,
   paymentSellerTestMobiles,
+  releaseAgentTestMobiles,
+  releaseBuyerTestMobiles,
+  releaseSellerTestMobiles,
   visualViewports,
 } from "./tests/helpers/visual-projects";
 
@@ -63,9 +66,12 @@ export default defineConfig({
           ...differentStoreCartConflictTestMobiles,
           ...paymentBuyerTestMobiles,
           ...paymentSellerTestMobiles,
+          ...releaseSellerTestMobiles,
+          ...releaseAgentTestMobiles,
+          ...releaseBuyerTestMobiles,
         ].join(","),
       },
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: process.env.SEVO_E2E_ISOLATED !== "1" && !process.env.CI,
       timeout: 120_000,
     },
     {
@@ -75,7 +81,18 @@ export default defineConfig({
         API_BASE_URL: "http://127.0.0.1:3109",
         SEVO_RUNTIME_ENV: "test",
       },
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: process.env.SEVO_E2E_ISOLATED !== "1" && !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: "pnpm e2e:worker",
+      url: "http://127.0.0.1:3108/health/ready",
+      env: {
+        WORKER_PORT: "3108",
+        API_READINESS_URL: "http://127.0.0.1:3109/health/ready",
+        INTERNAL_API_URL: "http://127.0.0.1:3109",
+      },
+      reuseExistingServer: process.env.SEVO_E2E_ISOLATED !== "1" && !process.env.CI,
       timeout: 120_000,
     },
   ],
