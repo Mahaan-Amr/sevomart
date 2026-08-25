@@ -7,6 +7,7 @@ import {
   directPaymentAttemptReviewRequiredV1Contract,
   directPaymentAttemptConfirmedV1Contract,
   directPaymentAttemptContract,
+  paymentReviewItemContract,
 } from "@sevo/contracts/payments/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import { paymentAttemptIdContract } from "@sevo/contracts/platform/v1";
@@ -18,6 +19,7 @@ import type {
 } from "../../inventory/public";
 import {
   createOrderPaymentTransactionContext,
+  type BuyerPaymentState,
   type OrderPaymentWorkflow,
 } from "../../orders/public";
 import {
@@ -81,51 +83,15 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           );
           if (!payableOrder) throw new DirectPaymentOrderNotPayableError();
           const occurredAt = new Date();
-          await this.inventory.holdReservationForReview(
-            sql as unknown as InventoryTransactionContext,
-            {
-              reservationId: payableOrder.reservationId,
-              attemptId: existing.attemptId,
-            },
-          );
-          await this.orders.markPaymentReview(
-            createOrderPaymentTransactionContext(sql),
-            {
-              orderId: command.orderId,
-              attemptId: paymentAttemptIdContract.parse(existing.attemptId),
-              occurredAt,
-              correlationId: command.correlationId,
-            },
-          );
-          await sql`
-            update payment_attempts set status = 'REVIEW_REQUIRED',
-              next_reconciliation_at = now()
-            where id = ${existing.attemptId} and status = 'DISPATCHED'
-              and redirect_url is null
-          `;
-          await insertAttemptAudit(sql, {
+          await this.#transitionToReview(sql, {
             attemptId: existing.attemptId,
-            fromStatus: "DISPATCHED",
-            toStatus: "REVIEW_REQUIRED",
+            orderId: command.orderId,
+            reservationId: payableOrder.reservationId,
             reasonCode: "DISPATCH_LEASE_EXPIRED",
             correlationId: command.correlationId,
+            occurredAt,
           });
           existing.status = "REVIEW_REQUIRED";
-          await enqueueOutboxEvent(
-            sql,
-            directPaymentAttemptReviewRequiredV1Contract.parse({
-              eventId: randomUUID(),
-              version: 1,
-              eventType: "DirectPaymentAttemptReviewRequired.v1",
-              aggregateId: existing.attemptId,
-              aggregateVersion: 3,
-              occurredAt: occurredAt.toISOString(),
-              correlationId: command.correlationId,
-              causationId: command.correlationId,
-              actor: { type: "SYSTEM" },
-              payload: { status: "REVIEW_REQUIRED" },
-            }),
-          );
         }
         return mapAttempt(existing);
       }
@@ -321,14 +287,6 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         };
       }
       if (attempt.amount !== callback.amount) {
-        await insertAttemptAudit(sql, {
-          attemptId: attempt.attemptId,
-          fromStatus: attempt.status,
-          toStatus:
-            attempt.status === "DISPATCHED" ? "REVIEW_REQUIRED" : attempt.status,
-          reasonCode: "PROVIDER_AMOUNT_MISMATCH",
-          correlationId,
-        });
         if (attempt.status === "DISPATCHED") {
           const order = await this.orders.lockPaymentResultOrder(
             createOrderPaymentTransactionContext(sql),
@@ -341,31 +299,15 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           );
           if (!order) throw new DirectPaymentOrderNotPayableError();
           const occurredAt = new Date();
-          await this.inventory.holdReservationForReview(
-            sql as unknown as InventoryTransactionContext,
-            { reservationId: order.reservationId, attemptId: attempt.attemptId },
-          );
-          await this.orders.markPaymentReview(
-            createOrderPaymentTransactionContext(sql),
-            {
-              orderId: attempt.orderId as Parameters<
-                OrderPaymentWorkflow["markPaymentReview"]
-              >[1]["orderId"],
-              attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
-              occurredAt,
-              correlationId,
-            },
-          );
-          await sql`
-            update payment_attempts set status = 'REVIEW_REQUIRED',
-              next_reconciliation_at = ${occurredAt}
-            where id = ${attempt.attemptId} and status = 'DISPATCHED'
-          `;
-          await enqueueAttemptReviewRequired(sql, {
+          await this.#transitionToReview(sql, {
             attemptId: attempt.attemptId,
+            orderId: attempt.orderId as Parameters<
+              OrderPaymentWorkflow["markPaymentReview"]
+            >[1]["orderId"],
+            reservationId: order.reservationId,
+            reasonCode: "PROVIDER_AMOUNT_MISMATCH",
             occurredAt,
             correlationId,
-            aggregateVersion: 3,
           });
           return {
             attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
@@ -373,6 +315,13 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
             duplicate: false,
           };
         }
+        await insertAttemptAudit(sql, {
+          attemptId: attempt.attemptId,
+          fromStatus: attempt.status,
+          toStatus: attempt.status,
+          reasonCode: "PROVIDER_AMOUNT_MISMATCH",
+          correlationId,
+        });
         return {
           attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
           status: attempt.status as "CONFIRMED" | "FAILED" | "REVIEW_REQUIRED",
@@ -481,35 +430,15 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       }
       if (callback.result === "PENDING") {
         const now = new Date();
-        await this.inventory.holdReservationForReview(
-          sql as unknown as InventoryTransactionContext,
-          { reservationId: order.reservationId, attemptId: attempt.attemptId },
-        );
-        await this.orders.markPaymentReview(createOrderPaymentTransactionContext(sql), {
+        await this.#transitionToReview(sql, {
+          attemptId: attempt.attemptId,
           orderId: attempt.orderId as Parameters<
             OrderPaymentWorkflow["markPaymentReview"]
           >[1]["orderId"],
-          attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
-          occurredAt: now,
-          correlationId,
-        });
-        await sql`
-          update payment_attempts set status = 'REVIEW_REQUIRED',
-            next_reconciliation_at = ${now}
-          where id = ${attempt.attemptId} and status = 'DISPATCHED'
-        `;
-        await insertAttemptAudit(sql, {
-          attemptId: attempt.attemptId,
-          fromStatus: attempt.status,
-          toStatus: "REVIEW_REQUIRED",
+          reservationId: order.reservationId,
           reasonCode: "PROVIDER_RESULT_PENDING",
           correlationId,
-        });
-        await enqueueAttemptReviewRequired(sql, {
-          attemptId: attempt.attemptId,
           occurredAt: now,
-          correlationId,
-          aggregateVersion: 3,
         });
         return {
           attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
@@ -553,6 +482,12 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
             correlationId,
           },
         );
+        await insertOperationalAlert(sql, {
+          attemptId: attempt.attemptId,
+          kind: "PAID_STOCK_CONFLICT",
+          correlationId,
+          occurredAt: now,
+        });
       }
       await enqueueOutboxEvent(
         sql,
@@ -593,36 +528,49 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       from payment_attempts
       where id = ${attemptId}::uuid and identity_id = ${identityId}::uuid
     `;
-    return rows[0] ? mapAttempt(rows[0]) : undefined;
+    const attempt = rows[0];
+    if (!attempt) return undefined;
+    const order = await this.orders.readBuyerPaymentState(
+      identityId,
+      attempt.orderId as Parameters<OrderPaymentWorkflow["readBuyerPaymentState"]>[1],
+    );
+    if (!order) throw new DirectPaymentAttemptNotFoundError();
+    return mapAttempt(attempt, order);
   }
 
   async recoverExpiredAttempts(now: Date, correlationId: string) {
     return this.#sql.begin(async (sql) => {
-      const rows = await sql<
-        Array<AttemptRow & { identityId: string; reservationId: string }>
-      >`
+      const rows = await sql<Array<AttemptRow & { identityId: string }>>`
         select attempt.id as "attemptId", attempt.order_id as "orderId",
           attempt.identity_id as "identityId", attempt.status,
           attempt.amount::int as amount, attempt.provider,
           attempt.provider_reference as "providerReference",
           attempt.redirect_url as "redirectUrl", attempt.created_at as "createdAt",
           attempt.confirmed_at as "confirmedAt",
-          attempt.dispatch_lease_until as "dispatchLeaseUntil",
-          orders.reservation_id as "reservationId"
+          attempt.dispatch_lease_until as "dispatchLeaseUntil"
         from payment_attempts attempt
-        join order_orders orders on orders.id = attempt.order_id
         where attempt.status in ('CREATED', 'DISPATCHED')
           and attempt.dispatch_lease_until <= ${now}
         order by attempt.dispatch_lease_until, attempt.id
-        for update of attempt, orders skip locked
+        for update skip locked
         limit 100
       `;
       for (const attempt of rows) {
+        const order = await this.orders.lockPaymentResultOrder(
+          createOrderPaymentTransactionContext(sql),
+          attempt.identityId as Parameters<
+            OrderPaymentWorkflow["lockPaymentResultOrder"]
+          >[1],
+          attempt.orderId as Parameters<
+            OrderPaymentWorkflow["lockPaymentResultOrder"]
+          >[2],
+        );
+        if (!order) throw new DirectPaymentOrderNotPayableError();
         if (attempt.status === "CREATED") {
           const reservationStatus = await this.inventory.resolveFailedPayment(
             sql as unknown as InventoryTransactionContext,
             {
-              reservationId: attempt.reservationId,
+              reservationId: order.reservationId,
               attemptId: attempt.attemptId,
               now,
             },
@@ -663,46 +611,17 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           }
           continue;
         }
-        await this.inventory.holdReservationForReview(
-          sql as unknown as InventoryTransactionContext,
-          { reservationId: attempt.reservationId, attemptId: attempt.attemptId },
-        );
         const occurredAt = new Date(now);
-        await this.orders.markPaymentReview(createOrderPaymentTransactionContext(sql), {
+        await this.#transitionToReview(sql, {
+          attemptId: attempt.attemptId,
           orderId: attempt.orderId as Parameters<
             OrderPaymentWorkflow["markPaymentReview"]
           >[1]["orderId"],
-          attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
-          occurredAt,
-          correlationId,
-        });
-        await sql`
-          update payment_attempts set status = 'REVIEW_REQUIRED',
-            next_reconciliation_at = ${occurredAt}
-          where id = ${attempt.attemptId} and status = 'DISPATCHED'
-        `;
-        await insertAttemptAudit(sql, {
-          attemptId: attempt.attemptId,
-          fromStatus: "DISPATCHED",
-          toStatus: "REVIEW_REQUIRED",
+          reservationId: order.reservationId,
           reasonCode: "DISPATCH_LEASE_EXPIRED",
           correlationId,
+          occurredAt,
         });
-        await enqueueOutboxEvent(
-          sql,
-          directPaymentAttemptReviewRequiredV1Contract.parse({
-            eventId: randomUUID(),
-            version: 1,
-            eventType: "DirectPaymentAttemptReviewRequired.v1",
-            aggregateId: attempt.attemptId,
-            aggregateVersion: 3,
-            occurredAt: occurredAt.toISOString(),
-            correlationId,
-            causationId: correlationId,
-            actor: { type: "SYSTEM" },
-            payload: { status: "REVIEW_REQUIRED" },
-          }),
-        );
       }
       return rows.length;
     });
@@ -713,51 +632,40 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     correlationId: string,
   ) {
     return this.#sql.begin(async (sql) => {
-      const rows = await sql<Array<AttemptRow & { reservationId: string }>>`
+      const rows = await sql<Array<AttemptRow & { identityId: string }>>`
         select attempt.id as "attemptId", attempt.order_id as "orderId",
-          attempt.status, attempt.amount::int as amount, attempt.provider,
+          attempt.identity_id as "identityId", attempt.status,
+          attempt.amount::int as amount, attempt.provider,
           attempt.provider_reference as "providerReference",
           attempt.redirect_url as "redirectUrl", attempt.created_at as "createdAt",
           attempt.confirmed_at as "confirmedAt",
-          attempt.dispatch_lease_until as "dispatchLeaseUntil",
-          orders.reservation_id as "reservationId"
+          attempt.dispatch_lease_until as "dispatchLeaseUntil"
         from payment_attempts attempt
-        join order_orders orders on orders.id = attempt.order_id
         where attempt.id = ${attemptId} and attempt.status = 'DISPATCHED'
-        for update of attempt, orders
+        for update
       `;
       const attempt = rows[0];
       if (!attempt) throw new DirectPaymentAttemptNotFoundError();
-      await this.inventory.holdReservationForReview(
-        sql as unknown as InventoryTransactionContext,
-        { reservationId: attempt.reservationId, attemptId: attempt.attemptId },
+      const order = await this.orders.lockPaymentResultOrder(
+        createOrderPaymentTransactionContext(sql),
+        attempt.identityId as Parameters<
+          OrderPaymentWorkflow["lockPaymentResultOrder"]
+        >[1],
+        attempt.orderId as Parameters<
+          OrderPaymentWorkflow["lockPaymentResultOrder"]
+        >[2],
       );
+      if (!order) throw new DirectPaymentOrderNotPayableError();
       const occurredAt = new Date();
-      await this.orders.markPaymentReview(createOrderPaymentTransactionContext(sql), {
+      await this.#transitionToReview(sql, {
+        attemptId: attempt.attemptId,
         orderId: attempt.orderId as Parameters<
           OrderPaymentWorkflow["markPaymentReview"]
         >[1]["orderId"],
-        attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
-        occurredAt,
-        correlationId,
-      });
-      await sql`
-        update payment_attempts set status = 'REVIEW_REQUIRED',
-          next_reconciliation_at = ${occurredAt}
-        where id = ${attempt.attemptId} and status = 'DISPATCHED'
-      `;
-      await insertAttemptAudit(sql, {
-        attemptId: attempt.attemptId,
-        fromStatus: "DISPATCHED",
-        toStatus: "REVIEW_REQUIRED",
+        reservationId: order.reservationId,
         reasonCode: "PROVIDER_INITIATION_OUTCOME_UNKNOWN",
         correlationId,
-      });
-      await enqueueAttemptReviewRequired(sql, {
-        attemptId: attempt.attemptId,
         occurredAt,
-        correlationId,
-        aggregateVersion: 3,
       });
       attempt.status = "REVIEW_REQUIRED";
       return mapAttempt(attempt);
@@ -773,11 +681,13 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           amount: number;
           providerReference: string;
           reconciliationCount: number;
+          reviewStartedAt: Date;
         }>
       >`
         select id as "attemptId", order_id as "orderId", amount::int as amount,
           provider_reference as "providerReference",
-          reconciliation_count as "reconciliationCount"
+          reconciliation_count as "reconciliationCount",
+          review_started_at as "reviewStartedAt"
         from payment_attempts
         where status = 'REVIEW_REQUIRED' and provider_reference is not null
           and next_reconciliation_at <= ${now}
@@ -794,6 +704,14 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           next_reconciliation_at = ${new Date(now.getTime() + delayMs)}
         where id = ${attempt.attemptId}
       `;
+      if (attempt.reviewStartedAt.getTime() <= now.getTime() - 30 * 60_000) {
+        await insertOperationalAlert(sql, {
+          attemptId: attempt.attemptId,
+          kind: "RECONCILIATION_OVERDUE",
+          correlationId: randomUUID(),
+          occurredAt: now,
+        });
+      }
       return {
         attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
         orderId: attempt.orderId as Parameters<
@@ -814,9 +732,12 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         attempt.confirmed_at as "confirmedAt",
         attempt.dispatch_lease_until as "dispatchLeaseUntil"
       from payment_attempts attempt
-      join order_orders orders on orders.id = attempt.order_id
       where attempt.status = 'REVIEW_REQUIRED'
-        and orders.status = 'PAYMENT_REVIEW'
+        or exists (
+          select 1 from payment_attempt_audits audit
+          where audit.attempt_id = attempt.id
+            and audit.reason_code = 'PAID_STOCK_CONFLICT'
+        )
       order by attempt.created_at, attempt.id
       limit 100
     `;
@@ -838,16 +759,74 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           where attempt_id = ${attempt.attemptId}
           order by occurred_at, id
         `;
-        return {
+        const alerts = await this.#sql<
+          Array<{
+            kind: "RECONCILIATION_OVERDUE" | "PAID_STOCK_CONFLICT";
+          }>
+        >`
+          select kind from payment_operational_alerts
+          where attempt_id = ${attempt.attemptId} and status = 'OPEN'
+          order by created_at, id
+        `;
+        return paymentReviewItemContract.parse({
           attempt: mapAttempt(attempt),
-          orderStatus: "PAYMENT_REVIEW" as const,
+          reviewKind: audits.some((audit) => audit.reasonCode === "PAID_STOCK_CONFLICT")
+            ? ("PAID_STOCK_CONFLICT" as const)
+            : ("RESULT_AMBIGUOUS" as const),
+          alertKinds: alerts.map((alert) => alert.kind),
           audits: audits.map((audit) => ({
             ...audit,
             occurredAt: audit.occurredAt.toISOString(),
           })),
-        };
+        });
       }),
     );
+  }
+
+  async #transitionToReview(
+    sql: Sql,
+    input: {
+      attemptId: string;
+      orderId: Parameters<OrderPaymentWorkflow["markPaymentReview"]>[1]["orderId"];
+      reservationId: string;
+      reasonCode:
+        | "DISPATCH_LEASE_EXPIRED"
+        | "PROVIDER_AMOUNT_MISMATCH"
+        | "PROVIDER_RESULT_PENDING"
+        | "PROVIDER_INITIATION_OUTCOME_UNKNOWN";
+      correlationId: string;
+      occurredAt: Date;
+    },
+  ) {
+    await this.inventory.holdReservationForReview(
+      sql as unknown as InventoryTransactionContext,
+      { reservationId: input.reservationId, attemptId: input.attemptId },
+    );
+    await this.orders.markPaymentReview(createOrderPaymentTransactionContext(sql), {
+      orderId: input.orderId,
+      attemptId: paymentAttemptIdContract.parse(input.attemptId),
+      occurredAt: input.occurredAt,
+      correlationId: input.correlationId,
+    });
+    await sql`
+      update payment_attempts set status = 'REVIEW_REQUIRED',
+        next_reconciliation_at = ${input.occurredAt},
+        review_started_at = coalesce(review_started_at, ${input.occurredAt})
+      where id = ${input.attemptId} and status = 'DISPATCHED'
+    `;
+    await insertAttemptAudit(sql, {
+      attemptId: input.attemptId,
+      fromStatus: "DISPATCHED",
+      toStatus: "REVIEW_REQUIRED",
+      reasonCode: input.reasonCode,
+      correlationId: input.correlationId,
+    });
+    await enqueueAttemptReviewRequired(sql, {
+      attemptId: input.attemptId,
+      occurredAt: input.occurredAt,
+      correlationId: input.correlationId,
+      aggregateVersion: 3,
+    });
   }
 
   async onModuleDestroy() {
@@ -944,7 +923,26 @@ async function enqueueAttemptReviewRequired(
   );
 }
 
-function mapAttempt(row: AttemptRow) {
+async function insertOperationalAlert(
+  sql: Sql,
+  input: {
+    attemptId: string;
+    kind: "RECONCILIATION_OVERDUE" | "PAID_STOCK_CONFLICT";
+    correlationId: string;
+    occurredAt: Date;
+  },
+) {
+  await sql`
+    insert into payment_operational_alerts
+      (id, attempt_id, kind, severity, status, correlation_id, created_at)
+    values
+      (${randomUUID()}, ${input.attemptId}, ${input.kind}, 'CRITICAL', 'OPEN',
+       ${input.correlationId}, ${input.occurredAt})
+    on conflict (attempt_id, kind) do nothing
+  `;
+}
+
+function mapAttempt(row: AttemptRow, order?: BuyerPaymentState) {
   return directPaymentAttemptContract.parse({
     attemptId: row.attemptId,
     orderId: row.orderId,
@@ -955,6 +953,12 @@ function mapAttempt(row: AttemptRow) {
     ...(row.redirectUrl ? { redirectUrl: row.redirectUrl } : {}),
     createdAt: row.createdAt.toISOString(),
     ...(row.confirmedAt ? { confirmedAt: row.confirmedAt.toISOString() } : {}),
+    ...(order
+      ? {
+          orderStatus: order.status,
+          reservationExpiresAt: order.reservationExpiresAt.toISOString(),
+        }
+      : {}),
   });
 }
 

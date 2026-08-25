@@ -42,7 +42,11 @@ export function OrderReceipt({
     try {
       const response = await fetch(`/api/orders/${orderId}/payment-attempts`, {
         method: "POST",
-        headers: { "idempotency-key": crypto.randomUUID() },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: "{}",
       });
       const parsed = directPaymentAttemptContract.safeParse(await response.json());
       if (!response.ok || !parsed.success) throw new Error("retry unavailable");
@@ -56,19 +60,33 @@ export function OrderReceipt({
   }
 
   const title =
-    attempt?.status === "CONFIRMED"
-      ? "پرداخت تأیید شد"
-      : attempt?.status === "FAILED"
-        ? "پرداخت انجام نشد"
-        : attempt?.status === "REVIEW_REQUIRED"
-          ? "نتیجه پرداخت در حال بررسی است"
-          : "در انتظار نتیجه پرداخت";
+    attempt?.status === "CONFIRMED" && attempt.orderStatus === "PAYMENT_REVIEW"
+      ? "پرداخت ثبت شد؛ سفارش در حال بررسی است"
+      : attempt?.status === "CONFIRMED"
+        ? "پرداخت تأیید شد"
+        : attempt?.status === "FAILED" && attempt.orderStatus === "EXPIRED"
+          ? "مهلت پرداخت تمام شد"
+          : attempt?.status === "FAILED"
+            ? "پرداخت انجام نشد"
+            : attempt?.status === "REVIEW_REQUIRED"
+              ? "نتیجه پرداخت در حال بررسی است"
+              : "در انتظار نتیجه پرداخت";
 
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="receipt-title">
         <h1 id="receipt-title">{title}</h1>
-        {attempt?.status === "CONFIRMED" ? (
+        {attempt?.status === "CONFIRMED" && attempt.orderStatus === "PAYMENT_REVIEW" ? (
+          <>
+            <p>
+              پرداخت ثبت شده است، اما موجودی لازم برای تحویل قطعی نبود. سوو سفارش را
+              بررسی می‌کند.
+            </p>
+            <p className={styles.next}>
+              تا پایان بررسی، انجام سفارش یا بازپرداخت قطعی وعده داده نمی‌شود.
+            </p>
+          </>
+        ) : attempt?.status === "CONFIRMED" ? (
           <>
             <p>سفارش اکنون برای فروشگاه قابل اقدام است.</p>
             <dl>
@@ -95,6 +113,13 @@ export function OrderReceipt({
               </div>
             </dl>
             <p className={styles.next}>قدم بعدی: فروشگاه سفارش را آماده می‌کند.</p>
+          </>
+        ) : attempt?.status === "FAILED" && attempt.orderStatus === "EXPIRED" ? (
+          <>
+            <p>رزرو کالا آزاد شد و این سفارش دیگر قابل پرداخت نیست.</p>
+            <a href="/cart" className={styles.primary}>
+              بازگشت به سبد
+            </a>
           </>
         ) : attempt?.status === "FAILED" ? (
           <>

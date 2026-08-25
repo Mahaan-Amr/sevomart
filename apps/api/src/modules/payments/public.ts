@@ -1,4 +1,7 @@
-import type { DirectPaymentAttempt } from "@sevo/contracts/payments/v1";
+import type {
+  DirectPaymentAttempt,
+  PaymentReviewItem,
+} from "@sevo/contracts/payments/v1";
 import type {
   IdentityId,
   MoneyV1,
@@ -64,18 +67,6 @@ export type DirectPaymentReconciliation = Readonly<{
   orderId: OrderId;
   amount: MoneyV1;
   providerReference: string;
-}>;
-
-export type PaymentReviewItem = Readonly<{
-  attempt: DirectPaymentAttempt;
-  orderStatus: "PAYMENT_REVIEW";
-  audits: ReadonlyArray<{
-    fromStatus: string | null;
-    toStatus: string;
-    reasonCode: string;
-    correlationId: string;
-    occurredAt: string;
-  }>;
 }>;
 
 export interface DirectPaymentRepository {

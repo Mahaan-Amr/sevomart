@@ -455,6 +455,20 @@ export class PostgresCheckoutRepository
     return rows[0];
   }
 
+  async readBuyerPaymentState(identityId: IdentityId, orderId: OrderId) {
+    const rows = await this.#sql<
+      Array<{
+        status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+        reservationExpiresAt: Date;
+      }>
+    >`
+      select status, reservation_expires_at as "reservationExpiresAt"
+      from order_orders
+      where id = ${orderId} and identity_id = ${identityId}
+    `;
+    return rows[0];
+  }
+
   async markPaid(
     transaction: OrderPaymentTransactionContext,
     command: Parameters<OrderPaymentWorkflow["markPaid"]>[1],

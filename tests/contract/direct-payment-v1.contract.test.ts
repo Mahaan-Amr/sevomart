@@ -2,6 +2,7 @@ import {
   createDirectPaymentAttemptInputContract,
   directPaymentAttemptContract,
   directPaymentAttemptFailedV1Contract,
+  paymentReviewQueueContract,
   providerCallbackInputContract,
   providerCallbackResultContract,
 } from "@sevo/contracts/payments/v1";
@@ -66,5 +67,32 @@ describe("direct payment v1 contract", () => {
         },
       }).payload.status,
     ).toBe("FAILED");
+    expect(
+      paymentReviewQueueContract.parse({
+        items: [
+          {
+            attempt: {
+              attemptId: callback.attemptId,
+              orderId: callback.orderId,
+              status: "REVIEW_REQUIRED",
+              amount: { amount: callback.amount, currency: "IRR" },
+              provider: "DEV",
+              createdAt: "2026-08-25T08:00:00.000Z",
+            },
+            reviewKind: "RESULT_AMBIGUOUS",
+            alertKinds: ["RECONCILIATION_OVERDUE"],
+            audits: [
+              {
+                fromStatus: "DISPATCHED",
+                toStatus: "REVIEW_REQUIRED",
+                reasonCode: "DISPATCH_LEASE_EXPIRED",
+                correlationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+                occurredAt: "2026-08-25T08:01:00.000Z",
+              },
+            ],
+          },
+        ],
+      }).items[0]?.alertKinds,
+    ).toEqual(["RECONCILIATION_OVERDUE"]);
   });
 });

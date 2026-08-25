@@ -37,6 +37,11 @@ export type PayableOrder = Readonly<{
 export type PaymentResultOrder = PayableOrder &
   Readonly<{ status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "EXPIRED" }>;
 
+export type BuyerPaymentState = Readonly<{
+  status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+  reservationExpiresAt: Date;
+}>;
+
 export interface OrderPaymentWorkflow {
   lockPayableOrder(
     transaction: OrderPaymentTransactionContext,
@@ -48,6 +53,10 @@ export interface OrderPaymentWorkflow {
     identityId: IdentityId,
     orderId: OrderId,
   ): Promise<PaymentResultOrder | undefined>;
+  readBuyerPaymentState(
+    identityId: IdentityId,
+    orderId: OrderId,
+  ): Promise<BuyerPaymentState | undefined>;
   markPaid(
     transaction: OrderPaymentTransactionContext,
     command: {

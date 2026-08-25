@@ -15,6 +15,7 @@ import { ApiExcludeController } from "@nestjs/swagger";
 import {
   providerCallbackResultContract,
   paymentIdempotencyKeyContract,
+  paymentReviewQueueContract,
 } from "@sevo/contracts/payments/v1";
 import type { RuntimeEnvironment } from "@sevo/config";
 import {
@@ -144,7 +145,9 @@ export class PlatformPaymentReviewController {
       await this.sessions.authorizePaymentReview(
         readPlatformSessionToken(request) ?? "",
       );
-      return { items: await this.payments.listReviewRequired() };
+      return paymentReviewQueueContract.parse({
+        items: await this.payments.listReviewRequired(),
+      });
     } catch (error) {
       if (error instanceof PlatformAgentSessionUnauthorizedError) {
         throw new HttpException(
@@ -175,6 +178,7 @@ export class PlatformPaymentReviewController {
 @Controller("v1/internal/payment-recoveries")
 export class InternalPaymentRecoveryController {
   constructor(
+    @Inject(PaymentRecoveryRunner)
     private readonly recovery: PaymentRecoveryRunner,
     @Inject("PAYMENTS_RUNTIME_ENVIRONMENT")
     private readonly environment: RuntimeEnvironment,
@@ -183,7 +187,7 @@ export class InternalPaymentRecoveryController {
   @Post("run")
   async run(
     @Headers("x-sevo-worker-secret") secret: string | undefined,
-  ): Promise<{ recovered: number; reconciled: boolean }> {
+  ): Promise<{ recovered: number; reconciliationClaimed: boolean }> {
     if (!sameSecret(secret, this.environment.PAYMENT_RECOVERY_SECRET)) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }

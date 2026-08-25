@@ -1,25 +1,16 @@
 "use client";
 
-import { directPaymentAttemptContract } from "@sevo/contracts/payments/v1";
+import {
+  paymentReviewQueueContract,
+  type PaymentReviewItem,
+} from "@sevo/contracts/payments/v1";
 import { useCallback, useEffect, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import styles from "./platform-payment-reviews.module.css";
 
-type ReviewItem = {
-  attempt: ReturnType<typeof directPaymentAttemptContract.parse>;
-  orderStatus: "PAYMENT_REVIEW";
-  audits: Array<{
-    fromStatus: string | null;
-    toStatus: string;
-    reasonCode: string;
-    correlationId: string;
-    occurredAt: string;
-  }>;
-};
-
 export function PlatformPaymentReviews() {
-  const [items, setItems] = useState<ReviewItem[]>([]);
+  const [items, setItems] = useState<readonly PaymentReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -30,12 +21,12 @@ export function PlatformPaymentReviews() {
       const response = await fetch("/api/platform/payment-reviews", {
         cache: "no-store",
       });
-      const body = (await response.json()) as { items?: unknown };
-      if (!response.ok || !Array.isArray(body.items)) {
+      const body: unknown = await response.json();
+      const parsed = paymentReviewQueueContract.safeParse(body);
+      if (!response.ok || !parsed.success) {
         throw new Error("صف بررسی پرداخت در دسترس نیست.");
       }
-      const parsed = body.items.map((item) => parseReviewItem(item));
-      setItems(parsed);
+      setItems(parsed.data.items);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "خطایی رخ داد.");
     } finally {
@@ -70,11 +61,18 @@ export function PlatformPaymentReviews() {
             <li key={item.attempt.attemptId}>
               <div className={styles.summary}>
                 <div>
-                  <strong>نتیجه پرداخت در حال بررسی است</strong>
+                  <strong>
+                    {item.reviewKind === "PAID_STOCK_CONFLICT"
+                      ? "پرداخت ثبت شده و موجودی در حال بررسی است"
+                      : "نتیجه پرداخت در حال بررسی است"}
+                  </strong>
                   <span>سفارش {item.attempt.orderId}</span>
                 </div>
                 <span>{formatIrrAsToman(item.attempt.amount.amount)}</span>
               </div>
+              {item.alertKinds.length > 0 ? (
+                <p role="status">این مورد نیازمند پیگیری عملیاتی است.</p>
+              ) : null}
               <dl>
                 {item.audits.map((audit, index) => (
                   <div key={`${audit.occurredAt}-${index}`}>
@@ -96,28 +94,21 @@ export function PlatformPaymentReviews() {
   );
 }
 
-function parseReviewItem(value: unknown): ReviewItem {
-  if (!value || typeof value !== "object") throw new Error("داده صف معتبر نیست.");
-  const item = value as Partial<ReviewItem>;
-  if (item.orderStatus !== "PAYMENT_REVIEW" || !Array.isArray(item.audits)) {
-    throw new Error("داده صف معتبر نیست.");
-  }
-  return {
-    attempt: directPaymentAttemptContract.parse(item.attempt),
-    orderStatus: item.orderStatus,
-    audits: item.audits,
-  };
-}
-
-function reasonLabel(reasonCode: string) {
-  const labels: Record<string, string> = {
+function reasonLabel(reasonCode: PaymentReviewItem["audits"][number]["reasonCode"]) {
+  const labels: Record<PaymentReviewItem["audits"][number]["reasonCode"], string> = {
     PAYMENT_ATTEMPT_CREATED: "تلاش پرداخت ساخته شد",
     PROVIDER_DISPATCH_CLAIMED: "ارسال به درگاه ثبت شد",
     PROVIDER_RESULT_PENDING: "درگاه نتیجه قطعی نداد",
     DISPATCH_LEASE_EXPIRED: "نتیجه ارسال در مهلت نرسید",
     PROVIDER_INITIATION_OUTCOME_UNKNOWN: "نتیجه شروع پرداخت نامشخص ماند",
-    PROVIDER_AMOUNT_MISMATCH: "مبلغ callback با سفارش سازگار نبود",
+    PROVIDER_AMOUNT_MISMATCH: "مبلغ نتیجه درگاه با سفارش سازگار نبود",
     PAID_STOCK_CONFLICT: "پرداخت ثبت شد؛ موجودی نیازمند بررسی است",
+    DISPATCH_NOT_STARTED_BEFORE_LEASE_EXPIRY: "ارسال به درگاه آغاز نشد",
+    PROVIDER_FAILED: "درگاه پرداخت را ناموفق اعلام کرد",
+    PROVIDER_CONFIRMED: "درگاه پرداخت را تأیید کرد",
+    DUPLICATE_PROVIDER_EVENT_AMOUNT_MISMATCH: "مبلغ نتیجه تکراری با سفارش سازگار نبود",
+    PROVIDER_RESULT_CONTRADICTS_CONFIRMED: "نتیجه تازه با تأیید قطعی پیشین سازگار نبود",
+    PROVIDER_RESULT_CONTRADICTS_FAILED: "نتیجه تازه با شکست قطعی پیشین سازگار نبود",
   };
-  return labels[reasonCode] ?? reasonCode;
+  return labels[reasonCode];
 }

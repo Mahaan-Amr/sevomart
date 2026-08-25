@@ -16,7 +16,8 @@ describe("platform payment review controller", () => {
           provider: "DEV",
           createdAt: "2026-08-25T08:00:00.000Z",
         },
-        orderStatus: "PAYMENT_REVIEW" as const,
+        reviewKind: "RESULT_AMBIGUOUS" as const,
+        alertKinds: [],
         audits: [
           {
             fromStatus: "DISPATCHED",
