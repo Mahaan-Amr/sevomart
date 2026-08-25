@@ -70,6 +70,161 @@ type OutboxDatabaseRow = {
   attemptCount: number;
 };
 
+export type OutboxConsumerBacklog = {
+  pendingEvents: number;
+  poisonEvents: number;
+  lagMs: number;
+};
+
+type OutboxConsumerScope = {
+  consumerName: string;
+  eventTypes: readonly string[];
+};
+
+export async function readOutboxConsumerBacklog(
+  sql: Sql,
+  scope: OutboxConsumerScope,
+): Promise<OutboxConsumerBacklog> {
+  const rows = await sql<OutboxConsumerBacklog[]>`
+    select
+      count(*)::int as "pendingEvents",
+      count(*) filter (where event.status = 'FAILED')::int as "poisonEvents",
+      least(2147483647, greatest(0, coalesce(floor(extract(epoch from
+        (clock_timestamp() - min(event.occurred_at))) * 1000), 0)))::int as "lagMs"
+    from platform_outbox_events event
+    left join platform_outbox_consumptions consumption
+      on consumption.event_id = event.event_id
+     and consumption.consumer_name = ${scope.consumerName}
+    where event.event_type in ${sql(scope.eventTypes)}
+      and consumption.event_id is null
+  `;
+  return rows[0] ?? { pendingEvents: 0, poisonEvents: 0, lagMs: 0 };
+}
+
+export async function replayOutboxEventHistory(
+  sql: Sql,
+  options: {
+    eventTypes: readonly string[];
+    handler: OutboxEventHandler;
+  },
+): Promise<number> {
+  const archived = await sql<OutboxDatabaseRow[]>`
+    select event_id as "eventId", envelope_version as version,
+      event_type as "eventType", aggregate_id as "aggregateId",
+      aggregate_version as "aggregateVersion", occurred_at as "occurredAt",
+      correlation_id as "correlationId", causation_id as "causationId",
+      actor_type as "actorType", actor_id as "actorId", payload,
+      attempt_count as "attemptCount"
+    from platform_outbox_events
+    where event_type in ${sql(options.eventTypes)}
+    order by occurred_at, aggregate_version, event_id
+  `;
+  for (const row of archived) await options.handler(storedOutboxEvent(row), sql);
+  return archived.length;
+}
+
+export async function catchUpOutboxConsumer(
+  databaseUrl: string,
+  options: {
+    consumerName: string;
+    handlers: Readonly<Record<string, OutboxEventHandler>>;
+    limit?: number;
+    log?: (record: Readonly<Record<string, unknown>>) => void;
+  },
+): Promise<{ replayedEventCount: number; poisonEventCount: number }> {
+  const eventTypes = Object.keys(options.handlers);
+  if (eventTypes.length === 0) {
+    throw new Error("Outbox catch-up requires at least one event handler");
+  }
+  const sql = postgres(databaseUrl, { max: 1 });
+  let replayedEventCount = 0;
+  let poisonEventCount = 0;
+  try {
+    for (let index = 0; index < (options.limit ?? 1_000); index += 1) {
+      let claimed: Pick<OutboxDatabaseRow, "eventId" | "eventType"> | undefined;
+      try {
+        const replayed = await sql.begin(async (transaction) => {
+          const rows = await transaction<OutboxDatabaseRow[]>`
+            select event_id as "eventId", envelope_version as version,
+              event_type as "eventType", aggregate_id as "aggregateId",
+              aggregate_version as "aggregateVersion", occurred_at as "occurredAt",
+              correlation_id as "correlationId", causation_id as "causationId",
+              actor_type as "actorType", actor_id as "actorId", payload,
+              attempt_count as "attemptCount"
+            from platform_outbox_events event
+            where event.event_type in ${transaction(eventTypes)}
+              and event.status in ('PROCESSED', 'FAILED')
+              and not exists (
+                select 1 from platform_outbox_consumptions consumption
+                where consumption.consumer_name = ${options.consumerName}
+                  and consumption.event_id = event.event_id
+              )
+            order by event.created_at, event.event_id
+            for update skip locked
+            limit 1
+          `;
+          const row = rows[0];
+          if (!row) return false;
+          claimed = row;
+          const handler = options.handlers[row.eventType];
+          if (!handler) throw new Error("Outbox catch-up handler is not registered");
+          await transaction`
+            insert into platform_outbox_consumptions
+              (consumer_name, event_id, consumed_at)
+            values (${options.consumerName}, ${row.eventId}, now())
+            on conflict (consumer_name, event_id) do nothing
+          `;
+          await handler(storedOutboxEvent(row), transaction);
+          return true;
+        });
+        if (!replayed) break;
+        replayedEventCount += 1;
+      } catch (error) {
+        poisonEventCount += 1;
+        const errorKind = error instanceof Error ? error.name : "UnknownError";
+        if (claimed) {
+          await sql`
+            update platform_outbox_events
+            set status = 'FAILED', attempt_count = attempt_count + 1,
+              last_error = ${errorKind}, failed_at = now()
+            where event_id = ${claimed.eventId}
+          `;
+        }
+        options.log?.({
+          level: "error",
+          message: "outbox_consumer_catchup_failed",
+          consumerName: options.consumerName,
+          eventType: claimed?.eventType,
+          errorKind,
+        });
+        break;
+      }
+    }
+    return { replayedEventCount, poisonEventCount };
+  } finally {
+    await sql.end();
+  }
+}
+
+function storedOutboxEvent(row: OutboxDatabaseRow): StoredOutboxEvent {
+  return {
+    version: row.version,
+    eventId: row.eventId,
+    eventType: row.eventType,
+    aggregateId: row.aggregateId,
+    aggregateVersion: row.aggregateVersion,
+    occurredAt: row.occurredAt.toISOString(),
+    correlationId: row.correlationId,
+    ...(row.causationId ? { causationId: row.causationId } : {}),
+    actor: eventActorV1Contract.parse(
+      row.actorType === "IDENTITY"
+        ? { type: "IDENTITY", id: row.actorId }
+        : { type: "SYSTEM" },
+    ),
+    payload: row.payload,
+  };
+}
+
 export class DurableOutboxWorker {
   readonly #sql: Sql;
   readonly #consumerName: string;

@@ -3,6 +3,7 @@ import {
   discoveryFeedProjectionEventTypes,
   discoveryProjectionOperationsV1,
 } from "@sevo/contracts/discovery/v1";
+import { readOutboxConsumerBacklog } from "@sevo/outbox";
 
 import type {
   DiscoveryFeedProjectionCandidate,
@@ -35,37 +36,7 @@ export class PostgresDiscoveryFeedRepository
   }
 
   async readPublicSnapshot(snapshotAt: Date) {
-    const statusRows = await this.#sql<StatusRow[]>`
-      select status.healthy, status.reason, status.updated_at as "updatedAt",
-        (select count(*)::int
-         from platform_outbox_events event
-         left join platform_outbox_consumptions consumption
-           on consumption.event_id = event.event_id
-          and consumption.consumer_name = 'discovery-public-feed-v1'
-         where event.event_type in ${this.#sql(discoveryFeedProjectionEventTypes)}
-           and consumption.event_id is null) as "pendingEvents",
-        (select count(*)::int
-         from platform_outbox_events event
-         left join platform_outbox_consumptions consumption
-           on consumption.event_id = event.event_id
-          and consumption.consumer_name = 'discovery-public-feed-v1'
-         where event.event_type in ${this.#sql(discoveryFeedProjectionEventTypes)}
-           and consumption.event_id is null and event.status = 'FAILED')
-          as "poisonEvents",
-        (select least(2147483647, greatest(0, coalesce(floor(extract(epoch from
-          (clock_timestamp() - min(event.occurred_at))) * 1000), 0)))::int
-         from platform_outbox_events event
-         left join platform_outbox_consumptions consumption
-           on consumption.event_id = event.event_id
-          and consumption.consumer_name = 'discovery-public-feed-v1'
-         where event.event_type in ${this.#sql(discoveryFeedProjectionEventTypes)}
-           and consumption.event_id is null) as "lagMs",
-        (select count(*)::int
-         from discovery_product_feed_version_buffers) as "unresolvedBuffers"
-      from discovery_projection_status status
-      where status.projection_name = 'public-feed-v1'
-    `;
-    const status = statusRows[0];
+    const status = await readProjectionStatus(this.#sql);
     if (!status) {
       return {
         healthy: false,
@@ -125,37 +96,7 @@ export class PostgresDiscoveryFeedRepository
     },
   ) {
     return this.#sql.begin("isolation level repeatable read read only", async (sql) => {
-      const statusRows = await sql<StatusRow[]>`
-          select status.healthy, status.reason, status.updated_at as "updatedAt",
-            (select count(*)::int
-             from platform_outbox_events event
-             left join platform_outbox_consumptions consumption
-               on consumption.event_id = event.event_id
-              and consumption.consumer_name = 'discovery-public-feed-v1'
-             where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
-               and consumption.event_id is null) as "pendingEvents",
-            (select count(*)::int
-             from platform_outbox_events event
-             left join platform_outbox_consumptions consumption
-               on consumption.event_id = event.event_id
-              and consumption.consumer_name = 'discovery-public-feed-v1'
-             where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
-               and consumption.event_id is null and event.status = 'FAILED')
-              as "poisonEvents",
-            (select least(2147483647, greatest(0, coalesce(floor(extract(epoch from
-              (clock_timestamp() - min(event.occurred_at))) * 1000), 0)))::int
-             from platform_outbox_events event
-             left join platform_outbox_consumptions consumption
-               on consumption.event_id = event.event_id
-              and consumption.consumer_name = 'discovery-public-feed-v1'
-             where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
-               and consumption.event_id is null) as "lagMs",
-            (select count(*)::int
-             from discovery_product_feed_version_buffers) as "unresolvedBuffers"
-          from discovery_projection_status status
-          where status.projection_name = 'public-feed-v1'
-        `;
-      const status = statusRows[0];
+      const status = await readProjectionStatus(sql);
       if (
         !status ||
         storedProjectionHealthIsBlocking(status) ||
@@ -261,6 +202,23 @@ export class PostgresDiscoveryFeedRepository
   async onModuleDestroy() {
     await this.#sql.end();
   }
+}
+
+async function readProjectionStatus(sql: Sql): Promise<StatusRow | undefined> {
+  const [statusRows, backlog] = await Promise.all([
+    sql<Array<Omit<StatusRow, "pendingEvents" | "poisonEvents" | "lagMs">>>`
+      select status.healthy, status.reason, status.updated_at as "updatedAt",
+        (select count(*)::int from discovery_product_feed_version_buffers)
+          as "unresolvedBuffers"
+      from discovery_projection_status status
+      where status.projection_name = 'public-feed-v1'
+    `,
+    readOutboxConsumerBacklog(sql, {
+      consumerName: "discovery-public-feed-v1",
+      eventTypes: discoveryFeedProjectionEventTypes,
+    }),
+  ]);
+  return statusRows[0] ? { ...statusRows[0], ...backlog } : undefined;
 }
 
 function storedProjectionHealthIsBlocking(status: StatusRow): boolean {

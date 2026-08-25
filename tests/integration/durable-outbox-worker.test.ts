@@ -3,8 +3,11 @@ import { randomUUID } from "node:crypto";
 import { storePublishedV1Contract } from "@sevo/contracts/store/v1";
 import { eventEnvelopeV1Contract } from "@sevo/contracts/platform/v1";
 import {
+  catchUpOutboxConsumer,
   DurableOutboxWorker,
   enqueueOutboxEvent,
+  readOutboxConsumerBacklog,
+  replayOutboxEventHistory,
   type OutboxEventHandler,
 } from "@sevo/outbox";
 import postgres from "postgres";
@@ -403,7 +406,89 @@ describe("durable outbox worker", () => {
     });
     expect(JSON.stringify(logs)).not.toContain("private-value");
   });
+
+  it("owns consumer backlog inspection behind the outbox interface", async () => {
+    const event = probeEvent("OutboxBacklogProbe.v1", "2026-08-23T12:00:00+03:30");
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await enqueueOutboxEvent(sql, event);
+    await sql`
+      update platform_outbox_events
+      set status = 'FAILED', failed_at = now()
+      where event_id = ${event.eventId}::uuid
+    `;
+
+    const backlog = await readOutboxConsumerBacklog(sql, {
+      consumerName: "backlog-integration-test",
+      eventTypes: [event.eventType],
+    });
+    await sql.end();
+
+    expect(backlog).toMatchObject({ pendingEvents: 1, poisonEvents: 1 });
+    expect(backlog.lagMs).toBeGreaterThan(0);
+  });
+
+  it("replays archived events in deterministic history order", async () => {
+    const later = probeEvent("OutboxHistoryProbe.v1", "2026-08-23T12:00:02+03:30");
+    const earlier = probeEvent("OutboxHistoryProbe.v1", "2026-08-23T12:00:01+03:30");
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await enqueueOutboxEvent(sql, later);
+    await enqueueOutboxEvent(sql, earlier);
+    const replayed: string[] = [];
+
+    const replayedEventCount = await sql.begin((transaction) =>
+      replayOutboxEventHistory(transaction, {
+        eventTypes: ["OutboxHistoryProbe.v1"],
+        handler: async (event) => {
+          replayed.push(event.eventId);
+        },
+      }),
+    );
+    await sql.end();
+
+    expect(replayed).toEqual([earlier.eventId, later.eventId]);
+    expect(replayedEventCount).toBe(2);
+  });
+
+  it("catches up an unconsumed archived event through the owner interface", async () => {
+    const event = probeEvent("OutboxCatchUpProbe.v1", new Date().toISOString());
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await enqueueOutboxEvent(sql, event);
+    await sql`
+      update platform_outbox_events set status = 'PROCESSED', processed_at = now()
+      where event_id = ${event.eventId}::uuid
+    `;
+    await sql.end();
+    const replayed: string[] = [];
+
+    const result = await catchUpOutboxConsumer(apiTestEnvironment.DATABASE_URL, {
+      consumerName: "catchup-integration-test",
+      handlers: {
+        "OutboxCatchUpProbe.v1": async (stored) => {
+          replayed.push(stored.eventId);
+        },
+      },
+    });
+
+    expect(result).toEqual({ replayedEventCount: 1, poisonEventCount: 0 });
+    expect(replayed).toEqual([event.eventId]);
+  });
 });
+
+function probeEvent(eventType: string, occurredAt: string) {
+  return {
+    ...eventEnvelopeV1Contract.parse({
+      version: 1,
+      eventId: randomUUID(),
+      eventType,
+      aggregateId: randomUUID(),
+      aggregateVersion: 1,
+      occurredAt,
+      correlationId: randomUUID(),
+      actor: { type: "SYSTEM" },
+    }),
+    payload: { probe: true },
+  };
+}
 
 async function signIn(server: {
   inject(options: Record<string, unknown>): Promise<{

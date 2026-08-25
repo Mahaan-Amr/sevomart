@@ -21,6 +21,16 @@ export function findBoundaryViolations(files) {
     const sourceRuntime = sourceModuleMatch?.[1];
     const sourceModule = sourceModuleMatch?.[2];
 
+    if (
+      sourceModule &&
+      /\bplatform_outbox_(?:events|consumptions)\b/.test(file.source)
+    ) {
+      violations.push({
+        path: sourcePath,
+        rule: "module-does-not-access-platform-outbox-data",
+      });
+    }
+
     for (const match of file.source.matchAll(importPattern)) {
       const specifier = match[1] ?? match[2];
       if (!specifier) continue;

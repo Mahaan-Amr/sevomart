@@ -9,14 +9,19 @@ import {
   discoveryFeedProjectionEventTypes,
   discoveryProjectionOperationsV1,
 } from "@sevo/contracts/discovery/v1";
-import { eventActorV1Contract, type EventActorV1 } from "@sevo/contracts/platform/v1";
 import {
   storePublishedV1Contract,
   storeUnpublishedV1Contract,
 } from "@sevo/contracts/store/v1";
-import type { OutboxEventHandler, StoredOutboxEvent } from "@sevo/outbox";
+import {
+  catchUpOutboxConsumer,
+  readOutboxConsumerBacklog,
+  replayOutboxEventHistory,
+  type OutboxEventHandler,
+  type StoredOutboxEvent,
+} from "@sevo/outbox";
 import { getMeter } from "@sevo/observability";
-import postgres, { type JSONValue } from "postgres";
+import postgres from "postgres";
 
 type ProductProjectionRow = {
   publicationVersion: number;
@@ -27,20 +32,6 @@ type ProductProjectionRow = {
   publicationUpdatedAt: Date;
   offerVersion: number;
   availabilityVersion: number;
-};
-
-type ProjectionArchiveRow = {
-  eventId: string;
-  version: 1;
-  eventType: string;
-  aggregateId: string;
-  aggregateVersion: number;
-  occurredAt: Date;
-  correlationId: string;
-  causationId: string | null;
-  actorType: "IDENTITY" | "SYSTEM";
-  actorId: string | null;
-  payload: JSONValue;
 };
 
 type ProjectionLog = (record: Readonly<Record<string, unknown>>) => void;
@@ -444,16 +435,6 @@ export async function rebuildDiscoveryPublicFeedProjection(
           hashtextextended('discovery-public-feed:rebuild', 0)
         )
       `;
-      const archived = await transaction<ProjectionArchiveRow[]>`
-        select event_id as "eventId", envelope_version as version,
-          event_type as "eventType", aggregate_id as "aggregateId",
-          aggregate_version as "aggregateVersion", occurred_at as "occurredAt",
-          correlation_id as "correlationId", causation_id as "causationId",
-          actor_type as "actorType", actor_id as "actorId", payload
-        from platform_outbox_events
-        where event_type in ${transaction(discoveryFeedProjectionEventTypes)}
-        order by occurred_at, aggregate_version, event_id
-      `;
       await transaction`
         update discovery_projection_status
         set healthy = false, reason = 'REBUILDING',
@@ -463,12 +444,12 @@ export async function rebuildDiscoveryPublicFeedProjection(
       await transaction`delete from discovery_product_feed_version_buffers`;
       await transaction`delete from discovery_product_feed_projections`;
       await transaction`delete from discovery_store_feed_projections`;
-
-      for (const row of archived) {
-        await dispatchDiscoveryProjectionEvent(archiveEvent(row), transaction);
-      }
+      const replayedEventCount = await replayOutboxEventHistory(transaction, {
+        eventTypes: discoveryFeedProjectionEventTypes,
+        handler: dispatchDiscoveryProjectionEvent,
+      });
       const health = await reconcileProjectionHealth(transaction);
-      return { replayedEventCount: archived.length, health };
+      return { replayedEventCount, health };
     });
     log({
       level: result.health.healthy ? "info" : "error",
@@ -510,77 +491,29 @@ export async function catchUpDiscoveryPublicFeedProjection(
   databaseUrl: string,
   log: ProjectionLog = (record) => console.log(JSON.stringify(record)),
 ) {
-  const sql = postgres(databaseUrl, { max: 1 });
-  let replayedEventCount = 0;
-  let poisonEventCount = 0;
-  try {
-    for (let index = 0; index < 1_000; index += 1) {
-      let claimed: Pick<ProjectionArchiveRow, "eventId" | "eventType"> | undefined;
-      try {
-        const replayed = await sql.begin(async (transaction) => {
-          const rows = await transaction<ProjectionArchiveRow[]>`
-            select event_id as "eventId", envelope_version as version,
-              event_type as "eventType", aggregate_id as "aggregateId",
-              aggregate_version as "aggregateVersion", occurred_at as "occurredAt",
-              correlation_id as "correlationId", causation_id as "causationId",
-              actor_type as "actorType", actor_id as "actorId", payload
-            from platform_outbox_events event
-            where event.event_type in ${transaction(discoveryFeedProjectionEventTypes)}
-              and event.status in ('PROCESSED', 'FAILED')
-              and not exists (
-                select 1 from platform_outbox_consumptions consumption
-                where consumption.consumer_name = 'discovery-public-feed-v1'
-                  and consumption.event_id = event.event_id
-              )
-            order by event.created_at, event.event_id
-            for update skip locked
-            limit 1
-          `;
-          const row = rows[0];
-          if (!row) return false;
-          claimed = row;
-          await transaction`
-            insert into platform_outbox_consumptions
-              (consumer_name, event_id, consumed_at)
-            values ('discovery-public-feed-v1', ${row.eventId}, now())
-            on conflict (consumer_name, event_id) do nothing
-          `;
-          await dispatchDiscoveryProjectionEvent(archiveEvent(row), transaction);
-          return true;
-        });
-        if (!replayed) break;
-        replayedEventCount += 1;
-      } catch (error) {
-        poisonEventCount += 1;
-        if (claimed) {
-          await sql`
-            update platform_outbox_events
-            set status = 'FAILED', attempt_count = attempt_count + 1,
-              last_error = ${error instanceof Error ? error.name : "UnknownError"},
-              failed_at = now()
-            where event_id = ${claimed.eventId}
-          `;
-        }
-        log({
-          level: "error",
-          message: "discovery_projection_catchup_failed",
-          errorKind: error instanceof Error ? error.name : "UnknownError",
-        });
-        break;
-      }
-    }
-    if (replayedEventCount > 0) {
+  const result = await catchUpOutboxConsumer(databaseUrl, {
+    consumerName: "discovery-public-feed-v1",
+    handlers: Object.fromEntries(
+      discoveryFeedProjectionEventTypes.map((eventType) => [
+        eventType,
+        dispatchDiscoveryProjectionEvent,
+      ]),
+    ),
+    log: (record) =>
       log({
-        level: "info",
-        message: "discovery_projection_catchup_completed",
-        replayedEventCount,
-      });
-      projectionReplayMetric.add(replayedEventCount, { operation: "catchup" });
-    }
-    return { replayedEventCount, poisonEventCount };
-  } finally {
-    await sql.end();
+        ...record,
+        message: "discovery_projection_catchup_failed",
+      }),
+  });
+  if (result.replayedEventCount > 0) {
+    log({
+      level: "info",
+      message: "discovery_projection_catchup_completed",
+      replayedEventCount: result.replayedEventCount,
+    });
+    projectionReplayMetric.add(result.replayedEventCount, { operation: "catchup" });
   }
+  return result;
 }
 
 function recordProjectionHealthMetrics(status: {
@@ -595,26 +528,6 @@ function recordProjectionHealthMetrics(status: {
   projectionPendingMetric.record(status.pendingEvents);
   projectionPoisonMetric.record(status.poisonEvents);
   projectionBuffersMetric.record(status.unresolvedBuffers);
-}
-
-function archiveEvent(row: ProjectionArchiveRow): StoredOutboxEvent {
-  const actor: EventActorV1 = eventActorV1Contract.parse(
-    row.actorType === "IDENTITY"
-      ? { type: "IDENTITY", id: row.actorId }
-      : { type: "SYSTEM" },
-  );
-  return {
-    version: row.version,
-    eventId: row.eventId,
-    eventType: row.eventType,
-    aggregateId: row.aggregateId,
-    aggregateVersion: row.aggregateVersion,
-    occurredAt: row.occurredAt.toISOString(),
-    correlationId: row.correlationId,
-    ...(row.causationId ? { causationId: row.causationId } : {}),
-    actor,
-    payload: row.payload,
-  };
 }
 
 async function dispatchDiscoveryProjectionEvent(
@@ -635,46 +548,19 @@ async function reconcileProjectionHealth(
   sql: Parameters<OutboxEventHandler>[1],
   processedEventOccurredAt?: string,
 ) {
-  const rows = await sql<
-    Array<{
-      pendingEvents: number;
-      unresolvedBuffers: number;
-      poisonEvents: number;
-      lagMs: number;
-    }>
-  >`
-    select
-      (select count(*)::int
-       from platform_outbox_events event
-       left join platform_outbox_consumptions consumption
-         on consumption.event_id = event.event_id
-        and consumption.consumer_name = 'discovery-public-feed-v1'
-       where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
-         and consumption.event_id is null) as "pendingEvents",
-      (select count(*)::int
-       from platform_outbox_events event
-       left join platform_outbox_consumptions consumption
-         on consumption.event_id = event.event_id
-        and consumption.consumer_name = 'discovery-public-feed-v1'
-       where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
-         and consumption.event_id is null and event.status = 'FAILED')
-        as "poisonEvents",
-      (select least(2147483647, greatest(0, coalesce(floor(extract(epoch from
-        (clock_timestamp() - min(event.occurred_at))) * 1000), 0)))::int
-       from platform_outbox_events event
-       left join platform_outbox_consumptions consumption
-         on consumption.event_id = event.event_id
-        and consumption.consumer_name = 'discovery-public-feed-v1'
-       where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
-         and consumption.event_id is null) as "lagMs",
-      (select count(*)::int
-       from discovery_product_feed_version_buffers) as "unresolvedBuffers"
-  `;
-  const counts = rows[0] ?? {
-    pendingEvents: 1,
-    unresolvedBuffers: 1,
-    poisonEvents: 1,
-    lagMs: discoveryProjectionOperationsV1.maxLagMs + 1,
+  const [backlog, bufferRows] = await Promise.all([
+    readOutboxConsumerBacklog(sql, {
+      consumerName: "discovery-public-feed-v1",
+      eventTypes: discoveryFeedProjectionEventTypes,
+    }),
+    sql<Array<{ unresolvedBuffers: number }>>`
+      select count(*)::int as "unresolvedBuffers"
+      from discovery_product_feed_version_buffers
+    `,
+  ]);
+  const counts = {
+    ...backlog,
+    unresolvedBuffers: bufferRows[0]?.unresolvedBuffers ?? 1,
   };
   const reason =
     counts.poisonEvents > 0

@@ -40,3 +40,10 @@ groups:
           severity: critical
         annotations:
           summary: Discovery projection rebuild is failing repeatedly
+
+      - alert: SevoDiscoveryProjectionReplayActivity
+        expr: increase(sevo_discovery_projection_replayed_events_total[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Discovery projection replayed archived events

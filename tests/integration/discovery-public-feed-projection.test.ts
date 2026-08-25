@@ -1,3 +1,4 @@
+import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import {
   productPublishedV2Contract,
   productUnpublishedV1Contract,
@@ -34,12 +35,12 @@ describe("public discovery event projection", () => {
       delete from platform_outbox_consumptions
       where event_id in (
         select event_id from platform_outbox_events
-        where aggregate_id in (${ids.store}, ${ids.product}, ${ids.variant})
+        where event_type in ${sql(discoveryFeedProjectionEventTypes)}
       )
     `;
     await sql`
       delete from platform_outbox_events
-      where aggregate_id in (${ids.store}, ${ids.product}, ${ids.variant})
+      where event_type in ${sql(discoveryFeedProjectionEventTypes)}
     `;
     await sql`delete from discovery_product_feed_version_buffers`;
     await sql`delete from discovery_product_feed_projections`;

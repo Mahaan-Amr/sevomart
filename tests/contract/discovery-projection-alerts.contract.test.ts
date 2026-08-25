@@ -35,7 +35,17 @@ describe("discovery projection operational alerts", () => {
     expect(byName.get("SevoDiscoveryProjectionRepeatedRebuildFailure")?.expr).toContain(
       'sevo_discovery_projection_rebuilds_total{outcome="failed"}[10m]',
     );
-    expect(rules).toHaveLength(5);
-    expect(rules.every((rule) => rule.labels?.severity === "critical")).toBe(true);
+    expect(byName.get("SevoDiscoveryProjectionReplayActivity")?.expr).toContain(
+      "increase(sevo_discovery_projection_replayed_events_total[10m]) > 0",
+    );
+    expect(byName.get("SevoDiscoveryProjectionReplayActivity")?.labels).toEqual({
+      severity: "warning",
+    });
+    expect(rules).toHaveLength(6);
+    expect(
+      rules
+        .filter((rule) => rule.alert !== "SevoDiscoveryProjectionReplayActivity")
+        .every((rule) => rule.labels?.severity === "critical"),
+    ).toBe(true);
   });
 });

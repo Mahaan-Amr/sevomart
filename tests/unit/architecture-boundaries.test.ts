@@ -153,6 +153,19 @@ describe("module boundary checker", () => {
       ]),
     ).toEqual([]);
   });
+
+  it("rejects direct access to platform-owned outbox tables from a domain module", () => {
+    expect(
+      findBoundaryViolations([
+        {
+          path: "apps/worker/src/modules/discovery/project-product.ts",
+          source: "select * from platform_outbox_events",
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({ rule: "module-does-not-access-platform-outbox-data" }),
+    ]);
+  });
 });
 
 describe("canonical module entrypoint checker", () => {

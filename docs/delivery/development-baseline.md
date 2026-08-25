@@ -123,6 +123,9 @@ replay و rebuild و مدت rebuild نیز metric عملیاتی‌اند. رک�
 `discovery_projection_rebuild_failed` سیگنال alert شکست rebuild است. collector باید
 اولی را پس از دو دورهٔ ۱۵ثانیه‌ای و دومی را با هر رخداد به on-call هدایت کند. log و
 metric فقط شمار aggregate دارند و payload، شناسه فروشگاه/کالا و PII را ثبت نمی‌کنند.
+هر replay آرشیوی نیز با rule هشدار `SevoDiscoveryProjectionReplayActivity` برای
+بررسی اپراتور قابل مشاهده است؛ این هشدار فعالیت بازیابی را گزارش می‌کند و به‌تنهایی
+به معنی ناسالم بودن projection نیست.
 ruleهای قابل‌بارگذاری Prometheus برای projection ناسالم، lag خارج از SLO، poison،
 version gap/buffer ماندگار و شکست تکراری rebuild در
 `ops/alerts/discovery-public-feed.prometheus.yml` نگه‌داری می‌شوند. نام‌های آن فایل
