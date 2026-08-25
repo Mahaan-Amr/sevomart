@@ -26,6 +26,7 @@ import {
   CART_SERVICE,
   CHECKOUT_REPOSITORY,
   CHECKOUT_SERVICE,
+  SELLER_ORDER_STORE_RESOLVER,
   SAVED_ADDRESS_REPOSITORY,
   SAVED_ADDRESS_SERVICE,
 } from "./orders.tokens";
@@ -35,6 +36,7 @@ import type {
   SavedAddressRepository,
 } from "./public";
 import { SavedAddressController } from "./saved-address.controller";
+import { SellerOrderController } from "./seller-order.controller";
 
 export type OrdersModuleOptions = {
   repository?: CartRepository;
@@ -46,6 +48,7 @@ export type OrdersModuleOptions = {
     transaction: Sql,
   ) => OpaqueProductTransactionContext;
   createStoreTransactionContext: (transaction: Sql) => OpaqueStoreTransactionContext;
+  resolveSellerStore: (identityId: string) => Promise<string | undefined>;
 };
 
 @Module({})
@@ -56,9 +59,18 @@ export class OrdersModule {
   ): DynamicModule {
     return {
       module: OrdersModule,
-      controllers: [CartController, SavedAddressController, CheckoutController],
+      controllers: [
+        CartController,
+        SavedAddressController,
+        CheckoutController,
+        SellerOrderController,
+      ],
       providers: [
         { provide: "ORDERS_RUNTIME_ENVIRONMENT", useValue: environment },
+        {
+          provide: SELLER_ORDER_STORE_RESOLVER,
+          useValue: options.resolveSellerStore,
+        },
         {
           provide: CART_REPOSITORY,
           useValue:

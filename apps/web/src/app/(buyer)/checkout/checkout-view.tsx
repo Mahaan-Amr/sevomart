@@ -10,6 +10,7 @@ import {
   type CheckoutChange,
   type Order,
 } from "@sevo/contracts/orders/v1";
+import { directPaymentAttemptContract } from "@sevo/contracts/payments/v1";
 import { useEffect, useRef, useState } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
@@ -29,6 +30,7 @@ export function CheckoutView() {
   const [pending, setPending] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   const orderIdempotencyKey = useRef("");
+  const paymentIdempotencyKey = useRef("");
 
   useEffect(() => {
     void loadOptions();
@@ -109,6 +111,29 @@ export function CheckoutView() {
     setPending(false);
   }
 
+  async function startPayment() {
+    if (!order) return;
+    setPending(true);
+    setMessage("");
+    const response = await fetch(`/api/orders/${order.orderId}/payment-attempts`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key":
+          paymentIdempotencyKey.current ||
+          (paymentIdempotencyKey.current = crypto.randomUUID()),
+      },
+      body: "{}",
+    });
+    const parsed = directPaymentAttemptContract.safeParse(await response.json());
+    if (response.ok && parsed.success && parsed.data.redirectUrl) {
+      window.location.assign(parsed.data.redirectUrl);
+      return;
+    }
+    showError("درگاه پرداخت آماده نشد. سفارش شما محفوظ است؛ دوباره تلاش کنید.");
+    setPending(false);
+  }
+
   function showCheckoutError(body: unknown) {
     const parsed = checkoutRevisionConflictContract.safeParse(body);
     if (parsed.success) {
@@ -171,6 +196,16 @@ export function CheckoutView() {
           </p>
           <strong>{formatIrrAsToman(order.review.total.amount)}</strong>
           <p className={styles.note}>شناسه سفارش: {order.orderId}</p>
+          <button className={styles.primary} disabled={pending} onClick={startPayment}>
+            {pending
+              ? "در حال رفتن به پرداخت…"
+              : `پرداخت ${formatIrrAsToman(order.review.total.amount)}`}
+          </button>
+          {message ? (
+            <div role="alert" className={styles.error}>
+              {message}
+            </div>
+          ) : null}
         </section>
       </main>
     );
@@ -281,7 +316,7 @@ export function CheckoutView() {
             <button className={styles.primary} disabled={pending} onClick={createOrder}>
               {pending
                 ? "در حال ثبت…"
-                : `ثبت سفارش با مبلغ ${formatIrrAsToman(review.total.amount)}`}
+                : `ثبت سفارش و پرداخت ${formatIrrAsToman(review.total.amount)}`}
             </button>
           </>
         )}

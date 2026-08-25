@@ -67,6 +67,26 @@ export interface InventoryAuthoring {
     transaction: InventoryTransactionContext,
     command: Readonly<{ reservationId: string; expiredAt: Date }>,
   ): Promise<boolean>;
+  holdReservationForPayment(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{
+      reservationId: string;
+      attemptId: string;
+      leaseUntil: Date;
+      now: Date;
+    }>,
+  ): Promise<void>;
+  consumeReservation(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{
+      reservationId: string;
+      attemptId: string;
+    }>,
+  ): Promise<boolean>;
+  holdReservationForReview(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{ reservationId: string; attemptId: string }>,
+  ): Promise<void>;
 }
 
 export class InventoryReservationUnavailableError extends Error {
@@ -74,6 +94,10 @@ export class InventoryReservationUnavailableError extends Error {
   constructor(readonly variantId: VariantId) {
     super("Inventory is not available for reservation");
   }
+}
+
+export class InventoryReservationNotConsumableError extends Error {
+  readonly code = "RESERVATION_NOT_CONSUMABLE" as const;
 }
 
 export class InventoryRevisionConflictError extends Error {

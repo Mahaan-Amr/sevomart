@@ -6,6 +6,7 @@ import { variantIdContract, type VariantId } from "@sevo/contracts/platform/v1";
 import {
   InventoryRevisionConflictError,
   InventoryReservationUnavailableError,
+  InventoryReservationNotConsumableError,
   type InventoryAuthoring,
   type InventorySnapshot,
   type InventoryTransactionContext,
@@ -40,7 +41,16 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       from inventory_reservation_lines line
       join inventory_reservations reservation on reservation.id = line.reservation_id
       where line.variant_id = ${command.variantId}
-        and reservation.status = 'ACTIVE' and reservation.expires_at > now()
+        and (
+          reservation.status = 'HELD_FOR_REVIEW'
+          or (
+            reservation.status = 'ACTIVE'
+            and greatest(
+              reservation.expires_at,
+              coalesce(reservation.hold_lease_until, reservation.expires_at)
+            ) > now()
+          )
+        )
     `;
     const current = {
       ...(rows[0] ?? { onHand: 0, revision: 0 }),
@@ -117,7 +127,16 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
           join inventory_reservations reservation
             on reservation.id = line.reservation_id
           where line.variant_id in ${sql(ordered.map((row) => row.variantId))}
-            and reservation.status = 'ACTIVE' and reservation.expires_at > now()
+            and (
+              reservation.status = 'HELD_FOR_REVIEW'
+              or (
+                reservation.status = 'ACTIVE'
+                and greatest(
+                  reservation.expires_at,
+                  coalesce(reservation.hold_lease_until, reservation.expires_at)
+                ) > now()
+              )
+            )
           group by line.variant_id
         `
       : [];
@@ -179,10 +198,24 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     >`
       select level.variant_id as "variantId", level.on_hand as "onHand",
         coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0)::int as reserved,
         (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0))::int as available,
         level.revision
       from inventory_levels level
@@ -205,10 +238,24 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     >`
       select level.on_hand as "onHand", level.revision,
         coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0)::int as reserved,
         (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0))::int as available
       from inventory_levels level
       left join inventory_reservation_lines line on line.variant_id = level.variant_id
@@ -237,7 +284,16 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
         from inventory_reservation_lines line
         join inventory_reservations reservation on reservation.id = line.reservation_id
         where line.variant_id = ${item.variantId}
-          and reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          and (
+            reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
+          )
       `;
       const current = levels[0];
       if (
@@ -272,10 +328,86 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       update inventory_reservations
       set status = 'RELEASED'
       where id = ${command.reservationId}::uuid and status = 'ACTIVE'
-        and expires_at <= ${command.expiredAt}
+        and greatest(expires_at, coalesce(hold_lease_until, expires_at))
+          <= ${command.expiredAt}
       returning id
     `;
     return rows.length === 1;
+  }
+
+  async holdReservationForPayment(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["holdReservationForPayment"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ id: string }>>`
+      update inventory_reservations
+      set payment_attempt_id = ${command.attemptId},
+        hold_lease_until = ${command.leaseUntil}
+      where id = ${command.reservationId}::uuid and status = 'ACTIVE'
+        and expires_at > ${command.now}
+        and (payment_attempt_id is null or payment_attempt_id = ${command.attemptId}::uuid)
+      returning id
+    `;
+    if (rows.length !== 1) throw new InventoryReservationNotConsumableError();
+  }
+
+  async consumeReservation(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["consumeReservation"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const reservations = await sql<Array<{ status: string; attemptId: string | null }>>`
+      select status, payment_attempt_id as "attemptId"
+      from inventory_reservations
+      where id = ${command.reservationId}::uuid
+      for update
+    `;
+    const reservation = reservations[0];
+    if (reservation?.status === "CONSUMED") return false;
+    if (
+      !reservation ||
+      !["ACTIVE", "HELD_FOR_REVIEW"].includes(reservation.status) ||
+      reservation.attemptId !== command.attemptId
+    ) {
+      throw new InventoryReservationNotConsumableError();
+    }
+    const lines = await sql<Array<{ variantId: string; quantity: number }>>`
+      select variant_id as "variantId", quantity
+      from inventory_reservation_lines
+      where reservation_id = ${command.reservationId}::uuid
+      order by variant_id
+    `;
+    for (const line of lines) {
+      const updated = await sql<Array<{ variantId: string }>>`
+        update inventory_levels
+        set on_hand = on_hand - ${line.quantity}, revision = revision + 1,
+          updated_at = now()
+        where variant_id = ${line.variantId}::uuid and on_hand >= ${line.quantity}
+        returning variant_id as "variantId"
+      `;
+      if (!updated[0]) throw new InventoryReservationNotConsumableError();
+    }
+    await sql`
+      update inventory_reservations
+      set status = 'CONSUMED', payment_attempt_id = null, hold_lease_until = null
+      where id = ${command.reservationId}::uuid
+    `;
+    return true;
+  }
+
+  async holdReservationForReview(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["holdReservationForReview"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ id: string }>>`
+      update inventory_reservations set status = 'HELD_FOR_REVIEW'
+      where id = ${command.reservationId}::uuid and status = 'ACTIVE'
+        and payment_attempt_id = ${command.attemptId}::uuid
+      returning id
+    `;
+    if (!rows[0]) throw new InventoryReservationNotConsumableError();
   }
 
   async onModuleDestroy() {

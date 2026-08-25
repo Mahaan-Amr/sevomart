@@ -4,12 +4,16 @@ import {
   checkoutPreparationContract,
   orderContract,
   orderCreatedV1Contract,
+  orderBecameActionableV1Contract,
+  orderPaymentReviewRequiredV1Contract,
   orderExpiredV1Contract,
+  sellerActionableOrderContract,
 } from "@sevo/contracts/orders/v1";
-import type { IdentityId } from "@sevo/contracts/platform/v1";
+import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
+import { eventCorrelationId } from "../../../event-correlation-id";
 import {
   InventoryReservationUnavailableError,
   type InventoryAuthoring,
@@ -30,6 +34,8 @@ import {
   CheckoutIdempotencyInProgressError,
   CheckoutRevisionExpiredError,
   type CheckoutRepository,
+  type OrderPaymentTransactionContext,
+  type OrderPaymentWorkflow,
 } from "../public";
 
 type PreparationRow = {
@@ -38,7 +44,9 @@ type PreparationRow = {
   consumedOrderId: string | null;
 };
 
-export class PostgresCheckoutRepository implements CheckoutRepository {
+export class PostgresCheckoutRepository
+  implements CheckoutRepository, OrderPaymentWorkflow
+{
   readonly #sql: Sql;
 
   constructor(
@@ -327,8 +335,8 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
             aggregateId: command.orderId,
             aggregateVersion: 1,
             occurredAt: new Date().toISOString(),
-            correlationId: command.correlationId,
-            causationId: command.correlationId,
+            correlationId: eventCorrelationId(command.correlationId),
+            causationId: command.orderId,
             actor: { type: "IDENTITY", id: command.identityId },
             payload: { status: "PENDING_PAYMENT", total: review.total },
           }),
@@ -395,6 +403,154 @@ export class PostgresCheckoutRepository implements CheckoutRepository {
       }
       return expired;
     });
+  }
+
+  async lockPaymentOrder(
+    transaction: OrderPaymentTransactionContext,
+    identityId: IdentityId,
+    orderId: OrderId,
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<
+      Array<{
+        orderId: OrderId;
+        reservationId: string;
+        totalAmount: number;
+        reservationExpiresAt: Date;
+        status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+      }>
+    >`
+      select id as "orderId", reservation_id as "reservationId",
+        total_amount::int as "totalAmount",
+        reservation_expires_at as "reservationExpiresAt", status
+      from order_orders
+      where id = ${orderId} and identity_id = ${identityId}
+      for update
+    `;
+    return rows[0];
+  }
+
+  async markPaid(
+    transaction: OrderPaymentTransactionContext,
+    command: Parameters<OrderPaymentWorkflow["markPaid"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const current = await sql<Array<{ status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" }>>`
+      select status from order_orders
+      where id = ${command.orderId}
+        and status in ('PENDING_PAYMENT', 'PAYMENT_REVIEW')
+      for update
+    `;
+    if (!current[0]) throw new CheckoutRevisionExpiredError();
+    const updated = await sql<Array<{ orderId: string }>>`
+      update order_orders set status = 'PAID', paid_at = ${command.paidAt}
+      where id = ${command.orderId}
+        and status = ${current[0].status}
+      returning id as "orderId"
+    `;
+    if (!updated[0]) throw new CheckoutRevisionExpiredError();
+    await sql`
+      insert into order_state_transitions
+        (id, order_id, from_status, to_status, reason_code, actor_kind,
+         correlation_id, occurred_at)
+      values
+        (${randomUUID()}, ${command.orderId}, ${current[0].status}, 'PAID',
+         'PAYMENT_CONFIRMED', 'PAYMENTS_SERVICE', ${command.correlationId},
+         ${command.paidAt})
+    `;
+    await enqueueOutboxEvent(
+      sql,
+      orderBecameActionableV1Contract.parse({
+        eventId: randomUUID(),
+        version: 1,
+        eventType: "OrderBecameActionable.v1",
+        aggregateId: command.orderId,
+        aggregateVersion: 2,
+        occurredAt: command.paidAt.toISOString(),
+        correlationId: eventCorrelationId(command.correlationId),
+        causationId: command.attemptId,
+        actor: { type: "SYSTEM" },
+        payload: { status: "PAID" },
+      }),
+    );
+  }
+
+  async listActionableByStore(storeId: StoreId) {
+    const rows = await this.#sql<
+      Array<{
+        orderId: string;
+        totalAmount: number;
+        paidAt: Date;
+        createdAt: Date;
+        itemCount: number;
+      }>
+    >`
+      select orders.id as "orderId", orders.total_amount::int as "totalAmount",
+        orders.paid_at as "paidAt", orders.created_at as "createdAt",
+        count(items.variant_id)::int as "itemCount"
+      from order_orders orders
+      join order_items items on items.order_id = orders.id
+      where orders.store_id = ${storeId} and orders.status = 'PAID'
+      group by orders.id
+      order by orders.paid_at, orders.id
+    `;
+    return rows.map((row) =>
+      sellerActionableOrderContract.parse({
+        orderId: row.orderId,
+        status: "PAID",
+        total: { amount: row.totalAmount, currency: "IRR" },
+        paidAt: row.paidAt.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+        itemCount: row.itemCount,
+      }),
+    );
+  }
+
+  async markPaymentReview(
+    transaction: OrderPaymentTransactionContext,
+    command: Parameters<OrderPaymentWorkflow["markPaymentReview"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const current = await sql<
+      Array<{ status: "PENDING_PAYMENT" | "EXPIRED" | "PAYMENT_REVIEW" }>
+    >`
+      select status from order_orders
+      where id = ${command.orderId}
+        and status in ('PENDING_PAYMENT', 'EXPIRED', 'PAYMENT_REVIEW')
+      for update
+    `;
+    if (!current[0]) throw new CheckoutRevisionExpiredError();
+    if (current[0].status === "PAYMENT_REVIEW") return;
+    const updated = await sql<Array<{ orderId: string }>>`
+      update order_orders set status = 'PAYMENT_REVIEW'
+      where id = ${command.orderId} and status = ${current[0].status}
+      returning id as "orderId"
+    `;
+    if (!updated[0]) throw new CheckoutRevisionExpiredError();
+    await sql`
+      insert into order_state_transitions
+        (id, order_id, from_status, to_status, reason_code, actor_kind,
+         correlation_id, occurred_at)
+      values
+        (${randomUUID()}, ${command.orderId}, ${current[0].status}, 'PAYMENT_REVIEW',
+         ${command.reasonCode}, 'PAYMENTS_SERVICE', ${command.correlationId},
+         ${command.occurredAt})
+    `;
+    await enqueueOutboxEvent(
+      sql,
+      orderPaymentReviewRequiredV1Contract.parse({
+        eventId: randomUUID(),
+        version: 1,
+        eventType: "OrderPaymentReviewRequired.v1",
+        aggregateId: command.orderId,
+        aggregateVersion: current[0].status === "EXPIRED" ? 3 : 2,
+        occurredAt: command.occurredAt.toISOString(),
+        correlationId: eventCorrelationId(command.correlationId),
+        causationId: command.attemptId,
+        actor: { type: "SYSTEM" },
+        payload: { status: "PAYMENT_REVIEW" },
+      }),
+    );
   }
 
   async onModuleDestroy() {

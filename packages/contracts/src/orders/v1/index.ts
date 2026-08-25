@@ -388,6 +388,35 @@ export const orderExpiredV1Contract = eventEnvelopeV1Contract.extend({
   payload: z.object({ status: z.literal("EXPIRED") }).strict(),
 });
 
+export const sellerActionableOrderContract = z
+  .object({
+    orderId: orderIdContract,
+    status: z.literal("PAID"),
+    total: moneyV1Contract,
+    paidAt: z.iso.datetime({ offset: true }),
+    createdAt: z.iso.datetime({ offset: true }),
+    itemCount: z.int().positive(),
+  })
+  .strict();
+
+export const sellerActionableOrderListContract = z
+  .object({ orders: z.array(sellerActionableOrderContract) })
+  .strict();
+
+export const orderBecameActionableV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("OrderBecameActionable.v1"),
+  causationId: z.uuid(),
+  actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+  payload: z.object({ status: z.literal("PAID") }).strict(),
+});
+
+export const orderPaymentReviewRequiredV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("OrderPaymentReviewRequired.v1"),
+  causationId: z.uuid(),
+  actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+  payload: z.object({ status: z.literal("PAYMENT_REVIEW") }).strict(),
+});
+
 export const cartAttachConflictContract = z.union([
   cartResolutionContract,
   cartErrorContract,
@@ -489,6 +518,8 @@ export const ordersV1Schemas = {
   CheckoutChange: checkoutChangeContract,
   CheckoutRevisionConflict: checkoutRevisionConflictContract,
   Order: orderContract,
+  SellerActionableOrder: sellerActionableOrderContract,
+  SellerActionableOrderList: sellerActionableOrderListContract,
   CartAttachConflict: cartAttachConflictContract,
   SavedAddressId: savedAddressIdContract,
   CreateSavedAddressInput: createSavedAddressInputContract,
@@ -504,6 +535,18 @@ export function createOrdersV1JsonSchemas() {
 }
 
 export const ordersV1Examples = {
+  SellerActionableOrderList: {
+    orders: [
+      {
+        orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+        status: "PAID",
+        total: { amount: 4_500_000, currency: "IRR" },
+        paidAt: "2026-08-25T08:02:00.000Z",
+        createdAt: "2026-08-25T08:00:00.000Z",
+        itemCount: 1,
+      },
+    ],
+  },
   CartId: "15e66295-eecd-4a7d-b06c-1d0909ab89c7",
   CartVariantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
   CartIdempotencyKey: "cart-add-01",
@@ -772,6 +815,7 @@ export type CheckoutOptions = z.infer<typeof checkoutOptionsContract>;
 export type CreateOrderInput = z.infer<typeof createOrderInputContract>;
 export type CheckoutChange = z.infer<typeof checkoutChangeContract>;
 export type Order = z.infer<typeof orderContract>;
+export type SellerActionableOrder = z.infer<typeof sellerActionableOrderContract>;
 export type CartReviewChange = z.infer<typeof cartReviewChangeContract>;
 export type CartItemRemovalInput = z.infer<typeof cartItemRemovalInputContract>;
 export type CartReviewInput = z.infer<typeof cartReviewInputContract>;

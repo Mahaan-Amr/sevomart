@@ -69,6 +69,13 @@ and checkout migrations, and brought API, Web, worker, PostgreSQL and MinIO to
 healthy status. Native `pnpm dev` found all 33 migrations with none pending and
 brought Web, API and worker to ready state.
 
+Issue 89 adds inventory-owned payment holds, orders-owned paid/review transitions,
+and payments-owned direct-attempt, callback-deduplication and audit tables. The
+three migrations are additive, require no compatibility window and use a forward
+fix if deployment must be corrected. The existing-database upgrade recognized all
+36 migrations and applied only these three payment-flow migrations successfully;
+the Compose and native paths use the same `prisma migrate deploy` history.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

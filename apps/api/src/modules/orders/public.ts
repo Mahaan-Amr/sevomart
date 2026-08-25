@@ -8,16 +8,66 @@ import type {
   CreateSavedAddressInput,
   CreateOrderInput,
   Order,
+  SellerActionableOrder,
   PrepareCheckoutInput,
   SavedAddress,
   SavedAddressId,
 } from "@sevo/contracts/orders/v1";
 import type {
   IdentityId,
+  OrderId,
+  PaymentAttemptId,
   ProductId,
   StoreId,
   VariantId,
 } from "@sevo/contracts/platform/v1";
+
+declare const orderPaymentTransactionContext: unique symbol;
+export type OrderPaymentTransactionContext = {
+  readonly [orderPaymentTransactionContext]: true;
+};
+
+export type PayableOrder = Readonly<{
+  orderId: OrderId;
+  reservationId: string;
+  totalAmount: number;
+  reservationExpiresAt: Date;
+  status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+}>;
+
+export interface OrderPaymentWorkflow {
+  lockPaymentOrder(
+    transaction: OrderPaymentTransactionContext,
+    identityId: IdentityId,
+    orderId: OrderId,
+  ): Promise<PayableOrder | undefined>;
+  markPaid(
+    transaction: OrderPaymentTransactionContext,
+    command: {
+      orderId: OrderId;
+      attemptId: PaymentAttemptId;
+      paidAt: Date;
+      correlationId: string;
+    },
+  ): Promise<void>;
+  markPaymentReview(
+    transaction: OrderPaymentTransactionContext,
+    command: {
+      orderId: OrderId;
+      attemptId: PaymentAttemptId;
+      occurredAt: Date;
+      correlationId: string;
+      reasonCode: "PAYMENT_DISPATCH_UNRESOLVED" | "PAYMENT_CONFIRMED_STOCK_CONFLICT";
+    },
+  ): Promise<void>;
+  listActionableByStore(storeId: StoreId): Promise<SellerActionableOrder[]>;
+}
+
+export function createOrderPaymentTransactionContext(
+  transaction: unknown,
+): OrderPaymentTransactionContext {
+  return transaction as OrderPaymentTransactionContext;
+}
 
 export type StoredCartItem = Readonly<{
   productId: ProductId;
