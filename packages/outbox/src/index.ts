@@ -319,22 +319,7 @@ export class DurableOutboxWorker {
     const row = rows[0];
     if (!row) return undefined;
     return {
-      event: {
-        version: row.version,
-        eventId: row.eventId,
-        eventType: row.eventType,
-        aggregateId: row.aggregateId,
-        aggregateVersion: row.aggregateVersion,
-        occurredAt: row.occurredAt.toISOString(),
-        correlationId: row.correlationId,
-        ...(row.causationId ? { causationId: row.causationId } : {}),
-        actor: eventActorV1Contract.parse(
-          row.actorType === "IDENTITY"
-            ? { type: "IDENTITY", id: row.actorId }
-            : { type: "SYSTEM" },
-        ),
-        payload: row.payload,
-      },
+      event: storedOutboxEvent(row),
       attemptCount: row.attemptCount,
       leaseOwner: this.#workerId,
     };
