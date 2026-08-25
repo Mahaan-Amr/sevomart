@@ -41,6 +41,11 @@ const runtimeEnvironmentContract = z.object({
   WEB_ORIGIN: z.url().default("http://localhost:3000"),
   DATABASE_URL: z.url().default("postgresql://sevo:sevo_local@localhost:6432/sevo"),
   OTP_PROVIDER: z.enum(["dev", "external"]).default("dev"),
+  DIRECT_PAYMENT_PROVIDER: z.enum(["dev", "external"]).default("dev"),
+  DEV_PAYMENT_PROVIDER_SIGNING_SECRET: z
+    .string()
+    .min(16)
+    .default("sevo_local_direct_payment_signing_secret"),
   DEV_OTP_TEST_MOBILES: iranianTestMobileList,
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional().or(z.literal("")),
   MINIO_ENDPOINT: z.string().min(1).default("127.0.0.1"),
@@ -84,6 +89,7 @@ export function readRuntimeEnvironment(
   if (environment.SEVO_RUNTIME_ENV === "production") {
     const unsafe =
       environment.OTP_PROVIDER === "dev" ||
+      environment.DIRECT_PAYMENT_PROVIDER === "dev" ||
       environment.MINIO_ACCESS_KEY === "sevo_local" ||
       environment.MINIO_SECRET_KEY === "sevo_local_password" ||
       ["127.0.0.1", "localhost", "minio"].includes(
@@ -95,6 +101,8 @@ export function readRuntimeEnvironment(
         "sevo_local_seller_approval_recovery_secret" ||
       environment.CART_TOKEN_DERIVATION_SECRET ===
         "sevo_local_cart_token_derivation_secret" ||
+      environment.DEV_PAYMENT_PROVIDER_SIGNING_SECRET ===
+        "sevo_local_direct_payment_signing_secret" ||
       Object.values(environment.DISCOVERY_CURSOR_KEYRING).includes(
         "sevo_local_discovery_cursor_signing_secret",
       ) ||
@@ -103,7 +111,7 @@ export function readRuntimeEnvironment(
       environment.DATABASE_URL.includes("sevo_local");
     if (unsafe) {
       throw new Error(
-        "Production trust requires external OTP, non-default secrets, and persistent TLS object storage",
+        "Production trust requires external OTP and payment providers, non-default secrets, and persistent TLS object storage",
       );
     }
   }

@@ -5,6 +5,8 @@ x-app-environment: &app-environment
   SEVO_RUNTIME_ENV: development
   DATABASE_URL: postgresql://${POSTGRES_USER:-sevo}:${POSTGRES_PASSWORD:-sevo_local}@postgres:5432/${POSTGRES_DB:-sevo}
   OTP_PROVIDER: dev
+  DIRECT_PAYMENT_PROVIDER: dev
+  DEV_PAYMENT_PROVIDER_SIGNING_SECRET: ${DEV_PAYMENT_PROVIDER_SIGNING_SECRET:-sevo_local_direct_payment_signing_secret}
   DEV_OTP_TEST_MOBILES: ${DEV_OTP_TEST_MOBILES:-09123456789}
   MINIO_ENDPOINT: minio
   MINIO_PORT: 9000

@@ -6,6 +6,7 @@ import { variantIdContract, type VariantId } from "@sevo/contracts/platform/v1";
 import {
   InventoryRevisionConflictError,
   InventoryReservationUnavailableError,
+  InventoryReservationNotConsumableError,
   type InventoryAuthoring,
   type InventorySnapshot,
   type InventoryTransactionContext,
@@ -276,6 +277,66 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       returning id
     `;
     return rows.length === 1;
+  }
+
+  async holdReservationForPayment(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["holdReservationForPayment"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ id: string }>>`
+      update inventory_reservations
+      set payment_attempt_id = ${command.attemptId},
+        hold_lease_until = ${command.leaseUntil}
+      where id = ${command.reservationId}::uuid and status = 'ACTIVE'
+        and expires_at > ${command.now}
+        and (payment_attempt_id is null or payment_attempt_id = ${command.attemptId}::uuid)
+      returning id
+    `;
+    if (rows.length !== 1) throw new InventoryReservationNotConsumableError();
+  }
+
+  async consumeReservation(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["consumeReservation"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const reservations = await sql<Array<{ status: string; attemptId: string | null }>>`
+      select status, payment_attempt_id as "attemptId"
+      from inventory_reservations
+      where id = ${command.reservationId}::uuid
+      for update
+    `;
+    const reservation = reservations[0];
+    if (reservation?.status === "CONSUMED") return false;
+    if (
+      reservation?.status !== "ACTIVE" ||
+      reservation.attemptId !== command.attemptId
+    ) {
+      throw new InventoryReservationNotConsumableError();
+    }
+    const lines = await sql<Array<{ variantId: string; quantity: number }>>`
+      select variant_id as "variantId", quantity
+      from inventory_reservation_lines
+      where reservation_id = ${command.reservationId}::uuid
+      order by variant_id
+    `;
+    for (const line of lines) {
+      const updated = await sql<Array<{ variantId: string }>>`
+        update inventory_levels
+        set on_hand = on_hand - ${line.quantity}, revision = revision + 1,
+          updated_at = now()
+        where variant_id = ${line.variantId}::uuid and on_hand >= ${line.quantity}
+        returning variant_id as "variantId"
+      `;
+      if (!updated[0]) throw new InventoryReservationNotConsumableError();
+    }
+    await sql`
+      update inventory_reservations
+      set status = 'CONSUMED', payment_attempt_id = null, hold_lease_until = null
+      where id = ${command.reservationId}::uuid
+    `;
+    return true;
   }
 
   async onModuleDestroy() {

@@ -249,7 +249,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
       update inventory_levels set on_hand = 0, revision = revision + 1
       where variant_id = ${ids.variant}
     `;
-    await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
+    await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
     await expect(
       page.getByRole("alert").filter({ hasText: "سبد را اصلاح" }),
     ).toBeVisible();
@@ -260,7 +260,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
   } finally {
     await stockSql.end();
   }
-  await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
+  await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
   await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
 

@@ -14,6 +14,8 @@ export const apiTestEnvironment = readRuntimeEnvironment({
   MINIO_SECRET_KEY: process.env.MINIO_SECRET_KEY,
   MINIO_BUCKET: process.env.MINIO_BUCKET,
   OTP_PROVIDER: "dev",
+  DIRECT_PAYMENT_PROVIDER: "dev",
+  DEV_PAYMENT_PROVIDER_SIGNING_SECRET: "sevo_test_direct_payment_signing_secret",
   DEV_OTP_TEST_MOBILES: "09123456789",
   OTEL_EXPORTER_OTLP_ENDPOINT: "",
 });

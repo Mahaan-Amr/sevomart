@@ -81,7 +81,11 @@ export function composeCanonicalApiModules(
       createProductTransactionContext: createOpaqueProductTransactionContext,
       createStoreTransactionContext: createOpaqueStoreTransactionContext,
     }),
-    PaymentsModule,
+    PaymentsModule.register(environment, {
+      inventory: inventoryAuthoring,
+      resolveSellerStore: async (identityId) =>
+        (await storeRepository.findBySellerId(identityId))?.id,
+    }),
     FulfillmentModule,
     ConversationsModule,
     ProblemFollowUpModule,

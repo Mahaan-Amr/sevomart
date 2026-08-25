@@ -150,6 +150,7 @@ model OrderOrder {
   reservationExpiresAt DateTime @map("reservation_expires_at") @db.Timestamptz(3)
   reviewSnapshot       Json     @map("review_snapshot") @db.JsonB
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  paidAt               DateTime? @map("paid_at") @db.Timestamptz(3)
 
   @@index([identityId, createdAt])
   @@map("order_orders")

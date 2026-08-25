@@ -1,1 +1,43 @@
 // Tables in this file are owned by the payments module.
+
+model PaymentAttempt {
+  id                String   @id @db.Uuid
+  orderId           String   @map("order_id") @db.Uuid
+  identityId        String   @map("identity_id") @db.Uuid
+  status            String   @db.VarChar(24)
+  amount            BigInt
+  currency          String   @default("IRR") @db.Char(3)
+  provider          String   @db.VarChar(24)
+  providerReference String?  @unique @map("provider_reference") @db.VarChar(128)
+  redirectUrl       String?  @map("redirect_url") @db.VarChar(500)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  dispatchedAt      DateTime? @map("dispatched_at") @db.Timestamptz(3)
+  confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz(3)
+
+  @@index([orderId])
+  @@map("payment_attempts")
+}
+
+model PaymentIdempotencyRecord {
+  identityId String   @map("identity_id") @db.Uuid
+  key        String   @db.VarChar(200)
+  requestHash String  @map("request_hash") @db.Char(64)
+  attemptId  String   @map("attempt_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([identityId, key])
+  @@map("payment_idempotency_records")
+}
+
+model PaymentProviderObservation {
+  provider           String   @db.VarChar(24)
+  providerEventId    String   @map("provider_event_id") @db.VarChar(128)
+  attemptId          String   @map("attempt_id") @db.Uuid
+  providerReference  String   @map("provider_reference") @db.VarChar(128)
+  result             String   @db.VarChar(24)
+  observedAt         DateTime @default(now()) @map("observed_at") @db.Timestamptz(3)
+  correlationId      String   @map("correlation_id") @db.VarChar(128)
+
+  @@id([provider, providerEventId])
+  @@map("payment_provider_observations")
+}

@@ -28,13 +28,15 @@ model InventoryAdjustment {
 }
 
 model InventoryReservation {
-  id        String                     @id @db.Uuid
-  orderId   String                     @unique @map("order_id") @db.Uuid
-  storeId   String                     @map("store_id") @db.Uuid
-  status    String                     @default("ACTIVE") @db.VarChar(24)
-  expiresAt DateTime                   @map("expires_at") @db.Timestamptz(3)
-  createdAt DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
-  lines     InventoryReservationLine[]
+  id               String                     @id @db.Uuid
+  orderId          String                     @unique @map("order_id") @db.Uuid
+  storeId          String                     @map("store_id") @db.Uuid
+  status           String                     @default("ACTIVE") @db.VarChar(24)
+  expiresAt        DateTime                   @map("expires_at") @db.Timestamptz(3)
+  paymentAttemptId String?                    @map("payment_attempt_id") @db.Uuid
+  holdLeaseUntil   DateTime?                  @map("hold_lease_until") @db.Timestamptz(3)
+  createdAt        DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  lines            InventoryReservationLine[]
 
   @@index([status, expiresAt])
   @@map("inventory_reservations")
