@@ -1,5 +1,8 @@
 import postgres, { type Sql } from "postgres";
-import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
+import {
+  discoveryFeedProjectionEventTypes,
+  discoveryProjectionOperationsV1,
+} from "@sevo/contracts/discovery/v1";
 
 import type {
   DiscoveryFeedProjectionCandidate,
@@ -13,6 +16,8 @@ type StatusRow = {
   updatedAt: Date;
   pendingEvents: number;
   unresolvedBuffers: number;
+  poisonEvents: number;
+  lagMs: number;
 };
 
 type RankedFollowingRow = DiscoveryFeedProjectionCandidate & {
@@ -40,6 +45,22 @@ export class PostgresDiscoveryFeedRepository
          where event.event_type in ${this.#sql(discoveryFeedProjectionEventTypes)}
            and consumption.event_id is null) as "pendingEvents",
         (select count(*)::int
+         from platform_outbox_events event
+         left join platform_outbox_consumptions consumption
+           on consumption.event_id = event.event_id
+          and consumption.consumer_name = 'discovery-public-feed-v1'
+         where event.event_type in ${this.#sql(discoveryFeedProjectionEventTypes)}
+           and consumption.event_id is null and event.status = 'FAILED')
+          as "poisonEvents",
+        (select least(2147483647, greatest(0, coalesce(floor(extract(epoch from
+          (clock_timestamp() - min(event.occurred_at))) * 1000), 0)))::int
+         from platform_outbox_events event
+         left join platform_outbox_consumptions consumption
+           on consumption.event_id = event.event_id
+          and consumption.consumer_name = 'discovery-public-feed-v1'
+         where event.event_type in ${this.#sql(discoveryFeedProjectionEventTypes)}
+           and consumption.event_id is null) as "lagMs",
+        (select count(*)::int
          from discovery_product_feed_version_buffers) as "unresolvedBuffers"
       from discovery_projection_status status
       where status.projection_name = 'public-feed-v1'
@@ -53,15 +74,22 @@ export class PostgresDiscoveryFeedRepository
         candidates: [],
       };
     }
-    if (!status.healthy || status.pendingEvents > 0 || status.unresolvedBuffers > 0) {
+    if (
+      storedProjectionHealthIsBlocking(status) ||
+      status.poisonEvents > 0 ||
+      status.lagMs > discoveryProjectionOperationsV1.maxLagMs ||
+      status.unresolvedBuffers > 0
+    ) {
       return {
         healthy: false,
         reason:
           status.unresolvedBuffers > 0
             ? "UNRESOLVED_BUFFERS"
-            : status.pendingEvents > 0
-              ? "PENDING_EVENTS"
-              : (status.reason ?? "UNHEALTHY"),
+            : status.poisonEvents > 0
+              ? "POISON_EVENT"
+              : status.lagMs > discoveryProjectionOperationsV1.maxLagMs
+                ? "PROJECTION_LAG"
+                : (status.reason ?? "UNHEALTHY"),
         projectionUpdatedAt: status.updatedAt,
         candidates: [],
       };
@@ -107,6 +135,22 @@ export class PostgresDiscoveryFeedRepository
              where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
                and consumption.event_id is null) as "pendingEvents",
             (select count(*)::int
+             from platform_outbox_events event
+             left join platform_outbox_consumptions consumption
+               on consumption.event_id = event.event_id
+              and consumption.consumer_name = 'discovery-public-feed-v1'
+             where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
+               and consumption.event_id is null and event.status = 'FAILED')
+              as "poisonEvents",
+            (select least(2147483647, greatest(0, coalesce(floor(extract(epoch from
+              (clock_timestamp() - min(event.occurred_at))) * 1000), 0)))::int
+             from platform_outbox_events event
+             left join platform_outbox_consumptions consumption
+               on consumption.event_id = event.event_id
+              and consumption.consumer_name = 'discovery-public-feed-v1'
+             where event.event_type in ${sql(discoveryFeedProjectionEventTypes)}
+               and consumption.event_id is null) as "lagMs",
+            (select count(*)::int
              from discovery_product_feed_version_buffers) as "unresolvedBuffers"
           from discovery_projection_status status
           where status.projection_name = 'public-feed-v1'
@@ -114,8 +158,9 @@ export class PostgresDiscoveryFeedRepository
       const status = statusRows[0];
       if (
         !status ||
-        !status.healthy ||
-        status.pendingEvents > 0 ||
+        storedProjectionHealthIsBlocking(status) ||
+        status.poisonEvents > 0 ||
+        status.lagMs > discoveryProjectionOperationsV1.maxLagMs ||
         status.unresolvedBuffers > 0
       ) {
         return {
@@ -124,9 +169,11 @@ export class PostgresDiscoveryFeedRepository
             ? "STATUS_MISSING"
             : status.unresolvedBuffers > 0
               ? "UNRESOLVED_BUFFERS"
-              : status.pendingEvents > 0
-                ? "PENDING_EVENTS"
-                : (status.reason ?? "UNHEALTHY"),
+              : status.poisonEvents > 0
+                ? "POISON_EVENT"
+                : status.lagMs > discoveryProjectionOperationsV1.maxLagMs
+                  ? "PROJECTION_LAG"
+                  : (status.reason ?? "UNHEALTHY"),
           projectionUpdatedAt: status?.updatedAt ?? new Date(0),
           followSetRevision: 0,
           visibleFollowedStoreCount: 0,
@@ -214,4 +261,11 @@ export class PostgresDiscoveryFeedRepository
   async onModuleDestroy() {
     await this.#sql.end();
   }
+}
+
+function storedProjectionHealthIsBlocking(status: StatusRow): boolean {
+  if (status.healthy) return false;
+  return !["PROJECTION_LAG", "POISON_EVENT", "UNRESOLVED_BUFFERS"].includes(
+    status.reason ?? "",
+  );
 }

@@ -88,6 +88,7 @@ model DiscoveryProductFeedProjection {
   published               Boolean
   firstPublishedAt        DateTime @map("first_published_at") @db.Timestamptz(3)
   eligibleSince           DateTime @map("eligible_since") @db.Timestamptz(3)
+  publicationUpdatedAt    DateTime @map("publication_updated_at") @db.Timestamptz(3)
   offerVersion            Int      @map("offer_version")
   availabilityVersion     Int      @map("availability_version")
   updatedAt               DateTime @map("updated_at") @db.Timestamptz(3)

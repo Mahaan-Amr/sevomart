@@ -118,3 +118,45 @@ native با secret مستقل و حداقل ۳۲ نویسه جایگزین شو�
 `compose.yaml` فقط برای توسعه بازتولیدپذیرند و startup production آن‌ها را رد
 می‌کند. مسیر native و Compose باید این متغیرها را هم‌زمان دریافت کنند و هنگام
 rotation، کلید قبلی تا پایان عمر ۲۴ساعته cursorهای صادرشده در keyring بماند.
+
+projection فروش‌پذیری کشف هر ۱۵ ثانیه پایش می‌شود و SLO lag آن ۶۰ ثانیه است.
+تا پیش از عبور از این مرز، پاسخ فید هر کارت را دوباره با read معتبر کالا و فروشگاه
+می‌سنجد و فقط کم‌نمایی موقت مجاز است. lag بیشتر، buffer حل‌نشده یا poison event
+فید را با `503 PROJECTION_UNAVAILABLE` می‌بندد. همان پایش gaugeهای OpenTelemetry
+برای `healthy`، lag، رخدادهای در انتظار/poison و buffer حل‌نشده صادر می‌کند؛ شمار
+replay و rebuild و مدت rebuild نیز metric عملیاتی‌اند. رکورد
+`discovery_projection_alert` سیگنال alert پایدار projection ناسالم و رکورد
+`discovery_projection_rebuild_failed` سیگنال alert شکست rebuild است. collector باید
+اولی را پس از دو دورهٔ ۱۵ثانیه‌ای و دومی را با هر رخداد به on-call هدایت کند. log و
+metric فقط شمار aggregate دارند و payload، شناسه فروشگاه/کالا و PII را ثبت نمی‌کنند.
+ruleهای قابل‌بارگذاری Prometheus برای projection ناسالم، lag خارج از SLO، poison،
+version gap/buffer ماندگار و شکست تکراری rebuild در
+`ops/alerts/discovery-public-feed.prometheus.yml` نگه‌داری می‌شوند. نام‌های آن فایل
+بر اساس تبدیل استاندارد نام و unit در OTLP-to-Prometheus هستند و deployment باید
+فایل را در rule loader مانیتورینگ بارگذاری کند.
+
+metrics با همان پشتهٔ موجود OpenTelemetry و exporter استاندارد OTLP صادر می‌شوند؛
+وابستگی‌های مستقیم `@opentelemetry/api`، `sdk-metrics` و
+`exporter-metrics-otlp-http` هم‌نسخه با SDK موجود، تحت مجوز Apache-2.0 و بدون
+وابستگی به ارائه‌دهندهٔ telemetry خاص نگه داشته شده‌اند. این بسته‌ها اجزای فعال و
+منتشرشوندهٔ پروژهٔ رسمی OpenTelemetry هستند. ارزیابی امنیتی آن‌ها dependency یا
+credential تازه‌ای خارج از زنجیرهٔ OpenTelemetry وارد نمی‌کند؛ اثر runtime به ارسال
+خروجی aggregate به endpoint ازپیش‌مجاز OTLP محدود است و lockfile و کنترل
+supply-chain مخزن نسخه‌های دقیق را تثبیت می‌کنند.
+parser توسعه‌ای `yaml` نیز فقط برای اعتبارسنجی خودکار syntax و قرارداد ruleهای
+Prometheus استفاده می‌شود؛ پروژهٔ فعال YAML، مجوز ISC، نسخهٔ lockشده و نبود هرگونه
+ورودی غیرقابل‌اعتماد یا اثر runtime آن، سطح امنیتی را به parsing فایل ثابت مخزن
+محدود می‌کند.
+
+بازسازی کامل از آرشیو outbox با قفل تراکنشی و بدون نمایش حالت نیمه‌ساخته انجام
+می‌شود. اپراتور پس از اطمینان از اتصال به پایگاه مقصد، در PowerShell دستور زیر را
+اجرا می‌کند؛ مقدار تأیید از اجرای تصادفی جلوگیری می‌کند:
+
+```powershell
+$env:SEVO_REBUILD_CONFIRM='public-feed-v1'
+pnpm projection:rebuild:discovery
+```
+
+رخدادهای در انتظار پس از rebuild همچنان با receipt عادی worker مصرف می‌شوند.
+خروجی فقط تعداد replay، مدت، lag، poison و buffer را گزارش می‌کند؛ شکست replay کل
+تراکنش را rollback می‌کند و projection پیشین باقی می‌ماند.

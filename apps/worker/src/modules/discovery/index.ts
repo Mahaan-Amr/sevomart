@@ -1,8 +1,10 @@
 import { identityStatusChangedV1Contract } from "@sevo/contracts/identity-access/v1";
+import { discoveryProjectionOperationsV1 } from "@sevo/contracts/discovery/v1";
 import { DurableOutboxWorker, type OutboxEventHandler } from "@sevo/outbox";
 
 import type { WorkerHandler } from "../public";
 import {
+  catchUpDiscoveryPublicFeedProjection,
   projectDiscoveryProductEvent,
   projectDiscoveryStoreEvent,
   reconcileDiscoveryProjectionHealth,
@@ -101,8 +103,32 @@ const publicDiscoveryProjectionWorker: WorkerHandler = {
       },
     });
     await worker.start();
+    await catchUpDiscoveryPublicFeedProjection(environment.DATABASE_URL);
     await reconcileDiscoveryProjectionHealth(environment.DATABASE_URL);
-    return () => worker.close();
+    let monitoring: Promise<void> | undefined;
+    const monitor = setInterval(() => {
+      if (monitoring) return;
+      monitoring = catchUpDiscoveryPublicFeedProjection(environment.DATABASE_URL)
+        .then(() => reconcileDiscoveryProjectionHealth(environment.DATABASE_URL))
+        .catch((error: unknown) => {
+          console.error(
+            JSON.stringify({
+              level: "error",
+              message: "discovery_projection_monitor_failed",
+              errorKind: error instanceof Error ? error.name : "UnknownError",
+            }),
+          );
+        })
+        .finally(() => {
+          monitoring = undefined;
+        });
+    }, discoveryProjectionOperationsV1.monitorIntervalMs);
+    monitor.unref();
+    return async () => {
+      clearInterval(monitor);
+      await monitoring;
+      await worker.close();
+    };
   },
 };
 
