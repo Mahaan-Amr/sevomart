@@ -13,6 +13,7 @@ import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
+import { eventCorrelationId } from "../../../event-correlation-id";
 import {
   InventoryReservationUnavailableError,
   type InventoryAuthoring,
@@ -334,8 +335,8 @@ export class PostgresCheckoutRepository
             aggregateId: command.orderId,
             aggregateVersion: 1,
             occurredAt: new Date().toISOString(),
-            correlationId: command.correlationId,
-            causationId: command.correlationId,
+            correlationId: eventCorrelationId(command.correlationId),
+            causationId: command.orderId,
             actor: { type: "IDENTITY", id: command.identityId },
             payload: { status: "PENDING_PAYMENT", total: review.total },
           }),
@@ -404,7 +405,7 @@ export class PostgresCheckoutRepository
     });
   }
 
-  async lockPayableOrder(
+  async lockPaymentOrder(
     transaction: OrderPaymentTransactionContext,
     identityId: IdentityId,
     orderId: OrderId,
@@ -416,14 +417,14 @@ export class PostgresCheckoutRepository
         reservationId: string;
         totalAmount: number;
         reservationExpiresAt: Date;
+        status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
       }>
     >`
       select id as "orderId", reservation_id as "reservationId",
         total_amount::int as "totalAmount",
-        reservation_expires_at as "reservationExpiresAt"
+        reservation_expires_at as "reservationExpiresAt", status
       from order_orders
       where id = ${orderId} and identity_id = ${identityId}
-        and status = 'PENDING_PAYMENT'
       for update
     `;
     return rows[0];
@@ -434,9 +435,17 @@ export class PostgresCheckoutRepository
     command: Parameters<OrderPaymentWorkflow["markPaid"]>[1],
   ) {
     const sql = transaction as unknown as Sql;
+    const current = await sql<Array<{ status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" }>>`
+      select status from order_orders
+      where id = ${command.orderId}
+        and status in ('PENDING_PAYMENT', 'PAYMENT_REVIEW')
+      for update
+    `;
+    if (!current[0]) throw new CheckoutRevisionExpiredError();
     const updated = await sql<Array<{ orderId: string }>>`
       update order_orders set status = 'PAID', paid_at = ${command.paidAt}
-      where id = ${command.orderId} and status = 'PENDING_PAYMENT'
+      where id = ${command.orderId}
+        and status = ${current[0].status}
       returning id as "orderId"
     `;
     if (!updated[0]) throw new CheckoutRevisionExpiredError();
@@ -445,7 +454,7 @@ export class PostgresCheckoutRepository
         (id, order_id, from_status, to_status, reason_code, actor_kind,
          correlation_id, occurred_at)
       values
-        (${randomUUID()}, ${command.orderId}, 'PENDING_PAYMENT', 'PAID',
+        (${randomUUID()}, ${command.orderId}, ${current[0].status}, 'PAID',
          'PAYMENT_CONFIRMED', 'PAYMENTS_SERVICE', ${command.correlationId},
          ${command.paidAt})
     `;
@@ -458,7 +467,7 @@ export class PostgresCheckoutRepository
         aggregateId: command.orderId,
         aggregateVersion: 2,
         occurredAt: command.paidAt.toISOString(),
-        correlationId: command.correlationId,
+        correlationId: eventCorrelationId(command.correlationId),
         causationId: command.attemptId,
         actor: { type: "SYSTEM" },
         payload: { status: "PAID" },
@@ -502,9 +511,19 @@ export class PostgresCheckoutRepository
     command: Parameters<OrderPaymentWorkflow["markPaymentReview"]>[1],
   ) {
     const sql = transaction as unknown as Sql;
+    const current = await sql<
+      Array<{ status: "PENDING_PAYMENT" | "EXPIRED" | "PAYMENT_REVIEW" }>
+    >`
+      select status from order_orders
+      where id = ${command.orderId}
+        and status in ('PENDING_PAYMENT', 'EXPIRED', 'PAYMENT_REVIEW')
+      for update
+    `;
+    if (!current[0]) throw new CheckoutRevisionExpiredError();
+    if (current[0].status === "PAYMENT_REVIEW") return;
     const updated = await sql<Array<{ orderId: string }>>`
       update order_orders set status = 'PAYMENT_REVIEW'
-      where id = ${command.orderId} and status = 'PENDING_PAYMENT'
+      where id = ${command.orderId} and status = ${current[0].status}
       returning id as "orderId"
     `;
     if (!updated[0]) throw new CheckoutRevisionExpiredError();
@@ -513,8 +532,8 @@ export class PostgresCheckoutRepository
         (id, order_id, from_status, to_status, reason_code, actor_kind,
          correlation_id, occurred_at)
       values
-        (${randomUUID()}, ${command.orderId}, 'PENDING_PAYMENT', 'PAYMENT_REVIEW',
-         'PAYMENT_DISPATCH_UNRESOLVED', 'PAYMENTS_SERVICE', ${command.correlationId},
+        (${randomUUID()}, ${command.orderId}, ${current[0].status}, 'PAYMENT_REVIEW',
+         ${command.reasonCode}, 'PAYMENTS_SERVICE', ${command.correlationId},
          ${command.occurredAt})
     `;
     await enqueueOutboxEvent(
@@ -524,9 +543,9 @@ export class PostgresCheckoutRepository
         version: 1,
         eventType: "OrderPaymentReviewRequired.v1",
         aggregateId: command.orderId,
-        aggregateVersion: 2,
+        aggregateVersion: current[0].status === "EXPIRED" ? 3 : 2,
         occurredAt: command.occurredAt.toISOString(),
-        correlationId: command.correlationId,
+        correlationId: eventCorrelationId(command.correlationId),
         causationId: command.attemptId,
         actor: { type: "SYSTEM" },
         payload: { status: "PAYMENT_REVIEW" },

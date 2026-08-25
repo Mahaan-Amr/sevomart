@@ -41,7 +41,16 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       from inventory_reservation_lines line
       join inventory_reservations reservation on reservation.id = line.reservation_id
       where line.variant_id = ${command.variantId}
-        and reservation.status = 'ACTIVE' and reservation.expires_at > now()
+        and (
+          reservation.status = 'HELD_FOR_REVIEW'
+          or (
+            reservation.status = 'ACTIVE'
+            and greatest(
+              reservation.expires_at,
+              coalesce(reservation.hold_lease_until, reservation.expires_at)
+            ) > now()
+          )
+        )
     `;
     const current = {
       ...(rows[0] ?? { onHand: 0, revision: 0 }),
@@ -118,7 +127,16 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
           join inventory_reservations reservation
             on reservation.id = line.reservation_id
           where line.variant_id in ${sql(ordered.map((row) => row.variantId))}
-            and reservation.status = 'ACTIVE' and reservation.expires_at > now()
+            and (
+              reservation.status = 'HELD_FOR_REVIEW'
+              or (
+                reservation.status = 'ACTIVE'
+                and greatest(
+                  reservation.expires_at,
+                  coalesce(reservation.hold_lease_until, reservation.expires_at)
+                ) > now()
+              )
+            )
           group by line.variant_id
         `
       : [];
@@ -180,10 +198,24 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     >`
       select level.variant_id as "variantId", level.on_hand as "onHand",
         coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0)::int as reserved,
         (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0))::int as available,
         level.revision
       from inventory_levels level
@@ -206,10 +238,24 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     >`
       select level.on_hand as "onHand", level.revision,
         coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0)::int as reserved,
         (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          where reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
         ), 0))::int as available
       from inventory_levels level
       left join inventory_reservation_lines line on line.variant_id = level.variant_id
@@ -238,7 +284,16 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
         from inventory_reservation_lines line
         join inventory_reservations reservation on reservation.id = line.reservation_id
         where line.variant_id = ${item.variantId}
-          and reservation.status = 'ACTIVE' and reservation.expires_at > now()
+          and (
+            reservation.status = 'HELD_FOR_REVIEW'
+            or (
+              reservation.status = 'ACTIVE'
+              and greatest(
+                reservation.expires_at,
+                coalesce(reservation.hold_lease_until, reservation.expires_at)
+              ) > now()
+            )
+          )
       `;
       const current = levels[0];
       if (
@@ -273,7 +328,8 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       update inventory_reservations
       set status = 'RELEASED'
       where id = ${command.reservationId}::uuid and status = 'ACTIVE'
-        and expires_at <= ${command.expiredAt}
+        and greatest(expires_at, coalesce(hold_lease_until, expires_at))
+          <= ${command.expiredAt}
       returning id
     `;
     return rows.length === 1;
@@ -310,7 +366,8 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     const reservation = reservations[0];
     if (reservation?.status === "CONSUMED") return false;
     if (
-      reservation?.status !== "ACTIVE" ||
+      !reservation ||
+      !["ACTIVE", "HELD_FOR_REVIEW"].includes(reservation.status) ||
       reservation.attemptId !== command.attemptId
     ) {
       throw new InventoryReservationNotConsumableError();

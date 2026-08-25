@@ -85,6 +85,7 @@ export interface DirectPaymentRepository {
     identityId: IdentityId,
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt | undefined>;
+  recoverExpiredDispatches(now: Date): Promise<number>;
 }
 
 export class InvalidProviderCallbackError extends Error {}

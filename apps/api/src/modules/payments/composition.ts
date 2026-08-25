@@ -4,6 +4,7 @@ import type { RuntimeEnvironment } from "@sevo/config";
 import type { InventoryAuthoring } from "../inventory/public";
 import type { OrderPaymentWorkflow } from "../orders/public";
 import { DirectPaymentApplicationService } from "./application/direct-payment.service";
+import { PaymentRecoveryRunner } from "./application/payment-recovery.runner";
 import { PostgresDirectPaymentRepository } from "./infrastructure/postgres-direct-payment.repository";
 import {
   DevPaymentController,
@@ -60,6 +61,14 @@ export class PaymentsModule {
             repository: DirectPaymentRepository,
             selectedProvider: DirectPaymentProvider,
           ) => new DirectPaymentApplicationService(repository, selectedProvider),
+        },
+        {
+          provide: PaymentRecoveryRunner,
+          inject: [DIRECT_PAYMENT_REPOSITORY, "PAYMENTS_RUNTIME_ENVIRONMENT"],
+          useFactory: (
+            repository: DirectPaymentRepository,
+            runtime: RuntimeEnvironment,
+          ) => new PaymentRecoveryRunner(repository, runtime),
         },
       ],
     };

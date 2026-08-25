@@ -53,6 +53,22 @@ export const providerCallbackResultContract = z
   })
   .strict();
 
+export const directPaymentErrorContract = z
+  .object({
+    code: z.enum([
+      "ORDER_NOT_PAYABLE",
+      "IDEMPOTENCY_CONFLICT",
+      "IDEMPOTENCY_IN_PROGRESS",
+      "AMOUNT_MISMATCH",
+      "ATTEMPT_NOT_FOUND",
+      "INVALID_CALLBACK",
+      "PRECONDITION_REQUIRED",
+    ]),
+    message: z.string().min(1),
+    correlationId: z.string().min(1),
+  })
+  .strict();
+
 export const directPaymentAttemptConfirmedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("DirectPaymentAttemptConfirmed.v1"),
   causationId: z.uuid(),
@@ -96,6 +112,7 @@ export const paymentsV1Schemas = {
   DirectPaymentAttempt: directPaymentAttemptContract,
   ProviderCallbackInput: providerCallbackInputContract,
   ProviderCallbackResult: providerCallbackResultContract,
+  DirectPaymentError: directPaymentErrorContract,
 } as const;
 
 export function createPaymentsV1JsonSchemas() {

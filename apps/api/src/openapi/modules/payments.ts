@@ -36,7 +36,8 @@ const operations = [
     responses: [
       { status: 201, schema: "DirectPaymentAttempt" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 409, schema: "InternalServerError" },
+      { status: 409, schema: "DirectPaymentError" },
+      { status: 428, schema: "DirectPaymentError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
@@ -54,7 +55,7 @@ const operations = [
     responses: [
       { status: 200, schema: "DirectPaymentAttempt" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 404, schema: "InternalServerError" },
+      { status: 404, schema: "DirectPaymentError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
@@ -75,7 +76,7 @@ const operations = [
     },
     responses: [
       { status: 200, schema: "ProviderCallbackResult" },
-      { status: 422, schema: "InternalServerError" },
+      { status: 422, schema: "DirectPaymentError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
@@ -96,6 +97,7 @@ export const contribute_payments_openApi: OpenApiContributor = (document) =>
         404: "Payment attempt is unavailable to this identity",
         409: "Order is not payable",
         422: "Provider callback is invalid",
+        428: "Idempotency precondition is missing",
         500: "Unexpected server error",
       },
     },
