@@ -87,7 +87,7 @@ describe("public discovery feed HTTP API", () => {
           ...(sessionCookie ? { headers: { cookie: sessionCookie } } : {}),
         });
         firstResponse ??= page;
-        expect(page.statusCode).toBe(200);
+        expect(page.statusCode, page.body).toBe(200);
         const body = page.json<{
           items: Array<{ productId: string }>;
           nextCursor?: string;
@@ -154,6 +154,22 @@ describe("public discovery feed HTTP API", () => {
     expect(invalid.json()).toMatchObject({ code: "INVALID_CURSOR" });
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const recentPending = storePublishedV1Contract.parse({
+      ...envelope("StorePublished.v1", storeId, 2, new Date().toISOString()),
+      payload: {
+        storeId,
+        publicationStatus: "PUBLISHED",
+        publicationVersion: 1,
+      },
+    });
+    await sql.begin((transaction) => enqueueOutboxEvent(transaction, recentPending));
+    const withinSlo = await server.inject({
+      method: "GET",
+      url: "/v1/feeds/discovery",
+    });
+    expect(withinSlo.statusCode).toBe(200);
+    await sql`delete from platform_outbox_events where event_id = ${recentPending.eventId}`;
+
     const pending = storePublishedV1Contract.parse({
       ...envelope("StorePublished.v1", storeId, 2, "2026-08-24T10:00:00.000Z"),
       payload: {
@@ -174,6 +190,27 @@ describe("public discovery feed HTTP API", () => {
       message: expect.stringContaining("دوباره تلاش کنید"),
     });
     await sql`delete from platform_outbox_events where event_id = ${pending.eventId}`;
+
+    const poison = storePublishedV1Contract.parse({
+      ...envelope("StorePublished.v1", storeId, 2, new Date().toISOString()),
+      payload: {
+        storeId,
+        publicationStatus: "PUBLISHED",
+        publicationVersion: 1,
+      },
+    });
+    await sql.begin((transaction) => enqueueOutboxEvent(transaction, poison));
+    await sql`
+      update platform_outbox_events set status = 'FAILED', failed_at = now(),
+        attempt_count = 5, last_error = 'ZodError'
+      where event_id = ${poison.eventId}
+    `;
+    const poisoned = await server.inject({
+      method: "GET",
+      url: "/v1/feeds/discovery",
+    });
+    expect(poisoned.statusCode).toBe(503);
+    await sql`delete from platform_outbox_events where event_id = ${poison.eventId}`;
     await sql.end();
   });
 });

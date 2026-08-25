@@ -112,3 +112,23 @@ native با secret مستقل و حداقل ۳۲ نویسه جایگزین شو�
 `compose.yaml` فقط برای توسعه بازتولیدپذیرند و startup production آن‌ها را رد
 می‌کند. مسیر native و Compose باید این متغیرها را هم‌زمان دریافت کنند و هنگام
 rotation، کلید قبلی تا پایان عمر ۲۴ساعته cursorهای صادرشده در keyring بماند.
+
+projection فروش‌پذیری کشف هر ۱۵ ثانیه پایش می‌شود و SLO lag آن ۶۰ ثانیه است.
+تا پیش از عبور از این مرز، پاسخ فید هر کارت را دوباره با read معتبر کالا و فروشگاه
+می‌سنجد و فقط کم‌نمایی موقت مجاز است. lag بیشتر، buffer حل‌نشده یا poison event
+فید را با `503 PROJECTION_UNAVAILABLE` می‌بندد. پایش فقط شمار aggregate رخدادهای
+در انتظار/poison، lag و شمار buffer را log می‌کند و payload، شناسه فروشگاه/کالا و
+PII را ثبت نمی‌کند.
+
+بازسازی کامل از آرشیو outbox با قفل تراکنشی و بدون نمایش حالت نیمه‌ساخته انجام
+می‌شود. اپراتور پس از اطمینان از اتصال به پایگاه مقصد، در PowerShell دستور زیر را
+اجرا می‌کند؛ مقدار تأیید از اجرای تصادفی جلوگیری می‌کند:
+
+```powershell
+$env:SEVO_REBUILD_CONFIRM='public-feed-v1'
+pnpm projection:rebuild:discovery
+```
+
+رخدادهای در انتظار پس از rebuild همچنان با receipt عادی worker مصرف می‌شوند.
+خروجی فقط تعداد replay، مدت، lag، poison و buffer را گزارش می‌کند؛ شکست replay کل
+تراکنش را rollback می‌کند و projection پیشین باقی می‌ماند.

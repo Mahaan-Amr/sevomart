@@ -23,6 +23,7 @@
     "compose:down": "docker compose down",
     "compose:rebuild": "docker compose build --no-cache && docker compose up --wait",
     "local:reset": "node scripts/local-reset.mjs",
+    "projection:rebuild:discovery": "pnpm --filter @sevo/worker rebuild:discovery",
     "dev": "pnpm infra:up && pnpm --filter @sevo/database exec prisma migrate deploy && pnpm build:packages && pnpm dev:apps",
     "dev:apps": "node --env-file-if-exists=.env scripts/run-dev-apps.mjs",
     "format": "prettier --write \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",

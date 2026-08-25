@@ -14,6 +14,10 @@ import { storeSlugContract } from "../../store-identifiers";
 
 export const discoveryFeedCursorContract = z.string().min(1).max(2_048);
 export const discoveryFeedLimitContract = z.coerce.number().int().min(1).max(30);
+export const discoveryProjectionOperationsV1 = {
+  maxLagMs: 60_000,
+  monitorIntervalMs: 15_000,
+} as const;
 
 const discoveryFeedMediaContract = z
   .object({

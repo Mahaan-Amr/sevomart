@@ -546,9 +546,10 @@ async function seedFollowingFeedProducts(storeId: string) {
       insert into discovery_product_feed_projections
         (product_id, store_id, product_aggregate_version, publication_version,
          published, first_published_at, eligible_since, offer_version,
-         availability_version, updated_at)
+         availability_version, publication_updated_at, updated_at)
       values (${product.productId}, ${storeId}, 2, 1, true,
-        ${product.publishedAt}, ${product.publishedAt}, 1, 1, now())
+        ${product.publishedAt}, ${product.publishedAt}, 1, 1,
+        ${product.publishedAt}, now())
     `;
   }
   await sql`

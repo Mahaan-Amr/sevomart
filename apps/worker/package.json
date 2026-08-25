@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/main.ts",
+    "rebuild:discovery": "tsx src/modules/discovery/rebuild-public-feed.cli.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
