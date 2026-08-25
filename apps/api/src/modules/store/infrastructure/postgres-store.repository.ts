@@ -52,6 +52,12 @@ export class PostgresStoreRepository
     return this.#find({ id });
   }
 
+  async findByIdInTransaction(transaction: OpaqueStoreTransactionContext, id: string) {
+    const sql = readOpaqueStoreTransaction(transaction);
+    await sql`select id from store_stores where id = ${id}::uuid for share`;
+    return this.#findWithSql(sql, { id });
+  }
+
   async findBySellerId(sellerId: string) {
     return this.#find({ sellerId });
   }

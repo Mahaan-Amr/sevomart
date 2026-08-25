@@ -26,3 +26,27 @@ model InventoryAdjustment {
   @@index([variantId, occurredAt])
   @@map("inventory_adjustments")
 }
+
+model InventoryReservation {
+  id        String                     @id @db.Uuid
+  orderId   String                     @unique @map("order_id") @db.Uuid
+  storeId   String                     @map("store_id") @db.Uuid
+  status    String                     @default("ACTIVE") @db.VarChar(24)
+  expiresAt DateTime                   @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  lines     InventoryReservationLine[]
+
+  @@index([status, expiresAt])
+  @@map("inventory_reservations")
+}
+
+model InventoryReservationLine {
+  reservationId String               @map("reservation_id") @db.Uuid
+  variantId     String               @map("variant_id") @db.Uuid
+  quantity      Int
+  reservation   InventoryReservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  @@id([reservationId, variantId])
+  @@index([variantId])
+  @@map("inventory_reservation_lines")
+}

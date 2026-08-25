@@ -46,3 +46,4 @@ export class ProductModule {
 }
 
 export { PostgresProductRepository } from "./infrastructure/postgres-product.repository";
+export { createOpaqueProductTransactionContext } from "./infrastructure/opaque-product-transaction";

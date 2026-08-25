@@ -61,6 +61,14 @@ migrations, applied the pending cart-lease migration, and brought API, Web, and
 worker to healthy status. Native `pnpm dev` found all 27 migrations with none
 pending and brought API, Web, and worker to ready state.
 
+Issue 88 adds inventory-owned expiring reservations and orders-owned checkout,
+immutable snapshot and idempotency tables. Both migrations are additive, require no
+compatibility window and use a forward fix if deployment must be corrected.
+`docker compose up --build --wait` found all 33 migrations, applied the reservation
+and checkout migrations, and brought API, Web, worker, PostgreSQL and MinIO to
+healthy status. Native `pnpm dev` found all 33 migrations with none pending and
+brought Web, API and worker to ready state.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

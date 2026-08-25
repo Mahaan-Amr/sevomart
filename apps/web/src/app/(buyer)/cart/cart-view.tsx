@@ -19,6 +19,7 @@ export function CartView() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [checkoutReady, setCheckoutReady] = useState(false);
 
   useEffect(() => {
     void load();
@@ -76,6 +77,7 @@ export function CartView() {
         setConflict(parsed.data.conflict);
         return;
       }
+      setCheckoutReady(true);
       setMessage("سبد به هویت سوو متصل شد و برای ادامه خرید آماده است.");
       await load();
     } catch {
@@ -268,6 +270,11 @@ export function CartView() {
                   تغییرها را دیدم
                 </button>
               </section>
+            ) : null}
+            {checkoutReady ? (
+              <a className={styles.addressLink} href="/checkout">
+                رفتن به مرور نهایی سفارش
+              </a>
             ) : null}
             {conflict ? (
               <ConflictChoice conflict={conflict} pending={pending} resolve={resolve} />

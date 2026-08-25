@@ -48,7 +48,9 @@ import {
   ProductInvalidTransitionError,
   type ProductRepository,
   type ProductWriteContext,
+  type OpaqueProductTransactionContext,
 } from "../public";
+import { readOpaqueProductTransaction } from "./opaque-product-transaction";
 
 type ProductRow = {
   productId: string;
@@ -207,7 +209,9 @@ export class PostgresProductRepository implements ProductRepository {
             orderedMediaIds: input.workingCopy.orderedMediaIds,
             variant: { variantId, price: input.workingCopy.variant.price },
           },
-          inventory: inventory ?? null,
+          inventory: inventory
+            ? { onHand: inventory.onHand, revision: inventory.revision }
+            : null,
         };
         return input.workingCopy.name &&
           input.workingCopy.orderedMediaIds.length === 1 &&
@@ -354,7 +358,28 @@ export class PostgresProductRepository implements ProductRepository {
   }
 
   async readAuthoritativeVariant(variantId: VariantId) {
-    const rows = await this.#sql<
+    return this.#readAuthoritativeVariant(this.#sql, variantId);
+  }
+
+  async readAuthoritativeVariantInTransaction(
+    transaction: OpaqueProductTransactionContext,
+    variantId: VariantId,
+  ) {
+    const sql = readOpaqueProductTransaction(transaction);
+    await sql`
+      select product.id
+      from product_variants variant
+      join product_products product on product.id = variant.product_id
+      join product_offers offer
+        on offer.product_id = product.id and offer.variant_id = variant.id
+      where variant.id = ${variantId}::uuid
+      for share of product, variant, offer
+    `;
+    return this.#readAuthoritativeVariant(sql, variantId);
+  }
+
+  async #readAuthoritativeVariant(sql: Sql, variantId: VariantId) {
+    const rows = await sql<
       Array<{
         productId: string;
         storeId: string;
@@ -950,7 +975,11 @@ export class PostgresProductRepository implements ProductRepository {
           variantIdContract.parse(variant.variantId),
         );
         return snapshot
-          ? { variantId: variant.variantId, ...snapshot }
+          ? {
+              variantId: variant.variantId,
+              onHand: snapshot.onHand,
+              revision: snapshot.revision,
+            }
           : { variantId: variant.variantId, onHand: 0, revision: 0 };
       }),
     );
@@ -1069,7 +1098,9 @@ export class PostgresProductRepository implements ProductRepository {
               : { amount: Number(row.amount), currency: "IRR" as const },
         },
       },
-      inventory,
+      inventory: inventory
+        ? { onHand: inventory.onHand, revision: inventory.revision }
+        : null,
     };
     return row.name && row.mediaId && row.amount !== null && inventory
       ? simpleProductDraftContract.parse(view)

@@ -46,8 +46,16 @@ export type ProductAuthoritativeVariant = Readonly<{
   sellable: boolean;
 }>;
 
+export type OpaqueProductTransactionContext = Readonly<{
+  kind: "opaque-product-transaction";
+}>;
+
 export interface ProductAuthoritativeRead {
   readAuthoritativeVariant(
+    variantId: VariantId,
+  ): Promise<ProductAuthoritativeVariant | undefined>;
+  readAuthoritativeVariantInTransaction?(
+    transaction: OpaqueProductTransactionContext,
     variantId: VariantId,
   ): Promise<ProductAuthoritativeVariant | undefined>;
   readPublishedProduct(

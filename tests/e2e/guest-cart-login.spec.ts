@@ -28,6 +28,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
     product: randomUUID(),
     variant: randomUUID(),
     media: randomUUID(),
+    shipping: randomUUID(),
   };
   const slug = `guest-cart-${projectIndex}`;
   const sql = postgres(databaseUrl, { max: 1 });
@@ -36,6 +37,37 @@ test("guest adds a product, signs in and continues the same cart", async ({
       select id as "storeId" from store_stores where slug = ${slug}
     `;
     for (const previous of previousStores) {
+      await sql`
+        delete from order_delivery_snapshots where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from order_shipping_snapshots where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from order_policy_snapshots where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from order_items where order_id in
+          (select id from order_orders where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`
+        delete from inventory_reservation_lines where reservation_id in
+          (select id from inventory_reservations where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`delete from inventory_reservations where store_id = ${previous.storeId}::uuid`;
+      await sql`
+        update order_checkout_preparations set consumed_order_id = null
+        where cart_id in
+          (select id from order_carts where store_id = ${previous.storeId}::uuid)
+      `;
+      await sql`delete from order_orders where store_id = ${previous.storeId}::uuid`;
+      await sql`
+        delete from order_checkout_preparations where cart_id in
+          (select id from order_carts where store_id = ${previous.storeId}::uuid)
+      `;
       await sql`delete from order_carts where store_id = ${previous.storeId}::uuid`;
       await sql`delete from product_products where store_id = ${previous.storeId}::uuid`;
       await sql`delete from store_stores where id = ${previous.storeId}::uuid`;
@@ -51,9 +83,22 @@ test("guest adds a product, signs in and continues the same cart", async ({
     }
     await sql`
       insert into store_stores
-        (id, name, slug, status, publication_version, revision, updated_at)
+        (id, name, slug, return_policy, return_policy_revision,
+         settlement_kind, settlement_status, settlement_verified_at,
+         status, publication_version, revision, updated_at)
       values
-        (${ids.store}, 'خانه فنجان', ${slug}, 'PUBLISHED', 1, 1, now())
+        (${ids.store}, 'خانه فنجان', ${slug},
+         'تا هفت روز امکان درخواست مرجوعی دارید.', 1,
+         'TEST', 'TEST_VERIFIED', now(), 'PUBLISHED', 1, 1, now())
+    `;
+    await sql`
+      insert into store_shipping_methods
+        (id, store_id, position, revision, code, label, fixed_fee_amount,
+         estimated_delivery_text, enabled, requires_delivery_address,
+         requires_postal_code)
+      values
+        (${ids.shipping}, ${ids.store}, 0, 1, 'NATIONAL_POST', 'پست پیشتاز',
+         500000, '۳ تا ۵ روز کاری', true, true, true)
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
@@ -65,6 +110,14 @@ test("guest adds a product, signs in and continues the same cart", async ({
       values (${ids.product}, ${ids.store}, 'PUBLISHED', 2, 1, now())
     `;
     await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key,
+         retired, ever_published)
+      values
+        (${ids.variant}, ${ids.product}, ${ids.store}, 'legacy-default',
+         'legacy-default', false, true)
+    `;
+    await sql`
       insert into product_publications
         (product_id, publication_version, name, description, media_id, variant_id)
       values
@@ -74,11 +127,6 @@ test("guest adds a product, signs in and continues the same cart", async ({
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
       values (${ids.product}, ${ids.variant}, 4500000, 'IRR', 1)
-    `;
-    await sql`
-      insert into product_variants
-        (id, product_id, store_id, client_key, combination_key)
-      values (${ids.variant}, ${ids.product}, ${ids.store}, 'simple', '')
     `;
     await sql`
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
@@ -188,6 +236,125 @@ test("guest adds a product, signs in and continues the same cart", async ({
         Number.parseFloat(getComputedStyle(element).transitionDuration),
       ),
   ).toBeLessThan(0.001);
+  await page.getByRole("link", { name: "بازگشت به سبد" }).click();
+  await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
+  await page.getByRole("link", { name: "رفتن به مرور نهایی سفارش" }).click();
+  await expect(page.getByRole("heading", { name: "مرور نهایی سفارش" })).toBeVisible();
+  await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
+  await expect(page.getByRole("heading", { name: "تسویه مستقیم" })).toBeVisible();
+  await expect(page.getByText("بازپرداخت را تضمین نمی‌کند.")).toBeVisible();
+  const stockSql = postgres(databaseUrl, { max: 1 });
+  try {
+    await stockSql`
+      update inventory_levels set on_hand = 0, revision = revision + 1
+      where variant_id = ${ids.variant}
+    `;
+    await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "سبد را اصلاح" }),
+    ).toBeVisible();
+    await stockSql`
+      update inventory_levels set on_hand = 8, revision = revision + 1
+      where variant_id = ${ids.variant}
+    `;
+  } finally {
+    await stockSql.end();
+  }
+  await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
+  await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
+  await assertNoHorizontalOverflow(page);
+
+  const historySql = postgres(databaseUrl, { max: 1 });
+  try {
+    const orders = await historySql<Array<{ orderId: string; reservationId: string }>>`
+      select id as "orderId", reservation_id as "reservationId"
+      from order_orders where store_id = ${ids.store}
+      order by created_at desc limit 1
+    `;
+    const created = orders[0];
+    if (!created) throw new Error("The browser checkout must persist an order");
+    const originalSnapshots = await historySql`
+      select address_id, address_revision, recipient_name, recipient_mobile,
+        province_text, city_text, address_line, postal_code
+      from order_delivery_snapshots where order_id = ${created.orderId}
+    `;
+    expect(originalSnapshots).toHaveLength(1);
+    const addresses = await historySql<Array<{ addressId: string; revision: number }>>`
+      select address.id as "addressId", address.current_revision as revision
+      from order_saved_addresses address
+      join identity_login_methods login on login.identity_id = address.identity_id
+      where login.mobile = ${mobile} and address.status = 'ACTIVE'
+      order by address.updated_at desc limit 1
+    `;
+    const selectedAddress = addresses[0];
+    if (!selectedAddress) throw new Error("Checkout must use a saved address");
+    const nextRevision = selectedAddress.revision + 1;
+    await historySql`
+      insert into order_saved_address_revisions
+        (address_id, revision, recipient_name, recipient_mobile, province_text,
+         city_text, address_line, postal_code)
+      values
+        (${selectedAddress.addressId}, ${nextRevision}, 'گیرنده تازه',
+         '09121111111', 'فارس', 'شیراز', 'نشانی تازه', '9876543210')
+    `;
+    await historySql`
+      update order_saved_addresses
+      set current_revision = ${nextRevision}, status = 'DELETED', updated_at = now()
+      where id = ${selectedAddress.addressId}
+    `;
+    expect(
+      await historySql`
+        select address_id, address_revision, recipient_name, recipient_mobile,
+          province_text, city_text, address_line, postal_code
+        from order_delivery_snapshots where order_id = ${created.orderId}
+      `,
+    ).toEqual(originalSnapshots);
+
+    await historySql`
+      update order_orders set reservation_expires_at = now() - interval '1 second'
+      where id = ${created.orderId}
+    `;
+    await historySql`
+      update inventory_reservations set expires_at = now() - interval '1 second'
+      where id = ${created.reservationId}
+    `;
+    await page.goto("/checkout");
+    await expect
+      .poll(async () => {
+        const rows = await historySql<
+          Array<{ orderStatus: string; reservationStatus: string }>
+        >`
+          select orders.status as "orderStatus", reservation.status as "reservationStatus"
+          from order_orders orders
+          join inventory_reservations reservation
+            on reservation.id = orders.reservation_id
+          where orders.id = ${created.orderId}
+        `;
+        return rows[0];
+      })
+      .toEqual({ orderStatus: "EXPIRED", reservationStatus: "RELEASED" });
+    expect(
+      await historySql`
+        select event_id from platform_outbox_events
+        where aggregate_id = ${created.orderId} and event_type = 'OrderExpired.v1'
+      `,
+    ).toHaveLength(1);
+    expect(
+      await historySql<Array<{ available: number }>>`
+        select (level.on_hand - coalesce(sum(line.quantity) filter (
+          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+        ), 0))::int as available
+        from inventory_levels level
+        left join inventory_reservation_lines line on line.variant_id = level.variant_id
+        left join inventory_reservations reservation
+          on reservation.id = line.reservation_id
+        where level.variant_id = ${ids.variant}
+        group by level.variant_id
+      `,
+    ).toEqual([{ available: 8 }]);
+  } finally {
+    await historySql.end();
+  }
 });
 
 test("same-store carts merge only after the buyer chooses merge", async ({
@@ -321,6 +488,14 @@ async function seedCartConflict(
         values (${fixture.productId}, ${fixture.storeId}, 'PUBLISHED', 2, 1, now())
       `;
       await sql`
+        insert into product_variants
+          (id, product_id, store_id, client_key, combination_key,
+           retired, ever_published)
+        values
+          (${fixture.variantId}, ${fixture.productId}, ${fixture.storeId},
+           'legacy-default', 'legacy-default', false, true)
+      `;
+      await sql`
         insert into product_publications
           (product_id, publication_version, name, description, media_id, variant_id)
         values
@@ -330,12 +505,6 @@ async function seedCartConflict(
       await sql`
         insert into product_offers (product_id, variant_id, amount, currency, revision)
         values (${fixture.productId}, ${fixture.variantId}, 4500000, 'IRR', 1)
-      `;
-      await sql`
-        insert into product_variants
-          (id, product_id, store_id, client_key, combination_key)
-        values
-          (${fixture.variantId}, ${fixture.productId}, ${fixture.storeId}, 'simple', '')
       `;
       await sql`
         insert into inventory_levels (variant_id, store_id, on_hand, revision)

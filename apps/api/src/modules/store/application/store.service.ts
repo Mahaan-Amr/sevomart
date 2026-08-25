@@ -20,6 +20,7 @@ import type {
   StoreRow,
   StoreShippingMethod,
   VerifiedSettlementDestination,
+  OpaqueStoreTransactionContext,
 } from "../public";
 import { StoreNotSellableError, StoreOwnershipRequiredError } from "../public";
 
@@ -239,6 +240,14 @@ export class StoreService implements StoreAuthoritativeRead {
 
   async readStore(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
     const row = await this.repository.findById(storeId);
+    return row ? toAuthoritativeStore(row) : undefined;
+  }
+
+  async readStoreInTransaction(
+    transaction: OpaqueStoreTransactionContext,
+    storeId: StoreId,
+  ): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
+    const row = await this.repository.findByIdInTransaction?.(transaction, storeId);
     return row ? toAuthoritativeStore(row) : undefined;
   }
 

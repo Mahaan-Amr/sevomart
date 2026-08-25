@@ -1,0 +1,135 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.panel {
+  width: min(100%, 560px);
+  margin: 0 auto;
+  padding: 24px;
+  border-radius: 22px;
+  background: var(--color-background);
+  box-shadow: var(--elevation-raised);
+}
+
+.panel h1 {
+  margin: 12px 0 24px;
+  font-size: 24px;
+}
+.panel h2 {
+  font-size: 16px;
+}
+.back,
+.panel a {
+  color: var(--color-primary-dark);
+}
+.panel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 24px;
+}
+.panel legend {
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+.choice input {
+  margin-top: 4px;
+  accent-color: var(--color-primary);
+}
+.choice span {
+  display: grid;
+  gap: 4px;
+}
+.choice small,
+.note {
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+.primary {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary:focus-visible,
+.choice:focus-within,
+.panel a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+.primary:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.items {
+  list-style: none;
+  padding: 0;
+}
+.items li,
+.total {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+.itemConflict {
+  display: block;
+  color: var(--color-primary-dark);
+  line-height: 1.8;
+}
+.total strong {
+  color: var(--color-primary-dark);
+}
+.trust {
+  margin: 20px 0;
+  padding: 16px;
+  border-inline-start: 4px solid var(--color-primary);
+  border-radius: 12px;
+  background: var(--color-cover-start);
+  line-height: 1.9;
+}
+.error {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--color-cover-start);
+  line-height: 1.8;
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 16px 8px;
+  }
+  .panel {
+    padding: 18px 14px;
+    box-shadow: var(--elevation-raised);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel *,
+  .panel *::before,
+  .panel *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}

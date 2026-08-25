@@ -22,6 +22,7 @@ import { OrdersModule } from "../modules/orders/composition";
 import { PaymentsModule } from "../modules/payments/composition";
 import { ProblemFollowUpModule } from "../modules/problem-follow-up/composition";
 import {
+  createOpaqueProductTransactionContext,
   PostgresProductRepository,
   ProductModule,
 } from "../modules/product/composition";
@@ -77,6 +78,8 @@ export function composeCanonicalApiModules(
     OrdersModule.register(environment, {
       products: productRepository,
       inventory: inventoryAuthoring,
+      createProductTransactionContext: createOpaqueProductTransactionContext,
+      createStoreTransactionContext: createOpaqueStoreTransactionContext,
     }),
     PaymentsModule,
     FulfillmentModule,

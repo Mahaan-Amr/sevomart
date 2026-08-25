@@ -1,16 +1,16 @@
 // Tables in this file are owned by the orders module.
 
 model OrderCart {
-  id                     String          @id @db.Uuid
-  storeId                String          @map("store_id") @db.Uuid
-  identityId             String?         @map("identity_id") @db.Uuid
-  status                 String          @default("ACTIVE") @db.VarChar(16)
-  revision               Int             @default(0)
-  reviewedPolicyRevision Int             @default(0) @map("reviewed_policy_revision")
-  reviewedShippingHash   String          @default("") @map("reviewed_shipping_hash") @db.Char(64)
-  expiresAt              DateTime        @map("expires_at") @db.Timestamptz(3)
-  createdAt              DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt              DateTime        @default(now()) @map("updated_at") @db.Timestamptz(3)
+  id                     String                 @id @db.Uuid
+  storeId                String                 @map("store_id") @db.Uuid
+  identityId             String?                @map("identity_id") @db.Uuid
+  status                 String                 @default("ACTIVE") @db.VarChar(16)
+  revision               Int                    @default(0)
+  reviewedPolicyRevision Int                    @default(0) @map("reviewed_policy_revision")
+  reviewedShippingHash   String                 @default("") @map("reviewed_shipping_hash") @db.Char(64)
+  expiresAt              DateTime               @map("expires_at") @db.Timestamptz(3)
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime               @default(now()) @map("updated_at") @db.Timestamptz(3)
   items                  OrderCartItem[]
   tokens                 OrderCartAccessToken[]
 
@@ -19,15 +19,15 @@ model OrderCart {
 }
 
 model OrderCartItem {
-  cartId    String    @map("cart_id") @db.Uuid
-  variantId String    @map("variant_id") @db.Uuid
-  productId String    @map("product_id") @db.Uuid
-  quantity  Int
-  reviewedPublicationVersion Int @default(0) @map("reviewed_publication_version")
-  reviewedUnitPriceAmount Int @default(0) @map("reviewed_unit_price_amount")
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(3)
-  cart      OrderCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  cartId                     String    @map("cart_id") @db.Uuid
+  variantId                  String    @map("variant_id") @db.Uuid
+  productId                  String    @map("product_id") @db.Uuid
+  quantity                   Int
+  reviewedPublicationVersion Int       @default(0) @map("reviewed_publication_version")
+  reviewedUnitPriceAmount    Int       @default(0) @map("reviewed_unit_price_amount")
+  createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                  DateTime  @default(now()) @map("updated_at") @db.Timestamptz(3)
+  cart                       OrderCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
   @@id([cartId, variantId])
   @@map("order_cart_items")
@@ -61,15 +61,15 @@ model OrderCartAccessToken {
 }
 
 model OrderCartIdempotencyRecord {
-  operation    String   @db.VarChar(48)
-  scope        String   @db.VarChar(128)
-  key          String   @db.VarChar(200)
-  requestHash  String   @map("request_hash") @db.Char(64)
-  state        String   @db.VarChar(16)
-  lockedUntil  DateTime @map("locked_until") @db.Timestamptz(3)
-  responseJson Json?    @map("response_json") @db.JsonB
+  operation    String    @db.VarChar(48)
+  scope        String    @db.VarChar(128)
+  key          String    @db.VarChar(200)
+  requestHash  String    @map("request_hash") @db.Char(64)
+  state        String    @db.VarChar(16)
+  lockedUntil  DateTime  @map("locked_until") @db.Timestamptz(3)
+  responseJson Json?     @map("response_json") @db.JsonB
   completedAt  DateTime? @map("completed_at") @db.Timestamptz(3)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([operation, scope, key])
   @@map("order_cart_idempotency_records")
@@ -105,18 +105,115 @@ model OrderSavedAddressRevision {
 }
 
 model OrderSavedAddressIdempotencyRecord {
-  operation    String   @db.VarChar(48)
-  identityId   String   @map("identity_id") @db.Uuid
-  key          String   @db.VarChar(200)
-  requestHash  String   @map("request_hash") @db.Char(64)
-  state        String   @db.VarChar(16)
-  lockedUntil  DateTime @map("locked_until") @db.Timestamptz(3)
-  responseJson Json?    @map("response_json") @db.JsonB
+  operation    String    @db.VarChar(48)
+  identityId   String    @map("identity_id") @db.Uuid
+  key          String    @db.VarChar(200)
+  requestHash  String    @map("request_hash") @db.Char(64)
+  state        String    @db.VarChar(16)
+  lockedUntil  DateTime  @map("locked_until") @db.Timestamptz(3)
+  responseJson Json?     @map("response_json") @db.JsonB
   completedAt  DateTime? @map("completed_at") @db.Timestamptz(3)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([operation, identityId, key])
   @@map("order_saved_address_idempotency_records")
+}
+
+model OrderCheckoutPreparation {
+  checkoutRevision String   @id @map("checkout_revision") @db.Uuid
+  identityId       String   @map("identity_id") @db.Uuid
+  cartId           String   @map("cart_id") @db.Uuid
+  cartRevision     Int      @map("cart_revision")
+  addressId        String?  @map("address_id") @db.Uuid
+  addressRevision  Int?     @map("address_revision")
+  shippingMethodId String   @map("shipping_method_id") @db.Uuid
+  shippingRevision Int      @map("shipping_revision")
+  policyRevision   Int      @map("policy_revision")
+  snapshot         Json     @db.JsonB
+  expiresAt        DateTime @map("expires_at") @db.Timestamptz(3)
+  consumedOrderId  String?  @unique @map("consumed_order_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([identityId, expiresAt])
+  @@map("order_checkout_preparations")
+}
+
+model OrderOrder {
+  id                   String   @id @db.Uuid
+  identityId           String   @map("identity_id") @db.Uuid
+  storeId              String   @map("store_id") @db.Uuid
+  checkoutRevision     String   @unique @map("checkout_revision") @db.Uuid
+  reservationId        String   @unique @map("reservation_id") @db.Uuid
+  status               String   @default("PENDING_PAYMENT") @db.VarChar(32)
+  totalAmount          BigInt   @map("total_amount")
+  currency             String   @default("IRR") @db.Char(3)
+  reservationExpiresAt DateTime @map("reservation_expires_at") @db.Timestamptz(3)
+  reviewSnapshot       Json     @map("review_snapshot") @db.JsonB
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([identityId, createdAt])
+  @@map("order_orders")
+}
+
+model OrderItemSnapshot {
+  orderId            String @map("order_id") @db.Uuid
+  variantId          String @map("variant_id") @db.Uuid
+  productId          String @map("product_id") @db.Uuid
+  name               String @db.VarChar(120)
+  quantity           Int
+  unitPriceAmount    BigInt @map("unit_price_amount")
+  publicationVersion Int    @map("publication_version")
+
+  @@id([orderId, variantId])
+  @@map("order_items")
+}
+
+model OrderDeliverySnapshot {
+  orderId         String  @id @map("order_id") @db.Uuid
+  addressId       String  @map("address_id") @db.Uuid
+  addressRevision Int     @map("address_revision")
+  recipientName   String  @map("recipient_name") @db.VarChar(120)
+  recipientMobile String  @map("recipient_mobile") @db.VarChar(11)
+  provinceText    String  @map("province_text") @db.VarChar(80)
+  cityText        String  @map("city_text") @db.VarChar(80)
+  addressLine     String  @map("address_line") @db.VarChar(500)
+  postalCode      String? @map("postal_code") @db.Char(10)
+
+  @@map("order_delivery_snapshots")
+}
+
+model OrderShippingSnapshot {
+  orderId                String @id @map("order_id") @db.Uuid
+  shippingMethodId       String @map("shipping_method_id") @db.Uuid
+  shippingMethodRevision Int    @map("shipping_method_revision")
+  code                   String @db.VarChar(24)
+  label                  String @db.VarChar(60)
+  feeAmount              BigInt @map("fee_amount")
+  estimatedDeliveryText  String @map("estimated_delivery_text") @db.VarChar(120)
+
+  @@map("order_shipping_snapshots")
+}
+
+model OrderPolicySnapshot {
+  orderId  String @id @map("order_id") @db.Uuid
+  revision Int
+  text     String @db.VarChar(1000)
+
+  @@map("order_policy_snapshots")
+}
+
+model OrderCreateIdempotencyRecord {
+  identityId   String    @map("identity_id") @db.Uuid
+  key          String    @db.VarChar(200)
+  requestHash  String    @map("request_hash") @db.Char(64)
+  state        String    @db.VarChar(16)
+  lockedUntil  DateTime  @map("locked_until") @db.Timestamptz(3)
+  responseJson Json?     @map("response_json") @db.JsonB
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([identityId, key])
+  @@map("order_create_idempotency_records")
 }
 
 model OrderSavedAddressAudit {
