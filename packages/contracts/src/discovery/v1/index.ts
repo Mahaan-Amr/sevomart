@@ -81,12 +81,38 @@ export const discoveryFeedPageV1Contract = z
     }
   });
 
+export const discoveryFollowingFeedPageV1Contract = z
+  .object({
+    version: z.literal(1),
+    items: z.array(discoveryFeedItemV1Contract).max(30),
+    nextCursor: discoveryFeedCursorContract.optional(),
+    snapshotAt: timestampV1Contract,
+    projectionUpdatedAt: timestampV1Contract,
+    visibleFollowedStoreCount: z.int().nonnegative(),
+    followSetRevision: z.int().nonnegative(),
+    emptyState: discoveryFeedEmptyStateV1Contract.optional(),
+  })
+  .strict()
+  .superRefine((page, context) => {
+    if ((page.items.length === 0) !== Boolean(page.emptyState)) {
+      context.addIssue({
+        code: "custom",
+        path: ["emptyState"],
+        message: "Empty state must be present exactly when the page has no items",
+      });
+    }
+  });
+
 const discoveryFeedErrorBase = {
   message: z.string().min(1),
   correlationId: z.uuid(),
 };
 
 export const discoveryFeedErrorV1Contract = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("UNAUTHENTICATED"), ...discoveryFeedErrorBase }).strict(),
+  z
+    .object({ code: z.literal("IDENTITY_INACTIVE"), ...discoveryFeedErrorBase })
+    .strict(),
   z.object({ code: z.literal("INVALID_CURSOR"), ...discoveryFeedErrorBase }).strict(),
   z.object({ code: z.literal("CURSOR_EXPIRED"), ...discoveryFeedErrorBase }).strict(),
   z
@@ -170,6 +196,7 @@ export const discoveryFollowErrorV1Contract = z.discriminatedUnion("code", [
 
 export const discoveryV1Paths = {
   discoveryFeed: "/v1/feeds/discovery",
+  followingFeed: "/v1/me/feeds/following",
   activateStoreFollow: (storeId: string) => `/v1/me/follows/${storeId}`,
   deactivateStoreFollow: (storeId: string) => `/v1/me/follows/${storeId}`,
 } as const;
@@ -189,6 +216,7 @@ export const discoveryV1Schemas = {
   DiscoveryFeedLimit: discoveryFeedLimitContract,
   DiscoveryFeedItemV1: discoveryFeedItemV1Contract,
   DiscoveryFeedPageV1: discoveryFeedPageV1Contract,
+  FollowingFeedPageV1: discoveryFollowingFeedPageV1Contract,
   DiscoveryFeedErrorV1: discoveryFeedErrorV1Contract,
   DiscoveryStoreId: storeIdContract,
   DiscoveryFollowIdempotencyKey: discoveryFollowIdempotencyKeyContract,
@@ -238,6 +266,18 @@ export const discoveryV1Examples = {
       nextAction: "بعداً دوباره سر بزنید.",
     },
   },
+  FollowingFeedPageV1: {
+    version: 1,
+    items: [],
+    snapshotAt: "2026-08-24T10:00:00.000Z",
+    projectionUpdatedAt: "2026-08-24T09:59:58.000Z",
+    visibleFollowedStoreCount: 0,
+    followSetRevision: 0,
+    emptyState: {
+      message: "برای دیدن کالاهای فروشگاه‌ها، چند فروشگاه را دنبال کنید.",
+      nextAction: "رفتن به کشف",
+    },
+  },
   DiscoveryFeedErrorV1: {
     code: "PROJECTION_UNAVAILABLE",
     message: "نمایش کالاها فعلاً به‌روز نیست. کمی بعد دوباره تلاش کنید.",
@@ -269,6 +309,7 @@ export function createDiscoveryV1JsonSchemas() {
 export type StoreFollowStatusV1 = z.infer<typeof storeFollowStatusV1Contract>;
 export type DiscoveryFeedItemV1 = z.infer<typeof discoveryFeedItemV1Contract>;
 export type DiscoveryFeedPageV1 = z.infer<typeof discoveryFeedPageV1Contract>;
+export type FollowingFeedPageV1 = z.infer<typeof discoveryFollowingFeedPageV1Contract>;
 export type StoreFollowViewV1 = z.infer<typeof storeFollowViewV1Contract>;
 export type ViewerStoreFollowV1 = z.infer<typeof viewerStoreFollowV1Contract>;
 export type PublicFollowerCountV1 = z.infer<typeof publicFollowerCountV1Contract>;

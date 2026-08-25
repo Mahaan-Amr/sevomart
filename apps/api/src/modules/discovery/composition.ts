@@ -5,12 +5,15 @@ import { STORE_AUTHORITATIVE_READ, type StoreAuthoritativeRead } from "../store/
 import type { ProductAuthoritativeRead } from "../product/public";
 import { StoreFollowingService } from "./application/store-following.service";
 import { DiscoveryFeedService } from "./application/discovery-feed.service";
+import { FollowingFeedService } from "./application/following-feed.service";
 import { DiscoveryController } from "./discovery.controller";
 import { DiscoveryFeedController } from "./discovery-feed.controller";
+import { FollowingFeedController } from "./following-feed.controller";
 import {
   DISCOVERY_FEED_PRODUCT_READ,
   DISCOVERY_FEED_REPOSITORY,
   DISCOVERY_FEED_SERVICE,
+  FOLLOWING_FEED_SERVICE,
   STORE_FOLLOWING_SERVICE,
 } from "./discovery.tokens";
 import { PostgresDiscoveryFeedRepository } from "./infrastructure/postgres-discovery-feed.repository";
@@ -18,12 +21,13 @@ import { PostgresStoreFollowingRepository } from "./infrastructure/postgres-stor
 import {
   STORE_FOLLOW_REPOSITORY,
   type DiscoveryFeedRepository,
+  type FollowingFeedRepository,
   type StoreFollowRepository,
 } from "./public";
 
 export type DiscoveryModuleOptions = {
   followingRepository?: StoreFollowRepository;
-  feedRepository?: DiscoveryFeedRepository;
+  feedRepository?: DiscoveryFeedRepository & FollowingFeedRepository;
   products: ProductAuthoritativeRead;
 };
 
@@ -41,7 +45,11 @@ export class DiscoveryModule {
       new PostgresDiscoveryFeedRepository(environment.DATABASE_URL);
     return {
       module: DiscoveryModule,
-      controllers: [DiscoveryController, DiscoveryFeedController],
+      controllers: [
+        DiscoveryController,
+        DiscoveryFeedController,
+        FollowingFeedController,
+      ],
       providers: [
         { provide: STORE_FOLLOW_REPOSITORY, useValue: followingRepository },
         { provide: DISCOVERY_FEED_REPOSITORY, useValue: feedRepository },
@@ -62,7 +70,7 @@ export class DiscoveryModule {
             DISCOVERY_FEED_PRODUCT_READ,
           ],
           useFactory: (
-            feeds: DiscoveryFeedRepository,
+            feeds: DiscoveryFeedRepository & FollowingFeedRepository,
             stores: StoreAuthoritativeRead,
             products: ProductAuthoritativeRead,
           ) =>
@@ -76,6 +84,23 @@ export class DiscoveryModule {
               },
               environment.DISCOVERY_RANKING_SECRET,
             ),
+        },
+        {
+          provide: FOLLOWING_FEED_SERVICE,
+          inject: [
+            DISCOVERY_FEED_REPOSITORY,
+            STORE_AUTHORITATIVE_READ,
+            DISCOVERY_FEED_PRODUCT_READ,
+          ],
+          useFactory: (
+            feeds: DiscoveryFeedRepository & FollowingFeedRepository,
+            stores: StoreAuthoritativeRead,
+            products: ProductAuthoritativeRead,
+          ) =>
+            new FollowingFeedService(feeds, stores, products, {
+              activeKeyId: environment.DISCOVERY_CURSOR_ACTIVE_KEY_ID,
+              keys: environment.DISCOVERY_CURSOR_KEYRING,
+            }),
         },
       ],
     };
