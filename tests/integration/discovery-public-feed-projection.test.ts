@@ -87,6 +87,46 @@ describe("public discovery event projection", () => {
     });
   });
 
+  it("does not restore a store from a stale publication generation", async () => {
+    const unpublished = storeUnpublishedV1Contract.parse({
+      ...envelope("StoreUnpublished.v1", ids.store, 2, "2026-08-24T10:00:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        publicationStatus: "DRAFT",
+        publicationVersion: 2,
+      },
+    });
+    const stalePublished = storePublishedV1Contract.parse({
+      ...envelope("StorePublished.v1", ids.store, 3, "2026-08-24T10:05:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        publicationStatus: "PUBLISHED",
+        publicationVersion: 1,
+      },
+    });
+
+    for (const event of [unpublished, stalePublished]) {
+      await sql.begin((transaction) => projectDiscoveryStoreEvent(event, transaction));
+    }
+
+    const [row] = await sql<
+      Array<{
+        published: boolean;
+        publicationVersion: number;
+        aggregateVersion: number;
+      }>
+    >`
+      select published, publication_version as "publicationVersion",
+        aggregate_version as "aggregateVersion"
+      from discovery_store_feed_projections where store_id = ${ids.store}
+    `;
+    expect(row).toEqual({
+      published: false,
+      publicationVersion: 2,
+      aggregateVersion: 2,
+    });
+  });
+
   it("buffers early versions and keeps the ranking timestamp immutable", async () => {
     const price = variantPriceChangedV1Contract.parse({
       ...envelope("VariantPriceChanged.v1", ids.product, 5, "2026-08-24T10:05:00.000Z"),
@@ -222,6 +262,81 @@ describe("public discovery event projection", () => {
     ).toHaveLength(0);
   });
 
+  it("keeps publication state monotonic when aggregate and publication versions diverge", async () => {
+    const current = productPublishedV2Contract.parse({
+      ...envelope("ProductPublished.v2", ids.product, 4, "2026-08-24T10:00:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 2,
+        snapshot: { variantIds: [ids.variant] },
+        offerVersion: 4,
+        availabilityVersion: 6,
+      },
+    });
+    const stalePublicationWithNewerAggregate = productUnpublishedV1Contract.parse({
+      ...envelope("ProductUnpublished.v1", ids.product, 10, "2026-08-24T10:05:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 1,
+      },
+    });
+    const newerPublicationWithOlderAggregate = productPublishedV2Contract.parse({
+      ...envelope("ProductPublished.v2", ids.product, 5, "2026-08-24T10:10:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 3,
+        snapshot: { variantIds: [ids.variant] },
+        offerVersion: 5,
+        availabilityVersion: 7,
+      },
+    });
+    const currentGenerationUnpublished = productUnpublishedV1Contract.parse({
+      ...envelope("ProductUnpublished.v1", ids.product, 6, "2026-08-24T10:15:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 3,
+      },
+    });
+
+    for (const event of [
+      current,
+      stalePublicationWithNewerAggregate,
+      newerPublicationWithOlderAggregate,
+      currentGenerationUnpublished,
+    ]) {
+      await sql.begin((transaction) =>
+        projectDiscoveryProductEvent(event, transaction),
+      );
+    }
+
+    const [row] = await sql<
+      Array<{
+        publicationVersion: number;
+        productAggregateVersion: number;
+        published: boolean;
+        offerVersion: number;
+        availabilityVersion: number;
+      }>
+    >`
+      select publication_version as "publicationVersion",
+        product_aggregate_version as "productAggregateVersion", published,
+        offer_version as "offerVersion",
+        availability_version as "availabilityVersion"
+      from discovery_product_feed_projections where product_id = ${ids.product}
+    `;
+    expect(row).toEqual({
+      publicationVersion: 3,
+      productAggregateVersion: 6,
+      published: false,
+      offerVersion: 5,
+      availabilityVersion: 7,
+    });
+  });
+
   it("rebuilds an equivalent projection when the event archive contains duplicates", async () => {
     const published = productPublishedV2Contract.parse({
       ...envelope("ProductPublished.v2", ids.product, 2, "2026-08-24T10:00:00.000Z"),
@@ -317,12 +432,59 @@ describe("public discovery event projection", () => {
       where event_id in ${sql(archived.map((event) => event.eventId))}
     `;
 
+    for (const event of archived) {
+      await sql.begin((transaction) =>
+        event.eventType.startsWith("Store")
+          ? projectDiscoveryStoreEvent(event, transaction)
+          : projectDiscoveryProductEvent(event, transaction),
+      );
+    }
+    const expectedStore = await sql`
+      select store_id, published, aggregate_version, publication_version, updated_at
+      from discovery_store_feed_projections where store_id = ${ids.store}
+    `;
+    const expectedProduct = await sql`
+      select product_id, store_id, product_aggregate_version,
+        publication_version, published, first_published_at, eligible_since,
+        publication_updated_at, offer_version, availability_version, updated_at
+      from discovery_product_feed_projections where product_id = ${ids.product}
+    `;
+    const expectedBuffers = await sql`
+      select product_id, publication_version, version_kind, version, updated_at
+      from discovery_product_feed_version_buffers where product_id = ${ids.product}
+      order by publication_version, version_kind
+    `;
+    await sql`delete from discovery_product_feed_version_buffers`;
+    await sql`delete from discovery_product_feed_projections`;
+    await sql`delete from discovery_store_feed_projections`;
+
     const result = await rebuildDiscoveryPublicFeedProjection(
       apiTestEnvironment.DATABASE_URL,
       () => undefined,
     );
 
     expect(result.replayedEventCount).toBeGreaterThanOrEqual(archived.length);
+    expect(
+      await sql`
+        select store_id, published, aggregate_version, publication_version, updated_at
+        from discovery_store_feed_projections where store_id = ${ids.store}
+      `,
+    ).toEqual(expectedStore);
+    expect(
+      await sql`
+        select product_id, store_id, product_aggregate_version,
+          publication_version, published, first_published_at, eligible_since,
+          publication_updated_at, offer_version, availability_version, updated_at
+        from discovery_product_feed_projections where product_id = ${ids.product}
+      `,
+    ).toEqual(expectedProduct);
+    expect(
+      await sql`
+        select product_id, publication_version, version_kind, version, updated_at
+        from discovery_product_feed_version_buffers where product_id = ${ids.product}
+        order by publication_version, version_kind
+      `,
+    ).toEqual(expectedBuffers);
     const [store] = await sql<
       Array<{ published: boolean; publicationVersion: number }>
     >`
@@ -441,6 +603,22 @@ describe("public discovery event projection", () => {
           price: { amount: 1_500_000, currency: "IRR" },
         },
       }),
+      variantAvailabilityChangedV1Contract.parse({
+        ...envelope(
+          "VariantAvailabilityChanged.v1",
+          ids.variant,
+          6,
+          "2026-08-24T10:06:00.000Z",
+        ),
+        payload: {
+          storeId: ids.store,
+          productId: ids.product,
+          variantId: ids.variant,
+          publicationVersion: 2,
+          availabilityVersion: 7,
+          availability: "AVAILABLE",
+        },
+      }),
     ];
 
     for (const ordering of permutations(events)) {
@@ -476,7 +654,7 @@ describe("public discovery event projection", () => {
         firstPublishedAt: new Date("2026-08-17T08:00:00.000Z"),
         eligibleSince: new Date("2026-08-24T10:00:00.000Z"),
         offerVersion: 5,
-        availabilityVersion: 6,
+        availabilityVersion: 7,
       });
     }
   });

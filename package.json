@@ -26,8 +26,8 @@
     "projection:rebuild:discovery": "pnpm --filter @sevo/worker rebuild:discovery",
     "dev": "pnpm infra:up && pnpm --filter @sevo/database exec prisma migrate deploy && pnpm build:packages && pnpm dev:apps",
     "dev:apps": "node --env-file-if-exists=.env scripts/run-dev-apps.mjs",
-    "format": "prettier --write \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
-    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"ops/**/*.{yaml,yml}\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"ops/**/*.{yaml,yml}\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
     "lint": "eslint . && pnpm check:architecture",
     "test": "pnpm test:unit && pnpm test:contract && pnpm test:integration && pnpm test:e2e",
     "test:unit": "vitest run --config vitest.config.ts",
@@ -52,6 +52,7 @@
     "sharp": "0.35.3",
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
   }
 }

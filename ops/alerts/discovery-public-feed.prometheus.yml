@@ -1,0 +1,42 @@
+groups:
+  - name: sevo-discovery-public-feed
+    interval: 15s
+    rules:
+      - alert: SevoDiscoveryProjectionUnhealthy
+        expr: sevo_discovery_projection_healthy == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: Discovery public-feed projection is unhealthy
+
+      - alert: SevoDiscoveryProjectionLagOutsideSlo
+        expr: sevo_discovery_projection_lag_milliseconds > 60000
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: Discovery projection lag exceeds its 60-second SLO
+
+      - alert: SevoDiscoveryProjectionPoisonEvent
+        expr: sevo_discovery_projection_poison_events > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: Discovery projection has a persistent poison event
+
+      - alert: SevoDiscoveryProjectionUnresolvedBuffer
+        expr: sevo_discovery_projection_unresolved_buffers > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: Discovery projection has a persistent version gap
+
+      - alert: SevoDiscoveryProjectionRepeatedRebuildFailure
+        expr: increase(sevo_discovery_projection_rebuilds_total{outcome="failed"}[10m]) >= 2
+        labels:
+          severity: critical
+        annotations:
+          summary: Discovery projection rebuild is failing repeatedly

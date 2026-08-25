@@ -1,4 +1,5 @@
 import { readRuntimeEnvironment } from "@sevo/config";
+import { startTelemetry } from "@sevo/observability";
 
 import { rebuildDiscoveryPublicFeedProjection } from "./project-public-feed";
 
@@ -9,8 +10,13 @@ async function run() {
     );
   }
   const environment = readRuntimeEnvironment();
-  const result = await rebuildDiscoveryPublicFeedProjection(environment.DATABASE_URL);
-  if (!result.health.healthy) process.exitCode = 2;
+  const telemetry = startTelemetry("sevo-worker-discovery-rebuild");
+  try {
+    const result = await rebuildDiscoveryPublicFeedProjection(environment.DATABASE_URL);
+    if (!result.health.healthy) process.exitCode = 2;
+  } finally {
+    await telemetry.shutdown();
+  }
 }
 
 void run().catch((error: unknown) => {

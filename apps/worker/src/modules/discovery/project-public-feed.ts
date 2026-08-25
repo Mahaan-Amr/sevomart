@@ -15,6 +15,7 @@ import {
   storeUnpublishedV1Contract,
 } from "@sevo/contracts/store/v1";
 import type { OutboxEventHandler, StoredOutboxEvent } from "@sevo/outbox";
+import { getMeter } from "@sevo/observability";
 import postgres, { type JSONValue } from "postgres";
 
 type ProductProjectionRow = {
@@ -44,6 +45,34 @@ type ProjectionArchiveRow = {
 
 type ProjectionLog = (record: Readonly<Record<string, unknown>>) => void;
 
+const projectionMeter = getMeter("sevo.discovery.public-feed");
+const projectionHealthyMetric = projectionMeter.createGauge(
+  "sevo.discovery.projection.healthy",
+);
+const projectionLagMetric = projectionMeter.createGauge(
+  "sevo.discovery.projection.lag",
+  { unit: "ms" },
+);
+const projectionPendingMetric = projectionMeter.createGauge(
+  "sevo.discovery.projection.pending_events",
+);
+const projectionPoisonMetric = projectionMeter.createGauge(
+  "sevo.discovery.projection.poison_events",
+);
+const projectionBuffersMetric = projectionMeter.createGauge(
+  "sevo.discovery.projection.unresolved_buffers",
+);
+const projectionReplayMetric = projectionMeter.createCounter(
+  "sevo.discovery.projection.replayed_events",
+);
+const projectionRebuildMetric = projectionMeter.createCounter(
+  "sevo.discovery.projection.rebuilds",
+);
+const projectionRebuildDurationMetric = projectionMeter.createHistogram(
+  "sevo.discovery.projection.rebuild_duration",
+  { unit: "ms" },
+);
+
 export const projectDiscoveryStoreEvent: OutboxEventHandler = async (event, sql) => {
   const changed =
     event.eventType === "StorePublished.v1"
@@ -61,13 +90,22 @@ export const projectDiscoveryStoreEvent: OutboxEventHandler = async (event, sql)
       hashtextextended(${`discovery-store-feed:${changed.payload.storeId}`}, 0)
     )
   `;
-  const current = await sql<Array<{ aggregateVersion: number }>>`
-    select aggregate_version as "aggregateVersion"
+  const current = await sql<
+    Array<{ aggregateVersion: number; publicationVersion: number }>
+  >`
+    select aggregate_version as "aggregateVersion",
+      publication_version as "publicationVersion"
     from discovery_store_feed_projections
     where store_id = ${changed.payload.storeId}
     for update
   `;
-  if ((current[0]?.aggregateVersion ?? 0) >= changed.aggregateVersion) {
+  const projected = current[0];
+  if (
+    projected &&
+    (publicationVersion < projected.publicationVersion ||
+      (publicationVersion === projected.publicationVersion &&
+        changed.aggregateVersion <= projected.aggregateVersion))
+  ) {
     await reconcileProjectionHealth(sql, changed.occurredAt);
     return;
   }
@@ -167,7 +205,18 @@ async function projectPublication(
          true, ${occurredAt}, ${occurredAt}, ${published.payload.offerVersion},
          ${published.payload.availabilityVersion}, ${occurredAt}, ${occurredAt})
     `;
-  } else if (published.aggregateVersion > current.productAggregateVersion) {
+  } else if (published.payload.publicationVersion < current.publicationVersion) {
+    await sql`
+      update discovery_product_feed_projections set
+        first_published_at = least(first_published_at, ${occurredAt}),
+        updated_at = greatest(updated_at, ${occurredAt})
+      where product_id = ${published.payload.productId}
+    `;
+    return;
+  } else if (
+    published.payload.publicationVersion > current.publicationVersion ||
+    published.aggregateVersion > current.productAggregateVersion
+  ) {
     await sql`
       update discovery_product_feed_projections set
         store_id = ${published.payload.storeId},
@@ -215,15 +264,20 @@ async function projectUnpublication(
     for update
   `;
   const current = rows[0];
-  if (current && current.aggregateVersion >= unpublished.aggregateVersion) {
-    if (current.publicationVersion > unpublished.payload.publicationVersion) {
-      await sql`
-        update discovery_product_feed_projections set
-          eligible_since = greatest(eligible_since, publication_updated_at),
-          updated_at = greatest(updated_at, ${unpublished.occurredAt})
-        where product_id = ${unpublished.payload.productId}
-      `;
-    }
+  if (current && unpublished.payload.publicationVersion < current.publicationVersion) {
+    await sql`
+      update discovery_product_feed_projections set
+        eligible_since = greatest(eligible_since, publication_updated_at),
+        updated_at = greatest(updated_at, ${unpublished.occurredAt})
+      where product_id = ${unpublished.payload.productId}
+    `;
+    return;
+  }
+  if (
+    current &&
+    current.publicationVersion === unpublished.payload.publicationVersion &&
+    current.aggregateVersion >= unpublished.aggregateVersion
+  ) {
     return;
   }
   if (current) {
@@ -371,6 +425,7 @@ export async function reconcileDiscoveryProjectionHealth(databaseUrl: string) {
         unresolvedBufferCount: status.unresolvedBuffers,
       }),
     );
+    recordProjectionHealthMetrics(status);
   } finally {
     await sql.end();
   }
@@ -426,6 +481,13 @@ export async function rebuildDiscoveryPublicFeedProjection(
       poisonEventCount: result.health.poisonEvents,
       unresolvedBufferCount: result.health.unresolvedBuffers,
     });
+    projectionRebuildMetric.add(1, {
+      outcome: result.health.healthy ? "healthy" : "unhealthy",
+    });
+    projectionRebuildDurationMetric.record(Date.now() - startedAt, {
+      outcome: result.health.healthy ? "healthy" : "unhealthy",
+    });
+    projectionReplayMetric.add(result.replayedEventCount, { operation: "rebuild" });
     return result;
   } catch (error) {
     log({
@@ -433,6 +495,10 @@ export async function rebuildDiscoveryPublicFeedProjection(
       message: "discovery_projection_rebuild_failed",
       durationMs: Date.now() - startedAt,
       errorKind: error instanceof Error ? error.name : "UnknownError",
+    });
+    projectionRebuildMetric.add(1, { outcome: "failed" });
+    projectionRebuildDurationMetric.record(Date.now() - startedAt, {
+      outcome: "failed",
     });
     throw error;
   } finally {
@@ -498,8 +564,6 @@ export async function catchUpDiscoveryPublicFeedProjection(
         log({
           level: "error",
           message: "discovery_projection_catchup_failed",
-          eventId: claimed?.eventId,
-          eventType: claimed?.eventType,
           errorKind: error instanceof Error ? error.name : "UnknownError",
         });
         break;
@@ -511,11 +575,26 @@ export async function catchUpDiscoveryPublicFeedProjection(
         message: "discovery_projection_catchup_completed",
         replayedEventCount,
       });
+      projectionReplayMetric.add(replayedEventCount, { operation: "catchup" });
     }
     return { replayedEventCount, poisonEventCount };
   } finally {
     await sql.end();
   }
+}
+
+function recordProjectionHealthMetrics(status: {
+  healthy: boolean;
+  lagMs: number;
+  pendingEvents: number;
+  poisonEvents: number;
+  unresolvedBuffers: number;
+}) {
+  projectionHealthyMetric.record(status.healthy ? 1 : 0);
+  projectionLagMetric.record(status.lagMs);
+  projectionPendingMetric.record(status.pendingEvents);
+  projectionPoisonMetric.record(status.poisonEvents);
+  projectionBuffersMetric.record(status.unresolvedBuffers);
 }
 
 function archiveEvent(row: ProjectionArchiveRow): StoredOutboxEvent {
