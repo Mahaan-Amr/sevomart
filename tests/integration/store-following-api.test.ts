@@ -1,4 +1,7 @@
-import { publicFollowerCountV1Contract } from "@sevo/contracts/discovery/v1";
+import {
+  discoveryFeedProjectionEventTypes,
+  publicFollowerCountV1Contract,
+} from "@sevo/contracts/discovery/v1";
 import { identityStatusChangedV1Contract } from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -337,7 +340,232 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(privateFollow.statusCode).toBe(404);
     expect(privateFollow.json()).toMatchObject({ code: "STORE_NOT_FOUND" });
   });
+
+  it("invalidates following-feed pagination after the signed-in buyer follows or unfollows", async () => {
+    const app = await startApp();
+    const ownerCookie = await signIn(app, "09123456789");
+    const buyerCookie = await signIn(app, "09123456788");
+    const secondOwnerCookie = await signIn(app, "09123456787");
+    const store = await publishStore(app, ownerCookie, "following-feed-store");
+    const secondStore = await publishStore(
+      app,
+      secondOwnerCookie,
+      "following-feed-second-store",
+    );
+    const server = app.getHttpAdapter().getInstance();
+    const productIds = await seedFollowingFeedProducts(store.id);
+    const secondProductIds = await seedFollowingFeedProducts(secondStore.id);
+
+    const guest = await server.inject({
+      method: "GET",
+      url: "/v1/me/feeds/following",
+    });
+    expect(guest.statusCode).toBe(401);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update identity_identities
+      set status = 'INACTIVE'
+      where id = (
+        select identity_id from identity_login_methods where mobile = '09123456788'
+      )
+    `;
+    const inactive = await server.inject({
+      method: "GET",
+      url: "/v1/me/feeds/following",
+      headers: { cookie: buyerCookie },
+    });
+    expect(inactive.statusCode).toBe(403);
+    expect(inactive.json()).toMatchObject({ code: "IDENTITY_INACTIVE" });
+    await sql`update identity_identities set status = 'ACTIVE'`;
+    await sql.end();
+
+    const followed = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${store.id}?identityId=${store.ownerId}`,
+      headers: { cookie: buyerCookie, "idempotency-key": "feed-follow" },
+      payload: { identityId: store.ownerId },
+    });
+    expect(followed.statusCode).toBe(200);
+
+    const first = await server.inject({
+      method: "GET",
+      url: `/v1/me/feeds/following?limit=1&identityId=${store.ownerId}`,
+      headers: { cookie: buyerCookie },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers["cache-control"]).toBe("private, no-store");
+    expect(first.headers).toHaveProperty("x-projection-lag-ms");
+    expect(first.json()).toMatchObject({
+      visibleFollowedStoreCount: 1,
+      followSetRevision: 1,
+      items: [{ productId: productIds[1] }],
+    });
+    expect(first.json()).toHaveProperty("nextCursor");
+    expect(JSON.stringify(first.json())).not.toMatch(/identity|score|like|viewCount/i);
+
+    const second = await server.inject({
+      method: "GET",
+      url: `/v1/me/feeds/following?limit=1&cursor=${encodeURIComponent(
+        first.json().nextCursor,
+      )}`,
+      headers: { cookie: buyerCookie },
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toMatchObject({ items: [{ productId: productIds[0] }] });
+    expect(second.json()).not.toHaveProperty("nextCursor");
+
+    const removed = await server.inject({
+      method: "DELETE",
+      url: `/v1/me/follows/${store.id}`,
+      headers: {
+        cookie: buyerCookie,
+        "idempotency-key": "feed-unfollow",
+        "if-match": '"1"',
+      },
+    });
+    expect(removed.statusCode).toBe(200);
+
+    const stale = await server.inject({
+      method: "GET",
+      url: `/v1/me/feeds/following?limit=1&cursor=${encodeURIComponent(
+        first.json().nextCursor,
+      )}`,
+      headers: { cookie: buyerCookie },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: "FEED_CURSOR_STALE" });
+
+    const reactivated = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${store.id}`,
+      headers: {
+        cookie: buyerCookie,
+        "idempotency-key": "feed-refollow",
+        "if-match": '"2"',
+      },
+    });
+    expect(reactivated.statusCode).toBe(200);
+    const beforeAnotherFollow = await server.inject({
+      method: "GET",
+      url: "/v1/me/feeds/following?limit=1",
+      headers: { cookie: buyerCookie },
+    });
+    expect(beforeAnotherFollow.statusCode).toBe(200);
+    expect(beforeAnotherFollow.json()).toHaveProperty("nextCursor");
+
+    const anotherFollow = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${secondStore.id}`,
+      headers: { cookie: buyerCookie, "idempotency-key": "feed-follow-second" },
+    });
+    expect(anotherFollow.statusCode).toBe(200);
+    const staleAfterFollow = await server.inject({
+      method: "GET",
+      url: `/v1/me/feeds/following?limit=1&cursor=${encodeURIComponent(
+        beforeAnotherFollow.json().nextCursor,
+      )}`,
+      headers: { cookie: buyerCookie },
+    });
+    expect(staleAfterFollow.statusCode).toBe(409);
+    expect(staleAfterFollow.json()).toMatchObject({ code: "FEED_CURSOR_STALE" });
+
+    const storesById = [
+      { storeId: store.id, productIds },
+      { storeId: secondStore.id, productIds: secondProductIds },
+    ].sort((left, right) => left.storeId.localeCompare(right.storeId));
+    const expectedOrder = [
+      ...storesById.map(({ productIds: ids }) => ids[1]),
+      ...storesById.map(({ productIds: ids }) => ids[0]),
+    ];
+    const roundRobinFirst = await server.inject({
+      method: "GET",
+      url: "/v1/me/feeds/following?limit=2",
+      headers: { cookie: buyerCookie },
+    });
+    expect(roundRobinFirst.statusCode).toBe(200);
+    expect(
+      roundRobinFirst.json().items.map((item: { productId: string }) => item.productId),
+    ).toEqual(expectedOrder.slice(0, 2));
+    expect(roundRobinFirst.json()).toHaveProperty("nextCursor");
+
+    const roundRobinSecond = await server.inject({
+      method: "GET",
+      url: `/v1/me/feeds/following?limit=2&cursor=${encodeURIComponent(
+        roundRobinFirst.json().nextCursor,
+      )}`,
+      headers: { cookie: buyerCookie },
+    });
+    expect(roundRobinSecond.statusCode).toBe(200);
+    expect(
+      roundRobinSecond
+        .json()
+        .items.map((item: { productId: string }) => item.productId),
+    ).toEqual(expectedOrder.slice(2));
+    expect(roundRobinSecond.json()).not.toHaveProperty("nextCursor");
+  });
 });
+
+async function seedFollowingFeedProducts(storeId: string) {
+  const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  const products = [0, 1].map((position) => ({
+    productId: crypto.randomUUID(),
+    variantId: crypto.randomUUID(),
+    mediaId: crypto.randomUUID(),
+    publishedAt: `2026-08-${23 + position}T10:00:00.000Z`,
+  }));
+  await sql`
+    insert into discovery_store_feed_projections
+      (store_id, published, aggregate_version, publication_version, updated_at)
+    values (${storeId}, true, 2, 1, now())
+  `;
+  for (const [position, product] of products.entries()) {
+    await sql`
+      insert into product_products
+        (id, store_id, state, revision, publication_version, published_at,
+         created_at, updated_at)
+      values (${product.productId}, ${storeId}, 'PUBLISHED', 2, 1,
+        ${product.publishedAt}, ${product.publishedAt}, ${product.publishedAt})
+    `;
+    await sql`
+      insert into product_publications
+        (product_id, publication_version, name, description, media_id, variant_id)
+      values (${product.productId}, 1, ${`فنجان ${position + 1}`},
+        'فنجان دست‌ساز', ${product.mediaId}, ${product.variantId})
+    `;
+    await sql`
+      insert into product_offers (product_id, variant_id, amount, currency, revision)
+      values (${product.productId}, ${product.variantId}, ${1_000_000 + position * 10},
+        'IRR', 1)
+    `;
+    await sql`
+      insert into inventory_levels (variant_id, store_id, on_hand, revision)
+      values (${product.variantId}, ${storeId}, 5, 1)
+    `;
+    await sql`
+      insert into discovery_product_feed_projections
+        (product_id, store_id, product_aggregate_version, publication_version,
+         published, first_published_at, eligible_since, offer_version,
+         availability_version, updated_at)
+      values (${product.productId}, ${storeId}, 2, 1, true,
+        ${product.publishedAt}, ${product.publishedAt}, 1, 1, now())
+    `;
+  }
+  await sql`
+    insert into platform_outbox_consumptions (consumer_name, event_id, consumed_at)
+    select 'discovery-public-feed-v1', event_id, now()
+    from platform_outbox_events
+    where event_type in ${sql(discoveryFeedProjectionEventTypes)}
+    on conflict (consumer_name, event_id) do nothing
+  `;
+  await sql`
+    update discovery_projection_status
+    set healthy = true, reason = null, updated_at = now()
+    where projection_name = 'public-feed-v1'
+  `;
+  await sql.end();
+  return products.map(({ productId }) => productId);
+}
 
 async function signIn(app: Awaited<ReturnType<typeof createApiApp>>, mobile: string) {
   const server = app.getHttpAdapter().getInstance();

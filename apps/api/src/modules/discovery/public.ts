@@ -1,5 +1,6 @@
 import type {
   DiscoveryFeedPageV1,
+  FollowingFeedPageV1,
   PublicFollowerCountV1,
   StoreFollowViewV1,
   ViewerStoreFollowV1,
@@ -20,6 +21,19 @@ export type DiscoveryFeedProjectionCandidate = Readonly<{
   availabilityVersion: number;
 }>;
 
+export type FollowingFeedRankingKey = Readonly<{
+  publicationDayUtc: string;
+  storeOrdinal: number;
+  storeId: string;
+  firstPublishedAt: string;
+  productId: string;
+}>;
+
+export type RankedFollowingFeedCandidate = Readonly<{
+  candidate: DiscoveryFeedProjectionCandidate;
+  key: FollowingFeedRankingKey;
+}>;
+
 export interface DiscoveryFeedRepository {
   readPublicSnapshot(snapshotAt: Date): Promise<{
     healthy: boolean;
@@ -34,6 +48,29 @@ export interface DiscoveryFeed {
     page: DiscoveryFeedPageV1;
     projectionLagMs: number;
   }>;
+}
+
+export interface FollowingFeedRepository {
+  readFollowingSnapshot(
+    identityId: IdentityId,
+    snapshotAt: Date,
+    page: { seek?: FollowingFeedRankingKey; limit: number },
+  ): Promise<{
+    healthy: boolean;
+    reason?: string;
+    projectionUpdatedAt: Date;
+    followSetRevision: number;
+    visibleFollowedStoreCount: number;
+    candidates: RankedFollowingFeedCandidate[];
+  }>;
+}
+
+export interface FollowingFeed {
+  read(input: {
+    identityId: IdentityId;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{ page: FollowingFeedPageV1; projectionLagMs: number }>;
 }
 
 export class DiscoveryProjectionUnavailableError extends Error {}

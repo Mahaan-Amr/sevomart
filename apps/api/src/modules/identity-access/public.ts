@@ -28,6 +28,13 @@ export interface SellerAccessRead {
 
 export interface IdentitySessionReader {
   readActiveIdentitySession(token: string): Promise<IdentitySession | undefined>;
+  readIdentitySession(token: string): Promise<
+    | {
+        session: IdentitySession;
+        identityStatus: "ACTIVE" | "INACTIVE";
+      }
+    | undefined
+  >;
 }
 
 export type OtpDelivery = {
@@ -70,6 +77,10 @@ export type ActiveIdentitySession = {
   expiresAt: Date;
 };
 
+export type IdentitySessionStatus = ActiveIdentitySession & {
+  identityStatus: "ACTIVE" | "INACTIVE";
+};
+
 export interface IdentityAccessRepository {
   saveChallengeIfAllowed(
     challenge: StoredOtpChallenge,
@@ -91,6 +102,7 @@ export interface IdentityAccessRepository {
     tokenHash: string,
     now: Date,
   ): Promise<ActiveIdentitySession | undefined>;
+  findSession(tokenHash: string, now: Date): Promise<IdentitySessionStatus | undefined>;
   revokeSession(tokenHash: string, revokedAt: Date): Promise<boolean>;
 }
 

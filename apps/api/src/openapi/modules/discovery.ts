@@ -73,6 +73,55 @@ const operations = [
     ],
   },
   {
+    operationId: "getFollowingFeed",
+    method: "get",
+    path: "/v1/me/feeds/following",
+    tag: "discovery",
+    auth: "identity-session",
+    queryParameters: [
+      {
+        name: "cursor",
+        schema: "DiscoveryFeedCursor",
+        example: discoveryV1Examples.DiscoveryFeedCursor,
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "DiscoveryFeedLimit",
+        example: discoveryV1Examples.DiscoveryFeedLimit,
+        required: false,
+      },
+    ],
+    responses: [
+      {
+        status: 200,
+        schema: "FollowingFeedPageV1",
+        headers: {
+          "X-Projection-Lag-Ms": {
+            description: "Age of the latest committed discovery projection",
+            schema: { type: "string" },
+          },
+        },
+      },
+      { status: 400, schema: "DiscoveryFeedErrorV1" },
+      { status: 401, schema: "DiscoveryFeedErrorV1" },
+      { status: 403, schema: "DiscoveryFeedErrorV1" },
+      { status: 409, schema: "DiscoveryFeedErrorV1" },
+      { status: 410, schema: "DiscoveryFeedErrorV1" },
+      {
+        status: 503,
+        schema: "DiscoveryFeedErrorV1",
+        headers: {
+          "Retry-After": {
+            description: "Seconds before retrying an unavailable projection",
+            schema: { type: "string" },
+          },
+        },
+      },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "activateStoreFollow",
     method: "put",
     path: "/v1/me/follows/{storeId}",
@@ -122,6 +171,7 @@ const responseMetadata = {
     200: "Discovery response returned",
     400: "Discovery cursor is invalid",
     401: "Identity session is missing or invalid",
+    403: "Identity is inactive",
     404: "Published store was not found",
     409: "Revision or idempotency key conflicts with current state",
     410: "Discovery cursor has expired",
