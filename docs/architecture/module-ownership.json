@@ -73,6 +73,7 @@
     "order_create_idempotency_records": "orders",
     "order_state_transitions": "orders",
     "payment_attempts": "payments",
+    "payment_operational_alerts": "payments",
     "payment_idempotency_records": "payments",
     "payment_provider_observations": "payments",
     "payment_attempt_audits": "payments",

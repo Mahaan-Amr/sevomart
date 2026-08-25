@@ -35,12 +35,29 @@ export type PayableOrder = Readonly<{
   status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
 }>;
 
+export type PaymentResultOrder = PayableOrder &
+  Readonly<{ status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "EXPIRED" }>;
+
+export type BuyerPaymentState = Readonly<{
+  status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+  reservationExpiresAt: Date;
+}>;
+
 export interface OrderPaymentWorkflow {
   lockPaymentOrder(
     transaction: OrderPaymentTransactionContext,
     identityId: IdentityId,
     orderId: OrderId,
   ): Promise<PayableOrder | undefined>;
+  lockPaymentResultOrder(
+    transaction: OrderPaymentTransactionContext,
+    identityId: IdentityId,
+    orderId: OrderId,
+  ): Promise<PaymentResultOrder | undefined>;
+  readBuyerPaymentState(
+    identityId: IdentityId,
+    orderId: OrderId,
+  ): Promise<BuyerPaymentState | undefined>;
   markPaid(
     transaction: OrderPaymentTransactionContext,
     command: {
@@ -57,7 +74,28 @@ export interface OrderPaymentWorkflow {
       attemptId: PaymentAttemptId;
       occurredAt: Date;
       correlationId: string;
-      reasonCode: "PAYMENT_DISPATCH_UNRESOLVED" | "PAYMENT_CONFIRMED_STOCK_CONFLICT";
+      reasonCode:
+        | "PAYMENT_DISPATCH_UNRESOLVED"
+        | "PAYMENT_CONFIRMED_STOCK_CONFLICT"
+        | "PAYMENT_PROVIDER_CONFLICT";
+    },
+  ): Promise<void>;
+  resolvePaymentFailure(
+    transaction: OrderPaymentTransactionContext,
+    command: {
+      orderId: OrderId;
+      attemptId: PaymentAttemptId;
+      occurredAt: Date;
+      correlationId: string;
+    },
+  ): Promise<"PENDING_PAYMENT" | "EXPIRED">;
+  markPaidStockConflict(
+    transaction: OrderPaymentTransactionContext,
+    command: {
+      orderId: OrderId;
+      attemptId: PaymentAttemptId;
+      occurredAt: Date;
+      correlationId: string;
     },
   ): Promise<void>;
   listActionableByStore(storeId: StoreId): Promise<SellerActionableOrder[]>;

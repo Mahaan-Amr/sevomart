@@ -31,6 +31,10 @@ export const directPaymentAttemptContract = z
     providerReference: z.string().min(1).max(128).optional(),
     createdAt: z.iso.datetime({ offset: true }),
     confirmedAt: z.iso.datetime({ offset: true }).optional(),
+    orderStatus: z
+      .enum(["PENDING_PAYMENT", "PAYMENT_REVIEW", "PAID", "EXPIRED"])
+      .optional(),
+    reservationExpiresAt: z.iso.datetime({ offset: true }).optional(),
   })
   .strict();
 
@@ -48,7 +52,7 @@ export const providerCallbackInputContract = z
 export const providerCallbackResultContract = z
   .object({
     attemptId: paymentAttemptIdContract,
-    status: z.literal("CONFIRMED"),
+    status: z.enum(["CONFIRMED", "FAILED", "REVIEW_REQUIRED"]),
     duplicate: z.boolean(),
   })
   .strict();
@@ -69,6 +73,14 @@ export const directPaymentErrorContract = z
   })
   .strict();
 
+export const paymentReviewErrorContract = z
+  .object({
+    code: z.literal("PLATFORM_PERMISSION_REQUIRED"),
+    message: z.string().min(1),
+    correlationId: z.string().min(1),
+  })
+  .strict();
+
 export const directPaymentAttemptConfirmedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("DirectPaymentAttemptConfirmed.v1"),
   causationId: z.uuid(),
@@ -79,6 +91,13 @@ export const directPaymentAttemptConfirmedV1Contract = eventEnvelopeV1Contract.e
       amount: moneyV1Contract,
     })
     .strict(),
+});
+
+export const directPaymentAttemptFailedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("DirectPaymentAttemptFailed.v1"),
+  causationId: z.uuid(),
+  actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+  payload: z.object({ status: z.literal("FAILED"), amount: moneyV1Contract }).strict(),
 });
 
 export const directPaymentAttemptCreatedV1Contract = eventEnvelopeV1Contract.extend({
@@ -103,6 +122,62 @@ export const directPaymentAttemptReviewRequiredV1Contract =
     payload: z.object({ status: z.literal("REVIEW_REQUIRED") }).strict(),
   });
 
+export const paymentAttemptAuditReasonCodeContract = z.enum([
+  "PAYMENT_ATTEMPT_CREATED",
+  "PROVIDER_DISPATCH_CLAIMED",
+  "DISPATCH_LEASE_EXPIRED",
+  "DISPATCH_NOT_STARTED_BEFORE_LEASE_EXPIRY",
+  "PROVIDER_FAILED",
+  "PROVIDER_RESULT_PENDING",
+  "PROVIDER_INITIATION_OUTCOME_UNKNOWN",
+  "PROVIDER_CONFIRMED",
+  "PAID_STOCK_CONFLICT",
+  "PROVIDER_AMOUNT_MISMATCH",
+  "DUPLICATE_PROVIDER_EVENT_AMOUNT_MISMATCH",
+  "DUPLICATE_PROVIDER_EVENT_RESULT_CONFLICT",
+  "PROVIDER_RESULT_CONTRADICTS_CONFIRMED",
+  "PROVIDER_RESULT_CONTRADICTS_FAILED",
+  "PROVIDER_REFERENCE_RECOVERED",
+]);
+
+export const paymentReviewItemContract = z
+  .object({
+    attempt: directPaymentAttemptContract,
+    reviewKind: z.enum([
+      "RESULT_AMBIGUOUS",
+      "PAID_STOCK_CONFLICT",
+      "PROVIDER_CONFLICT",
+    ]),
+    alertKinds: z
+      .array(
+        z.enum([
+          "RECONCILIATION_OVERDUE",
+          "PAID_STOCK_CONFLICT",
+          "PROVIDER_AMOUNT_MISMATCH",
+          "PROVIDER_RESULT_CONTRADICTION",
+        ]),
+      )
+      .readonly(),
+    audits: z
+      .array(
+        z
+          .object({
+            fromStatus: directPaymentAttemptStatusContract.nullable(),
+            toStatus: directPaymentAttemptStatusContract,
+            reasonCode: paymentAttemptAuditReasonCodeContract,
+            correlationId: z.string().min(1).max(128),
+            occurredAt: z.iso.datetime({ offset: true }),
+          })
+          .strict(),
+      )
+      .readonly(),
+  })
+  .strict();
+
+export const paymentReviewQueueContract = z
+  .object({ items: z.array(paymentReviewItemContract).readonly() })
+  .strict();
+
 export const paymentsV1Schemas = {
   OrderId: orderIdContract,
   PaymentAttemptId: paymentAttemptIdContract,
@@ -112,6 +187,8 @@ export const paymentsV1Schemas = {
   DirectPaymentAttempt: directPaymentAttemptContract,
   ProviderCallbackInput: providerCallbackInputContract,
   ProviderCallbackResult: providerCallbackResultContract,
+  PaymentReviewQueue: paymentReviewQueueContract,
+  PaymentReviewError: paymentReviewErrorContract,
   DirectPaymentError: directPaymentErrorContract,
 } as const;
 
@@ -143,8 +220,21 @@ export const paymentsV1Examples = {
     status: "CONFIRMED",
     duplicate: false,
   },
+  PaymentReviewError: {
+    code: "PLATFORM_PERMISSION_REQUIRED",
+    message: "مجوز بررسی عملیاتی برای این نشست فعال نیست.",
+    correlationId: "01J5H8CZHJ2QX0M5MEQ7M6H1P4",
+  },
 } as const;
 
 export type DirectPaymentAttempt = z.infer<typeof directPaymentAttemptContract>;
+export type DirectPaymentAttemptStatus = z.infer<
+  typeof directPaymentAttemptStatusContract
+>;
+export type PaymentAttemptAuditReasonCode = z.infer<
+  typeof paymentAttemptAuditReasonCodeContract
+>;
 export type ProviderCallbackInput = z.infer<typeof providerCallbackInputContract>;
 export type ProviderCallbackResult = z.infer<typeof providerCallbackResultContract>;
+export type PaymentReviewItem = z.infer<typeof paymentReviewItemContract>;
+export type PaymentReviewQueue = z.infer<typeof paymentReviewQueueContract>;

@@ -5,6 +5,7 @@ import postgres, { type Sql } from "postgres";
 import {
   PlatformAgentSessionUnauthorizedError,
   PlatformPermissionRequiredError,
+  type PlatformAgentActor,
   type PlatformAgentSessionAuthorizer,
 } from "../public";
 
@@ -21,13 +22,24 @@ export class PostgresPlatformAgentSessionAuthorizer implements PlatformAgentSess
   }
 
   async authorizeSellerApplicationReview(token: string) {
+    return this.#authorize(token, "SELLER_APPLICATION_REVIEW");
+  }
+
+  async authorizePaymentReview(token: string) {
+    return this.#authorize(token, "PAYMENT_REVIEW");
+  }
+
+  async #authorize<Permission extends "SELLER_APPLICATION_REVIEW" | "PAYMENT_REVIEW">(
+    token: string,
+    permission: Permission,
+  ): Promise<PlatformAgentActor & { permission: Permission }> {
     if (!token) throw new PlatformAgentSessionUnauthorizedError();
     const rows = await this.#sql<PlatformSessionRow[]>`
       select s.identity_id as "identityId",
         exists (
           select 1 from identity_platform_permission_grants g
           where g.identity_id = s.identity_id
-            and g.permission = 'SELLER_APPLICATION_REVIEW'
+            and g.permission = ${permission}
             and g.revoked_at is null
         ) as "hasPermission"
       from identity_sessions s
@@ -45,7 +57,7 @@ export class PostgresPlatformAgentSessionAuthorizer implements PlatformAgentSess
     return {
       identityId: session.identityId,
       audience: "PLATFORM_AGENT" as const,
-      permission: "SELLER_APPLICATION_REVIEW" as const,
+      permission,
     };
   }
 

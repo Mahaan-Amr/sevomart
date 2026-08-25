@@ -134,11 +134,16 @@ export class SellerApplicationSelfReviewForbiddenError extends Error {
 export type PlatformAgentActor = {
   identityId: string;
   audience: "PLATFORM_AGENT";
-  permission: "SELLER_APPLICATION_REVIEW";
+  permission: "SELLER_APPLICATION_REVIEW" | "PAYMENT_REVIEW";
 };
 
 export interface PlatformAgentSessionAuthorizer {
-  authorizeSellerApplicationReview(token: string): Promise<PlatformAgentActor>;
+  authorizeSellerApplicationReview(
+    token: string,
+  ): Promise<PlatformAgentActor & { permission: "SELLER_APPLICATION_REVIEW" }>;
+  authorizePaymentReview(
+    token: string,
+  ): Promise<PlatformAgentActor & { permission: "PAYMENT_REVIEW" }>;
 }
 
 export type SellerApplicationReviewContext = SellerApplicationCommandContext & {

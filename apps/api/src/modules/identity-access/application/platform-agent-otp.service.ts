@@ -40,7 +40,7 @@ export class PlatformAgentOtpService {
       join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
       join identity_platform_permission_grants g
         on g.identity_id = i.id
-       and g.permission = 'SELLER_APPLICATION_REVIEW'
+       and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW')
        and g.revoked_at is null
       where lm.kind = 'MOBILE' and lm.mobile = ${mobile}
       limit 1
@@ -107,15 +107,22 @@ export class PlatformAgentOtpService {
         throw new OtpRejectedError();
       }
 
-      const identities = await sql<Array<{ identityId: string }>>`
-        select i.id as "identityId"
+      const identities = await sql<
+        Array<{
+          identityId: string;
+          permission: "SELLER_APPLICATION_REVIEW" | "PAYMENT_REVIEW";
+        }>
+      >`
+        select i.id as "identityId", g.permission
         from identity_login_methods lm
         join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
         join identity_platform_permission_grants g
           on g.identity_id = i.id
-         and g.permission = 'SELLER_APPLICATION_REVIEW'
+         and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW')
          and g.revoked_at is null
         where lm.kind = 'MOBILE' and lm.mobile = ${challenge.mobile}
+        order by g.permission
+        limit 1
         for share of g
       `;
       const identity = identities[0];
@@ -138,7 +145,7 @@ export class PlatformAgentOtpService {
             identityId: identity.identityId,
             audience: "PLATFORM_AGENT" as const,
           },
-          permission: "SELLER_APPLICATION_REVIEW" as const,
+          permission: identity.permission,
           expiresAt: expiresAt.toISOString(),
         },
       };

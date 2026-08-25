@@ -80,6 +80,19 @@ const operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    operationId: "listPlatformPaymentReviews",
+    method: "get",
+    path: "/v1/platform/payment-reviews",
+    tag: "payments",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 200, schema: "PaymentReviewQueue" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "PaymentReviewError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 export const contribute_payments_openApi: OpenApiContributor = (document) =>
@@ -93,7 +106,7 @@ export const contribute_payments_openApi: OpenApiContributor = (document) =>
         200: "Payment state returned",
         201: "Payment attempt dispatched",
         401: "Identity session is missing or invalid",
-        403: "Active seller access is required",
+        403: "Required platform permission is missing",
         404: "Payment attempt is unavailable to this identity",
         409: "Order is not payable",
         422: "Provider callback is invalid",
