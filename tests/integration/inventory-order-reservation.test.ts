@@ -8,6 +8,7 @@ import {
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
 import {
   InventoryReservationUnavailableError,
+  type InventoryAuthoring,
   type InventoryTransactionContext,
 } from "../../apps/api/src/modules/inventory/public";
 import { PostgresCheckoutRepository } from "../../apps/api/src/modules/orders/composition";
@@ -396,6 +397,57 @@ describe("inventory reservation transaction seam", () => {
       correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
       reservationExpiresAt: new Date(Date.now() + 15 * 60_000),
     };
+
+    const failingInventory = new Proxy(inventory, {
+      get(target, property, receiver) {
+        if (property === "reserveForOrder") {
+          return async (
+            transaction: InventoryTransactionContext,
+            reservation: Parameters<InventoryAuthoring["reserveForOrder"]>[1],
+          ) => {
+            await target.reserveForOrder(transaction, reservation);
+            throw new Error("simulated post-reservation participant failure");
+          };
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    const failingOrders = new PostgresCheckoutRepository(
+      apiTestEnvironment.DATABASE_URL,
+      failingInventory,
+      products,
+      stores,
+      createOpaqueProductTransactionContext,
+      createOpaqueStoreTransactionContext,
+    );
+    await expect(failingOrders.createOrder(command)).rejects.toThrow(
+      "simulated post-reservation participant failure",
+    );
+    expect(
+      await sql`
+        select id from order_orders where checkout_revision = ${checkoutRevision}
+      `,
+    ).toHaveLength(0);
+    expect(
+      await sql`select id from inventory_reservations where order_id = ${orderId}`,
+    ).toHaveLength(0);
+    expect(
+      await sql`
+        select event_id from platform_outbox_events where aggregate_id = ${orderId}
+      `,
+    ).toHaveLength(0);
+    expect(
+      await sql`
+        select order_id from order_items where order_id = ${orderId}
+        union all
+        select order_id from order_shipping_snapshots where order_id = ${orderId}
+        union all
+        select order_id from order_policy_snapshots where order_id = ${orderId}
+        union all
+        select order_id from order_delivery_snapshots where order_id = ${orderId}
+      `,
+    ).toHaveLength(0);
+    await failingOrders.onModuleDestroy();
 
     const concurrent = await Promise.allSettled([
       orders.createOrder(command),

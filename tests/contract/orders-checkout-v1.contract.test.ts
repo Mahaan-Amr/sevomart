@@ -109,6 +109,16 @@ describe("checkout and CreateOrder.v1 contracts", () => {
     ).toHaveLength(2);
   });
 
+  it("keeps an in-progress idempotent order retry actionable", () => {
+    expect(
+      checkoutRevisionConflictContract.parse({
+        code: "IDEMPOTENCY_IN_PROGRESS",
+        message: "این درخواست هنوز در حال انجام است. کمی بعد دوباره تلاش کنید.",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+      }).code,
+    ).toBe("IDEMPOTENCY_IN_PROGRESS");
+  });
+
   it("models one pending order with a single expiring reservation", () => {
     expect(
       orderContract.parse({

@@ -347,6 +347,7 @@ export const checkoutRevisionConflictContract = z
       "ADDRESS_INVALID",
       "SHIPPING_METHOD_UNAVAILABLE",
       "IDEMPOTENCY_CONFLICT",
+      "IDEMPOTENCY_IN_PROGRESS",
       "CHECKOUT_NOT_READY",
       "PRECONDITION_REQUIRED",
       "VALIDATION_ERROR",

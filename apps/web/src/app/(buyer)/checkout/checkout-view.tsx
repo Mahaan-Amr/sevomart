@@ -23,7 +23,9 @@ export function CheckoutView() {
   const [order, setOrder] = useState<Order>();
   const [message, setMessage] = useState("");
   const [conflictChanges, setConflictChanges] = useState<CheckoutChange[]>([]);
-  const [errorAction, setErrorAction] = useState<"cart" | "address" | "review">("cart");
+  const [errorAction, setErrorAction] = useState<
+    "cart" | "address" | "review" | "retry"
+  >("cart");
   const [pending, setPending] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   const orderIdempotencyKey = useRef("");
@@ -111,6 +113,11 @@ export function CheckoutView() {
     const parsed = checkoutRevisionConflictContract.safeParse(body);
     if (parsed.success) {
       setConflictChanges(parsed.data.changes ?? []);
+      if (parsed.data.code === "IDEMPOTENCY_IN_PROGRESS") {
+        setErrorAction("retry");
+        showError(parsed.data.message);
+        return;
+      }
       if (
         parsed.data.code === "ADDRESS_INVALID" ||
         parsed.data.changes?.some((change) => change.kind === "ADDRESS_CHANGED")
@@ -286,6 +293,10 @@ export function CheckoutView() {
                 <a href="/addresses">اصلاح نشانی</a>
               ) : errorAction === "review" ? (
                 <a href="#checkout-title">مرور دوباره انتخاب‌ها</a>
+              ) : errorAction === "retry" ? (
+                <button type="button" onClick={createOrder}>
+                  تلاش دوباره برای ثبت سفارش
+                </button>
               ) : (
                 <a href="/cart">بازگشت به سبد</a>
               )}

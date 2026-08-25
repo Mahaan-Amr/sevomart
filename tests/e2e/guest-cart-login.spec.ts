@@ -263,6 +263,98 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: /ثبت سفارش با مبلغ/ }).click();
   await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
+
+  const historySql = postgres(databaseUrl, { max: 1 });
+  try {
+    const orders = await historySql<Array<{ orderId: string; reservationId: string }>>`
+      select id as "orderId", reservation_id as "reservationId"
+      from order_orders where store_id = ${ids.store}
+      order by created_at desc limit 1
+    `;
+    const created = orders[0];
+    if (!created) throw new Error("The browser checkout must persist an order");
+    const originalSnapshots = await historySql`
+      select address_id, address_revision, recipient_name, recipient_mobile,
+        province_text, city_text, address_line, postal_code
+      from order_delivery_snapshots where order_id = ${created.orderId}
+    `;
+    expect(originalSnapshots).toHaveLength(1);
+    const addresses = await historySql<Array<{ addressId: string; revision: number }>>`
+      select address.id as "addressId", address.current_revision as revision
+      from order_saved_addresses address
+      join identity_login_methods login on login.identity_id = address.identity_id
+      where login.mobile = ${mobile} and address.status = 'ACTIVE'
+      order by address.updated_at desc limit 1
+    `;
+    const selectedAddress = addresses[0];
+    if (!selectedAddress) throw new Error("Checkout must use a saved address");
+    const nextRevision = selectedAddress.revision + 1;
+    await historySql`
+      insert into order_saved_address_revisions
+        (address_id, revision, recipient_name, recipient_mobile, province_text,
+         city_text, address_line, postal_code)
+      values
+        (${selectedAddress.addressId}, ${nextRevision}, 'گیرنده تازه',
+         '09121111111', 'فارس', 'شیراز', 'نشانی تازه', '9876543210')
+    `;
+    await historySql`
+      update order_saved_addresses
+      set current_revision = ${nextRevision}, status = 'DELETED', updated_at = now()
+      where id = ${selectedAddress.addressId}
+    `;
+    expect(
+      await historySql`
+        select address_id, address_revision, recipient_name, recipient_mobile,
+          province_text, city_text, address_line, postal_code
+        from order_delivery_snapshots where order_id = ${created.orderId}
+      `,
+    ).toEqual(originalSnapshots);
+
+    await historySql`
+      update order_orders set reservation_expires_at = now() - interval '1 second'
+      where id = ${created.orderId}
+    `;
+    await historySql`
+      update inventory_reservations set expires_at = now() - interval '1 second'
+      where id = ${created.reservationId}
+    `;
+    await page.goto("/checkout");
+    await expect
+      .poll(async () => {
+        const rows = await historySql<
+          Array<{ orderStatus: string; reservationStatus: string }>
+        >`
+          select orders.status as "orderStatus", reservation.status as "reservationStatus"
+          from order_orders orders
+          join inventory_reservations reservation
+            on reservation.id = orders.reservation_id
+          where orders.id = ${created.orderId}
+        `;
+        return rows[0];
+      })
+      .toEqual({ orderStatus: "EXPIRED", reservationStatus: "RELEASED" });
+    expect(
+      await historySql`
+        select event_id from platform_outbox_events
+        where aggregate_id = ${created.orderId} and event_type = 'OrderExpired.v1'
+      `,
+    ).toHaveLength(1);
+    expect(
+      await historySql<Array<{ available: number }>>`
+        select (level.on_hand - coalesce(sum(line.quantity) filter (
+          where reservation.status = 'ACTIVE' and reservation.expires_at > now()
+        ), 0))::int as available
+        from inventory_levels level
+        left join inventory_reservation_lines line on line.variant_id = level.variant_id
+        left join inventory_reservations reservation
+          on reservation.id = line.reservation_id
+        where level.variant_id = ${ids.variant}
+        group by level.variant_id
+      `,
+    ).toEqual([{ available: 8 }]);
+  } finally {
+    await historySql.end();
+  }
 });
 
 test("same-store carts merge only after the buyer chooses merge", async ({

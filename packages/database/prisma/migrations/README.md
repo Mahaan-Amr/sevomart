@@ -38,7 +38,10 @@ worker to ready state.
 Issue 84 verification (2026-08-24): the multivariant `product` migration relaxes
 legacy one-variant constraints and adds variant identity, immutable snapshot and SKU
 history storage without removing existing rows; it needs no compatibility window and
-uses a forward fix if deployment must be corrected.
+uses a forward fix if deployment must be corrected. `docker compose up --build
+--wait` applied all 22 migrations and brought API, Web, and worker to healthy state;
+native `pnpm dev` reported no pending migrations and brought Web, API, and worker to
+ready state.
 
 Issue 85 verification (2026-08-24): the `product` lifecycle migration extends the
 existing state check with `UNPUBLISHED` and adds an append-only state-transition
