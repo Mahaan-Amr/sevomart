@@ -1,35 +1,16 @@
-import type { RuntimeEnvironment } from "@sevo/config";
+import { randomUUID } from "node:crypto";
 
-import type { DirectPaymentRepository } from "../public";
+import type { DirectPaymentRepository, DirectPaymentService } from "../public";
 
 export class PaymentRecoveryRunner {
-  private timer?: ReturnType<typeof setInterval>;
-
   constructor(
     private readonly repository: DirectPaymentRepository,
-    private readonly environment: RuntimeEnvironment,
+    private readonly service: DirectPaymentService,
   ) {}
 
-  async onModuleInit() {
-    if (this.environment.NODE_ENV === "test") return;
-    await this.repository.recoverExpiredDispatches(new Date());
-    this.timer = setInterval(() => {
-      void this.repository
-        .recoverExpiredDispatches(new Date())
-        .catch((error: unknown) => {
-          console.error(
-            JSON.stringify({
-              level: "error",
-              message: "payment_dispatch_recovery_failed",
-              error: error instanceof Error ? error.message : "unknown_error",
-            }),
-          );
-        });
-    }, 30_000);
-    this.timer.unref?.();
-  }
-
-  onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
+  async runOnce(now = new Date()) {
+    const recovered = await this.repository.recoverExpiredAttempts(now, randomUUID());
+    const reconciliationClaimed = await this.service.reconcileNext(now, randomUUID());
+    return { recovered, reconciliationClaimed };
   }
 }

@@ -1,46 +1,42 @@
-import type { RuntimeEnvironment } from "@sevo/config";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PaymentRecoveryRunner } from "../../apps/api/src/modules/payments/application/payment-recovery.runner";
-import type { DirectPaymentRepository } from "../../apps/api/src/modules/payments/public";
+import type {
+  DirectPaymentRepository,
+  DirectPaymentService,
+} from "../../apps/api/src/modules/payments/public";
 
 describe("PaymentRecoveryRunner", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
+  it("recovers expired attempts and claims one reconciliation in a worker cycle", async () => {
+    const now = new Date("2026-08-25T08:00:00.000Z");
+    const recoverExpiredAttempts = vi.fn().mockResolvedValue(2);
+    const reconcileNext = vi.fn().mockResolvedValue(true);
+    const runner = new PaymentRecoveryRunner(
+      { recoverExpiredAttempts } as unknown as DirectPaymentRepository,
+      { reconcileNext } as unknown as DirectPaymentService,
+    );
+
+    await expect(runner.runOnce(now)).resolves.toEqual({
+      recovered: 2,
+      reconciliationClaimed: true,
+    });
+    expect(recoverExpiredAttempts).toHaveBeenCalledWith(now, expect.any(String));
+    expect(reconcileNext).toHaveBeenCalledWith(now, expect.any(String));
   });
 
-  it("recovers expired dispatches at startup and on the interval", async () => {
-    vi.useFakeTimers();
-    const recoverExpiredDispatches = vi
-      .fn()
-      .mockResolvedValueOnce(1)
-      .mockRejectedValueOnce(new Error("temporary database error"));
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("reports an idle cycle without owning an in-process timer", async () => {
+    const recoverExpiredAttempts = vi.fn().mockResolvedValue(0);
+    const reconcileNext = vi.fn().mockResolvedValue(false);
     const runner = new PaymentRecoveryRunner(
-      { recoverExpiredDispatches } as unknown as DirectPaymentRepository,
-      { NODE_ENV: "development" } as RuntimeEnvironment,
+      { recoverExpiredAttempts } as unknown as DirectPaymentRepository,
+      { reconcileNext } as unknown as DirectPaymentService,
     );
 
-    await runner.onModuleInit();
-    await vi.advanceTimersByTimeAsync(30_000);
-
-    expect(recoverExpiredDispatches).toHaveBeenCalledTimes(2);
-    expect(log).toHaveBeenCalledWith(
-      expect.stringContaining("payment_dispatch_recovery_failed"),
-    );
-    runner.onModuleDestroy();
-  });
-
-  it("does not sweep in test applications", async () => {
-    const recoverExpiredDispatches = vi.fn();
-    const runner = new PaymentRecoveryRunner(
-      { recoverExpiredDispatches } as unknown as DirectPaymentRepository,
-      { NODE_ENV: "test" } as RuntimeEnvironment,
-    );
-
-    await runner.onModuleInit();
-
-    expect(recoverExpiredDispatches).not.toHaveBeenCalled();
+    await expect(runner.runOnce()).resolves.toEqual({
+      recovered: 0,
+      reconciliationClaimed: false,
+    });
+    expect(recoverExpiredAttempts).toHaveBeenCalledTimes(1);
+    expect(reconcileNext).toHaveBeenCalledTimes(1);
   });
 });

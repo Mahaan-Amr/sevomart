@@ -87,6 +87,18 @@ export interface InventoryAuthoring {
     transaction: InventoryTransactionContext,
     command: Readonly<{ reservationId: string; attemptId: string }>,
   ): Promise<void>;
+  holdReservationForProviderConflict(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{ reservationId: string; attemptId: string }>,
+  ): Promise<boolean>;
+  resolveFailedPayment(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{
+      reservationId: string;
+      attemptId: string;
+      now: Date;
+    }>,
+  ): Promise<"ACTIVE" | "RELEASED">;
 }
 
 export class InventoryReservationUnavailableError extends Error {

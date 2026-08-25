@@ -1,4 +1,7 @@
-import type { DirectPaymentAttempt } from "@sevo/contracts/payments/v1";
+import type {
+  DirectPaymentAttempt,
+  PaymentReviewItem,
+} from "@sevo/contracts/payments/v1";
 import type {
   IdentityId,
   MoneyV1,
@@ -48,14 +51,23 @@ export interface DirectPaymentService {
     correlationId: string,
   ): Promise<{
     attemptId: PaymentAttemptId;
-    status: "CONFIRMED";
+    status: "CONFIRMED" | "FAILED" | "REVIEW_REQUIRED";
     duplicate: boolean;
   }>;
   readAttempt(
     identityId: IdentityId,
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt>;
+  reconcileNext(now: Date, correlationId: string): Promise<boolean>;
+  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
 }
+
+export type DirectPaymentReconciliation = Readonly<{
+  attemptId: PaymentAttemptId;
+  orderId: OrderId;
+  amount: MoneyV1;
+  providerReference?: string;
+}>;
 
 export interface DirectPaymentRepository {
   prepareAttempt(command: {
@@ -71,21 +83,31 @@ export interface DirectPaymentRepository {
     attemptId: PaymentAttemptId;
     providerReference: string;
     redirectUrl: string;
+    correlationId: string;
   }): Promise<DirectPaymentAttempt>;
   claimDispatch(attemptId: PaymentAttemptId, correlationId: string): Promise<boolean>;
-  confirmCallback(
+  applyProviderResult(
     callback: VerifiedProviderCallback,
     correlationId: string,
   ): Promise<{
     attemptId: PaymentAttemptId;
-    status: "CONFIRMED";
+    status: "CONFIRMED" | "FAILED" | "REVIEW_REQUIRED";
     duplicate: boolean;
   }>;
   readAttemptForBuyer(
     identityId: IdentityId,
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt | undefined>;
-  recoverExpiredDispatches(now: Date): Promise<number>;
+  recoverExpiredAttempts(now: Date, correlationId: string): Promise<number>;
+  markDispatchUnknown(
+    attemptId: PaymentAttemptId,
+    correlationId: string,
+  ): Promise<DirectPaymentAttempt>;
+  claimNextReconciliation(
+    now: Date,
+    correlationId: string,
+  ): Promise<DirectPaymentReconciliation | null>;
+  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
 }
 
 export class InvalidProviderCallbackError extends Error {}

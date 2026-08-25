@@ -28,6 +28,7 @@ import {
   SELLER_ACCESS_READ,
   type IdentityAccessRepository,
   type OtpProvider,
+  type PlatformAgentSessionAuthorizer,
 } from "./public";
 import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
@@ -44,6 +45,7 @@ export type IdentityAccessModuleOptions = {
   repository?: IdentityAccessRepository;
   approvedSellerStoreProvisioner?: ApprovedSellerStoreProvisioner;
   createStoreTransactionContext?: (transaction: Sql) => OpaqueStoreTransactionContext;
+  platformAgentSessionAuthorizer?: PlatformAgentSessionAuthorizer;
 };
 
 @Module({})
@@ -126,9 +128,9 @@ export class IdentityAccessModule {
         },
         {
           provide: PLATFORM_AGENT_SESSION_AUTHORIZER,
-          useValue: new PostgresPlatformAgentSessionAuthorizer(
-            environment.DATABASE_URL,
-          ),
+          useValue:
+            options.platformAgentSessionAuthorizer ??
+            new PostgresPlatformAgentSessionAuthorizer(environment.DATABASE_URL),
         },
       ],
       exports: [IDENTITY_SESSION_READER, SELLER_ACCESS_READ],

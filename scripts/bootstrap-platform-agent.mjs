@@ -12,6 +12,7 @@ const identityId = options.get("--identity-id");
 const reason = options.get("--reason");
 const idempotencyKey = options.get("--idempotency-key");
 const action = options.get("--action") ?? "grant";
+const permission = options.get("--permission") ?? "SELLER_APPLICATION_REVIEW";
 const databaseUrl = process.env.DATABASE_URL;
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -27,6 +28,9 @@ if (!reason || reason.trim().length < 5 || reason.length > 500) {
 if (action !== "grant" && action !== "revoke") {
   throw new Error("--action must be grant or revoke");
 }
+if (!["SELLER_APPLICATION_REVIEW", "PAYMENT_REVIEW"].includes(permission)) {
+  throw new Error("--permission must be SELLER_APPLICATION_REVIEW or PAYMENT_REVIEW");
+}
 
 const sql = postgres(databaseUrl, { max: 1 });
 try {
@@ -37,7 +41,7 @@ try {
         JSON.stringify({
           action,
           identityId,
-          permission: "SELLER_APPLICATION_REVIEW",
+          permission,
           reason: reason.trim(),
         }),
       )
@@ -67,12 +71,12 @@ try {
     const active = await transaction`
       select id from identity_platform_permission_grants
       where identity_id = ${identityId}
-        and permission = 'SELLER_APPLICATION_REVIEW' and revoked_at is null
+        and permission = ${permission} and revoked_at is null
     `;
     const historical = await transaction`
       select id from identity_platform_permission_grants
       where identity_id = ${identityId}
-        and permission = 'SELLER_APPLICATION_REVIEW'
+        and permission = ${permission}
       limit 1
     `;
     const correlationId = randomUUID();
@@ -93,7 +97,7 @@ try {
       await transaction`
         insert into identity_platform_permission_grants
           (id, identity_id, permission, granted_at)
-        values (${grantId}, ${identityId}, 'SELLER_APPLICATION_REVIEW', ${occurredAt})
+        values (${grantId}, ${identityId}, ${permission}, ${occurredAt})
       `;
     }
     if (!isNoop && action === "revoke") {
@@ -106,7 +110,7 @@ try {
       insert into identity_platform_permission_audit
         (id, identity_id, permission, action, operation, actor_scope, actor_kind,
          reason, idempotency_key_hash, payload_hash, correlation_id, occurred_at)
-      values (${randomUUID()}, ${identityId}, 'SELLER_APPLICATION_REVIEW',
+      values (${randomUUID()}, ${identityId}, ${permission},
         ${auditAction}, ${action}, 'SYSTEM', ${actorKind}, ${reason.trim()},
         ${keyHash}, ${payloadHash}, ${correlationId}, ${occurredAt})
     `;
@@ -119,7 +123,7 @@ try {
           ${action === "grant" ? "PlatformPermissionGranted.v1" : "PlatformPermissionRevoked.v1"},
           ${grantId}, ${action === "grant" ? 1 : 2}, ${occurredAt}, ${correlationId},
           'SYSTEM', null, ${transaction.json({
-            permission: "SELLER_APPLICATION_REVIEW",
+            permission,
             actorKind,
           })})
       `;

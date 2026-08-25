@@ -14,9 +14,26 @@ model PaymentAttempt {
   dispatchedAt      DateTime? @map("dispatched_at") @db.Timestamptz(3)
   dispatchLeaseUntil DateTime? @map("dispatch_lease_until") @db.Timestamptz(3)
   confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  reconciliationCount Int     @default(0) @map("reconciliation_count")
+  nextReconciliationAt DateTime? @map("next_reconciliation_at") @db.Timestamptz(3)
+  reviewStartedAt    DateTime? @map("review_started_at") @db.Timestamptz(3)
 
   @@index([orderId])
   @@map("payment_attempts")
+}
+
+model PaymentOperationalAlert {
+  id            String   @id @db.Uuid
+  attemptId     String   @map("attempt_id") @db.Uuid
+  kind          String   @db.VarChar(48)
+  severity      String   @default("CRITICAL") @db.VarChar(16)
+  status        String   @default("OPEN") @db.VarChar(16)
+  correlationId String   @map("correlation_id") @db.VarChar(128)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([attemptId, kind])
+  @@index([status, createdAt])
+  @@map("payment_operational_alerts")
 }
 
 model PaymentIdempotencyRecord {

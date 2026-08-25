@@ -430,6 +430,46 @@ export class PostgresCheckoutRepository
     return rows[0];
   }
 
+  async lockPaymentResultOrder(
+    transaction: OrderPaymentTransactionContext,
+    identityId: IdentityId,
+    orderId: OrderId,
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<
+      Array<{
+        orderId: OrderId;
+        reservationId: string;
+        totalAmount: number;
+        reservationExpiresAt: Date;
+        status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "EXPIRED";
+      }>
+    >`
+      select id as "orderId", reservation_id as "reservationId",
+        total_amount::int as "totalAmount",
+        reservation_expires_at as "reservationExpiresAt", status
+      from order_orders
+      where id = ${orderId} and identity_id = ${identityId}
+        and status in ('PENDING_PAYMENT', 'PAYMENT_REVIEW', 'EXPIRED')
+      for update
+    `;
+    return rows[0];
+  }
+
+  async readBuyerPaymentState(identityId: IdentityId, orderId: OrderId) {
+    const rows = await this.#sql<
+      Array<{
+        status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+        reservationExpiresAt: Date;
+      }>
+    >`
+      select status, reservation_expires_at as "reservationExpiresAt"
+      from order_orders
+      where id = ${orderId} and identity_id = ${identityId}
+    `;
+    return rows[0];
+  }
+
   async markPaid(
     transaction: OrderPaymentTransactionContext,
     command: Parameters<OrderPaymentWorkflow["markPaid"]>[1],
@@ -546,6 +586,106 @@ export class PostgresCheckoutRepository
         aggregateVersion: current[0].status === "EXPIRED" ? 3 : 2,
         occurredAt: command.occurredAt.toISOString(),
         correlationId: eventCorrelationId(command.correlationId),
+        causationId: command.attemptId,
+        actor: { type: "SYSTEM" },
+        payload: { status: "PAYMENT_REVIEW" },
+      }),
+    );
+  }
+
+  async resolvePaymentFailure(
+    transaction: OrderPaymentTransactionContext,
+    command: Parameters<OrderPaymentWorkflow["resolvePaymentFailure"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<
+      Array<{
+        fromStatus: "PENDING_PAYMENT" | "PAYMENT_REVIEW";
+        toStatus: "PENDING_PAYMENT" | "EXPIRED";
+      }>
+    >`
+      with current as (
+        select id, status, reservation_expires_at
+        from order_orders
+        where id = ${command.orderId}
+          and status in ('PENDING_PAYMENT', 'PAYMENT_REVIEW')
+      )
+      update order_orders orders
+      set status = case
+        when current.reservation_expires_at > ${command.occurredAt}
+        then 'PENDING_PAYMENT' else 'EXPIRED' end
+      from current where orders.id = current.id
+      returning current.status as "fromStatus", orders.status as "toStatus"
+    `;
+    const changed = rows[0];
+    if (!changed) throw new CheckoutRevisionExpiredError();
+    if (changed.fromStatus !== changed.toStatus) {
+      await sql`
+        insert into order_state_transitions
+          (id, order_id, from_status, to_status, reason_code, actor_kind,
+           correlation_id, occurred_at)
+        values
+          (${randomUUID()}, ${command.orderId}, ${changed.fromStatus},
+           ${changed.toStatus}, 'PAYMENT_FAILED', 'PAYMENTS_SERVICE',
+           ${command.correlationId}, ${command.occurredAt})
+      `;
+    }
+    if (changed.toStatus === "EXPIRED") {
+      await enqueueOutboxEvent(
+        sql,
+        orderExpiredV1Contract.parse({
+          eventId: randomUUID(),
+          version: 1,
+          eventType: "OrderExpired.v1",
+          aggregateId: command.orderId,
+          aggregateVersion: 3,
+          occurredAt: command.occurredAt.toISOString(),
+          correlationId: command.correlationId,
+          causationId: command.attemptId,
+          actor: { type: "SYSTEM" },
+          payload: { status: "EXPIRED" },
+        }),
+      );
+    }
+    return changed.toStatus;
+  }
+
+  async markPaidStockConflict(
+    transaction: OrderPaymentTransactionContext,
+    command: Parameters<OrderPaymentWorkflow["markPaidStockConflict"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ fromStatus: string }>>`
+      with current as (
+        select id, status from order_orders
+        where id = ${command.orderId}
+          and status in ('PENDING_PAYMENT', 'PAYMENT_REVIEW', 'EXPIRED')
+      )
+      update order_orders orders set status = 'PAYMENT_REVIEW'
+      from current where orders.id = current.id
+      returning current.status as "fromStatus"
+    `;
+    const changed = rows[0];
+    if (!changed) throw new CheckoutRevisionExpiredError();
+    await sql`
+      insert into order_state_transitions
+        (id, order_id, from_status, to_status, reason_code, actor_kind,
+         correlation_id, occurred_at)
+      values
+        (${randomUUID()}, ${command.orderId}, ${changed.fromStatus}, 'PAYMENT_REVIEW',
+         'PAID_STOCK_CONFLICT', 'PAYMENTS_SERVICE', ${command.correlationId},
+         ${command.occurredAt})
+    `;
+    await enqueueOutboxEvent(
+      sql,
+      orderPaymentReviewRequiredV1Contract.parse({
+        eventId: randomUUID(),
+        version: 1,
+        eventType: "OrderPaymentReviewRequired.v1",
+        aggregateId: command.orderId,
+        aggregateVersion: 3,
+        occurredAt: command.occurredAt.toISOString(),
+        correlationId: command.correlationId,
         causationId: command.attemptId,
         actor: { type: "SYSTEM" },
         payload: { status: "PAYMENT_REVIEW" },

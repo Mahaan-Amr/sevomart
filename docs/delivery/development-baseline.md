@@ -95,6 +95,12 @@ Worker یک command با وضعیت `PENDING` را از endpoint داخلی مح
 باشد—همان ماژول recovery را با audit شکست به `CANCELLED` می‌برد تا command نامعتبر
 دوباره اجرا نشود و بازیابی‌های بعدی متوقف نمانند.
 
+بازیابی پرداخت نیز با poller ماژول پرداخت Worker و operation داخلی API انجام می‌شود.
+Worker با `PAYMENT_RECOVERY_SECRET` تلاش‌های دارای lease منقضی و تطبیق‌های سررسیدشده
+را claim می‌کند؛ تماس با ارائه‌دهنده بیرون transaction می‌ماند و زمان retry بعدی در
+پایگاه داده پایدار است. مقدار محلی این secret در `.env.example` فقط برای توسعه است و
+در production پذیرفته نمی‌شود.
+
 توکن دسترسی سبد مهمان از `CART_TOKEN_DERIVATION_SECRET` و کلید idempotency درخواست
 به‌صورت HMAC مشتق می‌شود تا retry نخستین افزودن، حتی پیش از دریافت cookie، همان سبد را
 برگرداند. مقدار محلی `.env.example` برای production ممنوع است و باید در مسیر Docker و

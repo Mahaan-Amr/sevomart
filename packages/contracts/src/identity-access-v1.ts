@@ -102,7 +102,10 @@ export const sellerApplicationReasonCodeContract = z.enum([
   "OTHER",
 ]);
 
-export const platformPermissionContract = z.literal("SELLER_APPLICATION_REVIEW");
+export const platformPermissionContract = z.enum([
+  "SELLER_APPLICATION_REVIEW",
+  "PAYMENT_REVIEW",
+]);
 
 const platformSellerApplicationDecisionBaseContract = z.object({
   expectedRevision: z.number().int().positive(),

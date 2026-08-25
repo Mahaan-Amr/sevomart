@@ -328,8 +328,8 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       update inventory_reservations
       set status = 'RELEASED'
       where id = ${command.reservationId}::uuid and status = 'ACTIVE'
-        and greatest(expires_at, coalesce(hold_lease_until, expires_at))
-          <= ${command.expiredAt}
+        and expires_at <= ${command.expiredAt}
+        and payment_attempt_id is null
       returning id
     `;
     return rows.length === 1;
@@ -365,6 +365,7 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     `;
     const reservation = reservations[0];
     if (reservation?.status === "CONSUMED") return false;
+    if (reservation?.status === "RELEASED") return false;
     if (
       !reservation ||
       !["ACTIVE", "HELD_FOR_REVIEW"].includes(reservation.status) ||
@@ -408,6 +409,40 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       returning id
     `;
     if (!rows[0]) throw new InventoryReservationNotConsumableError();
+  }
+
+  async holdReservationForProviderConflict(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["holdReservationForProviderConflict"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ id: string }>>`
+      update inventory_reservations
+      set status = 'HELD_FOR_REVIEW', payment_attempt_id = ${command.attemptId}::uuid,
+        hold_lease_until = now()
+      where id = ${command.reservationId}::uuid and status = 'ACTIVE'
+        and payment_attempt_id is null
+      returning id
+    `;
+    return Boolean(rows[0]);
+  }
+
+  async resolveFailedPayment(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["resolveFailedPayment"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ status: "ACTIVE" | "RELEASED" }>>`
+      update inventory_reservations
+      set status = case when expires_at > ${command.now} then 'ACTIVE' else 'RELEASED' end,
+        payment_attempt_id = null, hold_lease_until = null
+      where id = ${command.reservationId}::uuid
+        and status in ('ACTIVE', 'HELD_FOR_REVIEW')
+        and payment_attempt_id = ${command.attemptId}::uuid
+      returning status
+    `;
+    if (!rows[0]) throw new InventoryReservationNotConsumableError();
+    return rows[0].status;
   }
 
   async onModuleDestroy() {

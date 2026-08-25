@@ -36,31 +36,28 @@ export class DirectPaymentApplicationService implements DirectPaymentService {
     if (!claimed) {
       throw new DirectPaymentDispatchInProgressError();
     }
-    const initiation = await this.provider.initiate({
-      attemptId: attempt.attemptId,
-      orderId: attempt.orderId,
-      amount: attempt.amount,
-    });
-    return this.repository.recordInitiation({
-      attemptId: attempt.attemptId,
-      ...initiation,
-    });
+    try {
+      const initiation = await this.provider.initiate({
+        attemptId: attempt.attemptId,
+        orderId: attempt.orderId,
+        amount: attempt.amount,
+      });
+      return this.repository.recordInitiation({
+        attemptId: attempt.attemptId,
+        ...initiation,
+        correlationId: command.correlationId,
+      });
+    } catch {
+      return this.repository.markDispatchUnknown(
+        attempt.attemptId,
+        command.correlationId,
+      );
+    }
   }
 
   async applyCallback(input: unknown, correlationId: string) {
-    let callback = await this.provider.verifyAndMapCallback(input);
-    if (callback.result === "PENDING") {
-      callback = await this.provider.query({
-        attemptId: callback.attemptId,
-        orderId: callback.orderId,
-        amount: { amount: callback.amount, currency: "IRR" },
-        providerReference: callback.providerReference,
-      });
-    }
-    if (callback.result !== "CONFIRMED") {
-      throw new Error("Payment was not confirmed by the provider");
-    }
-    return this.repository.confirmCallback(callback, correlationId);
+    const callback = await this.provider.verifyAndMapCallback(input);
+    return this.repository.applyProviderResult(callback, correlationId);
   }
 
   async readAttempt(
@@ -70,5 +67,40 @@ export class DirectPaymentApplicationService implements DirectPaymentService {
     const attempt = await this.repository.readAttemptForBuyer(identityId, attemptId);
     if (!attempt) throw new DirectPaymentAttemptNotFoundError();
     return attempt;
+  }
+
+  async reconcileNext(now: Date, correlationId: string) {
+    const reconciliation = await this.repository.claimNextReconciliation(
+      now,
+      correlationId,
+    );
+    if (!reconciliation) return false;
+    try {
+      if (!reconciliation.providerReference) {
+        const initiation = await this.provider.initiate({
+          attemptId: reconciliation.attemptId,
+          orderId: reconciliation.orderId,
+          amount: reconciliation.amount,
+        });
+        await this.repository.recordInitiation({
+          attemptId: reconciliation.attemptId,
+          ...initiation,
+          correlationId,
+        });
+        return true;
+      }
+      const result = await this.provider.query({
+        ...reconciliation,
+        providerReference: reconciliation.providerReference,
+      });
+      await this.repository.applyProviderResult(result, correlationId);
+    } catch {
+      // The claimed row already carries its durable next retry timestamp.
+    }
+    return true;
+  }
+
+  listReviewRequired() {
+    return this.repository.listReviewRequired();
   }
 }

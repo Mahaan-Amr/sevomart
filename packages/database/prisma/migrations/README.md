@@ -76,6 +76,13 @@ fix if deployment must be corrected. The existing-database upgrade recognized al
 36 migrations and applied only these three payment-flow migrations successfully;
 the Compose and native paths use the same `prisma migrate deploy` history.
 
+Issue 90 additively adds the payment reconciliation schedule, the narrowly scoped
+platform payment-review permission and durable operational alerts. It requires no
+compatibility window and uses a forward fix if deployment must be corrected. A
+fresh isolated deployment applied all 40 migrations, including the latest discovery
+migration from `main`, and the 13 payment recovery integration scenarios passed on
+PostgreSQL without partial order, inventory or outbox effects.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

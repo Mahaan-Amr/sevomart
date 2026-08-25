@@ -3,20 +3,28 @@ import type { RuntimeEnvironment } from "@sevo/config";
 
 import type { InventoryAuthoring } from "../inventory/public";
 import type { OrderPaymentWorkflow } from "../orders/public";
+import type { PlatformAgentSessionAuthorizer } from "../identity-access/public";
 import { DirectPaymentApplicationService } from "./application/direct-payment.service";
 import { PaymentRecoveryRunner } from "./application/payment-recovery.runner";
 import { PostgresDirectPaymentRepository } from "./infrastructure/postgres-direct-payment.repository";
 import {
   DevPaymentController,
+  InternalPaymentRecoveryController,
   PaymentController,
+  PlatformPaymentReviewController,
   ProviderCallbackController,
 } from "./payment.controller";
 import {
   DIRECT_PAYMENT_PROVIDER,
   DIRECT_PAYMENT_REPOSITORY,
   DIRECT_PAYMENT_SERVICE,
+  PAYMENT_REVIEW_AUTHORIZER,
 } from "./payments.tokens";
-import type { DirectPaymentProvider, DirectPaymentRepository } from "./public";
+import type {
+  DirectPaymentProvider,
+  DirectPaymentRepository,
+  DirectPaymentService,
+} from "./public";
 import { DevDirectPaymentProvider } from "./testing/dev-direct-payment-provider";
 
 @Module({})
@@ -27,6 +35,7 @@ export class PaymentsModule {
       inventory: InventoryAuthoring;
       orders: OrderPaymentWorkflow;
       provider?: DirectPaymentProvider;
+      platformAgentSessions: PlatformAgentSessionAuthorizer;
     },
   ): DynamicModule {
     const devProvider =
@@ -40,10 +49,16 @@ export class PaymentsModule {
       controllers: [
         PaymentController,
         ProviderCallbackController,
+        InternalPaymentRecoveryController,
+        PlatformPaymentReviewController,
         ...(devProvider ? [DevPaymentController] : []),
       ],
       providers: [
         { provide: "PAYMENTS_RUNTIME_ENVIRONMENT", useValue: environment },
+        {
+          provide: PAYMENT_REVIEW_AUTHORIZER,
+          useValue: options.platformAgentSessions,
+        },
         { provide: DIRECT_PAYMENT_PROVIDER, useValue: provider },
         {
           provide: DIRECT_PAYMENT_REPOSITORY,
@@ -64,11 +79,11 @@ export class PaymentsModule {
         },
         {
           provide: PaymentRecoveryRunner,
-          inject: [DIRECT_PAYMENT_REPOSITORY, "PAYMENTS_RUNTIME_ENVIRONMENT"],
+          inject: [DIRECT_PAYMENT_REPOSITORY, DIRECT_PAYMENT_SERVICE],
           useFactory: (
             repository: DirectPaymentRepository,
-            runtime: RuntimeEnvironment,
-          ) => new PaymentRecoveryRunner(repository, runtime),
+            service: DirectPaymentService,
+          ) => new PaymentRecoveryRunner(repository, service),
         },
       ],
     };

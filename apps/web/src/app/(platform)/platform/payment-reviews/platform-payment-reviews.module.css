@@ -1,0 +1,88 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: var(--color-background);
+}
+.workspace {
+  width: min(100%, 760px);
+  margin: 0 auto;
+}
+.workspace header,
+.summary,
+.workspace dl div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.workspace h1 {
+  margin: 4px 0;
+}
+.eyebrow {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.workspace button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-primary-dark);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: var(--elevation-hover);
+}
+.workspace button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+.queue {
+  display: grid;
+  gap: 16px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.queue > li {
+  padding: 20px;
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+  background: var(--color-surface);
+}
+.summary strong,
+.summary span {
+  display: block;
+}
+.summary > span {
+  color: var(--color-primary-dark);
+  font-weight: 700;
+}
+.workspace dl {
+  margin: 16px 0 0;
+}
+.workspace dl div {
+  padding: 10px 0;
+  border-top: 1px solid var(--color-divider);
+}
+.workspace dd {
+  margin: 0;
+  color: var(--color-muted);
+}
+.empty {
+  margin-top: 24px;
+  padding: 20px;
+  border-inline-start: 4px solid var(--color-primary);
+  border-radius: 12px;
+  background: var(--color-cover-start);
+}
+@media (max-width: 600px) {
+  .workspace header,
+  .summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .workspace button {
+    width: 100%;
+  }
+}
