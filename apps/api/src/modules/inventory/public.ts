@@ -83,6 +83,10 @@ export interface InventoryAuthoring {
       attemptId: string;
     }>,
   ): Promise<boolean>;
+  holdReservationForReview(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{ reservationId: string; attemptId: string }>,
+  ): Promise<void>;
 }
 
 export class InventoryReservationUnavailableError extends Error {

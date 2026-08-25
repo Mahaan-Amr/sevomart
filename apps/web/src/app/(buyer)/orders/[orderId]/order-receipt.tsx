@@ -54,6 +54,15 @@ export function OrderReceipt({
                 <dd>تسویه مستقیم با فروشگاه</dd>
               </div>
               <div>
+                <dt>زمان پرداخت</dt>
+                <dd>
+                  {new Intl.DateTimeFormat("fa-IR", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  }).format(new Date(attempt.confirmedAt!))}
+                </dd>
+              </div>
+              <div>
                 <dt>شناسه سفارش</dt>
                 <dd>{orderId}</dd>
               </div>

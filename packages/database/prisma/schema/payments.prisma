@@ -12,6 +12,7 @@ model PaymentAttempt {
   redirectUrl       String?  @map("redirect_url") @db.VarChar(500)
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   dispatchedAt      DateTime? @map("dispatched_at") @db.Timestamptz(3)
+  dispatchLeaseUntil DateTime? @map("dispatch_lease_until") @db.Timestamptz(3)
   confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz(3)
 
   @@index([orderId])
@@ -40,4 +41,18 @@ model PaymentProviderObservation {
 
   @@id([provider, providerEventId])
   @@map("payment_provider_observations")
+}
+
+model PaymentAttemptAudit {
+  id            String   @id @db.Uuid
+  attemptId     String   @map("attempt_id") @db.Uuid
+  fromStatus    String?  @map("from_status") @db.VarChar(24)
+  toStatus      String   @map("to_status") @db.VarChar(24)
+  reasonCode    String   @map("reason_code") @db.VarChar(64)
+  actorKind     String   @map("actor_kind") @db.VarChar(32)
+  correlationId String   @map("correlation_id") @db.VarChar(128)
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([attemptId, occurredAt])
+  @@map("payment_attempt_audits")
 }

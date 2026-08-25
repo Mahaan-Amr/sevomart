@@ -41,4 +41,37 @@ describe("DevDirectPaymentProvider", () => {
       provider.verifyAndMapCallback({ ...callback, amount: 10 }),
     ).rejects.toThrow("Invalid provider callback");
   });
+
+  it("deterministically represents failed and pending fixtures and queries pending", async () => {
+    const provider = new DevDirectPaymentProvider("test-signing-secret");
+    const pending = provider.callback({
+      attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca272",
+      orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+      amount: 4_500_000,
+      providerEventId: "dev-pending-1",
+      result: "PENDING",
+    });
+    const verified = await provider.verifyAndMapCallback(pending);
+    expect(verified.result).toBe("PENDING");
+    await expect(
+      provider.query({
+        attemptId: verified.attemptId,
+        orderId: verified.orderId,
+        amount: { amount: verified.amount, currency: "IRR" },
+        providerReference: verified.providerReference,
+      }),
+    ).resolves.toMatchObject({ result: "CONFIRMED" });
+
+    await expect(
+      provider.verifyAndMapCallback(
+        provider.callback({
+          attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+          orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+          amount: 4_500_000,
+          providerEventId: "dev-failed-1",
+          result: "FAILED",
+        }),
+      ),
+    ).resolves.toMatchObject({ result: "FAILED" });
+  });
 });

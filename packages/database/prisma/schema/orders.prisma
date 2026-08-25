@@ -229,3 +229,17 @@ model OrderSavedAddressAudit {
   @@index([addressId, createdAt])
   @@map("order_saved_address_audits")
 }
+
+model OrderStateTransition {
+  id            String   @id @db.Uuid
+  orderId       String   @map("order_id") @db.Uuid
+  fromStatus    String?  @map("from_status") @db.VarChar(32)
+  toStatus      String   @map("to_status") @db.VarChar(32)
+  reasonCode    String   @map("reason_code") @db.VarChar(64)
+  actorKind     String   @map("actor_kind") @db.VarChar(32)
+  correlationId String   @map("correlation_id") @db.VarChar(128)
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([orderId, occurredAt])
+  @@map("order_state_transitions")
+}

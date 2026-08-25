@@ -6,6 +6,8 @@ import type { DirectPaymentProvider, VerifiedProviderCallback } from "../public"
 import { InvalidProviderCallbackError } from "../public";
 
 export class DevDirectPaymentProvider implements DirectPaymentProvider {
+  readonly providerKey = "DEV";
+
   constructor(private readonly signingSecret: string) {}
 
   async initiate(command: Parameters<DirectPaymentProvider["initiate"]>[0]) {
@@ -21,7 +23,17 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
     amount: number;
     providerEventId: string;
   }) {
-    const unsigned = { ...input, result: "CONFIRMED" as const };
+    return this.callback({ ...input, result: "CONFIRMED" });
+  }
+
+  callback(input: {
+    attemptId: string;
+    orderId: string;
+    amount: number;
+    providerEventId: string;
+    result: "CONFIRMED" | "FAILED" | "PENDING";
+  }) {
+    const unsigned = input;
     return {
       ...unsigned,
       signature: this.#sign(unsigned),
@@ -52,11 +64,24 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
     };
   }
 
+  async query(command: Parameters<DirectPaymentProvider["query"]>[0]) {
+    const lastHex = command.attemptId.replaceAll("-", "").at(-1) ?? "0";
+    const result = Number.parseInt(lastHex, 16) % 2 === 0 ? "CONFIRMED" : "FAILED";
+    return {
+      attemptId: command.attemptId,
+      orderId: command.orderId,
+      amount: command.amount.amount,
+      result,
+      providerEventId: `dev-query-${command.attemptId}`,
+      providerReference: command.providerReference,
+    } satisfies VerifiedProviderCallback;
+  }
+
   #sign(input: {
     attemptId: string;
     orderId: string;
     amount: number;
-    result: "CONFIRMED";
+    result: "CONFIRMED" | "FAILED" | "PENDING";
     providerEventId: string;
   }) {
     return createHmac("sha256", this.signingSecret)

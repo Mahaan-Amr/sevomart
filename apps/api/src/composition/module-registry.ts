@@ -18,7 +18,10 @@ import {
 } from "../modules/inventory/composition";
 import { MediaModule } from "../modules/media/composition";
 import { NotificationsModule } from "../modules/notifications/composition";
-import { OrdersModule } from "../modules/orders/composition";
+import {
+  OrdersModule,
+  PostgresCheckoutRepository,
+} from "../modules/orders/composition";
 import { PaymentsModule } from "../modules/payments/composition";
 import { ProblemFollowUpModule } from "../modules/problem-follow-up/composition";
 import {
@@ -30,6 +33,7 @@ import { ReportingAnalyticsModule } from "../modules/reporting-analytics/composi
 import {
   createOpaqueStoreTransactionContext,
   PostgresStoreRepository,
+  StoreService,
   StoreModule,
 } from "../modules/store/composition";
 import { DevOtpProvider } from "../modules/notifications/composition";
@@ -51,6 +55,16 @@ export function composeCanonicalApiModules(
   const productRepository = new PostgresProductRepository(
     environment.DATABASE_URL,
     inventoryAuthoring,
+  );
+  const checkoutRepository = new PostgresCheckoutRepository(
+    environment.DATABASE_URL,
+    inventoryAuthoring,
+    productRepository,
+    new StoreService(storeRepository, async () => {
+      throw new Error("Settlement verification is unavailable in checkout reads");
+    }),
+    createOpaqueProductTransactionContext,
+    createOpaqueStoreTransactionContext,
   );
 
   return [
@@ -76,15 +90,17 @@ export function composeCanonicalApiModules(
     ProductModule.register(environment, { repository: productRepository }),
     InventoryModule,
     OrdersModule.register(environment, {
+      checkoutRepository,
       products: productRepository,
       inventory: inventoryAuthoring,
       createProductTransactionContext: createOpaqueProductTransactionContext,
       createStoreTransactionContext: createOpaqueStoreTransactionContext,
+      resolveSellerStore: async (identityId) =>
+        (await storeRepository.findBySellerId(identityId))?.id,
     }),
     PaymentsModule.register(environment, {
       inventory: inventoryAuthoring,
-      resolveSellerStore: async (identityId) =>
-        (await storeRepository.findBySellerId(identityId))?.id,
+      orders: checkoutRepository,
     }),
     FulfillmentModule,
     ConversationsModule,

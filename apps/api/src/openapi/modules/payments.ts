@@ -61,9 +61,14 @@ const operations = [
   {
     operationId: "acceptDevPaymentCallback",
     method: "post",
-    path: "/v1/payment-providers/dev/callbacks",
+    path: "/internal/v1/payment-providers/{provider}/callbacks",
     tag: "payments",
     auth: "none",
+    pathParameter: {
+      name: "provider",
+      schema: "PaymentProviderKey",
+      example: "DEV",
+    },
     request: {
       schema: "ProviderCallbackInput",
       example: paymentsV1Examples.ProviderCallbackInput,
@@ -71,19 +76,6 @@ const operations = [
     responses: [
       { status: 200, schema: "ProviderCallbackResult" },
       { status: 422, schema: "InternalServerError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
-  },
-  {
-    operationId: "listSellerActionableOrders",
-    method: "get",
-    path: "/v1/seller/orders",
-    tag: "payments",
-    auth: "identity-session",
-    responses: [
-      { status: 200, schema: "SellerActionableOrderList" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "InternalServerError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },

@@ -16,6 +16,8 @@ export const directPaymentAttemptStatusContract = z.enum([
   "CREATED",
   "DISPATCHED",
   "CONFIRMED",
+  "FAILED",
+  "REVIEW_REQUIRED",
 ]);
 
 export const directPaymentAttemptContract = z
@@ -24,8 +26,8 @@ export const directPaymentAttemptContract = z
     orderId: orderIdContract,
     status: directPaymentAttemptStatusContract,
     amount: moneyV1Contract,
-    provider: z.literal("DEV"),
-    redirectUrl: z.string().startsWith("/v1/payment-providers/dev/pay/").optional(),
+    provider: z.string().min(1).max(24),
+    redirectUrl: z.string().min(1).max(500).optional(),
     providerReference: z.string().min(1).max(128).optional(),
     createdAt: z.iso.datetime({ offset: true }),
     confirmedAt: z.iso.datetime({ offset: true }).optional(),
@@ -37,7 +39,7 @@ export const providerCallbackInputContract = z
     attemptId: paymentAttemptIdContract,
     orderId: orderIdContract,
     amount: z.int().nonnegative(),
-    result: z.literal("CONFIRMED"),
+    result: z.enum(["CONFIRMED", "FAILED", "PENDING"]),
     providerEventId: z.string().min(1).max(128),
     signature: z.string().regex(/^[a-f0-9]{64}$/),
   })
@@ -49,21 +51,6 @@ export const providerCallbackResultContract = z
     status: z.literal("CONFIRMED"),
     duplicate: z.boolean(),
   })
-  .strict();
-
-export const sellerActionableOrderContract = z
-  .object({
-    orderId: orderIdContract,
-    status: z.literal("PAID"),
-    total: moneyV1Contract,
-    paidAt: z.iso.datetime({ offset: true }),
-    createdAt: z.iso.datetime({ offset: true }),
-    itemCount: z.int().positive(),
-  })
-  .strict();
-
-export const sellerActionableOrderListContract = z
-  .object({ orders: z.array(sellerActionableOrderContract) })
   .strict();
 
 export const directPaymentAttemptConfirmedV1Contract = eventEnvelopeV1Contract.extend({
@@ -78,16 +65,37 @@ export const directPaymentAttemptConfirmedV1Contract = eventEnvelopeV1Contract.e
     .strict(),
 });
 
+export const directPaymentAttemptCreatedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("DirectPaymentAttemptCreated.v1"),
+  causationId: z.uuid(),
+  actor: eventActorV1Contract,
+  payload: z.object({ status: z.literal("CREATED"), amount: moneyV1Contract }).strict(),
+});
+
+export const directPaymentAttemptDispatchedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("DirectPaymentAttemptDispatched.v1"),
+  causationId: z.uuid(),
+  actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+  payload: z.object({ status: z.literal("DISPATCHED") }).strict(),
+});
+
+export const directPaymentAttemptReviewRequiredV1Contract =
+  eventEnvelopeV1Contract.extend({
+    eventType: z.literal("DirectPaymentAttemptReviewRequired.v1"),
+    causationId: z.uuid(),
+    actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+    payload: z.object({ status: z.literal("REVIEW_REQUIRED") }).strict(),
+  });
+
 export const paymentsV1Schemas = {
   OrderId: orderIdContract,
   PaymentAttemptId: paymentAttemptIdContract,
   IdempotencyKey: paymentIdempotencyKeyContract,
+  PaymentProviderKey: z.string().min(1).max(24),
   CreateDirectPaymentAttemptInput: createDirectPaymentAttemptInputContract,
   DirectPaymentAttempt: directPaymentAttemptContract,
   ProviderCallbackInput: providerCallbackInputContract,
   ProviderCallbackResult: providerCallbackResultContract,
-  SellerActionableOrder: sellerActionableOrderContract,
-  SellerActionableOrderList: sellerActionableOrderListContract,
 } as const;
 
 export function createPaymentsV1JsonSchemas() {
@@ -118,21 +126,8 @@ export const paymentsV1Examples = {
     status: "CONFIRMED",
     duplicate: false,
   },
-  SellerActionableOrderList: {
-    orders: [
-      {
-        orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
-        status: "PAID",
-        total: { amount: 4_500_000, currency: "IRR" },
-        paidAt: "2026-08-25T08:02:00.000Z",
-        createdAt: "2026-08-25T08:00:00.000Z",
-        itemCount: 1,
-      },
-    ],
-  },
 } as const;
 
 export type DirectPaymentAttempt = z.infer<typeof directPaymentAttemptContract>;
 export type ProviderCallbackInput = z.infer<typeof providerCallbackInputContract>;
 export type ProviderCallbackResult = z.infer<typeof providerCallbackResultContract>;
-export type SellerActionableOrder = z.infer<typeof sellerActionableOrderContract>;

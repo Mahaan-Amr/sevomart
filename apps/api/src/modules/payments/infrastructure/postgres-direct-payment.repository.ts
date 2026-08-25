@@ -1,17 +1,24 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  directPaymentAttemptCreatedV1Contract,
+  directPaymentAttemptDispatchedV1Contract,
+  directPaymentAttemptReviewRequiredV1Contract,
   directPaymentAttemptConfirmedV1Contract,
   directPaymentAttemptContract,
 } from "@sevo/contracts/payments/v1";
-import { sellerActionableOrderContract } from "@sevo/contracts/payments/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
+import { paymentAttemptIdContract } from "@sevo/contracts/platform/v1";
 import postgres, { type Sql } from "postgres";
 
 import type {
   InventoryAuthoring,
   InventoryTransactionContext,
 } from "../../inventory/public";
+import {
+  createOrderPaymentTransactionContext,
+  type OrderPaymentWorkflow,
+} from "../../orders/public";
 import {
   DirectPaymentAmountMismatchError,
   DirectPaymentAttemptNotFoundError,
@@ -23,13 +30,14 @@ import {
 type AttemptRow = {
   attemptId: string;
   orderId: string;
-  status: "CREATED" | "DISPATCHED" | "CONFIRMED";
+  status: "CREATED" | "DISPATCHED" | "CONFIRMED" | "FAILED" | "REVIEW_REQUIRED";
   amount: number;
-  provider: "DEV";
+  provider: string;
   providerReference: string | null;
   redirectUrl: string | null;
   createdAt: Date;
   confirmedAt: Date | null;
+  dispatchLeaseUntil: Date | null;
 };
 
 export class PostgresDirectPaymentRepository implements DirectPaymentRepository {
@@ -38,6 +46,8 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
   constructor(
     databaseUrl: string,
     private readonly inventory: InventoryAuthoring,
+    private readonly orders: OrderPaymentWorkflow,
+    private readonly providerKey: string,
   ) {
     this.#sql = postgres(databaseUrl, { max: 5 });
   }
@@ -57,37 +67,80 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         }
         const existing = await readAttempt(sql, replay[0].attemptId);
         if (!existing) throw new DirectPaymentAttemptNotFoundError();
+        if (
+          existing.status === "DISPATCHED" &&
+          !existing.redirectUrl &&
+          existing.dispatchLeaseUntil &&
+          existing.dispatchLeaseUntil.getTime() <= Date.now()
+        ) {
+          const payableOrder = await this.orders.lockPayableOrder(
+            createOrderPaymentTransactionContext(sql),
+            command.identityId,
+            command.orderId,
+          );
+          if (!payableOrder) throw new DirectPaymentOrderNotPayableError();
+          const occurredAt = new Date();
+          await this.inventory.holdReservationForReview(
+            sql as unknown as InventoryTransactionContext,
+            {
+              reservationId: payableOrder.reservationId,
+              attemptId: existing.attemptId,
+            },
+          );
+          await this.orders.markPaymentReview(
+            createOrderPaymentTransactionContext(sql),
+            {
+              orderId: command.orderId,
+              attemptId: paymentAttemptIdContract.parse(existing.attemptId),
+              occurredAt,
+              correlationId: command.correlationId,
+            },
+          );
+          await sql`
+            update payment_attempts set status = 'REVIEW_REQUIRED'
+            where id = ${existing.attemptId} and status = 'DISPATCHED'
+              and redirect_url is null
+          `;
+          await insertAttemptAudit(sql, {
+            attemptId: existing.attemptId,
+            fromStatus: "DISPATCHED",
+            toStatus: "REVIEW_REQUIRED",
+            reasonCode: "DISPATCH_LEASE_EXPIRED",
+            correlationId: command.correlationId,
+          });
+          existing.status = "REVIEW_REQUIRED";
+          await enqueueOutboxEvent(
+            sql,
+            directPaymentAttemptReviewRequiredV1Contract.parse({
+              eventId: randomUUID(),
+              version: 1,
+              eventType: "DirectPaymentAttemptReviewRequired.v1",
+              aggregateId: existing.attemptId,
+              aggregateVersion: 3,
+              occurredAt: occurredAt.toISOString(),
+              correlationId: command.correlationId,
+              causationId: command.correlationId,
+              actor: { type: "SYSTEM" },
+              payload: { status: "REVIEW_REQUIRED" },
+            }),
+          );
+        }
         return mapAttempt(existing);
       }
-      const orders = await sql<
-        Array<{
-          orderId: string;
-          reservationId: string;
-          status: string;
-          totalAmount: number;
-          reservationExpiresAt: Date;
-        }>
-      >`
-        select id as "orderId", reservation_id as "reservationId", status,
-          total_amount::int as "totalAmount",
-          reservation_expires_at as "reservationExpiresAt"
-        from order_orders
-        where id = ${command.orderId}::uuid and identity_id = ${command.identityId}::uuid
-        for update
-      `;
-      const order = orders[0];
-      if (
-        !order ||
-        order.status !== "PENDING_PAYMENT" ||
-        order.reservationExpiresAt.getTime() <= Date.now()
-      ) {
+      const order = await this.orders.lockPayableOrder(
+        createOrderPaymentTransactionContext(sql),
+        command.identityId,
+        command.orderId,
+      );
+      if (!order || order.reservationExpiresAt.getTime() <= Date.now()) {
         throw new DirectPaymentOrderNotPayableError();
       }
       const active = await sql<AttemptRow[]>`
         select id as "attemptId", order_id as "orderId", status,
           amount::int as amount, provider,
           provider_reference as "providerReference", redirect_url as "redirectUrl",
-          created_at as "createdAt", confirmed_at as "confirmedAt"
+          created_at as "createdAt", confirmed_at as "confirmedAt",
+          dispatch_lease_until as "dispatchLeaseUntil"
         from payment_attempts
         where order_id = ${order.orderId}::uuid
           and status in ('CREATED', 'DISPATCHED', 'CONFIRMED')
@@ -99,7 +152,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           (id, order_id, identity_id, status, amount, currency, provider)
         values
           (${command.attemptId}, ${order.orderId}, ${command.identityId}, 'CREATED',
-           ${order.totalAmount}, 'IRR', 'DEV')
+           ${order.totalAmount}, 'IRR', ${this.providerKey})
       `;
       await this.inventory.holdReservationForPayment(
         sql as unknown as InventoryTransactionContext,
@@ -110,11 +163,31 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           now: new Date(),
         },
       );
-      await sql`
-        update payment_attempts
-        set status = 'DISPATCHED', dispatched_at = now()
-        where id = ${command.attemptId}
-      `;
+      await insertAttemptAudit(sql, {
+        attemptId: command.attemptId,
+        fromStatus: null,
+        toStatus: "CREATED",
+        reasonCode: "PAYMENT_ATTEMPT_CREATED",
+        correlationId: command.correlationId,
+      });
+      await enqueueOutboxEvent(
+        sql,
+        directPaymentAttemptCreatedV1Contract.parse({
+          eventId: randomUUID(),
+          version: 1,
+          eventType: "DirectPaymentAttemptCreated.v1",
+          aggregateId: command.attemptId,
+          aggregateVersion: 1,
+          occurredAt: new Date().toISOString(),
+          correlationId: command.correlationId,
+          causationId: command.correlationId,
+          actor: { type: "IDENTITY", id: command.identityId },
+          payload: {
+            status: "CREATED",
+            amount: { amount: order.totalAmount, currency: "IRR" },
+          },
+        }),
+      );
       await sql`
         insert into payment_idempotency_records
           (identity_id, key, request_hash, attempt_id)
@@ -123,6 +196,45 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
            ${command.attemptId})
       `;
       return mapAttempt((await readAttempt(sql, command.attemptId))!);
+    });
+  }
+
+  async claimDispatch(
+    attemptId: Parameters<DirectPaymentRepository["claimDispatch"]>[0],
+    correlationId: string,
+  ) {
+    return this.#sql.begin(async (sql) => {
+      const rows = await sql<Array<{ attemptId: string; amount: number }>>`
+        update payment_attempts
+        set status = 'DISPATCHED', dispatched_at = now(),
+          dispatch_lease_until = now() + interval '30 seconds'
+        where id = ${attemptId}::uuid and status = 'CREATED'
+        returning id as "attemptId", amount::int as amount
+      `;
+      if (!rows[0]) return false;
+      await insertAttemptAudit(sql, {
+        attemptId,
+        fromStatus: "CREATED",
+        toStatus: "DISPATCHED",
+        reasonCode: "PROVIDER_DISPATCH_CLAIMED",
+        correlationId,
+      });
+      await enqueueOutboxEvent(
+        sql,
+        directPaymentAttemptDispatchedV1Contract.parse({
+          eventId: randomUUID(),
+          version: 1,
+          eventType: "DirectPaymentAttemptDispatched.v1",
+          aggregateId: attemptId,
+          aggregateVersion: 2,
+          occurredAt: new Date().toISOString(),
+          correlationId,
+          causationId: correlationId,
+          actor: { type: "SYSTEM" },
+          payload: { status: "DISPATCHED" },
+        }),
+      );
+      return true;
     });
   }
 
@@ -137,7 +249,8 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       returning id as "attemptId", order_id as "orderId", status,
         amount::int as amount, provider,
         provider_reference as "providerReference", redirect_url as "redirectUrl",
-        created_at as "createdAt", confirmed_at as "confirmedAt"
+        created_at as "createdAt", confirmed_at as "confirmedAt",
+        dispatch_lease_until as "dispatchLeaseUntil"
     `;
     if (!rows[0]) throw new DirectPaymentAttemptNotFoundError();
     return mapAttempt(rows[0]);
@@ -148,26 +261,16 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     correlationId: string,
   ) {
     return this.#sql.begin(async (sql) => {
-      const attempts = await sql<
-        Array<
-          AttemptRow & {
-            identityId: string;
-            reservationId: string;
-            totalAmount: number;
-          }
-        >
-      >`
+      const attempts = await sql<Array<AttemptRow & { identityId: string }>>`
         select attempt.id as "attemptId", attempt.order_id as "orderId",
           attempt.status, attempt.amount::int as amount, attempt.provider,
           attempt.provider_reference as "providerReference",
           attempt.redirect_url as "redirectUrl", attempt.created_at as "createdAt",
           attempt.confirmed_at as "confirmedAt", attempt.identity_id as "identityId",
-          orders.reservation_id as "reservationId",
-          orders.total_amount::int as "totalAmount"
+          attempt.dispatch_lease_until as "dispatchLeaseUntil"
         from payment_attempts attempt
-        join order_orders orders on orders.id = attempt.order_id
         where attempt.id = ${callback.attemptId}::uuid
-        for update of attempt, orders
+        for update
       `;
       const attempt = attempts[0];
       if (
@@ -177,10 +280,22 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       ) {
         throw new DirectPaymentAttemptNotFoundError();
       }
-      if (
-        attempt.amount !== callback.amount ||
-        attempt.totalAmount !== callback.amount
-      ) {
+      const order = await this.orders.lockPayableOrder(
+        createOrderPaymentTransactionContext(sql),
+        attempt.identityId as Parameters<OrderPaymentWorkflow["lockPayableOrder"]>[1],
+        attempt.orderId as Parameters<OrderPaymentWorkflow["lockPayableOrder"]>[2],
+      );
+      if (!order) {
+        if (attempt.status === "CONFIRMED") {
+          return {
+            attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
+            status: "CONFIRMED" as const,
+            duplicate: true,
+          };
+        }
+        throw new DirectPaymentOrderNotPayableError();
+      }
+      if (attempt.amount !== callback.amount || order.totalAmount !== callback.amount) {
         throw new DirectPaymentAmountMismatchError();
       }
       const observation = await sql<Array<{ eventId: string }>>`
@@ -188,7 +303,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           (provider, provider_event_id, attempt_id, provider_reference, result,
            correlation_id)
         values
-          ('DEV', ${callback.providerEventId}, ${attempt.attemptId},
+          (${this.providerKey}, ${callback.providerEventId}, ${attempt.attemptId},
            ${callback.providerReference}, 'CONFIRMED', ${correlationId})
         on conflict (provider, provider_event_id) do nothing
         returning provider_event_id as "eventId"
@@ -197,7 +312,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         const original = await sql<Array<{ attemptId: string }>>`
           select attempt_id as "attemptId"
           from payment_provider_observations
-          where provider = 'DEV' and provider_event_id = ${callback.providerEventId}
+          where provider = ${this.providerKey} and provider_event_id = ${callback.providerEventId}
         `;
         if (
           original[0]?.attemptId !== attempt.attemptId ||
@@ -206,33 +321,49 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           throw new DirectPaymentAttemptNotFoundError();
         }
         return {
-          attemptId: attempt.attemptId,
+          attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
           status: "CONFIRMED" as const,
           duplicate: true,
         };
       }
       if (attempt.status === "CONFIRMED") {
         return {
-          attemptId: attempt.attemptId,
+          attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
           status: "CONFIRMED" as const,
           duplicate: true,
         };
       }
       await this.inventory.consumeReservation(
         sql as unknown as InventoryTransactionContext,
-        { reservationId: attempt.reservationId, attemptId: attempt.attemptId },
+        { reservationId: order.reservationId, attemptId: attempt.attemptId },
       );
       const now = new Date();
       await sql`update payment_attempts set status = 'CONFIRMED', confirmed_at = ${now} where id = ${attempt.attemptId}`;
-      await sql`update order_orders set status = 'PAID', paid_at = ${now} where id = ${attempt.orderId} and status = 'PENDING_PAYMENT'`;
+      await insertAttemptAudit(sql, {
+        attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
+        fromStatus: attempt.status,
+        toStatus: "CONFIRMED",
+        reasonCode: "PROVIDER_CONFIRMED",
+        correlationId,
+      });
+      await this.orders.markPaid(createOrderPaymentTransactionContext(sql), {
+        orderId: attempt.orderId as Parameters<
+          OrderPaymentWorkflow["markPaid"]
+        >[1]["orderId"],
+        attemptId: attempt.attemptId as Parameters<
+          OrderPaymentWorkflow["markPaid"]
+        >[1]["attemptId"],
+        paidAt: now,
+        correlationId,
+      });
       await enqueueOutboxEvent(
         sql,
         directPaymentAttemptConfirmedV1Contract.parse({
           eventId: randomUUID(),
           version: 1,
           eventType: "DirectPaymentAttemptConfirmed.v1",
-          aggregateId: attempt.orderId,
-          aggregateVersion: 2,
+          aggregateId: attempt.attemptId,
+          aggregateVersion: 3,
           occurredAt: now.toISOString(),
           correlationId,
           causationId: correlationId,
@@ -243,67 +374,28 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           },
         }),
       );
-      await enqueueOutboxEvent(sql, {
-        eventId: randomUUID(),
-        version: 1,
-        eventType: "OrderBecameActionable.v1",
-        aggregateId: attempt.orderId,
-        aggregateVersion: 2,
-        occurredAt: now.toISOString(),
-        correlationId,
-        causationId: correlationId,
-        actor: { type: "SYSTEM" },
-        payload: { status: "PAID" },
-      });
       return {
-        attemptId: attempt.attemptId,
+        attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
         status: "CONFIRMED" as const,
         duplicate: false,
       };
     });
   }
 
-  async readAttemptForBuyer(identityId: string, attemptId: string) {
+  async readAttemptForBuyer(
+    identityId: Parameters<DirectPaymentRepository["readAttemptForBuyer"]>[0],
+    attemptId: Parameters<DirectPaymentRepository["readAttemptForBuyer"]>[1],
+  ) {
     const rows = await this.#sql<AttemptRow[]>`
       select id as "attemptId", order_id as "orderId", status,
         amount::int as amount, provider,
         provider_reference as "providerReference", redirect_url as "redirectUrl",
-        created_at as "createdAt", confirmed_at as "confirmedAt"
+        created_at as "createdAt", confirmed_at as "confirmedAt",
+        dispatch_lease_until as "dispatchLeaseUntil"
       from payment_attempts
       where id = ${attemptId}::uuid and identity_id = ${identityId}::uuid
     `;
     return rows[0] ? mapAttempt(rows[0]) : undefined;
-  }
-
-  async listActionableByStore(storeId: string) {
-    const rows = await this.#sql<
-      Array<{
-        orderId: string;
-        totalAmount: number;
-        paidAt: Date;
-        createdAt: Date;
-        itemCount: number;
-      }>
-    >`
-      select orders.id as "orderId", orders.total_amount::int as "totalAmount",
-        orders.paid_at as "paidAt", orders.created_at as "createdAt",
-        count(items.variant_id)::int as "itemCount"
-      from order_orders orders
-      join order_items items on items.order_id = orders.id
-      where orders.store_id = ${storeId}::uuid and orders.status = 'PAID'
-      group by orders.id
-      order by orders.paid_at, orders.id
-    `;
-    return rows.map((row) =>
-      sellerActionableOrderContract.parse({
-        orderId: row.orderId,
-        status: "PAID",
-        total: { amount: row.totalAmount, currency: "IRR" },
-        paidAt: row.paidAt.toISOString(),
-        createdAt: row.createdAt.toISOString(),
-        itemCount: row.itemCount,
-      }),
-    );
   }
 
   async onModuleDestroy() {
@@ -311,13 +403,35 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
   }
 }
 
+async function insertAttemptAudit(
+  sql: Sql,
+  input: {
+    attemptId: string;
+    fromStatus: string | null;
+    toStatus: string;
+    reasonCode: string;
+    correlationId: string;
+  },
+) {
+  await sql`
+    insert into payment_attempt_audits
+      (id, attempt_id, from_status, to_status, reason_code, actor_kind,
+       correlation_id)
+    values
+      (${randomUUID()}, ${input.attemptId}, ${input.fromStatus}, ${input.toStatus},
+       ${input.reasonCode}, 'PAYMENTS_SERVICE', ${input.correlationId})
+  `;
+}
+
 async function readAttempt(sql: Sql, attemptId: string) {
   const rows = await sql<AttemptRow[]>`
     select id as "attemptId", order_id as "orderId", status,
       amount::int as amount, provider,
       provider_reference as "providerReference", redirect_url as "redirectUrl",
-      created_at as "createdAt", confirmed_at as "confirmedAt"
+      created_at as "createdAt", confirmed_at as "confirmedAt",
+      dispatch_lease_until as "dispatchLeaseUntil"
     from payment_attempts where id = ${attemptId}::uuid
+    for update
   `;
   return rows[0];
 }

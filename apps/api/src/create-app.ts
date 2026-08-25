@@ -16,10 +16,9 @@ export async function createApiApp(
 ): Promise<NestFastifyApplication> {
   if (
     environment.SEVO_RUNTIME_ENV === "production" &&
-    (environment.OTP_PROVIDER === "dev" ||
-      environment.DIRECT_PAYMENT_PROVIDER === "dev")
+    environment.OTP_PROVIDER === "dev"
   ) {
-    throw new Error("Development providers cannot run in production");
+    throw new Error("DevOtpProvider cannot run in production");
   }
 
   const adapter = new FastifyAdapter({

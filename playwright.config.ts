@@ -8,6 +8,8 @@ import {
   guestCartTestMobiles,
   sameStoreCartConflictTestMobiles,
   storefrontTestMobiles,
+  paymentBuyerTestMobiles,
+  paymentSellerTestMobiles,
   visualViewports,
 } from "./tests/helpers/visual-projects";
 
@@ -59,6 +61,8 @@ export default defineConfig({
           ...guestCartTestMobiles,
           ...sameStoreCartConflictTestMobiles,
           ...differentStoreCartConflictTestMobiles,
+          ...paymentBuyerTestMobiles,
+          ...paymentSellerTestMobiles,
         ].join(","),
       },
       reuseExistingServer: !process.env.CI,

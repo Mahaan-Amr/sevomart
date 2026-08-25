@@ -13,6 +13,8 @@ export type IdentityId = z.infer<typeof identityIdContract>;
 export type StoreId = z.infer<typeof storeIdContract>;
 export type ProductId = z.infer<typeof productIdContract>;
 export type VariantId = z.infer<typeof variantIdContract>;
+export type OrderId = z.infer<typeof orderIdContract>;
+export type PaymentAttemptId = z.infer<typeof paymentAttemptIdContract>;
 
 export const timestampV1Contract = z.iso.datetime({ offset: true });
 

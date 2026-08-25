@@ -3,7 +3,7 @@
 import {
   sellerActionableOrderListContract,
   type SellerActionableOrder,
-} from "@sevo/contracts/payments/v1";
+} from "@sevo/contracts/orders/v1";
 import { useEffect, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../lib/format-money";

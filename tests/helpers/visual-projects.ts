@@ -40,6 +40,14 @@ export const differentStoreCartConflictTestMobiles = Array.from(
   (_, index) => testMobile(80 + index),
 );
 
+export const paymentBuyerTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(90 + index),
+);
+
+export const paymentSellerTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(94 + index),
+);
+
 export function visualProjectIndex(projectName: string) {
   const index = visualViewports.findIndex(({ name }) => name === projectName);
   if (index === -1) throw new Error(`Unknown visual project ${projectName}`);

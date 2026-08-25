@@ -2,14 +2,18 @@ import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
 import type { InventoryAuthoring } from "../inventory/public";
+import type { OrderPaymentWorkflow } from "../orders/public";
 import { DirectPaymentApplicationService } from "./application/direct-payment.service";
 import { PostgresDirectPaymentRepository } from "./infrastructure/postgres-direct-payment.repository";
-import { PaymentController } from "./payment.controller";
+import {
+  DevPaymentController,
+  PaymentController,
+  ProviderCallbackController,
+} from "./payment.controller";
 import {
   DIRECT_PAYMENT_PROVIDER,
   DIRECT_PAYMENT_REPOSITORY,
   DIRECT_PAYMENT_SERVICE,
-  SELLER_STORE_RESOLVER,
 } from "./payments.tokens";
 import type { DirectPaymentProvider, DirectPaymentRepository } from "./public";
 import { DevDirectPaymentProvider } from "./testing/dev-direct-payment-provider";
@@ -20,28 +24,33 @@ export class PaymentsModule {
     environment: RuntimeEnvironment,
     options: {
       inventory: InventoryAuthoring;
+      orders: OrderPaymentWorkflow;
       provider?: DirectPaymentProvider;
-      resolveSellerStore: (identityId: string) => Promise<string | undefined>;
     },
   ): DynamicModule {
-    const provider =
-      options.provider ??
-      (environment.DIRECT_PAYMENT_PROVIDER === "dev"
-        ? new DevDirectPaymentProvider(environment.DEV_PAYMENT_PROVIDER_SIGNING_SECRET)
-        : undefined);
+    const devProvider =
+      !options.provider && environment.SEVO_RUNTIME_ENV !== "production"
+        ? new DevDirectPaymentProvider("sevo-local-dev-payment-fixture-secret")
+        : undefined;
+    const provider = options.provider ?? devProvider;
     if (!provider) throw new Error("The selected payment provider is not configured");
     return {
       module: PaymentsModule,
-      controllers: [PaymentController],
+      controllers: [
+        PaymentController,
+        ProviderCallbackController,
+        ...(devProvider ? [DevPaymentController] : []),
+      ],
       providers: [
         { provide: "PAYMENTS_RUNTIME_ENVIRONMENT", useValue: environment },
         { provide: DIRECT_PAYMENT_PROVIDER, useValue: provider },
-        { provide: SELLER_STORE_RESOLVER, useValue: options.resolveSellerStore },
         {
           provide: DIRECT_PAYMENT_REPOSITORY,
           useValue: new PostgresDirectPaymentRepository(
             environment.DATABASE_URL,
             options.inventory,
+            options.orders,
+            provider.providerKey,
           ),
         },
         {

@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
+import { PostgresCheckoutRepository } from "../../apps/api/src/modules/orders/composition";
 import { DirectPaymentApplicationService } from "../../apps/api/src/modules/payments/application/direct-payment.service";
 import { PostgresDirectPaymentRepository } from "../../apps/api/src/modules/payments/infrastructure/postgres-direct-payment.repository";
 import { DevDirectPaymentProvider } from "../../apps/api/src/modules/payments/testing/dev-direct-payment-provider";
@@ -20,18 +21,36 @@ const ids = {
 describe("successful direct payment transaction seam", () => {
   const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
   const inventory = new PostgresInventoryAuthoring(apiTestEnvironment.DATABASE_URL);
-  const provider = new DevDirectPaymentProvider("integration-payment-secret");
+  const provider = new (class extends DevDirectPaymentProvider {
+    initiationCount = 0;
+    override async initiate(
+      command: Parameters<DevDirectPaymentProvider["initiate"]>[0],
+    ) {
+      this.initiationCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return super.initiate(command);
+    }
+  })("integration-payment-secret");
+  const orders = new PostgresCheckoutRepository(
+    apiTestEnvironment.DATABASE_URL,
+    inventory,
+  );
   const payments = new PostgresDirectPaymentRepository(
     apiTestEnvironment.DATABASE_URL,
     inventory,
+    orders,
+    provider.providerKey,
   );
   const service = new DirectPaymentApplicationService(payments, provider);
 
   beforeEach(async () => {
+    provider.initiationCount = 0;
+    await sql`delete from payment_attempt_audits where attempt_id in (select id from payment_attempts where order_id = ${ids.order})`;
     await sql`delete from payment_provider_observations where attempt_id in (select id from payment_attempts where order_id = ${ids.order})`;
     await sql`delete from payment_idempotency_records where identity_id = ${ids.buyer}`;
+    await sql`delete from platform_outbox_events where aggregate_id = ${ids.order} or aggregate_id in (select id from payment_attempts where order_id = ${ids.order})`;
     await sql`delete from payment_attempts where order_id = ${ids.order}`;
-    await sql`delete from platform_outbox_events where aggregate_id in (${ids.order})`;
+    await sql`delete from order_state_transitions where order_id = ${ids.order}`;
     await sql`delete from inventory_reservation_lines where reservation_id = ${ids.reservation}`;
     await sql`delete from inventory_reservations where id = ${ids.reservation}`;
     await sql`delete from order_items where order_id = ${ids.order}`;
@@ -52,18 +71,34 @@ describe("successful direct payment transaction seam", () => {
 
   afterAll(async () => {
     await payments.onModuleDestroy();
+    await orders.onModuleDestroy();
     await inventory.onModuleDestroy();
     await sql.end();
   });
 
   it("dispatches before callback and confirms inventory/order only once", async () => {
-    expect(await service.listSellerActionable(ids.store)).toEqual([]);
-    const attempt = await service.createAttempt({
+    expect(await orders.listActionableByStore(ids.store as never)).toEqual([]);
+    const createCommand = {
       identityId: ids.buyer,
       orderId: ids.order,
       idempotencyKey: "pay-once",
       correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
-    });
+    } as const;
+    const concurrent = await Promise.allSettled([
+      service.createAttempt(createCommand),
+      service.createAttempt(createCommand),
+    ]);
+    const fulfilled = concurrent.filter(
+      (
+        result,
+      ): result is PromiseFulfilledResult<
+        Awaited<ReturnType<typeof service.createAttempt>>
+      > => result.status === "fulfilled",
+    );
+    expect(fulfilled).toHaveLength(1);
+    expect(concurrent.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const attempt = fulfilled[0]!.value;
+    expect(provider.initiationCount).toBe(1);
     expect(attempt).toMatchObject({ status: "DISPATCHED", orderId: ids.order });
     expect(
       await sql`select payment_attempt_id as "attemptId", hold_lease_until > now() as held from inventory_reservations where id = ${ids.reservation}`,
@@ -92,16 +127,94 @@ describe("successful direct payment transaction seam", () => {
       await sql`select on_hand as "onHand" from inventory_levels where variant_id = ${ids.variant}`,
     ).toEqual([{ onHand: 1 }]);
     expect(
-      await sql`select event_type as "eventType", payload from platform_outbox_events where aggregate_id = ${ids.order} order by event_type`,
+      await sql`select event_type as "eventType", payload from platform_outbox_events where aggregate_id in (${ids.order}, ${attempt.attemptId}) order by event_type`,
     ).toEqual([
       {
         eventType: "DirectPaymentAttemptConfirmed.v1",
         payload: { amount: { amount: 4500000, currency: "IRR" }, status: "CONFIRMED" },
       },
+      {
+        eventType: "DirectPaymentAttemptCreated.v1",
+        payload: { amount: { amount: 4500000, currency: "IRR" }, status: "CREATED" },
+      },
+      {
+        eventType: "DirectPaymentAttemptDispatched.v1",
+        payload: { status: "DISPATCHED" },
+      },
       { eventType: "OrderBecameActionable.v1", payload: { status: "PAID" } },
     ]);
-    expect(await service.listSellerActionable(ids.store)).toMatchObject([
+    expect(
+      await sql`select from_status as "fromStatus", to_status as "toStatus", correlation_id as "correlationId" from payment_attempt_audits where attempt_id = ${attempt.attemptId} order by occurred_at`,
+    ).toEqual([
+      {
+        fromStatus: null,
+        toStatus: "CREATED",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+      },
+      {
+        fromStatus: "CREATED",
+        toStatus: "DISPATCHED",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+      },
+      {
+        fromStatus: "DISPATCHED",
+        toStatus: "CONFIRMED",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+      },
+    ]);
+    expect(
+      await sql`select from_status as "fromStatus", to_status as "toStatus", correlation_id as "correlationId" from order_state_transitions where order_id = ${ids.order}`,
+    ).toEqual([
+      {
+        fromStatus: "PENDING_PAYMENT",
+        toStatus: "PAID",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+      },
+    ]);
+    expect(await orders.listActionableByStore(ids.store as never)).toMatchObject([
       { orderId: ids.order, status: "PAID", itemCount: 1 },
     ]);
+  });
+
+  it("moves an abandoned dispatch to review after its lease expires", async () => {
+    const correlationId = "8609f906-c921-490c-a793-84398fb67e0c";
+    const attempt = await payments.prepareAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      attemptId: "a1fe87eb-6c0f-47ca-93ca-9f9a038ca272" as never,
+      idempotencyKey: "abandoned-dispatch",
+      requestHash: "a".repeat(64),
+      correlationId,
+      leaseUntil: new Date(Date.now() + 60_000),
+    });
+    expect(await payments.claimDispatch(attempt.attemptId, correlationId)).toBe(true);
+    await sql`update payment_attempts set dispatch_lease_until = now() - interval '1 second' where id = ${attempt.attemptId}`;
+
+    const reviewed = await payments.prepareAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      attemptId: "b1fe87eb-6c0f-47ca-93ca-9f9a038ca272" as never,
+      idempotencyKey: "abandoned-dispatch",
+      requestHash: "a".repeat(64),
+      correlationId,
+      leaseUntil: new Date(Date.now() + 60_000),
+    });
+    expect(reviewed).toMatchObject({
+      attemptId: attempt.attemptId,
+      status: "REVIEW_REQUIRED",
+    });
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PAYMENT_REVIEW" },
+    ]);
+    expect(
+      await sql`select status from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "HELD_FOR_REVIEW" }]);
+    expect(
+      await sql`select event_type as "eventType" from platform_outbox_events where aggregate_id in (${ids.order}, ${attempt.attemptId}) and event_type like '%ReviewRequired.v1' order by event_type`,
+    ).toEqual([
+      { eventType: "DirectPaymentAttemptReviewRequired.v1" },
+      { eventType: "OrderPaymentReviewRequired.v1" },
+    ]);
+    expect(provider.initiationCount).toBe(0);
   });
 });

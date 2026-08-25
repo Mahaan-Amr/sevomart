@@ -339,6 +339,20 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     return true;
   }
 
+  async holdReservationForReview(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["holdReservationForReview"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ id: string }>>`
+      update inventory_reservations set status = 'HELD_FOR_REVIEW'
+      where id = ${command.reservationId}::uuid and status = 'ACTIVE'
+        and payment_attempt_id = ${command.attemptId}::uuid
+      returning id
+    `;
+    if (!rows[0]) throw new InventoryReservationNotConsumableError();
+  }
+
   async onModuleDestroy() {
     await this.#sql.end();
   }

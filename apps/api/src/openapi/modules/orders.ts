@@ -41,6 +41,19 @@ const idempotencyRetryHeader = {
 
 const operations = [
   {
+    operationId: "listSellerActionableOrders",
+    method: "get",
+    path: "/v1/seller/orders",
+    tag: "orders",
+    auth: "identity-session",
+    responses: [
+      { status: 200, schema: "SellerActionableOrderList" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "InternalServerError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "readCart",
     method: "get",
     path: "/v1/cart",
@@ -329,6 +342,7 @@ export const contribute_orders_openApi: OpenApiContributor = (document) =>
         201: "Saved address created",
         204: "Saved address removed from future selection",
         401: "Identity session is missing or invalid",
+        403: "Active seller access is required",
         404: "Saved address is unavailable to this identity",
         409: "Cart state requires a fresh revision or explicit resolution",
         422: "Cart input is invalid or unavailable",
