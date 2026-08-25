@@ -1,6 +1,7 @@
 import {
   createDirectPaymentAttemptInputContract,
   directPaymentAttemptContract,
+  directPaymentAttemptFailedV1Contract,
   providerCallbackInputContract,
   providerCallbackResultContract,
 } from "@sevo/contracts/payments/v1";
@@ -41,5 +42,29 @@ describe("direct payment v1 contract", () => {
       status: "CONFIRMED",
       duplicate: false,
     });
+    expect(
+      providerCallbackResultContract.parse({
+        attemptId: callback.attemptId,
+        status: "REVIEW_REQUIRED",
+        duplicate: false,
+      }).status,
+    ).toBe("REVIEW_REQUIRED");
+    expect(
+      directPaymentAttemptFailedV1Contract.parse({
+        eventId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+        version: 1,
+        eventType: "DirectPaymentAttemptFailed.v1",
+        aggregateId: callback.attemptId,
+        aggregateVersion: 3,
+        occurredAt: "2026-08-25T08:01:00.000Z",
+        correlationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+        causationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+        actor: { type: "SYSTEM" },
+        payload: {
+          status: "FAILED",
+          amount: { amount: 4_500_000, currency: "IRR" },
+        },
+      }).payload.status,
+    ).toBe("FAILED");
   });
 });

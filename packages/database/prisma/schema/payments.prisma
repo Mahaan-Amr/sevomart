@@ -14,6 +14,8 @@ model PaymentAttempt {
   dispatchedAt      DateTime? @map("dispatched_at") @db.Timestamptz(3)
   dispatchLeaseUntil DateTime? @map("dispatch_lease_until") @db.Timestamptz(3)
   confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  reconciliationCount Int     @default(0) @map("reconciliation_count")
+  nextReconciliationAt DateTime? @map("next_reconciliation_at") @db.Timestamptz(3)
 
   @@index([orderId])
   @@map("payment_attempts")

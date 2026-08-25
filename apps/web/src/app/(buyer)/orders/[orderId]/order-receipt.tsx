@@ -18,6 +18,7 @@ export function OrderReceipt({
 }) {
   const [attempt, setAttempt] = useState<DirectPaymentAttempt>();
   const [failed, setFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (!attemptId) {
@@ -35,12 +36,38 @@ export function OrderReceipt({
       .catch(() => setFailed(true));
   }, [attemptId, orderId]);
 
+  async function retryPayment() {
+    setRetrying(true);
+    setFailed(false);
+    try {
+      const response = await fetch(`/api/orders/${orderId}/payment-attempts`, {
+        method: "POST",
+        headers: { "idempotency-key": crypto.randomUUID() },
+      });
+      const parsed = directPaymentAttemptContract.safeParse(await response.json());
+      if (!response.ok || !parsed.success) throw new Error("retry unavailable");
+      setAttempt(parsed.data);
+      if (parsed.data.redirectUrl) window.location.assign(parsed.data.redirectUrl);
+    } catch {
+      setFailed(true);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  const title =
+    attempt?.status === "CONFIRMED"
+      ? "پرداخت تأیید شد"
+      : attempt?.status === "FAILED"
+        ? "پرداخت انجام نشد"
+        : attempt?.status === "REVIEW_REQUIRED"
+          ? "نتیجه پرداخت در حال بررسی است"
+          : "در انتظار نتیجه پرداخت";
+
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="receipt-title">
-        <h1 id="receipt-title">
-          {attempt?.status === "CONFIRMED" ? "پرداخت تأیید شد" : "بررسی پرداخت"}
-        </h1>
+        <h1 id="receipt-title">{title}</h1>
         {attempt?.status === "CONFIRMED" ? (
           <>
             <p>سفارش اکنون برای فروشگاه قابل اقدام است.</p>
@@ -69,10 +96,37 @@ export function OrderReceipt({
             </dl>
             <p className={styles.next}>قدم بعدی: فروشگاه سفارش را آماده می‌کند.</p>
           </>
+        ) : attempt?.status === "FAILED" ? (
+          <>
+            <p>
+              مبلغی برای این تلاش تأیید نشد. رزرو کالا فقط تا مهلت اصلی سفارش باقی
+              می‌ماند.
+            </p>
+            <button
+              className={styles.primary}
+              disabled={retrying}
+              onClick={retryPayment}
+            >
+              {retrying ? "در حال شروع…" : "تلاش دوباره"}
+            </button>
+            {failed ? (
+              <p role="alert">شروع دوباره پرداخت ممکن نشد. کمی بعد تلاش کنید.</p>
+            ) : null}
+          </>
+        ) : attempt?.status === "REVIEW_REQUIRED" ? (
+          <>
+            <p>
+              هنوز نتیجه قطعی از درگاه نرسیده است. برای جلوگیری از پرداخت دوباره، تلاش
+              تازه تا پایان بررسی بسته است.
+            </p>
+            <p className={styles.next}>
+              فروشگاه هنوز سفارشی برای آماده‌سازی دریافت نکرده است.
+            </p>
+          </>
         ) : failed ? (
           <p role="alert">رسید در دسترس نیست. از پیگیری سفارش دوباره تلاش کنید.</p>
         ) : (
-          <p>نتیجه پرداخت در حال دریافت است…</p>
+          <p>نتیجه پرداخت در حال دریافت است؛ این صفحه را نبندید.</p>
         )}
       </section>
     </main>

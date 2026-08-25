@@ -58,6 +58,10 @@ const runtimeEnvironmentContract = z.object({
     .string()
     .min(32)
     .default("sevo_local_seller_approval_recovery_secret"),
+  PAYMENT_RECOVERY_SECRET: z
+    .string()
+    .min(32)
+    .default("sevo_local_payment_recovery_secret"),
   CART_TOKEN_DERIVATION_SECRET: z
     .string()
     .min(32)
@@ -93,6 +97,7 @@ export function readRuntimeEnvironment(
       environment.MINIO_BUCKET === "sevo-media" ||
       environment.SELLER_APPROVAL_RECOVERY_SECRET ===
         "sevo_local_seller_approval_recovery_secret" ||
+      environment.PAYMENT_RECOVERY_SECRET === "sevo_local_payment_recovery_secret" ||
       environment.CART_TOKEN_DERIVATION_SECRET ===
         "sevo_local_cart_token_derivation_secret" ||
       Object.values(environment.DISCOVERY_CURSOR_KEYRING).includes(

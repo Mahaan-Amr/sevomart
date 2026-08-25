@@ -274,6 +274,7 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       set status = 'RELEASED'
       where id = ${command.reservationId}::uuid and status = 'ACTIVE'
         and expires_at <= ${command.expiredAt}
+        and payment_attempt_id is null
       returning id
     `;
     return rows.length === 1;
@@ -309,8 +310,10 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     `;
     const reservation = reservations[0];
     if (reservation?.status === "CONSUMED") return false;
+    if (reservation?.status === "RELEASED") return false;
     if (
-      reservation?.status !== "ACTIVE" ||
+      !reservation ||
+      !["ACTIVE", "HELD_FOR_REVIEW"].includes(reservation.status) ||
       reservation.attemptId !== command.attemptId
     ) {
       throw new InventoryReservationNotConsumableError();
@@ -351,6 +354,24 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       returning id
     `;
     if (!rows[0]) throw new InventoryReservationNotConsumableError();
+  }
+
+  async resolveFailedPayment(
+    transaction: InventoryTransactionContext,
+    command: Parameters<InventoryAuthoring["resolveFailedPayment"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ status: "ACTIVE" | "RELEASED" }>>`
+      update inventory_reservations
+      set status = case when expires_at > ${command.now} then 'ACTIVE' else 'RELEASED' end,
+        payment_attempt_id = null, hold_lease_until = null
+      where id = ${command.reservationId}::uuid
+        and status in ('ACTIVE', 'HELD_FOR_REVIEW')
+        and payment_attempt_id = ${command.attemptId}::uuid
+      returning status
+    `;
+    if (!rows[0]) throw new InventoryReservationNotConsumableError();
+    return rows[0].status;
   }
 
   async onModuleDestroy() {

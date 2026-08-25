@@ -24,17 +24,25 @@ import {
 } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-import { requireIdentity } from "../../http/identity-session";
+import { readPlatformSessionToken, requireIdentity } from "../../http/identity-session";
 import {
   IDENTITY_SESSION_READER,
   type IdentitySessionReader,
+  PlatformAgentSessionUnauthorizedError,
+  PlatformPermissionRequiredError,
+  type PlatformAgentSessionAuthorizer,
 } from "../identity-access/public";
 import { DevDirectPaymentProvider } from "./testing/dev-direct-payment-provider";
-import { DIRECT_PAYMENT_PROVIDER, DIRECT_PAYMENT_SERVICE } from "./payments.tokens";
+import {
+  DIRECT_PAYMENT_PROVIDER,
+  DIRECT_PAYMENT_SERVICE,
+  PAYMENT_REVIEW_AUTHORIZER,
+} from "./payments.tokens";
 import type { DirectPaymentProvider, DirectPaymentService } from "./public";
 import { DirectPaymentAttemptNotFoundError } from "./public";
 import { DirectPaymentDispatchInProgressError } from "./public";
 import { InvalidProviderCallbackError } from "./public";
+import { PaymentRecoveryRunner } from "./application/payment-recovery.runner";
 
 function requireIdempotencyKey(correlationId: string, value: string | undefined) {
   const key = paymentIdempotencyKeyContract.safeParse(value);
@@ -122,6 +130,68 @@ export class PaymentController {
 }
 
 @ApiExcludeController()
+@Controller("v1/platform/payment-reviews")
+export class PlatformPaymentReviewController {
+  constructor(
+    @Inject(DIRECT_PAYMENT_SERVICE) private readonly payments: DirectPaymentService,
+    @Inject(PAYMENT_REVIEW_AUTHORIZER)
+    private readonly sessions: PlatformAgentSessionAuthorizer,
+  ) {}
+
+  @Get()
+  async list(@Req() request: FastifyRequest) {
+    try {
+      await this.sessions.authorizePaymentReview(
+        readPlatformSessionToken(request) ?? "",
+      );
+      return { items: await this.payments.listReviewRequired() };
+    } catch (error) {
+      if (error instanceof PlatformAgentSessionUnauthorizedError) {
+        throw new HttpException(
+          {
+            code: "UNAUTHORIZED",
+            message: "برای دیدن بررسی‌های پرداخت با نشست عامل پلتفرم وارد شوید.",
+            correlationId: request.id,
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      if (error instanceof PlatformPermissionRequiredError) {
+        throw new HttpException(
+          {
+            code: "PLATFORM_PERMISSION_REQUIRED",
+            message: "مجوز بررسی عملیاتی برای این نشست فعال نیست.",
+            correlationId: request.id,
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      throw error;
+    }
+  }
+}
+
+@ApiExcludeController()
+@Controller("v1/internal/payment-recoveries")
+export class InternalPaymentRecoveryController {
+  constructor(
+    private readonly recovery: PaymentRecoveryRunner,
+    @Inject("PAYMENTS_RUNTIME_ENVIRONMENT")
+    private readonly environment: RuntimeEnvironment,
+  ) {}
+
+  @Post("run")
+  async run(
+    @Headers("x-sevo-worker-secret") secret: string | undefined,
+  ): Promise<{ recovered: number; reconciled: boolean }> {
+    if (!sameSecret(secret, this.environment.PAYMENT_RECOVERY_SECRET)) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+    return this.recovery.runOnce();
+  }
+}
+
+@ApiExcludeController()
 @Controller("internal/v1/payment-providers")
 export class ProviderCallbackController {
   constructor(
@@ -154,6 +224,16 @@ export class ProviderCallbackController {
       throw error;
     }
   }
+}
+
+function sameSecret(actual: string | undefined, expected: string): boolean {
+  if (!actual) return false;
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    actualBytes.length === expectedBytes.length &&
+    timingSafeEqual(actualBytes, expectedBytes)
+  );
 }
 
 @ApiExcludeController()
@@ -195,3 +275,4 @@ export class DevPaymentController {
     );
   }
 }
+import { timingSafeEqual } from "node:crypto";

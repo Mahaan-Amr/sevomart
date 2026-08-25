@@ -10,6 +10,7 @@ import {
 import { FulfillmentModule } from "../modules/fulfillment/composition";
 import {
   IdentityAccessModule,
+  PostgresPlatformAgentSessionAuthorizer,
   type IdentityAccessModuleOptions,
 } from "../modules/identity-access/composition";
 import {
@@ -66,6 +67,9 @@ export function composeCanonicalApiModules(
     createOpaqueProductTransactionContext,
     createOpaqueStoreTransactionContext,
   );
+  const platformAgentSessions = new PostgresPlatformAgentSessionAuthorizer(
+    environment.DATABASE_URL,
+  );
 
   return [
     IdentityAccessModule.register(environment, {
@@ -76,6 +80,8 @@ export function composeCanonicalApiModules(
       createStoreTransactionContext:
         identityOptions.createStoreTransactionContext ??
         createOpaqueStoreTransactionContext,
+      platformAgentSessionAuthorizer:
+        identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
     }),
     MediaModule.register(environment, undefined, async (mediaId) => {
       if (await storeRepository.isMediaPublished(mediaId)) return true;
@@ -101,6 +107,8 @@ export function composeCanonicalApiModules(
     PaymentsModule.register(environment, {
       inventory: inventoryAuthoring,
       orders: checkoutRepository,
+      platformAgentSessions:
+        identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
     }),
     FulfillmentModule,
     ConversationsModule,

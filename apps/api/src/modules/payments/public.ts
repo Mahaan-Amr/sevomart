@@ -48,14 +48,35 @@ export interface DirectPaymentService {
     correlationId: string,
   ): Promise<{
     attemptId: PaymentAttemptId;
-    status: "CONFIRMED";
+    status: "CONFIRMED" | "FAILED" | "REVIEW_REQUIRED";
     duplicate: boolean;
   }>;
   readAttempt(
     identityId: IdentityId,
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt>;
+  reconcileNext(now: Date, correlationId: string): Promise<boolean>;
+  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
 }
+
+export type DirectPaymentReconciliation = Readonly<{
+  attemptId: PaymentAttemptId;
+  orderId: OrderId;
+  amount: MoneyV1;
+  providerReference: string;
+}>;
+
+export type PaymentReviewItem = Readonly<{
+  attempt: DirectPaymentAttempt;
+  orderStatus: "PAYMENT_REVIEW";
+  audits: ReadonlyArray<{
+    fromStatus: string | null;
+    toStatus: string;
+    reasonCode: string;
+    correlationId: string;
+    occurredAt: string;
+  }>;
+}>;
 
 export interface DirectPaymentRepository {
   prepareAttempt(command: {
@@ -73,18 +94,25 @@ export interface DirectPaymentRepository {
     redirectUrl: string;
   }): Promise<DirectPaymentAttempt>;
   claimDispatch(attemptId: PaymentAttemptId, correlationId: string): Promise<boolean>;
-  confirmCallback(
+  applyProviderResult(
     callback: VerifiedProviderCallback,
     correlationId: string,
   ): Promise<{
     attemptId: PaymentAttemptId;
-    status: "CONFIRMED";
+    status: "CONFIRMED" | "FAILED" | "REVIEW_REQUIRED";
     duplicate: boolean;
   }>;
   readAttemptForBuyer(
     identityId: IdentityId,
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt | undefined>;
+  recoverExpiredAttempts(now: Date, correlationId: string): Promise<number>;
+  markDispatchUnknown(
+    attemptId: PaymentAttemptId,
+    correlationId: string,
+  ): Promise<DirectPaymentAttempt>;
+  claimNextReconciliation(now: Date): Promise<DirectPaymentReconciliation | null>;
+  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
 }
 
 export class InvalidProviderCallbackError extends Error {}

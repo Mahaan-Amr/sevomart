@@ -23,12 +23,27 @@ describe("successful direct payment transaction seam", () => {
   const inventory = new PostgresInventoryAuthoring(apiTestEnvironment.DATABASE_URL);
   const provider = new (class extends DevDirectPaymentProvider {
     initiationCount = 0;
+    failInitiation = false;
+    queryCount = 0;
+    queryResult: "CONFIRMED" | "FAILED" | "PENDING" = "PENDING";
     override async initiate(
       command: Parameters<DevDirectPaymentProvider["initiate"]>[0],
     ) {
       this.initiationCount += 1;
+      if (this.failInitiation) throw new Error("provider timeout");
       await new Promise((resolve) => setTimeout(resolve, 25));
       return super.initiate(command);
+    }
+    override async query(command: Parameters<DevDirectPaymentProvider["query"]>[0]) {
+      this.queryCount += 1;
+      return {
+        attemptId: command.attemptId,
+        orderId: command.orderId,
+        amount: command.amount.amount,
+        result: this.queryResult,
+        providerEventId: `dev-query-${this.queryCount}-${command.attemptId}`,
+        providerReference: command.providerReference,
+      } as const;
     }
   })("integration-payment-secret");
   const orders = new PostgresCheckoutRepository(
@@ -45,8 +60,11 @@ describe("successful direct payment transaction seam", () => {
 
   beforeEach(async () => {
     provider.initiationCount = 0;
+    provider.failInitiation = false;
+    provider.queryCount = 0;
+    provider.queryResult = "PENDING";
     await sql`delete from payment_attempt_audits where attempt_id in (select id from payment_attempts where order_id = ${ids.order})`;
-    await sql`delete from payment_provider_observations where attempt_id in (select id from payment_attempts where order_id = ${ids.order})`;
+    await sql`delete from payment_provider_observations where attempt_id in (select id from payment_attempts where order_id = ${ids.order}) or provider_event_id like 'dev-%'`;
     await sql`delete from payment_idempotency_records where identity_id = ${ids.buyer}`;
     await sql`delete from platform_outbox_events where aggregate_id = ${ids.order} or aggregate_id in (select id from payment_attempts where order_id = ${ids.order})`;
     await sql`delete from payment_attempts where order_id = ${ids.order}`;
@@ -190,15 +208,11 @@ describe("successful direct payment transaction seam", () => {
     expect(await payments.claimDispatch(attempt.attemptId, correlationId)).toBe(true);
     await sql`update payment_attempts set dispatch_lease_until = now() - interval '1 second' where id = ${attempt.attemptId}`;
 
-    const reviewed = await payments.prepareAttempt({
-      identityId: ids.buyer as never,
-      orderId: ids.order as never,
-      attemptId: "b1fe87eb-6c0f-47ca-93ca-9f9a038ca272" as never,
-      idempotencyKey: "abandoned-dispatch",
-      requestHash: "a".repeat(64),
-      correlationId,
-      leaseUntil: new Date(Date.now() + 60_000),
-    });
+    expect(await payments.recoverExpiredAttempts(new Date(), correlationId)).toBe(1);
+    const reviewed = await payments.readAttemptForBuyer(
+      ids.buyer as never,
+      attempt.attemptId,
+    );
     expect(reviewed).toMatchObject({
       attemptId: attempt.attemptId,
       status: "REVIEW_REQUIRED",
@@ -216,5 +230,287 @@ describe("successful direct payment transaction seam", () => {
       { eventType: "OrderPaymentReviewRequired.v1" },
     ]);
     expect(provider.initiationCount).toBe(0);
+  });
+
+  it("recovers an undispatched attempt without extending the original deadline", async () => {
+    const correlationId = "d609f906-c921-490c-a793-84398fb67e0c";
+    const attempt = await payments.prepareAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      attemptId: "d1fe87eb-6c0f-47ca-93ca-9f9a038ca272" as never,
+      idempotencyKey: "crash-before-dispatch",
+      requestHash: "d".repeat(64),
+      correlationId,
+      leaseUntil: new Date(Date.now() - 1_000),
+    });
+
+    expect(await payments.recoverExpiredAttempts(new Date(), correlationId)).toBe(1);
+    expect(
+      await payments.readAttemptForBuyer(ids.buyer as never, attempt.attemptId),
+    ).toMatchObject({ status: "FAILED" });
+    expect(
+      await sql`select status, payment_attempt_id as "attemptId" from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "ACTIVE", attemptId: null }]);
+    expect(await payments.recoverExpiredAttempts(new Date(), correlationId)).toBe(0);
+  });
+
+  it("releases an undispatched reservation once the original deadline has passed", async () => {
+    const correlationId = "4609f906-c921-490c-a793-84398fb67e0c";
+    const attempt = await payments.prepareAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      attemptId: "e1fe87eb-6c0f-47ca-93ca-9f9a038ca272" as never,
+      idempotencyKey: "crash-before-dispatch-after-deadline",
+      requestHash: "e".repeat(64),
+      correlationId,
+      leaseUntil: new Date(Date.now() + 1_000),
+    });
+    await sql`
+      update order_orders set reservation_expires_at = now() - interval '1 second'
+      where id = ${ids.order}
+    `;
+    await sql`
+      update inventory_reservations
+      set expires_at = now() - interval '1 second', hold_lease_until = now() - interval '1 second'
+      where id = ${ids.reservation}
+    `;
+    await sql`
+      update payment_attempts set dispatch_lease_until = now() - interval '1 second'
+      where id = ${attempt.attemptId}
+    `;
+
+    expect(await payments.recoverExpiredAttempts(new Date(), correlationId)).toBe(1);
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "EXPIRED" },
+    ]);
+    expect(
+      await sql`select status from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "RELEASED" }]);
+  });
+
+  it("treats an initiation timeout as ambiguous instead of guessing failure", async () => {
+    provider.failInitiation = true;
+    const attempt = await service.createAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      idempotencyKey: "provider-timeout",
+      correlationId: "1609f906-c921-490c-a793-84398fb67e0c",
+    });
+
+    expect(attempt.status).toBe("REVIEW_REQUIRED");
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PAYMENT_REVIEW" },
+    ]);
+    expect(
+      await sql`select status from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "HELD_FOR_REVIEW" }]);
+  });
+
+  it("releases a definite failure back to the original reservation deadline and permits a safe retry", async () => {
+    const first = await service.createAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      idempotencyKey: "failed-attempt",
+      correlationId: "9609f906-c921-490c-a793-84398fb67e0c",
+    });
+
+    expect(
+      await service.applyCallback(
+        provider.callback({
+          attemptId: first.attemptId,
+          orderId: ids.order,
+          amount: 4_500_000,
+          result: "FAILED",
+          providerEventId: "dev-failed-1",
+        }),
+        "9609f906-c921-490c-a793-84398fb67e0c",
+      ),
+    ).toMatchObject({ status: "FAILED", duplicate: false });
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PENDING_PAYMENT" },
+    ]);
+    expect(
+      await sql`select status, payment_attempt_id as "attemptId", hold_lease_until as "leaseUntil" from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "ACTIVE", attemptId: null, leaseUntil: null }]);
+
+    const retry = await service.createAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      idempotencyKey: "retry-after-failure",
+      correlationId: "a609f906-c921-490c-a793-84398fb67e0c",
+    });
+    expect(retry.attemptId).not.toBe(first.attemptId);
+    expect(retry.status).toBe("DISPATCHED");
+  });
+
+  it("holds an ambiguous result for review and replays its duplicate without a second effect", async () => {
+    const attempt = await service.createAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      idempotencyKey: "pending-attempt",
+      correlationId: "b609f906-c921-490c-a793-84398fb67e0c",
+    });
+    const callback = provider.callback({
+      attemptId: attempt.attemptId,
+      orderId: ids.order,
+      amount: 4_500_000,
+      result: "PENDING",
+      providerEventId: "dev-pending-1",
+    });
+
+    await expect(
+      service.applyCallback(callback, "b609f906-c921-490c-a793-84398fb67e0c"),
+    ).resolves.toMatchObject({ status: "REVIEW_REQUIRED", duplicate: false });
+    await expect(
+      service.applyCallback(callback, "b609f906-c921-490c-a793-84398fb67e0c"),
+    ).resolves.toMatchObject({ status: "REVIEW_REQUIRED", duplicate: true });
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PAYMENT_REVIEW" },
+    ]);
+    expect(
+      await sql`select status from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "HELD_FOR_REVIEW" }]);
+    await expect(
+      service.createAttempt({
+        identityId: ids.buyer as never,
+        orderId: ids.order as never,
+        idempotencyKey: "blocked-parallel-payment",
+        correlationId: "c609f906-c921-490c-a793-84398fb67e0c",
+      }),
+    ).rejects.toThrow();
+    expect(
+      await sql`select count(*)::int as count from payment_attempt_audits where attempt_id = ${attempt.attemptId} and to_status = 'REVIEW_REQUIRED'`,
+    ).toEqual([{ count: 1 }]);
+    expect(await service.listReviewRequired()).toMatchObject([
+      {
+        attempt: { attemptId: attempt.attemptId, status: "REVIEW_REQUIRED" },
+        orderStatus: "PAYMENT_REVIEW",
+        audits: [
+          { toStatus: "CREATED", reasonCode: "PAYMENT_ATTEMPT_CREATED" },
+          { toStatus: "DISPATCHED", reasonCode: "PROVIDER_DISPATCH_CLAIMED" },
+          { toStatus: "REVIEW_REQUIRED", reasonCode: "PROVIDER_RESULT_PENDING" },
+        ],
+      },
+    ]);
+
+    provider.queryResult = "CONFIRMED";
+    await expect(
+      service.reconcileNext(new Date(), "e609f906-c921-490c-a793-84398fb67e0c"),
+    ).resolves.toBe(true);
+    expect(provider.queryCount).toBe(1);
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PAID" },
+    ]);
+    expect(
+      await sql`select status from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "CONSUMED" }]);
+  });
+
+  it("reconciles a reviewed payment to failure without extending its deadline", async () => {
+    const attempt = await service.createAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      idempotencyKey: "review-then-fail",
+      correlationId: "f609f906-c921-490c-a793-84398fb67e0c",
+    });
+    await service.applyCallback(
+      provider.callback({
+        attemptId: attempt.attemptId,
+        orderId: ids.order,
+        amount: 4_500_000,
+        result: "PENDING",
+        providerEventId: "dev-review-before-failure",
+      }),
+      "f609f906-c921-490c-a793-84398fb67e0c",
+    );
+
+    await expect(
+      service.applyCallback(
+        provider.callback({
+          attemptId: attempt.attemptId,
+          orderId: ids.order,
+          amount: 4_500_000,
+          result: "FAILED",
+          providerEventId: "dev-failed-after-review",
+        }),
+        "0609f906-c921-490c-a793-84398fb67e0c",
+      ),
+    ).resolves.toMatchObject({ status: "FAILED", duplicate: false });
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PENDING_PAYMENT" },
+    ]);
+    expect(
+      await sql`select status, payment_attempt_id as "attemptId" from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "ACTIVE", attemptId: null }]);
+  });
+
+  it("records a late success after reservation release without overselling or seller handoff", async () => {
+    const attempt = await service.createAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      idempotencyKey: "late-success",
+      correlationId: "2609f906-c921-490c-a793-84398fb67e0c",
+    });
+    await sql`
+      update inventory_reservations
+      set status = 'RELEASED', payment_attempt_id = null, hold_lease_until = null
+      where id = ${ids.reservation}
+    `;
+    await sql`update order_orders set status = 'EXPIRED' where id = ${ids.order}`;
+
+    await expect(
+      service.applyCallback(
+        provider.successCallback({
+          attemptId: attempt.attemptId,
+          orderId: ids.order,
+          amount: 4_500_000,
+          providerEventId: "dev-late-confirmed",
+        }),
+        "2609f906-c921-490c-a793-84398fb67e0c",
+      ),
+    ).resolves.toMatchObject({ status: "CONFIRMED", duplicate: false });
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PAYMENT_REVIEW" },
+    ]);
+    expect(
+      await sql`select status from inventory_reservations where id = ${ids.reservation}`,
+    ).toEqual([{ status: "RELEASED" }]);
+    expect(
+      await sql`select on_hand as "onHand" from inventory_levels where variant_id = ${ids.variant}`,
+    ).toEqual([{ onHand: 2 }]);
+    expect(await orders.listActionableByStore(ids.store as never)).toEqual([]);
+    expect(
+      await sql`select count(*)::int as count from platform_outbox_events where aggregate_id = ${ids.order} and event_type = 'OrderBecameActionable.v1'`,
+    ).toEqual([{ count: 0 }]);
+    expect(
+      await sql`select reason_code as "reasonCode" from payment_attempt_audits where attempt_id = ${attempt.attemptId} order by occurred_at desc limit 1`,
+    ).toEqual([{ reasonCode: "PAID_STOCK_CONFLICT" }]);
+  });
+
+  it("rejects a callback amount mismatch and leaves an operational audit", async () => {
+    const attempt = await service.createAttempt({
+      identityId: ids.buyer as never,
+      orderId: ids.order as never,
+      idempotencyKey: "amount-mismatch",
+      correlationId: "3609f906-c921-490c-a793-84398fb67e0c",
+    });
+
+    await expect(
+      service.applyCallback(
+        provider.successCallback({
+          attemptId: attempt.attemptId,
+          orderId: ids.order,
+          amount: 4_400_000,
+          providerEventId: "dev-wrong-amount",
+        }),
+        "3609f906-c921-490c-a793-84398fb67e0c",
+      ),
+    ).resolves.toMatchObject({ status: "REVIEW_REQUIRED", duplicate: false });
+    expect(await sql`select status from order_orders where id = ${ids.order}`).toEqual([
+      { status: "PAYMENT_REVIEW" },
+    ]);
+    expect(
+      await sql`select reason_code as "reasonCode" from payment_attempt_audits where attempt_id = ${attempt.attemptId} order by occurred_at desc limit 1`,
+    ).toEqual([{ reasonCode: "PROVIDER_AMOUNT_MISMATCH" }]);
   });
 });

@@ -48,7 +48,7 @@ export const providerCallbackInputContract = z
 export const providerCallbackResultContract = z
   .object({
     attemptId: paymentAttemptIdContract,
-    status: z.literal("CONFIRMED"),
+    status: z.enum(["CONFIRMED", "FAILED", "REVIEW_REQUIRED"]),
     duplicate: z.boolean(),
   })
   .strict();
@@ -63,6 +63,13 @@ export const directPaymentAttemptConfirmedV1Contract = eventEnvelopeV1Contract.e
       amount: moneyV1Contract,
     })
     .strict(),
+});
+
+export const directPaymentAttemptFailedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("DirectPaymentAttemptFailed.v1"),
+  causationId: z.uuid(),
+  actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+  payload: z.object({ status: z.literal("FAILED"), amount: moneyV1Contract }).strict(),
 });
 
 export const directPaymentAttemptCreatedV1Contract = eventEnvelopeV1Contract.extend({
