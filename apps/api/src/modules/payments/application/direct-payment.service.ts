@@ -69,7 +69,10 @@ export class DirectPaymentApplicationService implements DirectPaymentService {
   }
 
   async reconcileNext(now: Date, correlationId: string) {
-    const reconciliation = await this.repository.claimNextReconciliation(now);
+    const reconciliation = await this.repository.claimNextReconciliation(
+      now,
+      correlationId,
+    );
     if (!reconciliation) return false;
     try {
       const result = await this.provider.query(reconciliation);

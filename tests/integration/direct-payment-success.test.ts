@@ -314,6 +314,21 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select status from inventory_reservations where id = ${ids.reservation}`,
     ).toEqual([{ status: "HELD_FOR_REVIEW" }]);
+
+    await sql`
+      update payment_attempts
+      set review_started_at = now() - interval '31 minutes',
+        next_reconciliation_at = now() - interval '1 second'
+      where id = ${attempt.attemptId}
+    `;
+
+    expect(
+      await service.reconcileNext(new Date(), "2609f906-c921-490c-a793-84398fb67e0c"),
+    ).toBe(false);
+    expect(provider.queryCount).toBe(0);
+    expect(
+      await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
+    ).toEqual([{ kind: "RECONCILIATION_OVERDUE", status: "OPEN" }]);
   });
 
   it("releases a definite failure back to the original reservation deadline and permits a safe retry", async () => {

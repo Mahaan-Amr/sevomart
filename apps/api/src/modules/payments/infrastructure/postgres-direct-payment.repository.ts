@@ -7,6 +7,8 @@ import {
   directPaymentAttemptReviewRequiredV1Contract,
   directPaymentAttemptConfirmedV1Contract,
   directPaymentAttemptContract,
+  type DirectPaymentAttemptStatus,
+  type PaymentAttemptAuditReasonCode,
   paymentReviewItemContract,
 } from "@sevo/contracts/payments/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
@@ -672,8 +674,26 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     });
   }
 
-  async claimNextReconciliation(now: Date) {
+  async claimNextReconciliation(now: Date, correlationId: string) {
     return this.#sql.begin(async (sql) => {
+      await sql`
+        insert into payment_operational_alerts
+          (id, attempt_id, kind, severity, status, correlation_id, created_at)
+        select
+          (
+            substr(md5(attempt.id::text || ':RECONCILIATION_OVERDUE'), 1, 8) || '-' ||
+            substr(md5(attempt.id::text || ':RECONCILIATION_OVERDUE'), 9, 4) || '-' ||
+            substr(md5(attempt.id::text || ':RECONCILIATION_OVERDUE'), 13, 4) || '-' ||
+            substr(md5(attempt.id::text || ':RECONCILIATION_OVERDUE'), 17, 4) || '-' ||
+            substr(md5(attempt.id::text || ':RECONCILIATION_OVERDUE'), 21, 12)
+          )::uuid,
+          attempt.id, 'RECONCILIATION_OVERDUE', 'CRITICAL', 'OPEN',
+          ${correlationId}, ${now}
+        from payment_attempts attempt
+        where attempt.status = 'REVIEW_REQUIRED'
+          and attempt.review_started_at <= ${new Date(now.getTime() - 30 * 60_000)}
+        on conflict (attempt_id, kind) do nothing
+      `;
       const rows = await sql<
         Array<{
           attemptId: string;
@@ -681,13 +701,11 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           amount: number;
           providerReference: string;
           reconciliationCount: number;
-          reviewStartedAt: Date;
         }>
       >`
         select id as "attemptId", order_id as "orderId", amount::int as amount,
           provider_reference as "providerReference",
-          reconciliation_count as "reconciliationCount",
-          review_started_at as "reviewStartedAt"
+          reconciliation_count as "reconciliationCount"
         from payment_attempts
         where status = 'REVIEW_REQUIRED' and provider_reference is not null
           and next_reconciliation_at <= ${now}
@@ -704,14 +722,6 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           next_reconciliation_at = ${new Date(now.getTime() + delayMs)}
         where id = ${attempt.attemptId}
       `;
-      if (attempt.reviewStartedAt.getTime() <= now.getTime() - 30 * 60_000) {
-        await insertOperationalAlert(sql, {
-          attemptId: attempt.attemptId,
-          kind: "RECONCILIATION_OVERDUE",
-          correlationId: randomUUID(),
-          occurredAt: now,
-        });
-      }
       return {
         attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
         orderId: attempt.orderId as Parameters<
@@ -838,9 +848,9 @@ async function insertAttemptAudit(
   sql: Sql,
   input: {
     attemptId: string;
-    fromStatus: string | null;
-    toStatus: string;
-    reasonCode: string;
+    fromStatus: DirectPaymentAttemptStatus | null;
+    toStatus: DirectPaymentAttemptStatus;
+    reasonCode: PaymentAttemptAuditReasonCode;
     correlationId: string;
   },
 ) {

@@ -102,7 +102,10 @@ export interface DirectPaymentRepository {
     attemptId: PaymentAttemptId,
     correlationId: string,
   ): Promise<DirectPaymentAttempt>;
-  claimNextReconciliation(now: Date): Promise<DirectPaymentReconciliation | null>;
+  claimNextReconciliation(
+    now: Date,
+    correlationId: string,
+  ): Promise<DirectPaymentReconciliation | null>;
   listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
 }
 

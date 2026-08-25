@@ -184,6 +184,12 @@ export const paymentsV1Examples = {
 } as const;
 
 export type DirectPaymentAttempt = z.infer<typeof directPaymentAttemptContract>;
+export type DirectPaymentAttemptStatus = z.infer<
+  typeof directPaymentAttemptStatusContract
+>;
+export type PaymentAttemptAuditReasonCode = z.infer<
+  typeof paymentAttemptAuditReasonCodeContract
+>;
 export type ProviderCallbackInput = z.infer<typeof providerCallbackInputContract>;
 export type ProviderCallbackResult = z.infer<typeof providerCallbackResultContract>;
 export type PaymentReviewItem = z.infer<typeof paymentReviewItemContract>;
