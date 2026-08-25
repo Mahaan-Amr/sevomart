@@ -62,15 +62,17 @@ export function OrderReceipt({
   const title =
     attempt?.status === "CONFIRMED" && attempt.orderStatus === "PAYMENT_REVIEW"
       ? "پرداخت ثبت شد؛ سفارش در حال بررسی است"
-      : attempt?.status === "CONFIRMED"
-        ? "پرداخت تأیید شد"
-        : attempt?.status === "FAILED" && attempt.orderStatus === "EXPIRED"
-          ? "مهلت پرداخت تمام شد"
-          : attempt?.status === "FAILED"
-            ? "پرداخت انجام نشد"
-            : attempt?.status === "REVIEW_REQUIRED"
-              ? "نتیجه پرداخت در حال بررسی است"
-              : "در انتظار نتیجه پرداخت";
+      : attempt?.orderStatus === "PAYMENT_REVIEW"
+        ? "نتیجه پرداخت در حال بررسی است"
+        : attempt?.status === "CONFIRMED"
+          ? "پرداخت تأیید شد"
+          : attempt?.status === "FAILED" && attempt.orderStatus === "EXPIRED"
+            ? "مهلت پرداخت تمام شد"
+            : attempt?.status === "FAILED"
+              ? "پرداخت انجام نشد"
+              : attempt?.status === "REVIEW_REQUIRED"
+                ? "نتیجه پرداخت در حال بررسی است"
+                : "در انتظار نتیجه پرداخت";
 
   return (
     <main className={styles.page}>
@@ -84,6 +86,16 @@ export function OrderReceipt({
             </p>
             <p className={styles.next}>
               تا پایان بررسی، انجام سفارش یا بازپرداخت قطعی وعده داده نمی‌شود.
+            </p>
+          </>
+        ) : attempt?.orderStatus === "PAYMENT_REVIEW" ? (
+          <>
+            <p>
+              نتیجه تازه درگاه با سابقه این تلاش سازگار نیست. برای جلوگیری از پرداخت
+              دوباره، سفارش تا بررسی سوو متوقف شده است.
+            </p>
+            <p className={styles.next}>
+              فروشگاه هنوز اقدام تازه‌ای برای این سفارش دریافت نمی‌کند.
             </p>
           </>
         ) : attempt?.status === "CONFIRMED" ? (
@@ -127,6 +139,11 @@ export function OrderReceipt({
               مبلغی برای این تلاش تأیید نشد. رزرو کالا فقط تا مهلت اصلی سفارش باقی
               می‌ماند.
             </p>
+            {attempt.reservationExpiresAt ? (
+              <p className={styles.next}>
+                مهلت تلاش دوباره: {formatPaymentDeadline(attempt.reservationExpiresAt)}
+              </p>
+            ) : null}
             <button
               className={styles.primary}
               disabled={retrying}
@@ -156,4 +173,11 @@ export function OrderReceipt({
       </section>
     </main>
   );
+}
+
+function formatPaymentDeadline(value: string) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

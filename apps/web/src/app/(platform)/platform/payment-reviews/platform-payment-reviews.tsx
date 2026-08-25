@@ -64,7 +64,9 @@ export function PlatformPaymentReviews() {
                   <strong>
                     {item.reviewKind === "PAID_STOCK_CONFLICT"
                       ? "پرداخت ثبت شده و موجودی در حال بررسی است"
-                      : "نتیجه پرداخت در حال بررسی است"}
+                      : item.reviewKind === "PROVIDER_CONFLICT"
+                        ? "نتیجه درگاه با سابقه پرداخت سازگار نیست"
+                        : "نتیجه پرداخت در حال بررسی است"}
                   </strong>
                   <span>سفارش {item.attempt.orderId}</span>
                 </div>
@@ -107,8 +109,11 @@ function reasonLabel(reasonCode: PaymentReviewItem["audits"][number]["reasonCode
     PROVIDER_FAILED: "درگاه پرداخت را ناموفق اعلام کرد",
     PROVIDER_CONFIRMED: "درگاه پرداخت را تأیید کرد",
     DUPLICATE_PROVIDER_EVENT_AMOUNT_MISMATCH: "مبلغ نتیجه تکراری با سفارش سازگار نبود",
+    DUPLICATE_PROVIDER_EVENT_RESULT_CONFLICT:
+      "نتیجه تکراری درگاه با ثبت پیشین سازگار نبود",
     PROVIDER_RESULT_CONTRADICTS_CONFIRMED: "نتیجه تازه با تأیید قطعی پیشین سازگار نبود",
     PROVIDER_RESULT_CONTRADICTS_FAILED: "نتیجه تازه با شکست قطعی پیشین سازگار نبود",
+    PROVIDER_REFERENCE_RECOVERED: "شناسه درگاه برای ادامه تطبیق بازیابی شد",
   };
   return labels[reasonCode];
 }

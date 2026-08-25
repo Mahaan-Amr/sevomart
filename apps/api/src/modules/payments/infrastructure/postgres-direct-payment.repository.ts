@@ -219,26 +219,40 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
   async recordInitiation(
     command: Parameters<DirectPaymentRepository["recordInitiation"]>[0],
   ) {
-    const rows = await this.#sql<AttemptRow[]>`
-      update payment_attempts
-      set provider_reference = ${command.providerReference},
-        redirect_url = ${command.redirectUrl}
-      where id = ${command.attemptId}::uuid and status = 'DISPATCHED'
-      returning id as "attemptId", order_id as "orderId", status,
-        amount::int as amount, provider,
-        provider_reference as "providerReference", redirect_url as "redirectUrl",
-        created_at as "createdAt", confirmed_at as "confirmedAt",
-        dispatch_lease_until as "dispatchLeaseUntil"
-    `;
-    if (!rows[0]) throw new DirectPaymentAttemptNotFoundError();
-    return mapAttempt(rows[0]);
+    return this.#sql.begin(async (sql) => {
+      const rows = await sql<AttemptRow[]>`
+        update payment_attempts
+        set provider_reference = coalesce(provider_reference, ${command.providerReference}),
+          redirect_url = coalesce(redirect_url, ${command.redirectUrl})
+        where id = ${command.attemptId}::uuid
+          and status in ('DISPATCHED', 'REVIEW_REQUIRED')
+          and (provider_reference is null or provider_reference = ${command.providerReference})
+        returning id as "attemptId", order_id as "orderId", status,
+          amount::int as amount, provider,
+          provider_reference as "providerReference", redirect_url as "redirectUrl",
+          created_at as "createdAt", confirmed_at as "confirmedAt",
+          dispatch_lease_until as "dispatchLeaseUntil"
+      `;
+      const attempt = rows[0];
+      if (!attempt) throw new DirectPaymentAttemptNotFoundError();
+      if (attempt.status === "REVIEW_REQUIRED") {
+        await insertAttemptAudit(sql, {
+          attemptId: attempt.attemptId,
+          fromStatus: "REVIEW_REQUIRED",
+          toStatus: "REVIEW_REQUIRED",
+          reasonCode: "PROVIDER_REFERENCE_RECOVERED",
+          correlationId: command.correlationId,
+        });
+      }
+      return mapAttempt(attempt);
+    });
   }
 
   async applyProviderResult(
     callback: Parameters<DirectPaymentRepository["applyProviderResult"]>[0],
     correlationId: string,
   ) {
-    return this.#sql.begin(async (sql) => {
+    const outcome = await this.#sql.begin(async (sql) => {
       const attempts = await sql<Array<AttemptRow & { identityId: string }>>`
         select attempt.id as "attemptId", attempt.order_id as "orderId",
           attempt.status, attempt.amount::int as amount, attempt.provider,
@@ -274,14 +288,52 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           from payment_provider_observations
           where provider = ${this.providerKey} and provider_event_id = ${callback.providerEventId}
         `;
-        if (
-          original[0]?.attemptId !== attempt.attemptId ||
-          original[0]?.result !== callback.result
-        ) {
+        if (original[0]?.attemptId !== attempt.attemptId) {
           throw new DirectPaymentAttemptNotFoundError();
         }
+        if (original[0]?.result !== callback.result) {
+          await this.#protectFailedAttemptFromContradictoryResult(
+            sql,
+            attempt,
+            correlationId,
+          );
+          const occurredAt = new Date();
+          await insertAttemptAudit(sql, {
+            attemptId: attempt.attemptId,
+            fromStatus: attempt.status,
+            toStatus: attempt.status,
+            reasonCode:
+              attempt.status === "CONFIRMED"
+                ? "PROVIDER_RESULT_CONTRADICTS_CONFIRMED"
+                : attempt.status === "FAILED"
+                  ? "PROVIDER_RESULT_CONTRADICTS_FAILED"
+                  : "DUPLICATE_PROVIDER_EVENT_RESULT_CONFLICT",
+            correlationId,
+          });
+          await insertOperationalAlert(sql, {
+            attemptId: attempt.attemptId,
+            kind: "PROVIDER_RESULT_CONTRADICTION",
+            correlationId,
+            occurredAt,
+          });
+          return { providerResultConflict: true as const };
+        }
         if (attempt.amount !== callback.amount) {
-          throw new DirectPaymentAmountMismatchError();
+          const occurredAt = new Date();
+          await insertAttemptAudit(sql, {
+            attemptId: attempt.attemptId,
+            fromStatus: attempt.status,
+            toStatus: attempt.status,
+            reasonCode: "DUPLICATE_PROVIDER_EVENT_AMOUNT_MISMATCH",
+            correlationId,
+          });
+          await insertOperationalAlert(sql, {
+            attemptId: attempt.attemptId,
+            kind: "PROVIDER_AMOUNT_MISMATCH",
+            correlationId,
+            occurredAt,
+          });
+          return { amountMismatch: true as const };
         }
         return {
           attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
@@ -312,6 +364,12 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
             occurredAt,
             correlationId,
           });
+          await insertOperationalAlert(sql, {
+            attemptId: attempt.attemptId,
+            kind: "PROVIDER_AMOUNT_MISMATCH",
+            correlationId,
+            occurredAt,
+          });
           return {
             attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
             status: "REVIEW_REQUIRED" as const,
@@ -324,6 +382,12 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           toStatus: attempt.status,
           reasonCode: "PROVIDER_AMOUNT_MISMATCH",
           correlationId,
+        });
+        await insertOperationalAlert(sql, {
+          attemptId: attempt.attemptId,
+          kind: "PROVIDER_AMOUNT_MISMATCH",
+          correlationId,
+          occurredAt: new Date(),
         });
         return {
           attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
@@ -340,6 +404,12 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
             reasonCode: "PROVIDER_RESULT_CONTRADICTS_CONFIRMED",
             correlationId,
           });
+          await insertOperationalAlert(sql, {
+            attemptId: attempt.attemptId,
+            kind: "PROVIDER_RESULT_CONTRADICTION",
+            correlationId,
+            occurredAt: new Date(),
+          });
         }
         return {
           attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
@@ -349,12 +419,23 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       }
       if (attempt.status === "FAILED") {
         if (callback.result !== "FAILED") {
+          await this.#protectFailedAttemptFromContradictoryResult(
+            sql,
+            attempt,
+            correlationId,
+          );
           await insertAttemptAudit(sql, {
             attemptId: attempt.attemptId,
             fromStatus: "FAILED",
             toStatus: "FAILED",
             reasonCode: "PROVIDER_RESULT_CONTRADICTS_FAILED",
             correlationId,
+          });
+          await insertOperationalAlert(sql, {
+            attemptId: attempt.attemptId,
+            kind: "PROVIDER_RESULT_CONTRADICTION",
+            correlationId,
+            occurredAt: new Date(),
           });
         }
         return {
@@ -516,6 +597,13 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         duplicate: false,
       };
     });
+    if ("amountMismatch" in outcome) {
+      throw new DirectPaymentAmountMismatchError();
+    }
+    if ("providerResultConflict" in outcome) {
+      throw new DirectPaymentAttemptNotFoundError();
+    }
+    return outcome;
   }
 
   async readAttemptForBuyer(
@@ -700,7 +788,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           attemptId: string;
           orderId: string;
           amount: number;
-          providerReference: string;
+          providerReference: string | null;
           reconciliationCount: number;
         }>
       >`
@@ -708,8 +796,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           provider_reference as "providerReference",
           reconciliation_count as "reconciliationCount"
         from payment_attempts
-        where status = 'REVIEW_REQUIRED' and provider_reference is not null
-          and next_reconciliation_at <= ${now}
+        where status = 'REVIEW_REQUIRED' and next_reconciliation_at <= ${now}
         order by next_reconciliation_at, id
         for update skip locked
         limit 1
@@ -729,7 +816,9 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           DirectPaymentRepository["prepareAttempt"]
         >[0]["orderId"],
         amount: { amount: attempt.amount, currency: "IRR" as const },
-        providerReference: attempt.providerReference,
+        ...(attempt.providerReference
+          ? { providerReference: attempt.providerReference }
+          : {}),
       };
     });
   }
@@ -745,9 +834,8 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       from payment_attempts attempt
       where attempt.status = 'REVIEW_REQUIRED'
         or exists (
-          select 1 from payment_attempt_audits audit
-          where audit.attempt_id = attempt.id
-            and audit.reason_code = 'PAID_STOCK_CONFLICT'
+          select 1 from payment_operational_alerts alert
+          where alert.attempt_id = attempt.id and alert.status = 'OPEN'
         )
       order by attempt.created_at, attempt.id
       limit 100
@@ -772,7 +860,11 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         `;
         const alerts = await this.#sql<
           Array<{
-            kind: "RECONCILIATION_OVERDUE" | "PAID_STOCK_CONFLICT";
+            kind:
+              | "RECONCILIATION_OVERDUE"
+              | "PAID_STOCK_CONFLICT"
+              | "PROVIDER_AMOUNT_MISMATCH"
+              | "PROVIDER_RESULT_CONTRADICTION";
           }>
         >`
           select kind from payment_operational_alerts
@@ -783,7 +875,14 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           attempt: mapAttempt(attempt),
           reviewKind: audits.some((audit) => audit.reasonCode === "PAID_STOCK_CONFLICT")
             ? ("PAID_STOCK_CONFLICT" as const)
-            : ("RESULT_AMBIGUOUS" as const),
+            : alerts.some((alert) =>
+                  [
+                    "PROVIDER_AMOUNT_MISMATCH",
+                    "PROVIDER_RESULT_CONTRADICTION",
+                  ].includes(alert.kind),
+                )
+              ? ("PROVIDER_CONFLICT" as const)
+              : ("RESULT_AMBIGUOUS" as const),
           alertKinds: alerts.map((alert) => alert.kind),
           audits: audits.map((audit) => ({
             ...audit,
@@ -792,6 +891,40 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         });
       }),
     );
+  }
+
+  async #protectFailedAttemptFromContradictoryResult(
+    sql: Sql,
+    attempt: AttemptRow & { identityId: string },
+    correlationId: string,
+  ) {
+    if (attempt.status !== "FAILED") return;
+    const order = await this.orders.lockPaymentResultOrder(
+      createOrderPaymentTransactionContext(sql),
+      attempt.identityId as Parameters<
+        OrderPaymentWorkflow["lockPaymentResultOrder"]
+      >[1],
+      attempt.orderId as Parameters<OrderPaymentWorkflow["lockPaymentResultOrder"]>[2],
+    );
+    if (!order || order.status === "PAYMENT_REVIEW") return;
+    if (order.status === "PENDING_PAYMENT") {
+      await this.inventory.holdReservationForProviderConflict(
+        sql as unknown as InventoryTransactionContext,
+        {
+          reservationId: order.reservationId,
+          attemptId: attempt.attemptId,
+        },
+      );
+    }
+    await this.orders.markPaymentReview(createOrderPaymentTransactionContext(sql), {
+      orderId: attempt.orderId as Parameters<
+        OrderPaymentWorkflow["markPaymentReview"]
+      >[1]["orderId"],
+      attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
+      occurredAt: new Date(),
+      correlationId,
+      reasonCode: "PAYMENT_PROVIDER_CONFLICT",
+    });
   }
 
   async #transitionToReview(
@@ -898,8 +1031,8 @@ async function enqueueAttemptFailed(
       aggregateId: input.attemptId,
       aggregateVersion: input.aggregateVersion,
       occurredAt: input.occurredAt.toISOString(),
-      correlationId: input.correlationId,
-      causationId: input.correlationId,
+      correlationId: eventCorrelationId(input.correlationId),
+      causationId: input.attemptId,
       actor: { type: "SYSTEM" },
       payload: {
         status: "FAILED",
@@ -927,8 +1060,8 @@ async function enqueueAttemptReviewRequired(
       aggregateId: input.attemptId,
       aggregateVersion: input.aggregateVersion,
       occurredAt: input.occurredAt.toISOString(),
-      correlationId: input.correlationId,
-      causationId: input.correlationId,
+      correlationId: eventCorrelationId(input.correlationId),
+      causationId: input.attemptId,
       actor: { type: "SYSTEM" },
       payload: { status: "REVIEW_REQUIRED" },
     }),
@@ -939,7 +1072,11 @@ async function insertOperationalAlert(
   sql: Sql,
   input: {
     attemptId: string;
-    kind: "RECONCILIATION_OVERDUE" | "PAID_STOCK_CONFLICT";
+    kind:
+      | "RECONCILIATION_OVERDUE"
+      | "PAID_STOCK_CONFLICT"
+      | "PROVIDER_AMOUNT_MISMATCH"
+      | "PROVIDER_RESULT_CONTRADICTION";
     correlationId: string;
     occurredAt: Date;
   },

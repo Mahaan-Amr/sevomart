@@ -89,7 +89,7 @@ const operations = [
     responses: [
       { status: 200, schema: "PaymentReviewQueue" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "InternalServerError" },
+      { status: 403, schema: "PaymentReviewError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },

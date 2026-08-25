@@ -73,6 +73,14 @@ export const directPaymentErrorContract = z
   })
   .strict();
 
+export const paymentReviewErrorContract = z
+  .object({
+    code: z.literal("PLATFORM_PERMISSION_REQUIRED"),
+    message: z.string().min(1),
+    correlationId: z.string().min(1),
+  })
+  .strict();
+
 export const directPaymentAttemptConfirmedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("DirectPaymentAttemptConfirmed.v1"),
   causationId: z.uuid(),
@@ -126,16 +134,29 @@ export const paymentAttemptAuditReasonCodeContract = z.enum([
   "PAID_STOCK_CONFLICT",
   "PROVIDER_AMOUNT_MISMATCH",
   "DUPLICATE_PROVIDER_EVENT_AMOUNT_MISMATCH",
+  "DUPLICATE_PROVIDER_EVENT_RESULT_CONFLICT",
   "PROVIDER_RESULT_CONTRADICTS_CONFIRMED",
   "PROVIDER_RESULT_CONTRADICTS_FAILED",
+  "PROVIDER_REFERENCE_RECOVERED",
 ]);
 
 export const paymentReviewItemContract = z
   .object({
     attempt: directPaymentAttemptContract,
-    reviewKind: z.enum(["RESULT_AMBIGUOUS", "PAID_STOCK_CONFLICT"]),
+    reviewKind: z.enum([
+      "RESULT_AMBIGUOUS",
+      "PAID_STOCK_CONFLICT",
+      "PROVIDER_CONFLICT",
+    ]),
     alertKinds: z
-      .array(z.enum(["RECONCILIATION_OVERDUE", "PAID_STOCK_CONFLICT"]))
+      .array(
+        z.enum([
+          "RECONCILIATION_OVERDUE",
+          "PAID_STOCK_CONFLICT",
+          "PROVIDER_AMOUNT_MISMATCH",
+          "PROVIDER_RESULT_CONTRADICTION",
+        ]),
+      )
       .readonly(),
     audits: z
       .array(
@@ -167,6 +188,7 @@ export const paymentsV1Schemas = {
   ProviderCallbackInput: providerCallbackInputContract,
   ProviderCallbackResult: providerCallbackResultContract,
   PaymentReviewQueue: paymentReviewQueueContract,
+  PaymentReviewError: paymentReviewErrorContract,
   DirectPaymentError: directPaymentErrorContract,
 } as const;
 
@@ -197,6 +219,11 @@ export const paymentsV1Examples = {
     attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
     status: "CONFIRMED",
     duplicate: false,
+  },
+  PaymentReviewError: {
+    code: "PLATFORM_PERMISSION_REQUIRED",
+    message: "مجوز بررسی عملیاتی برای این نشست فعال نیست.",
+    correlationId: "01J5H8CZHJ2QX0M5MEQ7M6H1P4",
   },
 } as const;
 

@@ -23,7 +23,12 @@ CREATE TABLE "payment_operational_alerts" (
   "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "payment_operational_alerts_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "payment_operational_alerts_kind_check"
-    CHECK ("kind" IN ('RECONCILIATION_OVERDUE', 'PAID_STOCK_CONFLICT')),
+    CHECK ("kind" IN (
+      'RECONCILIATION_OVERDUE',
+      'PAID_STOCK_CONFLICT',
+      'PROVIDER_AMOUNT_MISMATCH',
+      'PROVIDER_RESULT_CONTRADICTION'
+    )),
   CONSTRAINT "payment_operational_alerts_severity_check"
     CHECK ("severity" IN ('CRITICAL')),
   CONSTRAINT "payment_operational_alerts_status_check"

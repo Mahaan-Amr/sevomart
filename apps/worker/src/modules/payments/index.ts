@@ -1,6 +1,12 @@
+import { getMeter } from "@sevo/observability";
+
 import type { WorkerHandler } from "../public";
 
 type RunRecovery = (signal: AbortSignal) => Promise<void>;
+
+const paymentRecoveryFailureMetric = getMeter("sevo.payments.recovery").createCounter(
+  "sevo_payment_recovery_failures_total",
+);
 
 export function startPaymentRecoveryPoller(
   runRecovery: RunRecovery,
@@ -9,6 +15,7 @@ export function startPaymentRecoveryPoller(
   let stopped = false;
   let activeRequest: AbortController | undefined;
   let finishDelay: (() => void) | undefined;
+  let consecutiveFailures = 0;
 
   const wait = () =>
     new Promise<void>((resolve) => {
@@ -23,8 +30,21 @@ export function startPaymentRecoveryPoller(
       activeRequest = new AbortController();
       try {
         await runRecovery(activeRequest.signal);
-      } catch {
-        // Lease and reconciliation timestamps remain the durable retry queue.
+        consecutiveFailures = 0;
+      } catch (error: unknown) {
+        if (!stopped) {
+          consecutiveFailures += 1;
+          const errorType = error instanceof Error ? error.name : "UnknownError";
+          paymentRecoveryFailureMetric.add(1, { error_type: errorType });
+          console.error(
+            JSON.stringify({
+              level: "error",
+              message: "payment_recovery_sweep_failed",
+              errorType,
+              consecutiveFailures,
+            }),
+          );
+        }
       } finally {
         activeRequest = undefined;
       }

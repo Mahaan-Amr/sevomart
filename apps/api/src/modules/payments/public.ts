@@ -66,7 +66,7 @@ export type DirectPaymentReconciliation = Readonly<{
   attemptId: PaymentAttemptId;
   orderId: OrderId;
   amount: MoneyV1;
-  providerReference: string;
+  providerReference?: string;
 }>;
 
 export interface DirectPaymentRepository {
@@ -83,6 +83,7 @@ export interface DirectPaymentRepository {
     attemptId: PaymentAttemptId;
     providerReference: string;
     redirectUrl: string;
+    correlationId: string;
   }): Promise<DirectPaymentAttempt>;
   claimDispatch(attemptId: PaymentAttemptId, correlationId: string): Promise<boolean>;
   applyProviderResult(

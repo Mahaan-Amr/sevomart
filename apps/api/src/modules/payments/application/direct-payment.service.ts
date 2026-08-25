@@ -45,6 +45,7 @@ export class DirectPaymentApplicationService implements DirectPaymentService {
       return this.repository.recordInitiation({
         attemptId: attempt.attemptId,
         ...initiation,
+        correlationId: command.correlationId,
       });
     } catch {
       return this.repository.markDispatchUnknown(
@@ -75,7 +76,23 @@ export class DirectPaymentApplicationService implements DirectPaymentService {
     );
     if (!reconciliation) return false;
     try {
-      const result = await this.provider.query(reconciliation);
+      if (!reconciliation.providerReference) {
+        const initiation = await this.provider.initiate({
+          attemptId: reconciliation.attemptId,
+          orderId: reconciliation.orderId,
+          amount: reconciliation.amount,
+        });
+        await this.repository.recordInitiation({
+          attemptId: reconciliation.attemptId,
+          ...initiation,
+          correlationId,
+        });
+        return true;
+      }
+      const result = await this.provider.query({
+        ...reconciliation,
+        providerReference: reconciliation.providerReference,
+      });
       await this.repository.applyProviderResult(result, correlationId);
     } catch {
       // The claimed row already carries its durable next retry timestamp.

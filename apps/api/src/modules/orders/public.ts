@@ -74,7 +74,10 @@ export interface OrderPaymentWorkflow {
       attemptId: PaymentAttemptId;
       occurredAt: Date;
       correlationId: string;
-      reasonCode: "PAYMENT_DISPATCH_UNRESOLVED" | "PAYMENT_CONFIRMED_STOCK_CONFLICT";
+      reasonCode:
+        | "PAYMENT_DISPATCH_UNRESOLVED"
+        | "PAYMENT_CONFIRMED_STOCK_CONFLICT"
+        | "PAYMENT_PROVIDER_CONFLICT";
     },
   ): Promise<void>;
   resolvePaymentFailure(

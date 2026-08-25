@@ -3,6 +3,7 @@ import {
   createDirectPaymentAttemptInputContract,
   directPaymentAttemptContract,
   directPaymentAttemptFailedV1Contract,
+  paymentReviewErrorContract,
   paymentReviewQueueContract,
   providerCallbackInputContract,
   providerCallbackResultContract,
@@ -18,6 +19,13 @@ describe("direct payment v1 contract", () => {
         correlationId: "browser-request-123",
       }),
     ).toMatchObject({ code: "ORDER_NOT_PAYABLE" });
+    expect(
+      paymentReviewErrorContract.parse({
+        code: "PLATFORM_PERMISSION_REQUIRED",
+        message: "مجوز بررسی عملیاتی برای این نشست فعال نیست.",
+        correlationId: "browser-request-123",
+      }),
+    ).toMatchObject({ code: "PLATFORM_PERMISSION_REQUIRED" });
   });
 
   it("keeps payment attempts and verified callbacks free of raw tokens and PII", () => {
@@ -105,5 +113,24 @@ describe("direct payment v1 contract", () => {
         ],
       }).items[0]?.alertKinds,
     ).toEqual(["RECONCILIATION_OVERDUE"]);
+    expect(
+      paymentReviewQueueContract.parse({
+        items: [
+          {
+            attempt: {
+              attemptId: callback.attemptId,
+              orderId: callback.orderId,
+              status: "FAILED",
+              amount: { amount: callback.amount, currency: "IRR" },
+              provider: "DEV",
+              createdAt: "2026-08-25T08:00:00.000Z",
+            },
+            reviewKind: "PROVIDER_CONFLICT",
+            alertKinds: ["PROVIDER_RESULT_CONTRADICTION"],
+            audits: [],
+          },
+        ],
+      }).items[0]?.reviewKind,
+    ).toBe("PROVIDER_CONFLICT");
   });
 });
