@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import {
   Controller,
   Get,
@@ -40,10 +42,15 @@ import {
   PAYMENT_REVIEW_AUTHORIZER,
 } from "./payments.tokens";
 import type { DirectPaymentProvider, DirectPaymentService } from "./public";
-import { DirectPaymentAttemptNotFoundError } from "./public";
-import { DirectPaymentDispatchInProgressError } from "./public";
-import { InvalidProviderCallbackError } from "./public";
 import { PaymentRecoveryRunner } from "./application/payment-recovery.runner";
+import {
+  DirectPaymentAmountMismatchError,
+  DirectPaymentAttemptNotFoundError,
+  DirectPaymentDispatchInProgressError,
+  DirectPaymentIdempotencyConflictError,
+  DirectPaymentOrderNotPayableError,
+  InvalidProviderCallbackError,
+} from "./public";
 
 function requireIdempotencyKey(correlationId: string, value: string | undefined) {
   const key = paymentIdempotencyKeyContract.safeParse(value);
@@ -94,6 +101,22 @@ export class PaymentController {
             message: "درخواست پرداخت هنوز در حال انجام است؛ کمی بعد دوباره تلاش کنید.",
             correlationId: request.id,
           },
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (error instanceof DirectPaymentOrderNotPayableError) {
+        throw paymentError(
+          "ORDER_NOT_PAYABLE",
+          "مهلت یا وضعیت سفارش برای پرداخت آماده نیست؛ وضعیت سفارش را تازه کنید.",
+          request.id,
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (error instanceof DirectPaymentIdempotencyConflictError) {
+        throw paymentError(
+          "IDEMPOTENCY_CONFLICT",
+          "این شناسه درخواست قبلاً برای پرداخت دیگری استفاده شده است.",
+          request.id,
           HttpStatus.CONFLICT,
         );
       }
@@ -225,6 +248,22 @@ export class ProviderCallbackController {
           HttpStatus.UNPROCESSABLE_ENTITY,
         );
       }
+      if (error instanceof DirectPaymentAmountMismatchError) {
+        throw paymentError(
+          "AMOUNT_MISMATCH",
+          "مبلغ نتیجه پرداخت با سفارش یکسان نیست.",
+          request.id,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      if (error instanceof DirectPaymentAttemptNotFoundError) {
+        throw paymentError(
+          "ATTEMPT_NOT_FOUND",
+          "تلاش پرداخت با این نتیجه سازگار نیست.",
+          request.id,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
       throw error;
     }
   }
@@ -238,6 +277,15 @@ function sameSecret(actual: string | undefined, expected: string): boolean {
     actualBytes.length === expectedBytes.length &&
     timingSafeEqual(actualBytes, expectedBytes)
   );
+}
+
+function paymentError(
+  code: string,
+  message: string,
+  correlationId: string,
+  status: HttpStatus,
+) {
+  return new HttpException({ code, message, correlationId }, status);
 }
 
 @ApiExcludeController()
@@ -279,4 +327,3 @@ export class DevPaymentController {
     );
   }
 }
-import { timingSafeEqual } from "node:crypto";

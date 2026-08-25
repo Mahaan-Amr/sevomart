@@ -32,7 +32,10 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
     await page.getByLabel("شماره موبایل").fill(mobile);
     await page.getByRole("button", { name: "دریافت کد" }).click();
     await page.getByLabel("کد شش‌رقمی").fill("111111");
-    await page.getByRole("button", { name: "ورود" }).click();
+    await Promise.all([
+      page.waitForURL((url) => !url.pathname.startsWith("/login")),
+      page.getByRole("button", { name: "ورود" }).click(),
+    ]);
     const identities = await sql<Array<{ identityId: string }>>`
       select identity_id as "identityId" from identity_login_methods where mobile = ${mobile}
     `;
@@ -140,6 +143,7 @@ test("seller sees the real paid actionable order", async ({ page }, testInfo) =>
     await page.getByRole("button", { name: "دریافت کد" }).click();
     await page.getByLabel("کد شش‌رقمی").fill("111111");
     await page.getByRole("button", { name: "ورود" }).click();
+    await expect(page.getByRole("heading", { name: "وارد شدید" })).toBeVisible();
     const identities = await sql<Array<{ identityId: string }>>`
       select identity_id as "identityId" from identity_login_methods where mobile = ${mobile}
     `;

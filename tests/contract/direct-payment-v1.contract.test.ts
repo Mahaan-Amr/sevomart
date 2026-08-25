@@ -1,4 +1,5 @@
 import {
+  directPaymentErrorContract,
   createDirectPaymentAttemptInputContract,
   directPaymentAttemptContract,
   directPaymentAttemptFailedV1Contract,
@@ -9,6 +10,16 @@ import {
 import { describe, expect, it } from "vitest";
 
 describe("direct payment v1 contract", () => {
+  it("exposes actionable payment conflicts without leaking internals", () => {
+    expect(
+      directPaymentErrorContract.parse({
+        code: "ORDER_NOT_PAYABLE",
+        message: "مهلت یا وضعیت سفارش برای پرداخت آماده نیست.",
+        correlationId: "browser-request-123",
+      }),
+    ).toMatchObject({ code: "ORDER_NOT_PAYABLE" });
+  });
+
   it("keeps payment attempts and verified callbacks free of raw tokens and PII", () => {
     expect(createDirectPaymentAttemptInputContract.parse({})).toEqual({});
     expect(

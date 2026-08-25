@@ -32,6 +32,7 @@ export type PayableOrder = Readonly<{
   reservationId: string;
   totalAmount: number;
   reservationExpiresAt: Date;
+  status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
 }>;
 
 export type PaymentResultOrder = PayableOrder &
@@ -43,7 +44,7 @@ export type BuyerPaymentState = Readonly<{
 }>;
 
 export interface OrderPaymentWorkflow {
-  lockPayableOrder(
+  lockPaymentOrder(
     transaction: OrderPaymentTransactionContext,
     identityId: IdentityId,
     orderId: OrderId,
@@ -73,6 +74,7 @@ export interface OrderPaymentWorkflow {
       attemptId: PaymentAttemptId;
       occurredAt: Date;
       correlationId: string;
+      reasonCode: "PAYMENT_DISPATCH_UNRESOLVED" | "PAYMENT_CONFIRMED_STOCK_CONFLICT";
     },
   ): Promise<void>;
   resolvePaymentFailure(

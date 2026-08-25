@@ -15,6 +15,7 @@ import { enqueueOutboxEvent } from "@sevo/outbox";
 import { paymentAttemptIdContract } from "@sevo/contracts/platform/v1";
 import postgres, { type Sql } from "postgres";
 
+import { eventCorrelationId } from "../../../event-correlation-id";
 import type {
   InventoryAuthoring,
   InventoryTransactionContext,
@@ -78,12 +79,14 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           existing.dispatchLeaseUntil &&
           existing.dispatchLeaseUntil.getTime() <= Date.now()
         ) {
-          const payableOrder = await this.orders.lockPayableOrder(
+          const payableOrder = await this.orders.lockPaymentOrder(
             createOrderPaymentTransactionContext(sql),
             command.identityId,
             command.orderId,
           );
-          if (!payableOrder) throw new DirectPaymentOrderNotPayableError();
+          if (!payableOrder || payableOrder.status !== "PENDING_PAYMENT") {
+            throw new DirectPaymentOrderNotPayableError();
+          }
           const occurredAt = new Date();
           await this.#transitionToReview(sql, {
             attemptId: existing.attemptId,
@@ -97,12 +100,16 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         }
         return mapAttempt(existing);
       }
-      const order = await this.orders.lockPayableOrder(
+      const order = await this.orders.lockPaymentOrder(
         createOrderPaymentTransactionContext(sql),
         command.identityId,
         command.orderId,
       );
-      if (!order || order.reservationExpiresAt.getTime() <= Date.now()) {
+      if (
+        !order ||
+        order.status !== "PENDING_PAYMENT" ||
+        order.reservationExpiresAt.getTime() <= Date.now()
+      ) {
         throw new DirectPaymentOrderNotPayableError();
       }
       const active = await sql<AttemptRow[]>`
@@ -150,8 +157,8 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           aggregateId: command.attemptId,
           aggregateVersion: 1,
           occurredAt: new Date().toISOString(),
-          correlationId: command.correlationId,
-          causationId: command.correlationId,
+          correlationId: eventCorrelationId(command.correlationId),
+          causationId: command.attemptId,
           actor: { type: "IDENTITY", id: command.identityId },
           payload: {
             status: "CREATED",
@@ -199,8 +206,8 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           aggregateId: attemptId,
           aggregateVersion: 2,
           occurredAt: new Date().toISOString(),
-          correlationId,
-          causationId: correlationId,
+          correlationId: eventCorrelationId(correlationId),
+          causationId: attemptId,
           actor: { type: "SYSTEM" },
           payload: { status: "DISPATCHED" },
         }),
@@ -274,13 +281,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           throw new DirectPaymentAttemptNotFoundError();
         }
         if (attempt.amount !== callback.amount) {
-          await insertAttemptAudit(sql, {
-            attemptId: attempt.attemptId,
-            fromStatus: attempt.status,
-            toStatus: attempt.status,
-            reasonCode: "DUPLICATE_PROVIDER_EVENT_AMOUNT_MISMATCH",
-            correlationId,
-          });
+          throw new DirectPaymentAmountMismatchError();
         }
         return {
           attemptId: paymentAttemptIdContract.parse(attempt.attemptId),
@@ -500,8 +501,8 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           aggregateId: attempt.attemptId,
           aggregateVersion: attempt.status === "REVIEW_REQUIRED" ? 4 : 3,
           occurredAt: now.toISOString(),
-          correlationId,
-          causationId: correlationId,
+          correlationId: eventCorrelationId(correlationId),
+          causationId: attempt.attemptId,
           actor: { type: "SYSTEM" },
           payload: {
             status: "CONFIRMED",
@@ -817,6 +818,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       attemptId: paymentAttemptIdContract.parse(input.attemptId),
       occurredAt: input.occurredAt,
       correlationId: input.correlationId,
+      reasonCode: "PAYMENT_DISPATCH_UNRESOLVED",
     });
     await sql`
       update payment_attempts set status = 'REVIEW_REQUIRED',
