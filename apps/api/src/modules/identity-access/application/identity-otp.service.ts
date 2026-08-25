@@ -123,6 +123,18 @@ export class IdentityOtpService {
     };
   }
 
+  async readIdentitySession(token: string) {
+    const result = await this.repository.findSession(hashToken(token), this.now());
+    if (!result) return undefined;
+    return {
+      session: {
+        actor: { identityId: result.identityId, audience: "PUBLIC" as const },
+        expiresAt: result.expiresAt.toISOString(),
+      },
+      identityStatus: result.identityStatus,
+    };
+  }
+
   async revokeSession(token: string): Promise<boolean> {
     if (!token) return false;
     return this.repository.revokeSession(hashToken(token), this.now());

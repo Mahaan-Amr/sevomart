@@ -207,6 +207,45 @@ describe("public discovery event projection", () => {
       await sql`select * from discovery_product_feed_version_buffers`,
     ).toHaveLength(0);
   });
+
+  it("rebuilds an equivalent projection when the event archive contains duplicates", async () => {
+    const published = productPublishedV2Contract.parse({
+      ...envelope("ProductPublished.v2", ids.product, 2, "2026-08-24T10:00:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 1,
+        snapshot: { variantIds: [ids.variant] },
+        offerVersion: 1,
+        availabilityVersion: 1,
+      },
+    });
+    const replay = [published, published];
+    for (const event of replay) {
+      await sql.begin((transaction) =>
+        projectDiscoveryProductEvent(event, transaction),
+      );
+    }
+    const readProjection = () => sql`
+      select product_id, store_id, product_aggregate_version,
+        publication_version, published, first_published_at, eligible_since,
+        offer_version, availability_version, updated_at
+      from discovery_product_feed_projections where product_id = ${ids.product}
+    `;
+    const firstBuild = await readProjection();
+
+    await sql`delete from discovery_product_feed_version_buffers
+      where product_id = ${ids.product}`;
+    await sql`delete from discovery_product_feed_projections
+      where product_id = ${ids.product}`;
+    for (const event of replay) {
+      await sql.begin((transaction) =>
+        projectDiscoveryProductEvent(event, transaction),
+      );
+    }
+
+    expect(await readProjection()).toEqual(firstBuild);
+  });
 });
 
 function envelope(

@@ -131,6 +131,27 @@ export class PostgresIdentityAccessRepository
     return rows[0];
   }
 
+  async findSession(tokenHash: string, now: Date) {
+    const rows = await this.#sql<
+      Array<{
+        identityId: string;
+        expiresAt: Date;
+        identityStatus: "ACTIVE" | "INACTIVE";
+      }>
+    >`
+      select i.id as "identityId", s.expires_at as "expiresAt",
+        i.status as "identityStatus"
+      from identity_sessions s
+      join identity_identities i on i.id = s.identity_id
+      where s.token_hash = ${tokenHash}
+        and s.audience = 'PUBLIC'
+        and s.revoked_at is null
+        and s.expires_at > ${now}
+      limit 1
+    `;
+    return rows[0];
+  }
+
   async isActiveSeller(identityId: IdentityId): Promise<boolean> {
     const rows = await this.#sql<Array<{ active: boolean }>>`
       select exists(
