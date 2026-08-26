@@ -630,4 +630,69 @@ describe("migration foreign-key boundary checker", () => {
       ),
     ).toEqual([]);
   });
+
+  it("clears an inline foreign key when its source column is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-column/migration.sql",
+            source: `
+              alter table payment_attempts
+                add column order_id uuid references order_orders(id);
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__payments__drop-order-column/migration.sql",
+            source: `
+              alter table payment_attempts
+                drop column if exists order_id;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("clears foreign keys when their source table is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-table/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__payments__drop-order-table/migration.sql",
+            source: "drop table if exists payment_attempts;",
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("applies foreign-key additions and removals in SQL action order", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__temporary-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                add constraint temporary_order_fkey
+                  foreign key (order_id) references order_orders(id),
+                drop constraint temporary_order_fkey;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
 });

@@ -266,19 +266,29 @@ function splitSqlStatements(source) {
   return statements;
 }
 
-function inferredForeignKeyConstraintName(sourceTable, statement, referenceIndex) {
+function inferredForeignKeyDefinition(sourceTable, statement, referenceIndex) {
   const beforeReference = statement.slice(0, referenceIndex);
   const foreignKeyMatches = [
     ...beforeReference.matchAll(
-      /(?:constraint\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*))\s+)?foreign\s+key\s*\(\s*((?:"[^"]+"|[a-z_][a-z0-9_$]*))/gi,
+      /(?:constraint\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*))\s+)?foreign\s+key\s*\(([^)]*)\)/gi,
     ),
   ];
   const tableForeignKey = foreignKeyMatches.at(-1);
   if (tableForeignKey) {
     const explicitName = unqualifiedSqlIdentifier(tableForeignKey[1]);
-    if (explicitName) return explicitName;
-    const columnName = unqualifiedSqlIdentifier(tableForeignKey[2]);
-    if (columnName) return `${sourceTable}_${columnName}_fkey`;
+    const sourceColumns = [
+      ...tableForeignKey[2].matchAll(/"[^"]+"|[a-z_][a-z0-9_$]*/gi),
+    ]
+      .map(([identifier]) => unqualifiedSqlIdentifier(identifier))
+      .filter(Boolean);
+    return {
+      constraintName:
+        explicitName ??
+        (sourceColumns.length > 0
+          ? `${sourceTable}_${sourceColumns.join("_")}_fkey`
+          : undefined),
+      sourceColumns,
+    };
   }
 
   const columnDefinition = beforeReference.slice(
@@ -287,14 +297,17 @@ function inferredForeignKeyConstraintName(sourceTable, statement, referenceIndex
   const inlineConstraintName = unqualifiedSqlIdentifier(
     columnDefinition.match(/\bconstraint\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*))\s*$/i)?.[1],
   );
-  if (inlineConstraintName) return inlineConstraintName;
-
   const columnName = unqualifiedSqlIdentifier(
     columnDefinition.match(
       /^\s*(?:add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?)?((?:"[^"]+"|[a-z_][a-z0-9_$]*))/i,
     )?.[1],
   );
-  return columnName ? `${sourceTable}_${columnName}_fkey` : undefined;
+  return {
+    constraintName:
+      inlineConstraintName ??
+      (columnName ? `${sourceTable}_${columnName}_fkey` : undefined),
+    sourceColumns: columnName ? [columnName] : [],
+  };
 }
 
 export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOwners) {
@@ -306,11 +319,32 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
 
   const dropConstraintPattern =
     /\bdrop\s+constraint\s+(?:if\s+exists\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*))/gi;
+  const dropColumnPattern =
+    /\bdrop\s+(?!constraint\b)(?:column\s+)?(?:if\s+exists\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*))/gi;
+  const dropTablePattern =
+    /^\s*drop\s+table\s+(?:if\s+exists\s+)?([\s\S]*?)(?:\s+(?:cascade|restrict))?\s*$/i;
 
   for (const migration of [...migrations].sort((left, right) =>
     toPosix(left.path).localeCompare(toPosix(right.path)),
   )) {
     for (const sqlStatement of splitSqlStatements(migration.source)) {
+      const droppedTables = sqlStatement.match(dropTablePattern)?.[1];
+      if (droppedTables) {
+        const tableNames = droppedTables
+          .split(",")
+          .map((identifier) => unqualifiedSqlIdentifier(identifier))
+          .filter(Boolean);
+        for (const [key, violation] of activeViolations) {
+          if (
+            tableNames.includes(violation.sourceTable) ||
+            tableNames.includes(violation.targetTable)
+          ) {
+            activeViolations.delete(key);
+          }
+        }
+        continue;
+      }
+
       const statement = sqlStatement.match(tableStatementPattern);
       if (!statement) continue;
       const sourceTable = unqualifiedSqlIdentifier(statement[1] ?? statement[2]);
@@ -318,22 +352,54 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
       const sourceOwner = tableOwners[sourceTable];
       const statementBody = statement[3] ?? "";
 
-      for (const dropped of statementBody.matchAll(dropConstraintPattern)) {
-        const constraintName = unqualifiedSqlIdentifier(dropped[1]);
-        if (constraintName) {
-          activeViolations.delete(`${sourceTable}.${constraintName}`);
-        }
-      }
+      const actions = [
+        ...[...statementBody.matchAll(dropConstraintPattern)].map((match) => ({
+          index: match.index,
+          kind: "drop-constraint",
+          match,
+        })),
+        ...[...statementBody.matchAll(dropColumnPattern)].map((match) => ({
+          index: match.index,
+          kind: "drop-column",
+          match,
+        })),
+        ...[...statementBody.matchAll(referencePattern)].map((match) => ({
+          index: match.index,
+          kind: "reference",
+          match,
+        })),
+      ].sort((left, right) => left.index - right.index);
 
-      for (const reference of statementBody.matchAll(referencePattern)) {
-        const targetTable = unqualifiedSqlIdentifier(reference[1]);
+      for (const action of actions) {
+        if (action.kind === "drop-constraint") {
+          const constraintName = unqualifiedSqlIdentifier(action.match[1]);
+          if (constraintName)
+            activeViolations.delete(`${sourceTable}.${constraintName}`);
+          continue;
+        }
+
+        if (action.kind === "drop-column") {
+          const columnName = unqualifiedSqlIdentifier(action.match[1]);
+          if (!columnName) continue;
+          for (const [key, violation] of activeViolations) {
+            if (
+              violation.sourceTable === sourceTable &&
+              violation.sourceColumns.includes(columnName)
+            ) {
+              activeViolations.delete(key);
+            }
+          }
+          continue;
+        }
+
+        const targetTable = unqualifiedSqlIdentifier(action.match[1]);
         if (!targetTable) continue;
         const targetOwner = tableOwners[targetTable];
         if (sourceOwner && targetOwner && sourceOwner !== targetOwner) {
-          const constraintName = inferredForeignKeyConstraintName(
+          const { constraintName, sourceColumns } = inferredForeignKeyDefinition(
             sourceTable,
             statementBody,
-            reference.index,
+            action.match.index,
           );
           activeViolations.set(`${sourceTable}.${constraintName ?? targetTable}`, {
             path: toPosix(migration.path),
@@ -341,6 +407,7 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
             targetTable,
             sourceOwner,
             targetOwner,
+            sourceColumns,
             ...(constraintName ? { constraintName } : {}),
             rule: "cross-module-migration-foreign-key",
           });
@@ -349,7 +416,11 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
     }
   }
 
-  return [...activeViolations.values()];
+  return [...activeViolations.values()].map((violation) => {
+    const reportedViolation = { ...violation };
+    delete reportedViolation.sourceColumns;
+    return reportedViolation;
+  });
 }
 
 export function findTableOwnershipViolations(schema, tableOwners, registeredModules) {
