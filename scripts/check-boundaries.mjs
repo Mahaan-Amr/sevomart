@@ -152,6 +152,12 @@ function unqualifiedSqlIdentifier(identifier) {
   return identifier.split(".").at(-1)?.trim().replace(/^"|"$/g, "");
 }
 
+function sqlIdentifierList(source) {
+  return [...source.matchAll(/"[^"]+"|[a-z_][a-z0-9_$]*/gi)]
+    .map(([identifier]) => unqualifiedSqlIdentifier(identifier))
+    .filter(Boolean);
+}
+
 function splitSqlStatements(source) {
   const statements = [];
   let statement = "";
@@ -276,11 +282,7 @@ function inferredForeignKeyDefinition(sourceTable, statement, referenceIndex) {
   const tableForeignKey = foreignKeyMatches.at(-1);
   if (tableForeignKey) {
     const explicitName = unqualifiedSqlIdentifier(tableForeignKey[1]);
-    const sourceColumns = [
-      ...tableForeignKey[2].matchAll(/"[^"]+"|[a-z_][a-z0-9_$]*/gi),
-    ]
-      .map(([identifier]) => unqualifiedSqlIdentifier(identifier))
-      .filter(Boolean);
+    const sourceColumns = sqlIdentifierList(tableForeignKey[2]);
     return {
       constraintName:
         explicitName ??
@@ -315,7 +317,7 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
   const tableStatementPattern =
     /^\s*(?:create\s+table\s+(?:if\s+not\s+exists\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)|alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][a-z0-9_$]*))?))([\s\S]*)$/i;
   const referencePattern =
-    /\breferences\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)/gi;
+    /\breferences\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)(?:\s*\(([^)]*)\))?/gi;
 
   const dropConstraintPattern =
     /\bdrop\s+constraint\s+(?:if\s+exists\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*))/gi;
@@ -383,8 +385,10 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
           if (!columnName) continue;
           for (const [key, violation] of activeViolations) {
             if (
-              violation.sourceTable === sourceTable &&
-              violation.sourceColumns.includes(columnName)
+              (violation.sourceTable === sourceTable &&
+                violation.sourceColumns.includes(columnName)) ||
+              (violation.targetTable === sourceTable &&
+                violation.targetColumns.includes(columnName))
             ) {
               activeViolations.delete(key);
             }
@@ -401,6 +405,7 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
             statementBody,
             action.match.index,
           );
+          const targetColumns = sqlIdentifierList(action.match[2] ?? "");
           activeViolations.set(`${sourceTable}.${constraintName ?? targetTable}`, {
             path: toPosix(migration.path),
             sourceTable,
@@ -408,6 +413,7 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
             sourceOwner,
             targetOwner,
             sourceColumns,
+            targetColumns,
             ...(constraintName ? { constraintName } : {}),
             rule: "cross-module-migration-foreign-key",
           });
@@ -419,6 +425,7 @@ export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOw
   return [...activeViolations.values()].map((violation) => {
     const reportedViolation = { ...violation };
     delete reportedViolation.sourceColumns;
+    delete reportedViolation.targetColumns;
     return reportedViolation;
   });
 }

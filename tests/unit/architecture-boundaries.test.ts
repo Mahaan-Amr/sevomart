@@ -677,6 +677,53 @@ describe("migration foreign-key boundary checker", () => {
     ).toEqual([]);
   });
 
+  it("clears inbound foreign keys when their target table is dropped and recreated", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-table/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__orders__recreate-orders/migration.sql",
+            source: `
+              drop table order_orders cascade;
+              create table order_orders (id uuid primary key);
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("clears inbound foreign keys when their target column is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-table/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__orders__drop-order-id/migration.sql",
+            source: "alter table order_orders drop column id cascade;",
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
   it("applies foreign-key additions and removals in SQL action order", () => {
     expect(
       findCrossModuleMigrationForeignKeyViolations(
