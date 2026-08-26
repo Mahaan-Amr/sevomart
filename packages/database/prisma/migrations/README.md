@@ -83,6 +83,15 @@ fresh isolated deployment applied all 40 migrations, including the latest discov
 migration from `main`, and the 13 payment recovery integration scenarios passed on
 PostgreSQL without partial order, inventory or outbox effects.
 
+Issue 114 removes the published cross-module foreign key from
+`payment_attempts.order_id` with a payments-owned forward migration. The UUID remains
+a required, indexed scalar reference whose existence and payable state are resolved
+through the versioned orders contract inside the existing payment transaction. The
+change is compatible with the current runtime, needs no compatibility window and can
+be safely applied when the constraint is already absent. The architecture checker
+tracks foreign-key additions and removals across the complete SQL migration history
+so a later migration cannot restore a cross-producer constraint.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op
