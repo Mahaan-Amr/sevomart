@@ -126,7 +126,33 @@ export const sensitiveAccessControlModeContract = z.enum([
   "SINGLE_MANAGER_EXCEPTION",
 ]);
 
-const internalReasonContract = z.string().trim().min(10).max(1_000);
+function normalizeReasonDigits(value: string): string {
+  return value
+    .replace(/[۰-۹]/g, (digit) => `${"۰۱۲۳۴۵۶۷۸۹".indexOf(digit)}`)
+    .replace(/[٠-٩]/g, (digit) => `${"٠١٢٣٤٥٦٧٨٩".indexOf(digit)}`);
+}
+
+const internalReasonContract = z
+  .string()
+  .trim()
+  .min(10)
+  .max(1_000)
+  .superRefine((reason, context) => {
+    const normalized = normalizeReasonDigits(reason);
+    const containsRawIdentifier = [
+      /(?:\+98|0098|0)?9\d{9}/,
+      /\bIR\d{24}\b/i,
+      /(?:\d[ -]?){16}/,
+      /(?:^|\D)\d{10}(?:\D|$)/,
+      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,
+    ].some((pattern) => pattern.test(normalized));
+    if (containsRawIdentifier) {
+      context.addIssue({
+        code: "custom",
+        message: "reason must not copy a raw personal or banking identifier",
+      });
+    }
+  });
 const strongAuthenticationAtContract = timestampV1Contract;
 const activeAccessManagerCountContract = z.int().min(1);
 

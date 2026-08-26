@@ -410,6 +410,22 @@ describe("platform access v1 contract", () => {
         occurredAt: "2026-08-26T10:01:00.000Z",
       }).action,
     ).toBe("SENSITIVE_FIELD_REVEALED");
+    expect(
+      platformAccessAuditEntryContract.safeParse({
+        auditId: "88888888-8888-4888-8888-888888888888",
+        grantId,
+        action: "SENSITIVE_FIELD_REVEALED",
+        actorIdentityId: requesterIdentityId,
+        subjectIdentityId: requesterIdentityId,
+        scope: paymentReviewScope,
+        reasonCode: "CASE_ACCESS_APPROVED",
+        reason: "برای تماس با 09123456789 اطلاعات پرونده آشکار شد",
+        outcome: "SUCCEEDED",
+        singleManagerException: false,
+        correlationId,
+        occurredAt: "2026-08-26T10:01:00.000Z",
+      }).success,
+    ).toBe(false);
   });
 
   it("publishes stable errors for policy and lifecycle failures", () => {
