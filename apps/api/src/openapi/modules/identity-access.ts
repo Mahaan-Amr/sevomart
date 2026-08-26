@@ -21,6 +21,99 @@ const retryAfterHeader = {
   },
 };
 
+const idempotencyHeaderParameters = [
+  {
+    name: "Idempotency-Key",
+    schema: "IdempotencyKey",
+    example: identityAccessV1Examples.IdempotencyKey,
+    required: true,
+  },
+] as const;
+
+const platformAccessGrantPathParameter = {
+  name: "grantId",
+  schema: "PlatformAccessGrantId",
+  example: identityAccessV1Examples.PlatformAccessGrantId,
+} as const;
+
+const platformAccessListQueryParameters = [
+  {
+    name: "subjectIdentityId",
+    schema: "PlatformAccessSubjectIdentityId",
+    example: identityAccessV1Examples.PlatformAccessSubjectIdentityId,
+    required: false,
+  },
+  {
+    name: "status",
+    schema: "PlatformAccessStatus",
+    example: identityAccessV1Examples.PlatformAccessStatus,
+    required: false,
+  },
+  {
+    name: "cursor",
+    schema: "PlatformAccessCursor",
+    example: identityAccessV1Examples.PlatformAccessCursor,
+    required: false,
+  },
+  {
+    name: "limit",
+    schema: "PlatformAccessPageLimit",
+    example: identityAccessV1Examples.PlatformAccessPageLimit,
+    required: false,
+  },
+] as const;
+
+const platformAccessAuditQueryParameters = [
+  {
+    name: "grantId",
+    schema: "PlatformAccessGrantId",
+    example: identityAccessV1Examples.PlatformAccessGrantId,
+    required: false,
+  },
+  {
+    name: "actorIdentityId",
+    schema: "PlatformAccessSubjectIdentityId",
+    example: identityAccessV1Examples.PlatformAccessSubjectIdentityId,
+    required: false,
+  },
+  ...platformAccessListQueryParameters.slice(2),
+] as const;
+
+const platformAccessMutationResponses = [
+  { status: 200, schema: "PlatformAccessGrant" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 404, schema: "PlatformAccessError" },
+  { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
+
+const platformAccessListResponses = [
+  { status: 200, schema: "PlatformAccessGrantPage" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
+
+const platformAccessRequestResponses = [
+  { status: 202, schema: "PlatformAccessGrant" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
+
+const platformAccessAuditResponses = [
+  { status: 200, schema: "PlatformAccessAuditPage" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
+
 const operations = [
   {
     operationId: "requestIdentityOtp",
@@ -85,14 +178,7 @@ const operations = [
     path: sellerApplicationV1Paths.submit,
     tag: "identity-access",
     auth: "identity-session",
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "SellerApplicationInput",
       example: identityAccessV1Examples.SellerApplicationInput,
@@ -147,14 +233,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "ResubmitSellerApplication",
       example: identityAccessV1Examples.ResubmitSellerApplication,
@@ -183,14 +262,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "WithdrawSellerApplication",
       example: identityAccessV1Examples.WithdrawSellerApplication,
@@ -309,14 +381,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "RequestSellerApplicationInformation",
       example: identityAccessV1Examples.RequestSellerApplicationInformation,
@@ -342,14 +407,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "ApproveSellerApplication",
       example: identityAccessV1Examples.ApproveSellerApplication,
@@ -375,14 +433,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "RejectSellerApplication",
       example: identityAccessV1Examples.RejectSellerApplication,
@@ -403,26 +454,12 @@ const operations = [
     path: platformAccessV1Paths.responsibilityGrants,
     tag: "identity-access",
     auth: "platform-agent-session",
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "ResponsibilityGrantRequestInput",
       example: identityAccessV1Examples.ResponsibilityGrantRequestInput,
     },
-    responses: [
-      { status: 202, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessRequestResponses,
   },
   {
     operationId: "listResponsibilityGrants",
@@ -430,27 +467,8 @@ const operations = [
     path: platformAccessV1Paths.responsibilityGrants,
     tag: "identity-access",
     auth: "platform-agent-session",
-    queryParameters: [
-      {
-        name: "cursor",
-        schema: "PlatformAccessCursor",
-        example: identityAccessV1Examples.PlatformAccessCursor,
-        required: false,
-      },
-      {
-        name: "limit",
-        schema: "PlatformAccessPageLimit",
-        example: identityAccessV1Examples.PlatformAccessPageLimit,
-        required: false,
-      },
-    ],
-    responses: [
-      { status: 200, schema: "PlatformAccessGrantPage" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    queryParameters: platformAccessListQueryParameters,
+    responses: platformAccessListResponses,
   },
   {
     operationId: "approveResponsibilityGrant",
@@ -458,32 +476,13 @@ const operations = [
     path: platformAccessV1Paths.responsibilityGrantApproval,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "PlatformAccessApprovalInput",
       example: identityAccessV1Examples.PlatformAccessApprovalInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "revokeResponsibilityGrant",
@@ -491,32 +490,27 @@ const operations = [
     path: platformAccessV1Paths.responsibilityGrantRevocation,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "PlatformAccessRevocationInput",
       example: identityAccessV1Examples.PlatformAccessRevocationInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "rejectResponsibilityGrant",
+    method: "post",
+    path: platformAccessV1Paths.responsibilityGrantRejection,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRejectionInput",
+      example: identityAccessV1Examples.PlatformAccessRejectionInput,
+    },
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "requestSensitiveAccess",
@@ -524,26 +518,12 @@ const operations = [
     path: platformAccessV1Paths.sensitiveAccessGrants,
     tag: "identity-access",
     auth: "platform-agent-session",
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "SensitiveAccessRequestInput",
       example: identityAccessV1Examples.SensitiveAccessRequestInput,
     },
-    responses: [
-      { status: 202, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessRequestResponses,
   },
   {
     operationId: "listSensitiveAccessGrants",
@@ -551,27 +531,8 @@ const operations = [
     path: platformAccessV1Paths.sensitiveAccessGrants,
     tag: "identity-access",
     auth: "platform-agent-session",
-    queryParameters: [
-      {
-        name: "cursor",
-        schema: "PlatformAccessCursor",
-        example: identityAccessV1Examples.PlatformAccessCursor,
-        required: false,
-      },
-      {
-        name: "limit",
-        schema: "PlatformAccessPageLimit",
-        example: identityAccessV1Examples.PlatformAccessPageLimit,
-        required: false,
-      },
-    ],
-    responses: [
-      { status: 200, schema: "PlatformAccessGrantPage" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    queryParameters: platformAccessListQueryParameters,
+    responses: platformAccessListResponses,
   },
   {
     operationId: "approveSensitiveAccess",
@@ -579,32 +540,13 @@ const operations = [
     path: platformAccessV1Paths.sensitiveAccessApproval,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "PlatformAccessApprovalInput",
       example: identityAccessV1Examples.PlatformAccessApprovalInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "revokeSensitiveAccess",
@@ -612,32 +554,27 @@ const operations = [
     path: platformAccessV1Paths.sensitiveAccessRevocation,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "PlatformAccessRevocationInput",
       example: identityAccessV1Examples.PlatformAccessRevocationInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "rejectSensitiveAccess",
+    method: "post",
+    path: platformAccessV1Paths.sensitiveAccessRejection,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRejectionInput",
+      example: identityAccessV1Examples.PlatformAccessRejectionInput,
+    },
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "requestEmergencyAccess",
@@ -645,26 +582,12 @@ const operations = [
     path: platformAccessV1Paths.emergencyAccessGrants,
     tag: "identity-access",
     auth: "platform-agent-session",
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "EmergencyAccessRequestInput",
       example: identityAccessV1Examples.EmergencyAccessRequestInput,
     },
-    responses: [
-      { status: 202, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessRequestResponses,
   },
   {
     operationId: "listEmergencyAccessGrants",
@@ -672,27 +595,8 @@ const operations = [
     path: platformAccessV1Paths.emergencyAccessGrants,
     tag: "identity-access",
     auth: "platform-agent-session",
-    queryParameters: [
-      {
-        name: "cursor",
-        schema: "PlatformAccessCursor",
-        example: identityAccessV1Examples.PlatformAccessCursor,
-        required: false,
-      },
-      {
-        name: "limit",
-        schema: "PlatformAccessPageLimit",
-        example: identityAccessV1Examples.PlatformAccessPageLimit,
-        required: false,
-      },
-    ],
-    responses: [
-      { status: 200, schema: "PlatformAccessGrantPage" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    queryParameters: platformAccessListQueryParameters,
+    responses: platformAccessListResponses,
   },
   {
     operationId: "approveEmergencyAccess",
@@ -700,32 +604,13 @@ const operations = [
     path: platformAccessV1Paths.emergencyAccessApproval,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "PlatformAccessApprovalInput",
       example: identityAccessV1Examples.PlatformAccessApprovalInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "activateEmergencyAccess",
@@ -733,32 +618,13 @@ const operations = [
     path: platformAccessV1Paths.emergencyAccessActivation,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "EmergencyAccessActivationInput",
       example: identityAccessV1Examples.EmergencyAccessActivationInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "revokeEmergencyAccess",
@@ -766,32 +632,13 @@ const operations = [
     path: platformAccessV1Paths.emergencyAccessRevocation,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "PlatformAccessRevocationInput",
       example: identityAccessV1Examples.PlatformAccessRevocationInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "closeEmergencyAccess",
@@ -799,32 +646,41 @@ const operations = [
     path: platformAccessV1Paths.emergencyAccessClosure,
     tag: "identity-access",
     auth: "platform-agent-session",
-    pathParameter: {
-      name: "grantId",
-      schema: "PlatformAccessGrantId",
-      example: identityAccessV1Examples.PlatformAccessGrantId,
-    },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "EmergencyAccessClosureInput",
       example: identityAccessV1Examples.EmergencyAccessClosureInput,
     },
-    responses: [
-      { status: 200, schema: "PlatformAccessGrant" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 404, schema: "PlatformAccessError" },
-      { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "rejectEmergencyAccess",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessRejection,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRejectionInput",
+      example: identityAccessV1Examples.PlatformAccessRejectionInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "completeEmergencyAccessReview",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessReview,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "EmergencyAccessReviewInput",
+      example: identityAccessV1Examples.EmergencyAccessReviewInput,
+    },
+    responses: platformAccessMutationResponses,
   },
   {
     operationId: "listPlatformAccessAudit",
@@ -832,33 +688,8 @@ const operations = [
     path: platformAccessV1Paths.audit,
     tag: "identity-access",
     auth: "platform-agent-session",
-    queryParameters: [
-      {
-        name: "grantId",
-        schema: "PlatformAccessGrantId",
-        example: identityAccessV1Examples.PlatformAccessGrantId,
-        required: false,
-      },
-      {
-        name: "cursor",
-        schema: "PlatformAccessCursor",
-        example: identityAccessV1Examples.PlatformAccessCursor,
-        required: false,
-      },
-      {
-        name: "limit",
-        schema: "PlatformAccessPageLimit",
-        example: identityAccessV1Examples.PlatformAccessPageLimit,
-        required: false,
-      },
-    ],
-    responses: [
-      { status: 200, schema: "PlatformAccessAuditPage" },
-      { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PlatformAccessError" },
-      { status: 422, schema: "ValidationError" },
-      { status: 500, schema: "InternalServerError" },
-    ],
+    queryParameters: platformAccessAuditQueryParameters,
+    responses: platformAccessAuditResponses,
   },
 ] as const satisfies readonly ApiOperationContract[];
 

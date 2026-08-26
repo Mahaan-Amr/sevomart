@@ -1,6 +1,8 @@
 import {
   approveResponsibilityGrantCommandContract,
   approveSensitiveAccessCommandContract,
+  completeEmergencyAccessReviewCommandContract,
+  emergencyAccessGrantViewContract,
   emergencyAccessActivationCommandContract,
   identityAccessV1Schemas,
   platformAccessAuditEntryContract,
@@ -9,8 +11,12 @@ import {
   platformAccessV1Paths,
   requestEmergencyAccessCommandContract,
   requestResponsibilityGrantCommandContract,
+  responsibilityGrantViewContract,
   requestSensitiveAccessCommandContract,
+  rejectPlatformAccessCommandContract,
+  sensitiveAccessRequestInputContract,
   sensitiveAccessGrantedV1Contract,
+  sensitiveAccessGrantViewContract,
 } from "@sevo/contracts/identity-access/v1";
 import * as rootContracts from "@sevo/contracts";
 import { describe, expect, it } from "vitest";
@@ -39,11 +45,15 @@ describe("platform access v1 contract", () => {
         "/v1/platform/access/responsibility-grants/{grantId}/approval",
       responsibilityGrantRevocation:
         "/v1/platform/access/responsibility-grants/{grantId}/revocation",
+      responsibilityGrantRejection:
+        "/v1/platform/access/responsibility-grants/{grantId}/rejection",
       sensitiveAccessGrants: "/v1/platform/access/sensitive-grants",
       sensitiveAccessApproval:
         "/v1/platform/access/sensitive-grants/{grantId}/approval",
       sensitiveAccessRevocation:
         "/v1/platform/access/sensitive-grants/{grantId}/revocation",
+      sensitiveAccessRejection:
+        "/v1/platform/access/sensitive-grants/{grantId}/rejection",
       emergencyAccessGrants: "/v1/platform/access/emergency-grants",
       emergencyAccessApproval:
         "/v1/platform/access/emergency-grants/{grantId}/approval",
@@ -52,6 +62,9 @@ describe("platform access v1 contract", () => {
       emergencyAccessRevocation:
         "/v1/platform/access/emergency-grants/{grantId}/revocation",
       emergencyAccessClosure: "/v1/platform/access/emergency-grants/{grantId}/closure",
+      emergencyAccessRejection:
+        "/v1/platform/access/emergency-grants/{grantId}/rejection",
+      emergencyAccessReview: "/v1/platform/access/emergency-grants/{grantId}/review",
       audit: "/v1/platform/access/audit",
     });
   });
@@ -136,6 +149,9 @@ describe("platform access v1 contract", () => {
       reason: "بررسی مغایرت نتیجه پرداخت همین پرونده",
       scope: paymentReviewScope,
       ttlMinutes: 30,
+      requestMode: "AGENT_REQUEST" as const,
+      activeAccessManagerCount: 2,
+      controlMode: "REQUEST_APPROVAL" as const,
       strongAuthenticationAt: authenticatedAt,
     };
 
@@ -152,6 +168,36 @@ describe("platform access v1 contract", () => {
         scope: { ...paymentReviewScope, allowedActions: ["BULK_EXPORT"] },
       }).success,
     ).toBe(false);
+
+    expect(
+      sensitiveAccessRequestInputContract.parse({
+        recipientIdentityId,
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "RESOLVE_ASSIGNED_CASE",
+        reason: "تخصیص پرونده پرداخت به عامل مشخص",
+        scope: paymentReviewScope,
+        ttlMinutes: 30,
+      }).recipientIdentityId,
+    ).toBe(recipientIdentityId);
+    expect(
+      requestSensitiveAccessCommandContract.safeParse({
+        ...command,
+        recipientIdentityId,
+        requestMode: "MANAGER_ASSIGNMENT",
+        activeAccessManagerCount: 1,
+        controlMode: "SINGLE_MANAGER_EXCEPTION",
+      }).success,
+    ).toBe(true);
+    expect(
+      approveSensitiveAccessCommandContract.safeParse({
+        grantId,
+        requesterIdentityId,
+        recipientIdentityId: requesterIdentityId,
+        approverIdentityId,
+        activeAccessManagerCount: 1,
+        strongAuthenticationAt: authenticatedAt,
+      }).success,
+    ).toBe(true);
   });
 
   it("allows the explicit single-manager emergency exception without faking approval", () => {
@@ -188,6 +234,104 @@ describe("platform access v1 contract", () => {
         strongAuthenticationAt: authenticatedAt,
       }).success,
     ).toBe(false);
+  });
+
+  it("publishes executable rejection and post-incident review commands", () => {
+    expect(
+      rejectPlatformAccessCommandContract.safeParse({
+        grantId,
+        requesterIdentityId,
+        recipientIdentityId: requesterIdentityId,
+        reviewerIdentityId: requesterIdentityId,
+        reason: "درخواست با محدوده مجاز پرونده هم‌خوان نیست",
+        expectedRevision: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      rejectPlatformAccessCommandContract.safeParse({
+        grantId,
+        requesterIdentityId,
+        recipientIdentityId: requesterIdentityId,
+        reviewerIdentityId: approverIdentityId,
+        reason: "درخواست با محدوده مجاز پرونده هم‌خوان نیست",
+        expectedRevision: 1,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      completeEmergencyAccessReviewCommandContract.safeParse({
+        grantId,
+        requesterIdentityId,
+        approverIdentityId,
+        reviewerIdentityId: requesterIdentityId,
+        reviewMode: "INDEPENDENT",
+        availableHumanReviewerCount: 2,
+        findingCode: "CONTROLS_FOLLOWED",
+        reviewDueAt: "2026-08-27T10:00:00.000Z",
+        reviewedAt: "2026-08-26T16:00:00.000Z",
+        expectedRevision: 4,
+      }).success,
+    ).toBe(false);
+    expect(
+      completeEmergencyAccessReviewCommandContract.safeParse({
+        grantId,
+        requesterIdentityId,
+        approverIdentityId: null,
+        reviewerIdentityId: requesterIdentityId,
+        reviewMode: "WITHOUT_INDEPENDENT_REVIEW",
+        availableHumanReviewerCount: 1,
+        findingCode: "CONTROLS_FOLLOWED",
+        reviewDueAt: "2026-08-27T10:00:00.000Z",
+        reviewedAt: "2026-08-26T16:00:00.000Z",
+        expectedRevision: 4,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("restricts each grant kind to its approved lifecycle", () => {
+    const base = {
+      grantId,
+      subjectIdentityId: requesterIdentityId,
+      requestedByIdentityId: requesterIdentityId,
+      approvedByIdentityId: approverIdentityId,
+      revision: 2,
+      singleManagerException: false,
+      createdAt: "2026-08-26T10:00:00.000Z",
+      activatedAt: "2026-08-26T10:01:00.000Z",
+      revokedAt: null,
+    };
+    expect(
+      responsibilityGrantViewContract.safeParse({
+        ...base,
+        grantKind: "RESPONSIBILITY",
+        responsibility: "PAYMENT_REVIEW",
+        status: "EXPIRED",
+        expiresAt: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      sensitiveAccessGrantViewContract.safeParse({
+        ...base,
+        grantKind: "SENSITIVE_ACCESS",
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "RESOLVE_ASSIGNED_CASE",
+        scope: paymentReviewScope,
+        status: "CLOSED",
+        expiresAt: "2026-08-26T10:31:00.000Z",
+      }).success,
+    ).toBe(false);
+    expect(
+      emergencyAccessGrantViewContract.safeParse({
+        ...base,
+        grantKind: "EMERGENCY_ACCESS",
+        incidentId: "INC-2026-0042",
+        scope: paymentReviewScope,
+        status: "CLOSED",
+        expiresAt: "2026-08-26T10:31:00.000Z",
+        reviewDueAt: "2026-08-27T10:00:00.000Z",
+        reviewStatus: "PENDING",
+      }).success,
+    ).toBe(true);
   });
 
   it("publishes PII-free lifecycle events and append-only audit records", () => {
@@ -229,6 +373,7 @@ describe("platform access v1 contract", () => {
         actorIdentityId: requesterIdentityId,
         subjectIdentityId: requesterIdentityId,
         scope: paymentReviewScope,
+        reasonCode: "CASE_ACCESS_APPROVED",
         outcome: "SUCCEEDED",
         singleManagerException: false,
         correlationId,
@@ -245,6 +390,14 @@ describe("platform access v1 contract", () => {
         correlationId,
       }).code,
     ).toBe("SELF_APPROVAL_FORBIDDEN");
+    expect(
+      platformAccessErrorContract.safeParse({
+        code: "SELF_APPROVAL_FORBIDDEN",
+        message: "تأییدکننده باید از درخواست‌کننده جدا باشد.",
+        correlationId,
+        details: { rawBankAccount: "IR000000000000000000000000" },
+      }).success,
+    ).toBe(false);
   });
 
   it("publishes executable JSON schemas and OpenAPI operations from the owner fragment", () => {
@@ -254,6 +407,8 @@ describe("platform access v1 contract", () => {
       EmergencyAccessRequestInput: expect.anything(),
       PlatformAccessGrant: expect.anything(),
       PlatformAccessAuditPage: expect.anything(),
+      PlatformAccessRejectionInput: expect.anything(),
+      EmergencyAccessReviewInput: expect.anything(),
       PlatformAccessError: platformAccessErrorContract,
     });
 
@@ -279,14 +434,26 @@ describe("platform access v1 contract", () => {
         platformAccessV1Paths.responsibilityGrantRevocation,
         "revokeResponsibilityGrant",
       ],
+      [
+        "post",
+        platformAccessV1Paths.responsibilityGrantRejection,
+        "rejectResponsibilityGrant",
+      ],
       ["post", platformAccessV1Paths.sensitiveAccessGrants, "requestSensitiveAccess"],
       ["get", platformAccessV1Paths.sensitiveAccessGrants, "listSensitiveAccessGrants"],
+      ["post", platformAccessV1Paths.sensitiveAccessRejection, "rejectSensitiveAccess"],
       ["post", platformAccessV1Paths.emergencyAccessGrants, "requestEmergencyAccess"],
       ["get", platformAccessV1Paths.emergencyAccessGrants, "listEmergencyAccessGrants"],
       [
         "post",
         platformAccessV1Paths.emergencyAccessActivation,
         "activateEmergencyAccess",
+      ],
+      ["post", platformAccessV1Paths.emergencyAccessRejection, "rejectEmergencyAccess"],
+      [
+        "post",
+        platformAccessV1Paths.emergencyAccessReview,
+        "completeEmergencyAccessReview",
       ],
       ["get", platformAccessV1Paths.audit, "listPlatformAccessAudit"],
     ] as const;
@@ -297,6 +464,22 @@ describe("platform access v1 contract", () => {
         { platformAgentSession: [] },
       ]);
     }
+    for (const path of [
+      platformAccessV1Paths.responsibilityGrants,
+      platformAccessV1Paths.sensitiveAccessGrants,
+      platformAccessV1Paths.emergencyAccessGrants,
+    ]) {
+      expect(
+        document.paths[path]?.get?.parameters?.map(
+          (parameter: { name: string }) => parameter.name,
+        ),
+      ).toEqual(["subjectIdentityId", "status", "cursor", "limit"]);
+    }
+    expect(
+      document.paths[platformAccessV1Paths.audit]?.get?.parameters?.map(
+        (parameter: { name: string }) => parameter.name,
+      ),
+    ).toEqual(["grantId", "actorIdentityId", "cursor", "limit"]);
     expect(document.components?.schemas?.PlatformAccessError).toBeDefined();
   });
 });

@@ -17,10 +17,13 @@ export const platformAccessV1Paths = {
     "/v1/platform/access/responsibility-grants/{grantId}/approval",
   responsibilityGrantRevocation:
     "/v1/platform/access/responsibility-grants/{grantId}/revocation",
+  responsibilityGrantRejection:
+    "/v1/platform/access/responsibility-grants/{grantId}/rejection",
   sensitiveAccessGrants: "/v1/platform/access/sensitive-grants",
   sensitiveAccessApproval: "/v1/platform/access/sensitive-grants/{grantId}/approval",
   sensitiveAccessRevocation:
     "/v1/platform/access/sensitive-grants/{grantId}/revocation",
+  sensitiveAccessRejection: "/v1/platform/access/sensitive-grants/{grantId}/rejection",
   emergencyAccessGrants: "/v1/platform/access/emergency-grants",
   emergencyAccessApproval: "/v1/platform/access/emergency-grants/{grantId}/approval",
   emergencyAccessActivation:
@@ -28,6 +31,8 @@ export const platformAccessV1Paths = {
   emergencyAccessRevocation:
     "/v1/platform/access/emergency-grants/{grantId}/revocation",
   emergencyAccessClosure: "/v1/platform/access/emergency-grants/{grantId}/closure",
+  emergencyAccessRejection: "/v1/platform/access/emergency-grants/{grantId}/rejection",
+  emergencyAccessReview: "/v1/platform/access/emergency-grants/{grantId}/review",
   audit: "/v1/platform/access/audit",
 } as const;
 
@@ -35,6 +40,13 @@ export const platformAccessGrantIdContract = z.uuid().brand<"PlatformAccessGrant
 export const platformAccessAuditIdContract = z.uuid().brand<"PlatformAccessAuditId">();
 export const platformAccessCursorContract = z.string().min(1).max(500);
 export const platformAccessPageLimitContract = z.int().min(1).max(100);
+export const platformAccessStatusContract = z.enum([
+  "PENDING_APPROVAL",
+  "ACTIVE",
+  "EXPIRED",
+  "REVOKED",
+  "CLOSED",
+]);
 
 export const responsibilityContract = z.enum([
   "ACCESS_ADMINISTRATION",
@@ -102,6 +114,16 @@ export const platformAccessPurposeCodeContract = z.enum([
   "RESOLVE_ASSIGNED_CASE",
   "VERIFY_CASE_EVIDENCE",
   "CONTAIN_ACTIVE_INCIDENT",
+]);
+
+export const sensitiveAccessRequestModeContract = z.enum([
+  "AGENT_REQUEST",
+  "MANAGER_ASSIGNMENT",
+]);
+export const sensitiveAccessControlModeContract = z.enum([
+  "REQUEST_APPROVAL",
+  "DIRECT_ASSIGNMENT",
+  "SINGLE_MANAGER_EXCEPTION",
 ]);
 
 const internalReasonContract = z.string().trim().min(10).max(1_000);
@@ -180,9 +202,50 @@ export const requestSensitiveAccessCommandContract = z
       .positive()
       .max(PLATFORM_ACCESS_MAX_TTL_MINUTES)
       .default(PLATFORM_ACCESS_DEFAULT_TTL_MINUTES),
+    requestMode: sensitiveAccessRequestModeContract,
+    activeAccessManagerCount: activeAccessManagerCountContract,
+    controlMode: sensitiveAccessControlModeContract,
     strongAuthenticationAt: strongAuthenticationAtContract,
   })
-  .strict();
+  .strict()
+  .superRefine((command, context) => {
+    if (command.requestMode === "AGENT_REQUEST") {
+      if (command.requesterIdentityId !== command.recipientIdentityId) {
+        context.addIssue({
+          code: "custom",
+          path: ["recipientIdentityId"],
+          message: "an agent request can only request access for its actor",
+        });
+      }
+      if (command.controlMode !== "REQUEST_APPROVAL") {
+        context.addIssue({
+          code: "custom",
+          path: ["controlMode"],
+          message: "an agent request requires approval",
+        });
+      }
+      return;
+    }
+
+    if (command.requesterIdentityId === command.recipientIdentityId) {
+      context.addIssue({
+        code: "custom",
+        path: ["recipientIdentityId"],
+        message: "a manager cannot assign sensitive access to itself",
+      });
+    }
+    const expectedMode =
+      command.activeAccessManagerCount === 1
+        ? "SINGLE_MANAGER_EXCEPTION"
+        : "DIRECT_ASSIGNMENT";
+    if (command.controlMode !== expectedMode) {
+      context.addIssue({
+        code: "custom",
+        path: ["controlMode"],
+        message: `manager assignment requires ${expectedMode}`,
+      });
+    }
+  });
 
 export const approveSensitiveAccessCommandContract = z
   .object({
@@ -190,7 +253,7 @@ export const approveSensitiveAccessCommandContract = z
     requesterIdentityId: identityIdContract,
     recipientIdentityId: identityIdContract,
     approverIdentityId: identityIdContract,
-    activeAccessManagerCount: z.int().min(2),
+    activeAccessManagerCount: activeAccessManagerCountContract,
     strongAuthenticationAt: strongAuthenticationAtContract,
   })
   .strict()
@@ -319,12 +382,86 @@ export const closeEmergencyAccessCommandContract = z
   })
   .strict();
 
+export const rejectPlatformAccessCommandContract = z
+  .object({
+    grantId: platformAccessGrantIdContract,
+    requesterIdentityId: identityIdContract,
+    recipientIdentityId: identityIdContract,
+    reviewerIdentityId: identityIdContract,
+    reason: internalReasonContract,
+    expectedRevision: z.int().positive(),
+  })
+  .strict()
+  .superRefine((command, context) => {
+    if (
+      command.reviewerIdentityId === command.requesterIdentityId ||
+      command.reviewerIdentityId === command.recipientIdentityId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["reviewerIdentityId"],
+        message: "a requester or recipient cannot reject its own request",
+      });
+    }
+  });
+
+export const emergencyAccessReviewModeContract = z.enum([
+  "INDEPENDENT",
+  "WITHOUT_INDEPENDENT_REVIEW",
+]);
+export const emergencyAccessReviewFindingContract = z.enum([
+  "CONTROLS_FOLLOWED",
+  "SCOPE_EXCEEDED",
+  "AUDIT_INCOMPLETE",
+  "FOLLOW_UP_REQUIRED",
+]);
+
+export const completeEmergencyAccessReviewCommandContract = z
+  .object({
+    grantId: platformAccessGrantIdContract,
+    requesterIdentityId: identityIdContract,
+    approverIdentityId: identityIdContract.nullable(),
+    reviewerIdentityId: identityIdContract,
+    reviewMode: emergencyAccessReviewModeContract,
+    availableHumanReviewerCount: z.int().positive(),
+    findingCode: emergencyAccessReviewFindingContract,
+    reviewDueAt: timestampV1Contract,
+    reviewedAt: timestampV1Contract,
+    expectedRevision: z.int().positive(),
+  })
+  .strict()
+  .superRefine((command, context) => {
+    if (command.reviewMode === "WITHOUT_INDEPENDENT_REVIEW") {
+      if (
+        command.availableHumanReviewerCount !== 1 ||
+        command.reviewerIdentityId !== command.requesterIdentityId ||
+        command.approverIdentityId !== null
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["reviewMode"],
+          message: "self-review is only valid when one human reviewer exists",
+        });
+      }
+      return;
+    }
+
+    if (
+      command.reviewerIdentityId === command.requesterIdentityId ||
+      command.reviewerIdentityId === command.approverIdentityId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["reviewerIdentityId"],
+        message: "post-incident review must be independent",
+      });
+    }
+  });
+
 export const platformAccessListQueryContract = z
   .object({
     subjectIdentityId: identityIdContract.optional(),
-    status: z
-      .enum(["PENDING_APPROVAL", "ACTIVE", "EXPIRED", "REVOKED", "CLOSED"])
-      .optional(),
+    status: platformAccessStatusContract.optional(),
     cursor: platformAccessCursorContract.optional(),
     limit: platformAccessPageLimitContract.default(20),
   })
@@ -352,6 +489,19 @@ export const platformAccessAuditActionContract = z.enum([
   "POST_INCIDENT_REVIEW_COMPLETED",
 ]);
 
+export const platformAccessAuditReasonCodeContract = z.enum([
+  "RESPONSIBILITY_GRANTED",
+  "CASE_ASSIGNED",
+  "CASE_ACCESS_REQUESTED",
+  "CASE_ACCESS_APPROVED",
+  "ACCESS_REQUEST_REJECTED",
+  "OPERATIONAL_NEED_ENDED",
+  "ACCESS_REVOKED_FOR_SAFETY",
+  "TTL_EXPIRED",
+  "INCIDENT_CONTAINMENT",
+  "POST_INCIDENT_REVIEW",
+]);
+
 export const platformAccessAuditEntryContract = z
   .object({
     auditId: platformAccessAuditIdContract,
@@ -360,6 +510,7 @@ export const platformAccessAuditEntryContract = z
     actorIdentityId: identityIdContract,
     subjectIdentityId: identityIdContract,
     scope: platformAccessScopeContract.optional(),
+    reasonCode: platformAccessAuditReasonCodeContract,
     outcome: z.enum(["SUCCEEDED", "DENIED", "STOPPED_AFTER_REVOCATION"]),
     singleManagerException: z.boolean(),
     correlationId: z.uuid(),
@@ -524,7 +675,6 @@ export const platformAccessErrorContract = z
     ]),
     message: z.string().min(1),
     correlationId: z.string().min(1),
-    details: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -538,6 +688,7 @@ export const responsibilityGrantRequestInputContract = z
 
 export const sensitiveAccessRequestInputContract = z
   .object({
+    recipientIdentityId: identityIdContract.optional(),
     responsibility: responsibilityContract,
     purposeCode: platformAccessPurposeCodeContract,
     reason: internalReasonContract,
@@ -585,12 +736,25 @@ export const emergencyAccessClosureInputContract = z
   })
   .strict();
 
+export const platformAccessRejectionInputContract = z
+  .object({
+    expectedRevision: z.int().positive(),
+    reason: internalReasonContract,
+  })
+  .strict();
+
+export const emergencyAccessReviewInputContract = z
+  .object({
+    expectedRevision: z.int().positive(),
+    findingCode: emergencyAccessReviewFindingContract,
+  })
+  .strict();
+
 const platformAccessGrantBaseShape = {
   grantId: platformAccessGrantIdContract,
   subjectIdentityId: identityIdContract,
   requestedByIdentityId: identityIdContract,
   approvedByIdentityId: identityIdContract.nullable(),
-  status: z.enum(["PENDING_APPROVAL", "ACTIVE", "EXPIRED", "REVOKED", "CLOSED"]),
   revision: z.int().positive(),
   singleManagerException: z.boolean(),
   createdAt: timestampV1Contract,
@@ -602,6 +766,7 @@ export const responsibilityGrantViewContract = z
   .object({
     ...platformAccessGrantBaseShape,
     grantKind: z.literal("RESPONSIBILITY"),
+    status: z.enum(["PENDING_APPROVAL", "ACTIVE", "REVOKED"]),
     responsibility: responsibilityContract,
     expiresAt: z.null(),
   })
@@ -611,6 +776,7 @@ export const sensitiveAccessGrantViewContract = z
   .object({
     ...platformAccessGrantBaseShape,
     grantKind: z.literal("SENSITIVE_ACCESS"),
+    status: z.enum(["PENDING_APPROVAL", "ACTIVE", "EXPIRED", "REVOKED"]),
     responsibility: responsibilityContract,
     purposeCode: platformAccessPurposeCodeContract,
     scope: platformAccessScopeContract,
@@ -622,6 +788,7 @@ export const emergencyAccessGrantViewContract = z
   .object({
     ...platformAccessGrantBaseShape,
     grantKind: z.literal("EMERGENCY_ACCESS"),
+    status: z.enum(["PENDING_APPROVAL", "ACTIVE", "EXPIRED", "REVOKED", "CLOSED"]),
     incidentId: z.string().min(3).max(120),
     scope: platformAccessScopeContract,
     expiresAt: timestampV1Contract,
@@ -660,6 +827,8 @@ export const platformAccessV1Schemas = {
   PlatformAccessGrantId: platformAccessGrantIdContract,
   PlatformAccessCursor: platformAccessCursorContract,
   PlatformAccessPageLimit: platformAccessPageLimitContract,
+  PlatformAccessSubjectIdentityId: identityIdContract,
+  PlatformAccessStatus: platformAccessStatusContract,
   Responsibility: responsibilityContract,
   PlatformAccessScope: platformAccessScopeContract,
   ResponsibilityGrantRequestInput: responsibilityGrantRequestInputContract,
@@ -669,6 +838,8 @@ export const platformAccessV1Schemas = {
   PlatformAccessRevocationInput: platformAccessRevocationInputContract,
   EmergencyAccessActivationInput: emergencyAccessActivationInputContract,
   EmergencyAccessClosureInput: emergencyAccessClosureInputContract,
+  PlatformAccessRejectionInput: platformAccessRejectionInputContract,
+  EmergencyAccessReviewInput: emergencyAccessReviewInputContract,
   PlatformAccessGrant: platformAccessGrantContract,
   PlatformAccessGrantPage: platformAccessGrantPageContract,
   PlatformAccessAuditPage: platformAccessAuditPageContract,
@@ -679,6 +850,8 @@ export const platformAccessV1Examples = {
   PlatformAccessGrantId: "44444444-4444-4444-8444-444444444444",
   PlatformAccessCursor: "eyJvY2N1cnJlZEF0IjoiMjAyNi0wOC0yNlQxMDowMDowMC4wMDBaIn0",
   PlatformAccessPageLimit: 20,
+  PlatformAccessSubjectIdentityId: "11111111-1111-4111-8111-111111111111",
+  PlatformAccessStatus: "ACTIVE",
   ResponsibilityGrantRequestInput: {
     recipientIdentityId: "22222222-2222-4222-8222-222222222222",
     responsibility: "PAYMENT_REVIEW",
@@ -714,6 +887,14 @@ export const platformAccessV1Examples = {
   EmergencyAccessClosureInput: {
     expectedRevision: 3,
     reason: "مهار حادثه تکمیل و نشست اضطراری بسته شد",
+  },
+  PlatformAccessRejectionInput: {
+    expectedRevision: 1,
+    reason: "درخواست با محدوده مجاز پرونده هم‌خوان نیست",
+  },
+  EmergencyAccessReviewInput: {
+    expectedRevision: 4,
+    findingCode: "CONTROLS_FOLLOWED",
   },
   PlatformAccessGrant: {
     grantKind: "SENSITIVE_ACCESS",
