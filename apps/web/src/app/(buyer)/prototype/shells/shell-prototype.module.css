@@ -1,0 +1,955 @@
+.prototype {
+  display: block;
+  min-height: 100dvh;
+  padding: 0 0 112px;
+  background: #f4f0f1;
+}
+
+.prototype button {
+  font: inherit;
+}
+.prototypeNote {
+  position: fixed;
+  z-index: 50;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border: 1px solid rgb(164 20 57 / 16%);
+  border-radius: 999px;
+  background: rgb(250 248 248 / 86%);
+  color: #81767a;
+  font-size: 10px;
+  backdrop-filter: blur(10px);
+}
+.mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 13px;
+  background: #a41439;
+  color: white;
+  font-size: 19px;
+  font-weight: 600;
+  box-shadow: 4px 4px 10px rgb(118 11 41 / 18%);
+}
+.avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgb(164 20 57 / 12%);
+  border-radius: 50%;
+  background: #f6e3e9;
+  color: #760b29;
+  font-weight: 600;
+}
+.active {
+  color: #a41439 !important;
+}
+
+/* A — spaces are visually and navigationally separate. */
+.shellA {
+  min-height: calc(100dvh - 112px);
+  padding-right: 230px;
+}
+.buyerShell,
+.focusShell {
+  padding-right: 0;
+}
+.sideRail {
+  position: fixed;
+  z-index: 2;
+  inset: 0 0 0 auto;
+  display: flex;
+  width: 230px;
+  flex-direction: column;
+  gap: 24px;
+  padding: 22px 18px;
+  border-left: 1px solid rgb(129 118 122 / 12%);
+  background: #faf8f8;
+}
+.railBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.railIdentity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 16px;
+  background: #f4f0f1;
+  box-shadow: inset 2px 2px 5px rgb(96 73 80 / 8%);
+}
+.railIdentity span:last-child,
+.bigIdentity {
+  display: grid;
+}
+.railIdentity small,
+.bigIdentity small {
+  color: #81767a;
+  font-size: 10px;
+}
+.sideRail nav {
+  display: grid;
+  gap: 6px;
+}
+.sideRail nav button {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #544a4d;
+  text-align: right;
+  cursor: pointer;
+}
+.sideRail nav button.active {
+  background: #f6e3e9;
+  box-shadow: inset 2px 2px 4px rgb(118 11 41 / 8%);
+}
+.sideRail nav button span {
+  width: 20px;
+  text-align: center;
+}
+.backToBuyer {
+  margin-top: auto;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: #81767a;
+  cursor: pointer;
+}
+.buyerHeader {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  height: 68px;
+  align-items: center;
+  gap: 28px;
+  padding: 0 max(20px, calc((100vw - 1060px) / 2));
+  border-bottom: 1px solid rgb(129 118 122 / 12%);
+  background: rgb(250 248 248 / 90%);
+  backdrop-filter: blur(14px);
+}
+.buyerHeader nav {
+  display: flex;
+  gap: 6px;
+}
+.buyerHeader nav button,
+.headerActions button {
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: #62585b;
+  cursor: pointer;
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-right: auto;
+}
+.headerActions button {
+  border-radius: 12px;
+  background: #f4f0f1;
+  box-shadow: inset 2px 2px 4px rgb(96 73 80 / 8%);
+}
+.headerActions b {
+  color: #a41439;
+}
+.shellContent {
+  width: min(100% - 40px, 1000px);
+  margin: 0 auto;
+  padding: 76px 0;
+}
+.contentHeading {
+  max-width: 580px;
+  margin-bottom: 28px;
+}
+.contentHeading > span {
+  color: #a41439;
+  font-size: 12px;
+  font-weight: 600;
+}
+.contentHeading h1 {
+  margin: 5px 0 4px;
+  color: #2f2528;
+  font-size: clamp(24px, 4vw, 34px);
+  font-weight: 600;
+}
+.contentHeading p {
+  color: #81767a;
+}
+.productGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px 14px;
+}
+.product {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.productImage {
+  aspect-ratio: 4 / 5;
+  border-radius: 18px;
+  box-shadow:
+    7px 7px 14px rgb(96 73 80 / 9%),
+    -7px -7px 14px rgb(255 255 255 / 74%);
+}
+.tone1 {
+  background: linear-gradient(145deg, #e5cbd1, #b88995);
+}
+.tone2 {
+  background: linear-gradient(145deg, #d6cab9, #a99b85);
+}
+.tone3 {
+  background: linear-gradient(145deg, #c3cbc0, #8c9e91);
+}
+.product strong {
+  margin-top: 5px;
+  font-size: 13px;
+}
+.product span {
+  color: #81767a;
+  font-size: 11px;
+}
+.workList {
+  overflow: hidden;
+  border: 1px solid rgb(129 118 122 / 14%);
+  border-radius: 20px;
+  background: #faf8f8;
+  box-shadow:
+    8px 8px 18px rgb(96 73 80 / 7%),
+    -8px -8px 18px rgb(255 255 255 / 65%);
+}
+.workRow {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid rgb(129 118 122 / 13%);
+  background: transparent;
+  color: #2f2528;
+  text-align: right;
+  cursor: pointer;
+}
+.workRow:last-child {
+  border-bottom: 0;
+}
+.workRow > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+}
+.workRow small {
+  color: #81767a;
+  font-size: 11px;
+}
+.workRow em {
+  color: #a41439;
+  font-size: 11px;
+  font-style: normal;
+}
+.rowIcon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 12px;
+  background: #f6e3e9;
+  color: #760b29;
+  font-weight: 600;
+}
+.focusShell {
+  width: min(100%, 720px);
+  margin: 0 auto;
+}
+.focusHeader {
+  display: grid;
+  height: 64px;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 12px;
+  color: #81767a;
+  font-size: 11px;
+}
+.focusHeader button {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: #81767a;
+}
+.focusHeader span {
+  justify-self: end;
+}
+.focusShell .shellContent {
+  width: min(100% - 32px, 520px);
+  padding-top: 42px;
+}
+.focusShell .contentHeading {
+  text-align: center;
+}
+.applicationTrack {
+  display: grid;
+  gap: 0;
+  padding: 18px;
+  border-radius: 20px;
+  background: #faf8f8;
+  box-shadow:
+    8px 8px 18px rgb(96 73 80 / 7%),
+    -8px -8px 18px white;
+}
+.applicationTrack > div {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  min-height: 78px;
+}
+.applicationTrack > div:not(:last-child)::after {
+  position: absolute;
+  top: 32px;
+  right: 15px;
+  width: 1px;
+  height: 44px;
+  background: #d5cace;
+  content: "";
+}
+.applicationTrack b {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ebe5e7;
+  color: #81767a;
+}
+.applicationTrack span {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  padding-top: 4px;
+}
+.applicationTrack small {
+  color: #81767a;
+  font-size: 11px;
+}
+.applicationTrack .currentStep b {
+  background: #a41439;
+  color: white;
+}
+.mobileNav {
+  display: none;
+}
+
+/* B — identity is the primary organizing object. */
+.shellB {
+  min-height: calc(100dvh - 112px);
+}
+.hubHeader {
+  display: flex;
+  height: 72px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 max(18px, calc((100vw - 1180px) / 2));
+  border-bottom: 1px solid rgb(129 118 122 / 14%);
+  background: #faf8f8;
+  font-weight: 600;
+}
+.compactIdentity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  border: 0;
+  background: transparent;
+  color: #2f2528;
+}
+.compactIdentity .avatar {
+  width: 32px;
+  height: 32px;
+}
+.hubLayout {
+  display: grid;
+  width: min(100% - 36px, 1180px);
+  grid-template-columns: 270px 1fr;
+  gap: 46px;
+  margin: 0 auto;
+  padding: 52px 0;
+}
+.identityDock {
+  align-self: start;
+  padding: 22px;
+  border-radius: 24px;
+  background: #faf8f8;
+  box-shadow:
+    10px 10px 22px rgb(96 73 80 / 8%),
+    -10px -10px 22px rgb(255 255 255 / 72%);
+}
+.dockLabel {
+  color: #81767a;
+  font-size: 10px;
+}
+.bigIdentity {
+  justify-items: center;
+  gap: 5px;
+  padding: 20px 0;
+  text-align: center;
+}
+.bigIdentity .avatar {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 4px;
+  font-size: 20px;
+}
+.placeList {
+  display: grid;
+  gap: 8px;
+}
+.placeList button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #544a4d;
+  text-align: right;
+}
+.placeList button b {
+  color: #bfb4b8;
+}
+.placeList button span {
+  display: grid;
+}
+.placeList button small {
+  color: #81767a;
+  font-size: 10px;
+}
+.placeList .selectedPlace {
+  background: #f6e3e9;
+  color: #760b29;
+}
+.placeList .selectedPlace b {
+  color: #a41439;
+}
+.identityDock > p {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgb(129 118 122 / 14%);
+  font-size: 10px;
+  text-align: center;
+}
+.hubMain {
+  display: block;
+  min-height: auto;
+  padding: 0;
+}
+.nextAction {
+  padding: 34px;
+  border-radius: 28px;
+  background: #760b29;
+  color: white;
+  box-shadow: 10px 10px 22px rgb(118 11 41 / 18%);
+}
+.nextAction > span {
+  color: #f1cbd6;
+  font-size: 11px;
+}
+.nextAction h1 {
+  margin: 8px 0 4px;
+  color: white;
+  font-size: 30px;
+}
+.nextAction p {
+  color: #efd9df;
+}
+.nextAction button {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-top: 24px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: white;
+  color: #760b29;
+  font-weight: 600;
+}
+.hubSection {
+  margin-top: 36px;
+}
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.sectionTitle h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.sectionTitle button {
+  border: 0;
+  background: transparent;
+  color: #a41439;
+}
+.hubSection .productGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.hubSection .product:nth-child(n + 4) {
+  display: none;
+}
+
+/* C — current work dominates; destinations become a command. */
+.shellC {
+  min-height: calc(100dvh - 112px);
+  background: #faf8f8;
+}
+.commandHeader {
+  display: grid;
+  height: 72px;
+  grid-template-columns: 1fr minmax(260px, 420px) 1fr;
+  align-items: center;
+  padding: 0 max(18px, calc((100vw - 1120px) / 2));
+  border-bottom: 1px solid rgb(129 118 122 / 14%);
+}
+.commandHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.commandHeader > div span:last-child {
+  display: grid;
+}
+.commandHeader small {
+  color: #81767a;
+  font-size: 9px;
+}
+.commandButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgb(129 118 122 / 16%);
+  border-radius: 12px;
+  background: #f4f0f1;
+  color: #81767a;
+  box-shadow: inset 2px 2px 4px rgb(96 73 80 / 7%);
+}
+.commandButton kbd {
+  margin-right: auto;
+  padding: 2px 6px;
+  border: 1px solid rgb(129 118 122 / 18%);
+  border-radius: 6px;
+  background: #faf8f8;
+  font-family: inherit;
+  font-size: 9px;
+}
+.avatarButton {
+  justify-self: end;
+  border: 0;
+  background: transparent;
+}
+.commandBody {
+  width: min(100% - 40px, 920px);
+  margin: 0 auto;
+  padding: 28px 0 60px;
+}
+.contextLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #81767a;
+  font-size: 11px;
+}
+.contextLine button {
+  border: 0;
+  background: transparent;
+  color: #81767a;
+}
+.contextLine strong {
+  color: #2f2528;
+}
+.focusTask {
+  display: grid;
+  grid-template-columns: 64px 1fr 52px;
+  align-items: center;
+  gap: 26px;
+  margin: 46px 0 56px;
+}
+.taskNumber {
+  align-self: start;
+  padding-top: 10px;
+  color: #c0b4b8;
+  font-size: 12px;
+}
+.taskCopy > span {
+  color: #a41439;
+  font-size: 11px;
+  font-weight: 600;
+}
+.taskCopy h1 {
+  margin: 7px 0 2px;
+  color: #2f2528;
+  font-size: clamp(28px, 5vw, 46px);
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+.roundAction {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #a41439;
+  color: white;
+  font-size: 20px;
+  box-shadow: 5px 5px 12px rgb(118 11 41 / 20%);
+}
+.compactQueue {
+  padding-top: 22px;
+  border-top: 1px solid rgb(129 118 122 / 16%);
+}
+.compactQueue .sectionTitle span {
+  color: #81767a;
+  font-size: 10px;
+}
+.compactQueue .workList {
+  border: 0;
+  box-shadow: none;
+}
+.compactQueue .productGrid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+.compactQueue .productImage {
+  border-radius: 14px;
+  box-shadow: none;
+}
+.compactQueue .product strong {
+  font-size: 10px;
+}
+.compactQueue .product span {
+  display: none;
+}
+.commandMobileNav {
+  display: none;
+}
+
+/* Prototype-only controls */
+.prototypeControls {
+  position: fixed;
+  z-index: 100;
+  bottom: 14px;
+  left: 50%;
+  display: grid;
+  min-width: min(92vw, 560px);
+  gap: 7px;
+  transform: translateX(-50%);
+}
+.identityControls,
+.variantControls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 999px;
+  background: rgb(47 37 40 / 94%);
+  box-shadow: 0 12px 30px rgb(47 37 40 / 30%);
+  backdrop-filter: blur(16px);
+}
+.identityControls button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #d9ced1;
+  font-size: 10px;
+  cursor: pointer;
+}
+.identityControls button.current {
+  background: #f6e3e9;
+  color: #760b29;
+}
+.variantControls {
+  width: 250px;
+  margin: 0 auto;
+  justify-content: space-between;
+}
+.variantControls button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #453b3e;
+  color: white;
+  cursor: pointer;
+}
+.variantControls span {
+  display: grid;
+  min-width: 130px;
+  color: white;
+  text-align: center;
+}
+.variantControls small {
+  color: #c5b9bd;
+  font-size: 9px;
+}
+
+@media (max-width: 720px) {
+  .prototype {
+    padding-bottom: 124px;
+  }
+  .prototypeNote {
+    top: 6px;
+    white-space: nowrap;
+  }
+  .shellA {
+    min-height: calc(100dvh - 124px);
+    padding-right: 0;
+  }
+  .sideRail {
+    display: none;
+  }
+  .buyerHeader {
+    height: 60px;
+    padding: 0 14px;
+  }
+  .buyerHeader nav {
+    display: none;
+  }
+  .headerActions {
+    margin-right: auto;
+  }
+  .shellContent {
+    width: min(100% - 28px, 1000px);
+    padding: 54px 0 34px;
+  }
+  .contentHeading {
+    margin-bottom: 20px;
+  }
+  .contentHeading h1 {
+    font-size: 25px;
+  }
+  .productGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 10px;
+  }
+  .workRow {
+    grid-template-columns: 36px 1fr;
+    padding: 12px;
+  }
+  .workRow em {
+    grid-column: 2;
+  }
+  .mobileNav {
+    position: fixed;
+    z-index: 10;
+    right: 10px;
+    bottom: 126px;
+    left: 10px;
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    justify-content: space-around;
+    padding: 5px;
+    border: 1px solid rgb(129 118 122 / 13%);
+    border-radius: 18px;
+    background: rgb(250 248 248 / 92%);
+    box-shadow: 0 8px 24px rgb(96 73 80 / 14%);
+    backdrop-filter: blur(14px);
+  }
+  .mobileNav button {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-width: 48px;
+    border: 0;
+    background: transparent;
+    color: #81767a;
+    font-size: 8px;
+  }
+  .mobileNav button span {
+    font-size: 15px;
+  }
+  .focusShell .mobileNav {
+    display: none;
+  }
+  .focusHeader {
+    padding-top: 8px;
+  }
+  .applicationTrack {
+    padding: 14px;
+  }
+
+  .hubHeader {
+    height: 62px;
+    padding: 0 14px;
+  }
+  .hubHeader > span {
+    display: none;
+  }
+  .hubLayout {
+    display: block;
+    width: min(100% - 28px, 1180px);
+    padding: 30px 0;
+  }
+  .identityDock {
+    padding: 13px;
+    border-radius: 18px;
+  }
+  .dockLabel,
+  .identityDock > p {
+    display: none;
+  }
+  .bigIdentity {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    justify-items: start;
+    align-items: center;
+    gap: 0 10px;
+    padding: 4px;
+    text-align: right;
+  }
+  .bigIdentity .avatar {
+    grid-row: 1 / 3;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+  }
+  .placeList {
+    margin-top: 10px;
+  }
+  .placeList button:not(.selectedPlace) {
+    display: none;
+  }
+  .hubMain {
+    margin-top: 18px;
+  }
+  .nextAction {
+    padding: 24px;
+    border-radius: 22px;
+  }
+  .nextAction h1 {
+    font-size: 24px;
+  }
+  .hubSection {
+    margin-top: 28px;
+  }
+  .hubSection .productGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .hubSection .product:nth-child(3) {
+    display: none;
+  }
+
+  .commandHeader {
+    height: 62px;
+    grid-template-columns: 1fr auto;
+    padding: 0 14px;
+  }
+  .commandHeader .mark {
+    width: 34px;
+    height: 34px;
+  }
+  .commandButton {
+    display: none;
+  }
+  .commandBody {
+    width: min(100% - 28px, 920px);
+    padding-top: 26px;
+  }
+  .focusTask {
+    grid-template-columns: 1fr 44px;
+    gap: 14px;
+    margin: 36px 0 44px;
+  }
+  .taskNumber {
+    display: none;
+  }
+  .taskCopy h1 {
+    font-size: 32px;
+  }
+  .roundAction {
+    width: 44px;
+    height: 44px;
+  }
+  .compactQueue .sectionTitle {
+    display: grid;
+  }
+  .compactQueue .sectionTitle span {
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .compactQueue .productGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .compactQueue .product:nth-child(n + 4) {
+    display: none;
+  }
+  .commandMobileNav {
+    position: fixed;
+    z-index: 10;
+    right: 12px;
+    bottom: 126px;
+    left: 12px;
+    display: flex;
+    justify-content: space-around;
+    padding: 8px;
+    border-radius: 16px;
+    background: #2f2528;
+    box-shadow: 0 8px 24px rgb(47 37 40 / 25%);
+  }
+  .commandMobileNav button {
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #d7cccf;
+    font-size: 10px;
+  }
+  .commandMobileNav button.active {
+    background: #f6e3e9;
+    color: #760b29 !important;
+  }
+
+  .prototypeControls {
+    bottom: 8px;
+    min-width: calc(100vw - 16px);
+  }
+  .identityControls button {
+    flex: 1;
+    padding-inline: 5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prototype *,
+  .prototype *::before,
+  .prototype *::after {
+    transition: none !important;
+  }
+}
