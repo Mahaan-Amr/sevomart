@@ -139,13 +139,15 @@ const internalReasonContract = z
   .max(1_000)
   .superRefine((reason, context) => {
     const normalized = normalizeReasonDigits(reason);
-    const containsRawIdentifier = [
-      /(?:\+98|0098|0)?9\d{9}/,
-      /\bIR\d{24}\b/i,
-      /(?:\d[ -]?){16}/,
-      /(?:^|\D)\d{10}(?:\D|$)/,
-      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,
-    ].some((pattern) => pattern.test(normalized));
+    const compact = normalized.replace(/[\s\u200c-]+/g, "");
+    const containsRawIdentifier =
+      [
+        /(?:^|\D)(?:\+98|0098|0)?9\d{9}(?:\D|$)/,
+        /(?:^|\D)IR\d{24}(?:\D|$)/i,
+        /(?:^|\D)\d{16}(?:\D|$)/,
+        /(?:^|\D)\d{10}(?:\D|$)/,
+      ].some((pattern) => pattern.test(compact)) ||
+      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(normalized);
     if (containsRawIdentifier) {
       context.addIssue({
         code: "custom",

@@ -410,22 +410,36 @@ describe("platform access v1 contract", () => {
         occurredAt: "2026-08-26T10:01:00.000Z",
       }).action,
     ).toBe("SENSITIVE_FIELD_REVEALED");
-    expect(
-      platformAccessAuditEntryContract.safeParse({
-        auditId: "88888888-8888-4888-8888-888888888888",
-        grantId,
-        action: "SENSITIVE_FIELD_REVEALED",
-        actorIdentityId: requesterIdentityId,
-        subjectIdentityId: requesterIdentityId,
-        scope: paymentReviewScope,
-        reasonCode: "CASE_ACCESS_APPROVED",
-        reason: "برای تماس با 09123456789 اطلاعات پرونده آشکار شد",
-        outcome: "SUCCEEDED",
-        singleManagerException: false,
-        correlationId,
-        occurredAt: "2026-08-26T10:01:00.000Z",
-      }).success,
-    ).toBe(false);
+    const auditEntry = {
+      auditId: "88888888-8888-4888-8888-888888888888",
+      grantId,
+      action: "SENSITIVE_FIELD_REVEALED",
+      actorIdentityId: requesterIdentityId,
+      subjectIdentityId: requesterIdentityId,
+      scope: paymentReviewScope,
+      reasonCode: "CASE_ACCESS_APPROVED",
+      reason: "دلیل امن برای بررسی دسترسی همین پرونده",
+      outcome: "SUCCEEDED",
+      singleManagerException: false,
+      correlationId,
+      occurredAt: "2026-08-26T10:01:00.000Z",
+    } as const;
+    const unsafeReasons = [
+      "برای تماس با ۰۹۱۲ ۳۴۵ ۶۷۸۹ اطلاعات پرونده آشکار شد",
+      "شماره شبا IR12 3456 7890 1234 5678 9012 34 ثبت شد",
+      "شماره کارت ۶۰۳۷-۹۹۱۲-۳۴۵۶-۷۸۹۰ ثبت شد",
+      "کد ملی 0012345678 ثبت شد",
+      "ایمیل person@example.com ثبت شد",
+    ];
+
+    for (const reason of unsafeReasons) {
+      expect(
+        platformAccessAuditEntryContract.safeParse({
+          ...auditEntry,
+          reason,
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("publishes stable errors for policy and lifecycle failures", () => {
