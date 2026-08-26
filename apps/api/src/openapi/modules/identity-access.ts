@@ -89,6 +89,11 @@ const platformAccessMutationResponses = [
   { status: 500, schema: "InternalServerError" },
 ] as const;
 
+const platformAccessRejectionResponses = [
+  { status: 200, schema: "PlatformAccessRejection" },
+  ...platformAccessMutationResponses.slice(1),
+] as const;
+
 const platformAccessListResponses = [
   { status: 200, schema: "PlatformAccessGrantPage" },
   { status: 401, schema: "UnauthorizedError" },
@@ -510,7 +515,7 @@ const operations = [
       schema: "PlatformAccessRejectionInput",
       example: identityAccessV1Examples.PlatformAccessRejectionInput,
     },
-    responses: platformAccessMutationResponses,
+    responses: platformAccessRejectionResponses,
   },
   {
     operationId: "requestSensitiveAccess",
@@ -574,7 +579,7 @@ const operations = [
       schema: "PlatformAccessRejectionInput",
       example: identityAccessV1Examples.PlatformAccessRejectionInput,
     },
-    responses: platformAccessMutationResponses,
+    responses: platformAccessRejectionResponses,
   },
   {
     operationId: "requestEmergencyAccess",
@@ -666,7 +671,7 @@ const operations = [
       schema: "PlatformAccessRejectionInput",
       example: identityAccessV1Examples.PlatformAccessRejectionInput,
     },
-    responses: platformAccessMutationResponses,
+    responses: platformAccessRejectionResponses,
   },
   {
     operationId: "completeEmergencyAccessReview",

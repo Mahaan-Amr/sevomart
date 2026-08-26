@@ -511,6 +511,7 @@ export const platformAccessAuditEntryContract = z
     subjectIdentityId: identityIdContract,
     scope: platformAccessScopeContract.optional(),
     reasonCode: platformAccessAuditReasonCodeContract,
+    reason: internalReasonContract,
     outcome: z.enum(["SUCCEEDED", "DENIED", "STOPPED_AFTER_REVOCATION"]),
     singleManagerException: z.boolean(),
     correlationId: z.uuid(),
@@ -639,6 +640,45 @@ export const emergencyAccessClosedV1Contract = timeBoundAccessEventContract(
   "CLOSED",
 );
 
+const platformAccessRejectionEventPayloadBaseContract = z
+  .object({
+    grantKind: z.enum(["RESPONSIBILITY", "SENSITIVE_ACCESS", "EMERGENCY_ACCESS"]),
+    grantId: platformAccessGrantIdContract,
+    subjectIdentityId: identityIdContract,
+    requestStatus: z.literal("REJECTED"),
+    auditRequired: z.literal(true),
+  })
+  .strict();
+
+function platformAccessRejectionEventContract<
+  const EventType extends string,
+  const GrantKind extends "RESPONSIBILITY" | "SENSITIVE_ACCESS" | "EMERGENCY_ACCESS",
+>(eventType: EventType, grantKind: GrantKind) {
+  return eventEnvelopeV1Contract
+    .extend({
+      eventType: z.literal(eventType),
+      actor: platformAccessEventActorContract,
+      payload: platformAccessRejectionEventPayloadBaseContract.extend({
+        grantKind: z.literal(grantKind),
+      }),
+    })
+    .strict();
+}
+
+export const platformPermissionGrantRejectedV1Contract =
+  platformAccessRejectionEventContract(
+    "PlatformPermissionGrantRejected.v1",
+    "RESPONSIBILITY",
+  );
+export const sensitiveAccessRejectedV1Contract = platformAccessRejectionEventContract(
+  "SensitiveAccessRejected.v1",
+  "SENSITIVE_ACCESS",
+);
+export const emergencyAccessRejectedV1Contract = platformAccessRejectionEventContract(
+  "EmergencyAccessRejected.v1",
+  "EMERGENCY_ACCESS",
+);
+
 export const platformAccessEventContract = z.discriminatedUnion("eventType", [
   platformPermissionGrantRequestedV1Contract,
   platformPermissionGrantedV1Contract,
@@ -652,6 +692,9 @@ export const platformAccessEventContract = z.discriminatedUnion("eventType", [
   emergencyAccessRevokedV1Contract,
   emergencyAccessExpiredV1Contract,
   emergencyAccessClosedV1Contract,
+  platformPermissionGrantRejectedV1Contract,
+  sensitiveAccessRejectedV1Contract,
+  emergencyAccessRejectedV1Contract,
 ]);
 
 export const platformAccessErrorContract = z
@@ -809,6 +852,16 @@ export const platformAccessGrantContract = z.discriminatedUnion("grantKind", [
   emergencyAccessGrantViewContract,
 ]);
 
+export const platformAccessRejectionContract = z
+  .object({
+    grantId: platformAccessGrantIdContract,
+    grantKind: z.enum(["RESPONSIBILITY", "SENSITIVE_ACCESS", "EMERGENCY_ACCESS"]),
+    requestStatus: z.literal("REJECTED"),
+    revision: z.int().positive(),
+    rejectedAt: timestampV1Contract,
+  })
+  .strict();
+
 export const platformAccessGrantPageContract = z
   .object({
     items: z.array(platformAccessGrantContract),
@@ -841,6 +894,7 @@ export const platformAccessV1Schemas = {
   PlatformAccessRejectionInput: platformAccessRejectionInputContract,
   EmergencyAccessReviewInput: emergencyAccessReviewInputContract,
   PlatformAccessGrant: platformAccessGrantContract,
+  PlatformAccessRejection: platformAccessRejectionContract,
   PlatformAccessGrantPage: platformAccessGrantPageContract,
   PlatformAccessAuditPage: platformAccessAuditPageContract,
   PlatformAccessError: platformAccessErrorContract,
@@ -917,6 +971,13 @@ export const platformAccessV1Examples = {
     },
     expiresAt: "2026-08-26T10:31:00.000Z",
   },
+  PlatformAccessRejection: {
+    grantId: "44444444-4444-4444-8444-444444444444",
+    grantKind: "SENSITIVE_ACCESS",
+    requestStatus: "REJECTED",
+    revision: 2,
+    rejectedAt: "2026-08-26T10:03:00.000Z",
+  },
   PlatformAccessGrantPage: { items: [], nextCursor: null },
   PlatformAccessAuditPage: { items: [], nextCursor: null },
   PlatformAccessError: {
@@ -929,6 +990,10 @@ export const platformAccessV1Examples = {
 export type Responsibility = z.infer<typeof responsibilityContract>;
 export type PlatformAccessScope = z.infer<typeof platformAccessScopeContract>;
 export type PlatformAccessAuditEntry = z.infer<typeof platformAccessAuditEntryContract>;
+export type PlatformAccessAuditReasonCode = z.infer<
+  typeof platformAccessAuditReasonCodeContract
+>;
 export type PlatformAccessEvent = z.infer<typeof platformAccessEventContract>;
 export type PlatformAccessError = z.infer<typeof platformAccessErrorContract>;
 export type PlatformAccessGrant = z.infer<typeof platformAccessGrantContract>;
+export type PlatformAccessRejection = z.infer<typeof platformAccessRejectionContract>;

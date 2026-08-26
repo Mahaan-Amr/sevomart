@@ -8,6 +8,7 @@ import {
   platformAccessAuditEntryContract,
   platformAccessErrorContract,
   platformAccessEventContract,
+  platformAccessRejectionContract,
   platformAccessV1Paths,
   requestEmergencyAccessCommandContract,
   requestResponsibilityGrantCommandContract,
@@ -17,6 +18,7 @@ import {
   sensitiveAccessRequestInputContract,
   sensitiveAccessGrantedV1Contract,
   sensitiveAccessGrantViewContract,
+  sensitiveAccessRejectedV1Contract,
 } from "@sevo/contracts/identity-access/v1";
 import * as rootContracts from "@sevo/contracts";
 import { describe, expect, it } from "vitest";
@@ -258,6 +260,33 @@ describe("platform access v1 contract", () => {
       }).success,
     ).toBe(true);
 
+    const rejection = platformAccessRejectionContract.parse({
+      grantId,
+      grantKind: "SENSITIVE_ACCESS",
+      requestStatus: "REJECTED",
+      revision: 2,
+      rejectedAt: "2026-08-26T10:03:00.000Z",
+    });
+    expect(
+      sensitiveAccessRejectedV1Contract.parse({
+        version: 1,
+        eventId: "99999999-9999-4999-8999-999999999999",
+        eventType: "SensitiveAccessRejected.v1",
+        aggregateId: grantId,
+        aggregateVersion: 2,
+        occurredAt: rejection.rejectedAt,
+        correlationId,
+        actor: { type: "IDENTITY", id: approverIdentityId },
+        payload: {
+          grantKind: rejection.grantKind,
+          grantId,
+          subjectIdentityId: requesterIdentityId,
+          requestStatus: rejection.requestStatus,
+          auditRequired: true,
+        },
+      }).payload.requestStatus,
+    ).toBe("REJECTED");
+
     expect(
       completeEmergencyAccessReviewCommandContract.safeParse({
         grantId,
@@ -374,6 +403,7 @@ describe("platform access v1 contract", () => {
         subjectIdentityId: requesterIdentityId,
         scope: paymentReviewScope,
         reasonCode: "CASE_ACCESS_APPROVED",
+        reason: "بررسی مغایرت نتیجه پرداخت همین پرونده",
         outcome: "SUCCEEDED",
         singleManagerException: false,
         correlationId,
@@ -406,6 +436,7 @@ describe("platform access v1 contract", () => {
       SensitiveAccessRequestInput: expect.anything(),
       EmergencyAccessRequestInput: expect.anything(),
       PlatformAccessGrant: expect.anything(),
+      PlatformAccessRejection: expect.anything(),
       PlatformAccessAuditPage: expect.anything(),
       PlatformAccessRejectionInput: expect.anything(),
       EmergencyAccessReviewInput: expect.anything(),
@@ -441,14 +472,27 @@ describe("platform access v1 contract", () => {
       ],
       ["post", platformAccessV1Paths.sensitiveAccessGrants, "requestSensitiveAccess"],
       ["get", platformAccessV1Paths.sensitiveAccessGrants, "listSensitiveAccessGrants"],
+      ["post", platformAccessV1Paths.sensitiveAccessApproval, "approveSensitiveAccess"],
+      [
+        "post",
+        platformAccessV1Paths.sensitiveAccessRevocation,
+        "revokeSensitiveAccess",
+      ],
       ["post", platformAccessV1Paths.sensitiveAccessRejection, "rejectSensitiveAccess"],
       ["post", platformAccessV1Paths.emergencyAccessGrants, "requestEmergencyAccess"],
       ["get", platformAccessV1Paths.emergencyAccessGrants, "listEmergencyAccessGrants"],
+      ["post", platformAccessV1Paths.emergencyAccessApproval, "approveEmergencyAccess"],
       [
         "post",
         platformAccessV1Paths.emergencyAccessActivation,
         "activateEmergencyAccess",
       ],
+      [
+        "post",
+        platformAccessV1Paths.emergencyAccessRevocation,
+        "revokeEmergencyAccess",
+      ],
+      ["post", platformAccessV1Paths.emergencyAccessClosure, "closeEmergencyAccess"],
       ["post", platformAccessV1Paths.emergencyAccessRejection, "rejectEmergencyAccess"],
       [
         "post",
@@ -480,6 +524,16 @@ describe("platform access v1 contract", () => {
         (parameter: { name: string }) => parameter.name,
       ),
     ).toEqual(["grantId", "actorIdentityId", "cursor", "limit"]);
+    for (const path of [
+      platformAccessV1Paths.responsibilityGrantRejection,
+      platformAccessV1Paths.sensitiveAccessRejection,
+      platformAccessV1Paths.emergencyAccessRejection,
+    ]) {
+      expect(
+        document.paths[path]?.post?.responses?.["200"]?.content?.["application/json"]
+          ?.schema,
+      ).toEqual({ $ref: "#/components/schemas/PlatformAccessRejection" });
+    }
     expect(document.components?.schemas?.PlatformAccessError).toBeDefined();
   });
 });
