@@ -99,6 +99,18 @@ describe("successful direct payment transaction seam", () => {
     await sql.end();
   });
 
+  it("stores the order reference without a cross-module foreign key", async () => {
+    expect(
+      await sql`
+        select constraint_name as "constraintName"
+        from information_schema.table_constraints
+        where table_schema = 'public'
+          and table_name = 'payment_attempts'
+          and constraint_type = 'FOREIGN KEY'
+      `,
+    ).toEqual([]);
+  });
+
   it("dispatches before callback and confirms inventory/order only once", async () => {
     expect(await orders.listActionableByStore(ids.store as never)).toEqual([]);
     const createCommand = {

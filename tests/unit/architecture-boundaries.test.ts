@@ -4,6 +4,7 @@ import {
   findBoundaryViolations,
   findCanonicalModuleEntrypointViolations,
   findContractOwnershipViolations,
+  findCrossModuleMigrationForeignKeyViolations,
   findMigrationOwnershipViolations,
   findModuleSchemaOwnershipViolations,
   findTableOwnershipViolations,
@@ -325,6 +326,419 @@ describe("migration ownership checker", () => {
           "packages/database/prisma/migrations/20260824174500__product__state_transition_truncate_guard/migration.sql",
         ],
         modules,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("migration foreign-key boundary checker", () => {
+  const tableOwners = { payment_attempts: "payments", order_orders: "orders" };
+
+  it("rejects a foreign key between tables owned by different producers", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260825090200__payments__direct-payment-success/migration.sql",
+            source: `
+              create table payment_attempts (
+                id uuid primary key,
+                order_id uuid not null references order_orders(id) on delete restrict
+              );
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        sourceTable: "payment_attempts",
+        targetTable: "order_orders",
+        sourceOwner: "payments",
+        targetOwner: "orders",
+        rule: "cross-module-migration-foreign-key",
+      }),
+    ]);
+  });
+
+  it("rejects a cross-producer foreign key added to an existing quoted table", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826090000__payments__restore-order-fk/migration.sql",
+            source: `
+              ALTER TABLE "payment_attempts"
+                ADD CONSTRAINT "payment_attempts_order_id_fkey"
+                FOREIGN KEY ("order_id") REFERENCES "order_orders"("id");
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        sourceTable: "payment_attempts",
+        targetTable: "order_orders",
+        rule: "cross-module-migration-foreign-key",
+      }),
+    ]);
+  });
+
+  it("accepts a published cross-producer foreign key after a later forward fix", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260825090200__payments__direct-payment-success/migration.sql",
+            source: `
+              create table payment_attempts (
+                id uuid primary key,
+                order_id uuid not null references order_orders(id) on delete restrict
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826090000__payments__remove-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                drop constraint if exists payment_attempts_order_id_fkey;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects restoring a cross-producer foreign key after its forward fix", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260825090200__payments__direct-payment-success/migration.sql",
+            source:
+              "create table payment_attempts (order_id uuid references order_orders(id));",
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826090000__payments__remove-order-fk/migration.sql",
+            source:
+              "alter table payment_attempts drop constraint payment_attempts_order_id_fkey;",
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826091000__payments__restore-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                add constraint payment_attempts_order_id_fkey
+                foreign key (order_id) references order_orders(id);
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        path: expect.stringContaining("restore-order-fk"),
+        rule: "cross-module-migration-foreign-key",
+      }),
+    ]);
+  });
+
+  it("does not let a semicolon in a SQL comment hide a foreign key", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826092000__payments__commented-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts -- the published constraint was removed;
+                add constraint payment_attempts_order_id_fkey
+                foreign key (order_id) references order_orders(id);
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({ rule: "cross-module-migration-foreign-key" }),
+    ]);
+  });
+
+  it("reports an unnamed table-level foreign key instead of throwing", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826093000__payments__unnamed-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                add foreign key (order_id) references order_orders(id);
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        constraintName: "payment_attempts_order_id_fkey",
+        rule: "cross-module-migration-foreign-key",
+      }),
+    ]);
+  });
+
+  it("uses standard PostgreSQL backslash semantics when splitting strings", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826094000__payments__string-before-order-fk/migration.sql",
+            source: `
+              select '\\';
+              alter table payment_attempts
+                add foreign key (order_id) references order_orders(id);
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({ rule: "cross-module-migration-foreign-key" }),
+    ]);
+  });
+
+  it("ignores reference-like text inside a SQL string literal", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826095000__payments__add-note/migration.sql",
+            source: `
+              alter table payment_attempts
+                add column note text default 'references order_orders';
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps a named inline foreign key active when a different name is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826100000__payments__named-inline-order-fk/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid constraint custom_order_fk references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826101000__payments__drop-default-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                drop constraint if exists payment_attempts_order_id_fkey;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        constraintName: "custom_order_fk",
+        rule: "cross-module-migration-foreign-key",
+      }),
+    ]);
+  });
+
+  it("clears a named inline foreign key when its real name is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826100000__payments__named-inline-order-fk/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid constraint custom_order_fk references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826101000__payments__drop-custom-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                drop constraint if exists custom_order_fk;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps an added-column foreign key active when a different name is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-column/migration.sql",
+            source: `
+              alter table payment_attempts
+                add column order_id uuid references order_orders(id);
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__payments__drop-wrong-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                drop constraint if exists payment_attempts_add_fkey;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        constraintName: "payment_attempts_order_id_fkey",
+        rule: "cross-module-migration-foreign-key",
+      }),
+    ]);
+  });
+
+  it("clears an added-column foreign key when its generated name is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-column/migration.sql",
+            source: `
+              alter table payment_attempts
+                add column order_id uuid references order_orders(id);
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__payments__drop-generated-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                drop constraint if exists payment_attempts_order_id_fkey;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("clears an inline foreign key when its source column is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-column/migration.sql",
+            source: `
+              alter table payment_attempts
+                add column order_id uuid references order_orders(id);
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__payments__drop-order-column/migration.sql",
+            source: `
+              alter table payment_attempts
+                drop column if exists order_id;
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("clears foreign keys when their source table is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-table/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__payments__drop-order-table/migration.sql",
+            source: "drop table if exists payment_attempts;",
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("clears inbound foreign keys when their target table is dropped and recreated", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-table/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__orders__recreate-orders/migration.sql",
+            source: `
+              drop table order_orders cascade;
+              create table order_orders (id uuid primary key);
+            `,
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("clears inbound foreign keys when their target column is dropped", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__add-order-table/migration.sql",
+            source: `
+              create table payment_attempts (
+                order_id uuid references order_orders(id)
+              );
+            `,
+          },
+          {
+            path: "packages/database/prisma/migrations/20260826103000__orders__drop-order-id/migration.sql",
+            source: "alter table order_orders drop column id cascade;",
+          },
+        ],
+        tableOwners,
+      ),
+    ).toEqual([]);
+  });
+
+  it("applies foreign-key additions and removals in SQL action order", () => {
+    expect(
+      findCrossModuleMigrationForeignKeyViolations(
+        [
+          {
+            path: "packages/database/prisma/migrations/20260826102000__payments__temporary-order-fk/migration.sql",
+            source: `
+              alter table payment_attempts
+                add constraint temporary_order_fkey
+                  foreign key (order_id) references order_orders(id),
+                drop constraint temporary_order_fkey;
+            `,
+          },
+        ],
+        tableOwners,
       ),
     ).toEqual([]);
   });

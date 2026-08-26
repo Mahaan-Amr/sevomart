@@ -367,6 +367,9 @@ CREATED → DISPATCHED → PENDING_RESULT → CONFIRMED | FAILED | REVIEW_REQUIR
 - snapshot سفارش پس از ساخت تغییر نمی‌کند.
 - مبلغ پرداخت دقیقاً با `Money.v1` snapshot سفارش برابر است.
 - هر سفارش حداکثر یک تلاش پرداخت فعال دارد.
+- `payment_attempts.order_id` یک مرجع scalar از نوع `OrderId` است؛ ماژول پرداخت
+  وجود، مالکیت و وضعیت قابل‌پرداخت سفارش را فقط از قرارداد نسخه‌دار سفارش و بدون
+  foreign key یا رابطه Prisma میان‌ماژولی بررسی می‌کند.
 - `PAID` فقط همراه پرداخت `CONFIRMED` و رزرو مصرف‌شده قابل ثبت است.
 - `OrderBecameActionable.v1` برای هر سفارش حداکثر یک اثر معنایی دارد.
 - `onHand`، `reserved` و `available` متعلق به موجودی‌اند؛ سفارش مقدار authoritative
@@ -493,7 +496,10 @@ local/test ممکن است و startup production با این adapter باید fa
 
 موجودی مالک جدول رزرو، مقدار `onHand/reserved/available` و migrationهای آن است.
 سفارش فقط `reservationId` را نگه می‌دارد و هیچ جدول یا model موجودی را مستقیم
-نمی‌خواند. فروشگاه و کالا نیز هیچ جدول تکراری در این Spec ندارند.
+نمی‌خواند. پرداخت نیز `orderId` را فقط به‌صورت scalar نگه می‌دارد و invariant
+سفارش را از `@sevo/contracts/orders/v1` مصرف می‌کند؛ هیچ FK، join یا رابطه ORM
+میان جدول‌های پرداخت و سفارش مجاز نیست. فروشگاه و کالا نیز هیچ جدول تکراری در
+این Spec ندارند.
 
 ### خانواده فایل‌های Issueهای ساخت
 

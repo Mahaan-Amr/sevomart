@@ -147,6 +147,289 @@ export function findMigrationOwnershipViolations(paths, registeredModules) {
   return violations;
 }
 
+function unqualifiedSqlIdentifier(identifier) {
+  if (!identifier) return undefined;
+  return identifier.split(".").at(-1)?.trim().replace(/^"|"$/g, "");
+}
+
+function sqlIdentifierList(source) {
+  return [...source.matchAll(/"[^"]+"|[a-z_][a-z0-9_$]*/gi)]
+    .map(([identifier]) => unqualifiedSqlIdentifier(identifier))
+    .filter(Boolean);
+}
+
+function splitSqlStatements(source) {
+  const statements = [];
+  let statement = "";
+  let state = "normal";
+  let blockCommentDepth = 0;
+  let dollarQuote = "";
+  let singleQuoteBackslashEscapes = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const next = source[index + 1];
+
+    if (state === "line-comment") {
+      if (character === "\n") {
+        state = "normal";
+        statement += character;
+      } else {
+        statement += " ";
+      }
+      continue;
+    }
+
+    if (state === "block-comment") {
+      if (character === "/" && next === "*") {
+        blockCommentDepth += 1;
+        statement += "  ";
+        index += 1;
+      } else if (character === "*" && next === "/") {
+        blockCommentDepth -= 1;
+        statement += "  ";
+        index += 1;
+        if (blockCommentDepth === 0) state = "normal";
+      } else {
+        statement += character === "\n" ? character : " ";
+      }
+      continue;
+    }
+
+    if (state === "single-quote") {
+      statement += character === "\n" ? character : " ";
+      if (singleQuoteBackslashEscapes && character === "\\" && next) {
+        statement += next === "\n" ? next : " ";
+        index += 1;
+      } else if (character === "'" && next === "'") {
+        statement += " ";
+        index += 1;
+      } else if (character === "'") {
+        state = "normal";
+      }
+      continue;
+    }
+
+    if (state === "double-quote") {
+      statement += character;
+      if (character === '"' && next === '"') {
+        statement += next;
+        index += 1;
+      } else if (character === '"') {
+        state = "normal";
+      }
+      continue;
+    }
+
+    if (state === "dollar-quote") {
+      if (source.startsWith(dollarQuote, index)) {
+        statement += " ".repeat(dollarQuote.length);
+        index += dollarQuote.length - 1;
+        state = "normal";
+      } else {
+        statement += character === "\n" ? character : " ";
+      }
+      continue;
+    }
+
+    if (character === "-" && next === "-") {
+      state = "line-comment";
+      statement += "  ";
+      index += 1;
+    } else if (character === "/" && next === "*") {
+      state = "block-comment";
+      blockCommentDepth = 1;
+      statement += "  ";
+      index += 1;
+    } else if (character === "'") {
+      state = "single-quote";
+      singleQuoteBackslashEscapes =
+        /e/i.test(source[index - 1] ?? "") &&
+        !/[a-z0-9_$]/i.test(source[index - 2] ?? "");
+      statement += " ";
+    } else if (character === '"') {
+      state = "double-quote";
+      statement += character;
+    } else if (character === "$") {
+      const tag = source.slice(index).match(/^\$[a-z_][a-z0-9_]*\$|^\$\$/i)?.[0];
+      if (tag) {
+        state = "dollar-quote";
+        dollarQuote = tag;
+        statement += " ".repeat(tag.length);
+        index += tag.length - 1;
+      } else {
+        statement += character;
+      }
+    } else if (character === ";") {
+      if (statement.trim()) statements.push(statement);
+      statement = "";
+    } else {
+      statement += character;
+    }
+  }
+
+  if (statement.trim()) statements.push(statement);
+  return statements;
+}
+
+function inferredForeignKeyDefinition(sourceTable, statement, referenceIndex) {
+  const beforeReference = statement.slice(0, referenceIndex);
+  const foreignKeyMatches = [
+    ...beforeReference.matchAll(
+      /(?:constraint\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*))\s+)?foreign\s+key\s*\(([^)]*)\)/gi,
+    ),
+  ];
+  const tableForeignKey = foreignKeyMatches.at(-1);
+  if (tableForeignKey) {
+    const explicitName = unqualifiedSqlIdentifier(tableForeignKey[1]);
+    const sourceColumns = sqlIdentifierList(tableForeignKey[2]);
+    return {
+      constraintName:
+        explicitName ??
+        (sourceColumns.length > 0
+          ? `${sourceTable}_${sourceColumns.join("_")}_fkey`
+          : undefined),
+      sourceColumns,
+    };
+  }
+
+  const columnDefinition = beforeReference.slice(
+    Math.max(beforeReference.lastIndexOf(","), beforeReference.lastIndexOf("(")) + 1,
+  );
+  const inlineConstraintName = unqualifiedSqlIdentifier(
+    columnDefinition.match(/\bconstraint\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*))\s*$/i)?.[1],
+  );
+  const columnName = unqualifiedSqlIdentifier(
+    columnDefinition.match(
+      /^\s*(?:add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?)?((?:"[^"]+"|[a-z_][a-z0-9_$]*))/i,
+    )?.[1],
+  );
+  return {
+    constraintName:
+      inlineConstraintName ??
+      (columnName ? `${sourceTable}_${columnName}_fkey` : undefined),
+    sourceColumns: columnName ? [columnName] : [],
+  };
+}
+
+export function findCrossModuleMigrationForeignKeyViolations(migrations, tableOwners) {
+  const activeViolations = new Map();
+  const tableStatementPattern =
+    /^\s*(?:create\s+table\s+(?:if\s+not\s+exists\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)|alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][a-z0-9_$]*))?))([\s\S]*)$/i;
+  const referencePattern =
+    /\breferences\s+((?:"[^"]+"|[a-z_][a-z0-9_$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][a-z0-9_$]*))?)(?:\s*\(([^)]*)\))?/gi;
+
+  const dropConstraintPattern =
+    /\bdrop\s+constraint\s+(?:if\s+exists\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*))/gi;
+  const dropColumnPattern =
+    /\bdrop\s+(?!constraint\b)(?:column\s+)?(?:if\s+exists\s+)?((?:"[^"]+"|[a-z_][a-z0-9_$]*))/gi;
+  const dropTablePattern =
+    /^\s*drop\s+table\s+(?:if\s+exists\s+)?([\s\S]*?)(?:\s+(?:cascade|restrict))?\s*$/i;
+
+  for (const migration of [...migrations].sort((left, right) =>
+    toPosix(left.path).localeCompare(toPosix(right.path)),
+  )) {
+    for (const sqlStatement of splitSqlStatements(migration.source)) {
+      const droppedTables = sqlStatement.match(dropTablePattern)?.[1];
+      if (droppedTables) {
+        const tableNames = droppedTables
+          .split(",")
+          .map((identifier) => unqualifiedSqlIdentifier(identifier))
+          .filter(Boolean);
+        for (const [key, violation] of activeViolations) {
+          if (
+            tableNames.includes(violation.sourceTable) ||
+            tableNames.includes(violation.targetTable)
+          ) {
+            activeViolations.delete(key);
+          }
+        }
+        continue;
+      }
+
+      const statement = sqlStatement.match(tableStatementPattern);
+      if (!statement) continue;
+      const sourceTable = unqualifiedSqlIdentifier(statement[1] ?? statement[2]);
+      if (!sourceTable) continue;
+      const sourceOwner = tableOwners[sourceTable];
+      const statementBody = statement[3] ?? "";
+
+      const actions = [
+        ...[...statementBody.matchAll(dropConstraintPattern)].map((match) => ({
+          index: match.index,
+          kind: "drop-constraint",
+          match,
+        })),
+        ...[...statementBody.matchAll(dropColumnPattern)].map((match) => ({
+          index: match.index,
+          kind: "drop-column",
+          match,
+        })),
+        ...[...statementBody.matchAll(referencePattern)].map((match) => ({
+          index: match.index,
+          kind: "reference",
+          match,
+        })),
+      ].sort((left, right) => left.index - right.index);
+
+      for (const action of actions) {
+        if (action.kind === "drop-constraint") {
+          const constraintName = unqualifiedSqlIdentifier(action.match[1]);
+          if (constraintName)
+            activeViolations.delete(`${sourceTable}.${constraintName}`);
+          continue;
+        }
+
+        if (action.kind === "drop-column") {
+          const columnName = unqualifiedSqlIdentifier(action.match[1]);
+          if (!columnName) continue;
+          for (const [key, violation] of activeViolations) {
+            if (
+              (violation.sourceTable === sourceTable &&
+                violation.sourceColumns.includes(columnName)) ||
+              (violation.targetTable === sourceTable &&
+                violation.targetColumns.includes(columnName))
+            ) {
+              activeViolations.delete(key);
+            }
+          }
+          continue;
+        }
+
+        const targetTable = unqualifiedSqlIdentifier(action.match[1]);
+        if (!targetTable) continue;
+        const targetOwner = tableOwners[targetTable];
+        if (sourceOwner && targetOwner && sourceOwner !== targetOwner) {
+          const { constraintName, sourceColumns } = inferredForeignKeyDefinition(
+            sourceTable,
+            statementBody,
+            action.match.index,
+          );
+          const targetColumns = sqlIdentifierList(action.match[2] ?? "");
+          activeViolations.set(`${sourceTable}.${constraintName ?? targetTable}`, {
+            path: toPosix(migration.path),
+            sourceTable,
+            targetTable,
+            sourceOwner,
+            targetOwner,
+            sourceColumns,
+            targetColumns,
+            ...(constraintName ? { constraintName } : {}),
+            rule: "cross-module-migration-foreign-key",
+          });
+        }
+      }
+    }
+  }
+
+  return [...activeViolations.values()].map((violation) => {
+    const reportedViolation = { ...violation };
+    delete reportedViolation.sourceColumns;
+    delete reportedViolation.targetColumns;
+    return reportedViolation;
+  });
+}
+
 export function findTableOwnershipViolations(schema, tableOwners, registeredModules) {
   const violations = [];
   const modelPattern = /model\s+([A-Za-z][A-Za-z0-9_]*)\s*\{([\s\S]*?)\}/g;
@@ -292,9 +575,9 @@ async function collectSources(root) {
   return files;
 }
 
-async function collectMigrationPaths(root) {
+async function collectMigrations(root) {
   const migrationRoot = path.join(root, "packages", "database", "prisma", "migrations");
-  const paths = [];
+  const migrations = [];
 
   async function visit(directory) {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -303,13 +586,16 @@ async function collectMigrationPaths(root) {
       if (entry.isDirectory()) {
         await visit(absolutePath);
       } else if (entry.name === "migration.sql") {
-        paths.push(toPosix(path.relative(root, absolutePath)));
+        migrations.push({
+          path: toPosix(path.relative(root, absolutePath)),
+          source: await readFile(absolutePath, "utf8"),
+        });
       }
     }
   }
 
   await visit(migrationRoot);
-  return paths;
+  return migrations;
 }
 
 async function collectFiles(root, directory, predicate = () => true) {
@@ -369,13 +655,15 @@ async function main() {
   const repositoryPaths = new Set(
     entrypointFiles.flat().map(({ path: filePath }) => filePath),
   );
+  const migrations = await collectMigrations(root);
   const violations = [
     ...findBoundaryViolations(await collectSources(root)),
     ...findCanonicalModuleEntrypointViolations(registeredModules, repositoryPaths),
     ...findMigrationOwnershipViolations(
-      await collectMigrationPaths(root),
+      migrations.map(({ path: migrationPath }) => migrationPath),
       registeredDataOwners,
     ),
+    ...findCrossModuleMigrationForeignKeyViolations(migrations, ownership.tables),
     ...findTableOwnershipViolations(
       databaseSchema,
       ownership.tables,
