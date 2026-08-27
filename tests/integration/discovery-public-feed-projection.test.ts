@@ -1,8 +1,9 @@
+import { variantAvailabilityChangedV1Contract } from "@sevo/contracts/inventory/v1";
 import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import {
   productPublishedV2Contract,
+  productPublishedV1Contract,
   productUnpublishedV1Contract,
-  variantAvailabilityChangedV1Contract,
   variantPriceChangedV1Contract,
 } from "@sevo/contracts/product/v1";
 import {
@@ -86,6 +87,66 @@ describe("public discovery event projection", () => {
       publicationVersion: 2,
       updatedAt: new Date("2026-08-24T10:00:00.000Z"),
     });
+  });
+
+  it("rebuilds mixed legacy and canonical publication history without reviving an old generation", async () => {
+    const mediaId = crypto.randomUUID();
+    const legacy = productPublishedV1Contract.parse({
+      ...envelope("ProductPublished.v1", ids.product, 2, "2026-08-17T08:00:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 1,
+        offerVersion: 1,
+        availabilityVersion: 1,
+        snapshot: {
+          productId: ids.product,
+          name: "نام قدیمی کالا",
+          image: { id: mediaId, url: `/v1/media/${mediaId}` },
+          price: { amount: 1_000_000, currency: "IRR" },
+          availability: "AVAILABLE",
+          publicationVersion: 1,
+        },
+      },
+    });
+    const canonical = productPublishedV2Contract.parse({
+      ...envelope("ProductPublished.v2", ids.product, 4, "2026-08-24T10:00:00.000Z"),
+      payload: {
+        storeId: ids.store,
+        productId: ids.product,
+        publicationVersion: 2,
+        offerVersion: 2,
+        availabilityVersion: 3,
+        snapshot: { variantIds: [ids.variant] },
+      },
+    });
+    const unpublished = productUnpublishedV1Contract.parse({
+      ...envelope("ProductUnpublished.v1", ids.product, 5, "2026-08-24T11:00:00.000Z"),
+      payload: { storeId: ids.store, productId: ids.product, publicationVersion: 2 },
+    });
+    for (const event of [canonical, unpublished, legacy, legacy]) {
+      await sql.begin((transaction) =>
+        projectDiscoveryProductEvent(event, transaction),
+      );
+    }
+    const readProjection = () => sql`
+      select published, publication_version, first_published_at, offer_version, availability_version
+      from discovery_product_feed_projections where product_id = ${ids.product}
+    `;
+    const projected = await readProjection();
+    expect(projected).toEqual([
+      {
+        published: false,
+        publication_version: 2,
+        first_published_at: new Date("2026-08-17T08:00:00.000Z"),
+        offer_version: 2,
+        availability_version: 3,
+      },
+    ]);
+    for (const event of [legacy, canonical, unpublished])
+      await enqueueOutboxEvent(sql, event);
+    await rebuildDiscoveryPublicFeedProjection(apiTestEnvironment.DATABASE_URL);
+    expect(await readProjection()).toEqual(projected);
   });
 
   it("does not restore a store from a stale publication generation", async () => {

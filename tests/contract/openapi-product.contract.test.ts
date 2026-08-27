@@ -17,6 +17,18 @@ describe("OpenAPI simple product tracer", () => {
     });
     const document = response.json();
 
+    for (const name of [
+      "ProductAuthoritativeVariantV1",
+      "InventoryAvailabilityReadV1",
+      "ProductPublishedV1",
+      "ProductPublishedV2",
+      "ProductUnpublishedV1",
+      "VariantPriceChangedV1",
+      "VariantAvailabilityChangedV1",
+    ]) {
+      expect(document.components.schemas, name).toHaveProperty(name);
+    }
+
     const expected = [
       ["post", "/v1/seller/products", "createSellerProduct", true],
       [

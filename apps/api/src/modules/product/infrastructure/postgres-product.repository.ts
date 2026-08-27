@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import {
   productBatchResultContract,
+  productAuthoritativeVariantV1Contract,
   productViewContract,
   productPublishedV2Contract,
   productUnpublishedV1Contract,
   productCombinationKey,
   publicProductContract,
   publicProductSummaryContract,
-  variantAvailabilityChangedV1Contract,
   variantPriceChangedV1Contract,
   publicSimpleProductContract,
   publicSimpleProductSummaryContract,
@@ -432,7 +432,7 @@ export class PostgresProductRepository implements ProductRepository {
       return undefined;
     }
     const image = snapshot?.success ? snapshot.data.images[0]! : undefined;
-    return {
+    return productAuthoritativeVariantV1Contract.parse({
       productId: productIdContract.parse(row.productId),
       variantId: variantIdContract.parse(row.variantId),
       storeId: storeIdContract.parse(row.storeId),
@@ -441,7 +441,7 @@ export class PostgresProductRepository implements ProductRepository {
       unitPrice: { amount: Number(row.amount), currency: "IRR" as const },
       publicationVersion: row.publicationVersion,
       sellable: row.sellable,
-    } as const;
+    });
   }
 
   async replaceProductWorkingCopy(
@@ -709,24 +709,18 @@ export class PostgresProductRepository implements ProductRepository {
         if (input.rows.some((row) => !activeIds.has(row.variantId))) {
           throw new InvalidVariantError();
         }
-        const before = new Map(
-          await Promise.all(
-            input.rows.map(
-              async (row) =>
-                [
-                  row.variantId,
-                  await this.inventory.readInTransaction(
-                    sql as unknown as InventoryTransactionContext,
-                    row.variantId,
-                  ),
-                ] as const,
-            ),
-          ),
-        );
         const rows = await this.inventory.replaceBatchForProduct(
           sql as unknown as InventoryTransactionContext,
           {
             storeId: storeIdContract.parse(storeId),
+            ...(current.state === "PUBLISHED"
+              ? {
+                  publication: {
+                    productId: productIdContract.parse(productId),
+                    publicationVersion: current.publicationVersion,
+                  },
+                }
+              : {}),
             rows: input.rows,
             reasonCode: input.reasonCode,
             actorId: context.actorId,
@@ -734,34 +728,6 @@ export class PostgresProductRepository implements ProductRepository {
           },
         );
         const revision = current.revision + 1;
-        if (current.state === "PUBLISHED") {
-          for (const row of rows) {
-            const wasAvailable = (before.get(row.variantId)?.onHand ?? 0) > 0;
-            const isAvailable = row.onHand > 0;
-            if (wasAvailable === isAvailable) continue;
-            await enqueueOutboxEvent(
-              sql,
-              variantAvailabilityChangedV1Contract.parse({
-                version: 1,
-                eventId: this.createId(),
-                eventType: "VariantAvailabilityChanged.v1",
-                aggregateId: row.variantId,
-                aggregateVersion: row.revision,
-                occurredAt: new Date().toISOString(),
-                correlationId: context.correlationId,
-                actor: { type: "IDENTITY", id: context.actorId },
-                payload: {
-                  storeId,
-                  productId,
-                  variantId: row.variantId,
-                  publicationVersion: current.publicationVersion,
-                  availabilityVersion: row.revision,
-                  availability: isAvailable ? "AVAILABLE" : "OUT_OF_STOCK",
-                },
-              }),
-            );
-          }
-        }
         await sql`update product_products set revision = ${revision}, updated_at = now() where id = ${productId}`;
         return productBatchResultContract.parse({
           productRevision: revision,

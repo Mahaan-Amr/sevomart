@@ -197,7 +197,7 @@ PUBLISHED --publish working copy--> PUBLISHED (publicationVersion + 1)
   context مات در یک transaction PostgreSQL انجام می‌شود. caller به repository یا
   جدول داخلی دسترسی ندارد.
 - انتشار، ساخت snapshot منتشرشده، افزایش `publicationVersion`، بازنشستگی گونه‌های
-  حذف‌شده و درج `ProductPublished.v1` در outbox اتمیک‌اند.
+  حذف‌شده و درج `ProductPublished.v2` در outbox اتمیک‌اند.
 - توقف انتشار، تغییر state و outbox همان رخداد اتمیک‌اند.
 - batch قیمت/SKU در transaction کالا و batch موجودی در transaction موجودی مستقل
   و all-or-nothing هستند؛ UI آن‌ها را transaction توزیع‌شده معرفی نمی‌کند.
@@ -291,7 +291,7 @@ audit خصوصی نگهداری می‌شود و وارد event یا log نمی�
 
 | رخداد                           | payload دامنه‌ای حداقلی                                                                                  | version ordering                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `ProductPublished.v1`           | `storeId`، `productId`، `publicationVersion`، snapshot عمومی کالا و offer/availability versionهای همراه  | snapshot مبنای projection                      |
+| `ProductPublished.v2`           | `storeId`، `productId`، `publicationVersion`، `snapshot.variantIds` و offer/availability versionهای همراه  | نسخه canonical؛ خواندن محتوا از producer                      |
 | `ProductUnpublished.v1`         | `storeId`، `productId`، `publicationVersion`                                                             | sequence کالا                                  |
 | `VariantPriceChanged.v1`        | `storeId`، `productId`، `variantId`، `offerVersion`، price و `publicationVersion` مرتبط                  | offerVersion مستقل                             |
 | `VariantAvailabilityChanged.v1` | `storeId`، `productId`، `variantId`، `availabilityVersion`، `AVAILABLE/OUT_OF_STOCK` و publication مرتبط | فقط عبور از مرز صفر؛ availabilityVersion مستقل |
@@ -300,6 +300,22 @@ audit خصوصی نگهداری می‌شود و وارد event یا log نمی�
 را تا دریافت publication مرتبط نگه می‌دارد. تغییر ناسازگار schema با `.v2` کنار
 `.v1` عرضه، مصرف‌کنندگان مهاجرت و سپس نسخه قدیمی حذف می‌شود. افزودن optional
 سازگار در v1 مجاز است.
+
+### ۶.۶ تثبیت مالکیت و سازگاری رخدادها
+
+طبق [تصمیم تثبیت قراردادهای مشترک](https://github.com/Mahaan-Amr/sevomart/issues/110)،
+نسخه canonical انتشار `ProductPublished.v2` است. snapshot رخداد تنها شناسه گونه‌ها
+را حمل می‌کند؛ متن، تصویر، قیمت نمایشی و تعداد دقیق موجودی از رخداد انتشار خوانده
+نمی‌شوند. مصرف‌کننده برای نمایش، خواندن authoritative کالا و موجودی را به کار می‌برد.
+قرارداد `ProductPublished.v1` فقط در پنجره سازگاری و adapter تاریخچه discovery
+باقی می‌ماند؛ حذف آن نیازمند اثبات نبود مصرف‌کننده و نیاز replay است.
+
+schema و emission رخداد `VariantAvailabilityChanged.v1` فقط متعلق به inventory
+است. کالا در فرمان اصلاح موجودی، شناسه کالا و نسخه انتشار را می‌دهد؛ inventory
+پس از قفل‌کردن موجودی، عبور `onHand - reserved` از مرز صفر را تشخیص می‌دهد و
+رخداد را همراه mutation در همان تراکنش ثبت می‌کند. محصول رخداد موجودی نمی‌سازد.
+شرح سطح اجرایی، پنجره سازگاری و شواهد در
+[تحویل قرارداد کالا و موجودی](../delivery/product-inventory-contracts.md) آمده است.
 
 ## ۷. قراردادهای مصرفی و یال‌ها
 

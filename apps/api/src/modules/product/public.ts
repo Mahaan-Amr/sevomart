@@ -1,5 +1,6 @@
 import type {
   ProductBatchResult,
+  ProductAuthoritativeVariantV1,
   ProductView,
   PublicProduct,
   PublicProductSummary,
@@ -13,7 +14,6 @@ import type {
   SimpleProductView,
 } from "@sevo/contracts/product/v1";
 import type {
-  MoneyV1,
   IdentityId,
   ProductId,
   StoreId,
@@ -35,16 +35,7 @@ export type ProductWriteContext = Readonly<{
   expectedRevision: number;
 }>;
 
-export type ProductAuthoritativeVariant = Readonly<{
-  productId: ProductId;
-  variantId: VariantId;
-  storeId: StoreId;
-  name: string;
-  image: { id: string; url: string };
-  unitPrice: MoneyV1;
-  publicationVersion: number;
-  sellable: boolean;
-}>;
+export type ProductAuthoritativeVariant = Readonly<ProductAuthoritativeVariantV1>;
 
 export type OpaqueProductTransactionContext = Readonly<{
   kind: "opaque-product-transaction";

@@ -64,7 +64,7 @@ describe("canonical v1 contract entrypoints", () => {
       eventEnvelopeV1Contract.parse({
         version: 1,
         eventId: "b47ac10b-58cc-4372-a567-0e02b2c3d479",
-        eventType: "ProductPublished.v1",
+        eventType: "ProductPublished.v2",
         aggregateId: "c47ac10b-58cc-4372-a567-0e02b2c3d479",
         aggregateVersion: 2,
         occurredAt: "2026-08-23T12:00:00+03:30",
@@ -74,7 +74,7 @@ describe("canonical v1 contract entrypoints", () => {
           id: "e47ac10b-58cc-4372-a567-0e02b2c3d479",
         },
       }),
-    ).toMatchObject({ eventType: "ProductPublished.v1", aggregateVersion: 2 });
+    ).toMatchObject({ eventType: "ProductPublished.v2", aggregateVersion: 2 });
 
     expect(
       eventEnvelopeV1Contract.parse({

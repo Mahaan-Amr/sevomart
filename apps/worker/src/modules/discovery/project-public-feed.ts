@@ -1,8 +1,7 @@
+import { variantAvailabilityChangedV1Contract } from "@sevo/contracts/inventory/v1";
 import {
-  productPublishedV1Contract,
   productPublishedV2Contract,
   productUnpublishedV1Contract,
-  variantAvailabilityChangedV1Contract,
   variantPriceChangedV1Contract,
 } from "@sevo/contracts/product/v1";
 import {
@@ -22,6 +21,10 @@ import {
 } from "@sevo/outbox";
 import { getMeter } from "@sevo/observability";
 import postgres from "postgres";
+import {
+  readLegacyProductPublication,
+  type ProductPublicationMetadata,
+} from "./legacy-product-publication";
 
 type ProductProjectionRow = {
   publicationVersion: number;
@@ -129,15 +132,10 @@ export const projectDiscoveryProductEvent: OutboxEventHandler = async (event, sq
       hashtextextended(${`discovery-product-feed:${productId}`}, 0)
     )
   `;
-  if (
-    event.eventType === "ProductPublished.v1" ||
-    event.eventType === "ProductPublished.v2"
-  ) {
-    const published =
-      event.eventType === "ProductPublished.v1"
-        ? productPublishedV1Contract.parse(event)
-        : productPublishedV2Contract.parse(event);
-    await projectPublication(published, sql);
+  if (event.eventType === "ProductPublished.v2") {
+    await projectPublication(productPublishedV2Contract.parse(event), sql);
+  } else if (event.eventType === "ProductPublished.v1") {
+    await projectPublication(readLegacyProductPublication(event), sql);
   } else if (event.eventType === "ProductUnpublished.v1") {
     const unpublished = productUnpublishedV1Contract.parse(event);
     await projectUnpublication(unpublished, sql);
@@ -166,9 +164,7 @@ export const projectDiscoveryProductEvent: OutboxEventHandler = async (event, sq
 };
 
 async function projectPublication(
-  published: ReturnType<
-    typeof productPublishedV1Contract.parse | typeof productPublishedV2Contract.parse
-  >,
+  published: ProductPublicationMetadata,
   sql: Parameters<OutboxEventHandler>[1],
 ) {
   const rows = await sql<ProductProjectionRow[]>`
