@@ -62,3 +62,24 @@ PostgreSQL و ۱۳۶ E2E در چهار viewport سبز است. تست‌های �
 هنگام انتظار projection از بودجه ۲۰ ثانیه گذشت؛ همان tracer در سه viewport دیگر،
 در اجرای کامل پیشین و در اجرای isolated تازه `360x800` سبز شد. این failure زمان‌بندی
 به تغییر قرارداد سفارش/پرداخت مرتبط نبود و حذف یا افزایش بودجه آزمون انجام نشد.
+
+## eligibility سفارش برای گفت‌وگو
+
+[قرارداد و adapter بررسی تعلق سفارش برای گفت‌وگو](https://github.com/Mahaan-Amr/sevomart/issues/178)
+یک seam هم‌زمان و داخلی با مالک orders اضافه می‌کند:
+`OrderConversationEligibility.checkConversationOrder({ identityId, orderId, storeId })`.
+شناسه هویت از نشست معتبر مصرف‌کننده می‌آید، نه body درخواست خریدار.
+`orderConversationEligibilityInputContract` ورودی strict و
+`orderConversationEligibilityResultContract` خروجی boolean را در orders/v1 تثبیت
+می‌کنند. adapter روی `PostgresCheckoutRepository` موجود اجرا می‌شود و فقط تعلق
+هم‌زمان خریدار، سفارش و فروشگاه را بررسی می‌کند. شناسه نامعتبر، سفارش ناموجود،
+خریدار دیگر و فروشگاه دیگر همگی `false` هستند؛ خطای زیرساخت به معنی eligibility
+نیست و برای retry به مصرف‌کننده برمی‌گردد.
+
+وضعیت پرداخت، مهلت رزرو و قابل اقدام بودن سفارش شرط تازه‌ای برای گفت‌وگو نیستند.
+نتیجه هیچ snapshot، نشانی، مبلغ یا داده تماس ندارد. مصرف‌کننده همچنان مسئول بررسی
+هویت فعال و دسترسی زنده participant است و جدول orders را مستقیم نمی‌خواند.
+
+افزودن قرارداد سازگار است و HTTP، OpenAPI عمومی، migration، env، startup و dependency
+را تغییر نمی‌دهد. adapter در Docker و native از همان مسیر اتصال PostgreSQL استفاده
+می‌کند. آزمون قرارداد و integration موجود، تعلق و همه وضعیت‌های سفارش را پوشش می‌دهند.

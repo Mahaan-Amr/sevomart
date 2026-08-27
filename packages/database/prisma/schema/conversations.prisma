@@ -1,1 +1,80 @@
 // Tables in this file are owned by the conversations module.
+
+model ConversationThread {
+  messages           ConversationMessage[]
+  id                 String                @id @db.Uuid
+  buyerIdentityId    String                @map("buyer_identity_id") @db.Uuid
+  sellerIdentityId   String                @map("seller_identity_id") @db.Uuid
+  storeId            String                @map("store_id") @db.Uuid
+  contextKind        String                @map("context_kind") @db.VarChar(16)
+  contextReferenceId String                @map("context_reference_id") @db.Uuid
+  context            Json                  @db.JsonB
+  version            Int                   @default(0)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime              @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([buyerIdentityId, sellerIdentityId, storeId, contextKind, contextReferenceId])
+  @@index([buyerIdentityId, updatedAt(sort: Desc), id(sort: Desc)], map: "conversation_threads_buyer_updated")
+  @@index([sellerIdentityId, updatedAt(sort: Desc), id(sort: Desc)], map: "conversation_threads_seller_updated")
+  @@map("conversation_threads")
+}
+
+model ConversationIdempotency {
+  scope       String   @db.VarChar(128)
+  key         String   @db.VarChar(200)
+  requestHash String   @map("request_hash") @db.Char(64)
+  response    Json?    @db.JsonB
+  claimId     String?  @map("claim_id") @db.Uuid
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([scope, key])
+  @@map("conversation_idempotency")
+}
+
+model ConversationAudit {
+  id             String   @id @db.Uuid
+  identityId     String?  @map("identity_id") @db.Uuid
+  conversationId String?  @map("conversation_id") @db.Uuid
+  operation      String   @db.VarChar(48)
+  outcome        String   @db.VarChar(48)
+  correlationId  String   @map("correlation_id") @db.Uuid
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@map("conversation_audits")
+}
+
+model ConversationMessage {
+  id             String             @id @db.Uuid
+  conversationId String             @map("conversation_id") @db.Uuid
+  thread         ConversationThread @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderRole     String             @map("sender_role") @db.VarChar(8)
+  content        Json               @db.JsonB
+  createdAt      DateTime           @map("created_at") @db.Timestamptz(3)
+
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)], map: "conversation_messages_order")
+  @@map("conversation_messages")
+}
+
+model ConversationSnapshot {
+  id             String                      @id @db.Uuid
+  identityId     String                      @map("identity_id") @db.Uuid
+  operation      String                      @db.VarChar(16)
+  conversationId String?                     @map("conversation_id") @db.Uuid
+  expiresAt      DateTime                    @map("expires_at") @db.Timestamptz(3)
+  entries        ConversationSnapshotEntry[]
+
+  @@index([expiresAt], map: "conversation_snapshots_expiry")
+  @@map("conversation_snapshots")
+}
+
+model ConversationSnapshotEntry {
+  snapshotId String               @map("snapshot_id") @db.Uuid
+  snapshot   ConversationSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  itemId     String               @map("item_id") @db.Uuid
+  sortAt     DateTime             @map("sort_at") @db.Timestamptz(3)
+
+  @@id([snapshotId, itemId])
+  @@index([snapshotId, sortAt(sort: Desc), itemId(sort: Desc)], map: "conversation_snapshot_entries_order")
+  @@map("conversation_snapshot_entries")
+}

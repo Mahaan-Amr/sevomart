@@ -14,6 +14,32 @@ import type { OpenApiContributor } from "../public";
 
 const operations = [
   {
+    operationId: "uploadConversationMedia",
+    method: "post",
+    path: "/v1/conversations/{conversationId}/media",
+    tag: "media",
+    auth: "identity-session",
+    pathParameter: {
+      name: "conversationId",
+      schema: "MediaConversationId",
+      example: mediaV1Examples.MediaConversationId,
+    },
+    request: {
+      schema: "ConversationMediaUploadInput",
+      example: mediaV1Examples.ConversationMediaUploadInput,
+      contentType: "multipart/form-data",
+    },
+    responses: [
+      { status: 201, schema: "MediaReference" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "MediaNotFoundError" },
+      { status: 413, schema: "ValidationError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 429, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "uploadStoreMedia",
     method: "post",
     path: "/v1/seller/media",
@@ -72,6 +98,7 @@ const operations = [
     },
     responses: [
       { status: 200, binaryMedia: true },
+      { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "MediaNotFoundError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -99,19 +126,21 @@ export const contribute_media_openApi: OpenApiContributor = (document) => {
     operations,
     responseMetadata,
   );
-  const mediaUploadSchema = composed.components?.schemas?.MediaUploadInput as {
-    properties?: Record<string, Record<string, unknown>>;
-  };
-  if (mediaUploadSchema.properties?.file) {
-    mediaUploadSchema.properties.file = {
-      type: "string",
-      format: "binary",
-      description:
-        "JPEG, PNG, or WebP; maximum 10 MB and 24 megapixels; animated images are rejected.",
-      "x-maxBytes": MEDIA_UPLOAD_MAX_BYTES,
-      "x-maxPixels": MEDIA_UPLOAD_MAX_PIXELS,
-      "x-acceptedMediaTypes": [...MEDIA_UPLOAD_ACCEPTED_TYPES],
+  for (const name of ["MediaUploadInput", "ConversationMediaUploadInput"]) {
+    const mediaUploadSchema = composed.components?.schemas?.[name] as {
+      properties?: Record<string, Record<string, unknown>>;
     };
+    if (mediaUploadSchema.properties?.file) {
+      mediaUploadSchema.properties.file = {
+        type: "string",
+        format: "binary",
+        description:
+          "JPEG, PNG, or WebP; maximum 10 MB and 24 megapixels; animated images are rejected.",
+        "x-maxBytes": MEDIA_UPLOAD_MAX_BYTES,
+        "x-maxPixels": MEDIA_UPLOAD_MAX_PIXELS,
+        "x-acceptedMediaTypes": [...MEDIA_UPLOAD_ACCEPTED_TYPES],
+      };
+    }
   }
   return composed;
 };

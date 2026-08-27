@@ -4,12 +4,16 @@ import type { RuntimeEnvironment } from "@sevo/config";
 import { FakeObjectStorage } from "./testing/fake-object-storage";
 import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media-storage";
 import {
+  CONVERSATION_MEDIA_ACCESS,
+  CONVERSATION_ATTACHMENT_READER,
+  type ConversationMediaAccess,
   MEDIA_STORAGE,
   PUBLISHED_MEDIA_ACCESS,
   SELLER_UPLOAD_RATE_LIMITER,
   type MediaStorage,
   type PublishedMediaAccess,
 } from "./public";
+import { MediaAttachmentReader } from "./media-attachment-reader";
 import { MediaController } from "./media.controller";
 import { SellerUploadRateLimiter } from "./seller-upload-rate-limiter";
 
@@ -19,6 +23,7 @@ export class MediaModule {
     environment: RuntimeEnvironment,
     storage?: MediaStorage,
     publishedMediaAccess: PublishedMediaAccess = async () => false,
+    conversationMediaAccess: ConversationMediaAccess = async () => false,
   ): DynamicModule {
     const configuredStorage =
       storage ??
@@ -30,6 +35,11 @@ export class MediaModule {
       global: true,
       controllers: [MediaController],
       providers: [
+        { provide: CONVERSATION_MEDIA_ACCESS, useValue: conversationMediaAccess },
+        {
+          provide: CONVERSATION_ATTACHMENT_READER,
+          useValue: new MediaAttachmentReader(configuredStorage),
+        },
         { provide: MEDIA_STORAGE, useValue: configuredStorage },
         { provide: PUBLISHED_MEDIA_ACCESS, useValue: publishedMediaAccess },
         {
@@ -37,7 +47,7 @@ export class MediaModule {
           useValue: new SellerUploadRateLimiter(),
         },
       ],
-      exports: [MEDIA_STORAGE],
+      exports: [MEDIA_STORAGE, CONVERSATION_ATTACHMENT_READER],
     };
   }
 }

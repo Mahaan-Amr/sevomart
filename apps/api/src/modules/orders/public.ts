@@ -1,4 +1,5 @@
 import type {
+  OrderConversationEligibilityInput,
   AttachCartInput,
   Cart,
   CartConflict,
@@ -46,6 +47,10 @@ export type BuyerPaymentState = Readonly<{
   status: OrderStatus;
   reservationExpiresAt: Date;
 }>;
+
+export interface OrderConversationEligibility {
+  checkConversationOrder(input: OrderConversationEligibilityInput): Promise<boolean>;
+}
 
 export interface OrderPaymentWorkflow {
   lockPaymentOrder(

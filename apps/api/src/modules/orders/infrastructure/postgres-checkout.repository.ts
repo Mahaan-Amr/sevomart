@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  orderConversationEligibilityInputContract,
   checkoutPreparationContract,
   orderContract,
   orderCreatedV1Contract,
@@ -33,6 +34,7 @@ import {
   CheckoutIdempotencyConflictError,
   CheckoutIdempotencyInProgressError,
   CheckoutRevisionExpiredError,
+  type OrderConversationEligibility,
   type CheckoutRepository,
   type OrderPaymentTransactionContext,
   type OrderPaymentWorkflow,
@@ -45,7 +47,7 @@ type PreparationRow = {
 };
 
 export class PostgresCheckoutRepository
-  implements CheckoutRepository, OrderPaymentWorkflow
+  implements CheckoutRepository, OrderPaymentWorkflow, OrderConversationEligibility
 {
   readonly #sql: Sql;
 
@@ -454,6 +456,19 @@ export class PostgresCheckoutRepository
       for update
     `;
     return rows[0];
+  }
+
+  async checkConversationOrder(
+    input: Parameters<OrderConversationEligibility["checkConversationOrder"]>[0],
+  ) {
+    const parsed = orderConversationEligibilityInputContract.safeParse(input);
+    if (!parsed.success) return false;
+    const { identityId, orderId, storeId } = parsed.data;
+    const rows = await this.#sql`
+      select 1 from order_orders
+      where id = ${orderId} and identity_id = ${identityId} and store_id = ${storeId}
+    `;
+    return rows.length === 1;
   }
 
   async readBuyerPaymentState(identityId: IdentityId, orderId: OrderId) {
