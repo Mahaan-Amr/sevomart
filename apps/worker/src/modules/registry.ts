@@ -14,19 +14,25 @@ import { reporting_analytics_workerHandlers } from "./reporting-analytics/index"
 import { store_workerHandlers } from "./store/index";
 import type { WorkerHandler } from "./public";
 
-export const canonicalWorkerHandlers: readonly WorkerHandler[] = [
-  ...identity_access_workerHandlers,
-  ...store_workerHandlers,
-  ...product_workerHandlers,
-  ...inventory_workerHandlers,
-  ...orders_workerHandlers,
-  ...payments_workerHandlers,
-  ...fulfillment_workerHandlers,
-  ...conversations_workerHandlers,
-  ...problem_follow_up_workerHandlers,
-  ...content_workerHandlers,
-  ...discovery_workerHandlers,
-  ...media_workerHandlers,
-  ...notifications_workerHandlers,
-  ...reporting_analytics_workerHandlers,
+export const canonicalWorkerRegistry: readonly {
+  owner: string;
+  handlers: readonly WorkerHandler[];
+}[] = [
+  { owner: "identity-access", handlers: identity_access_workerHandlers },
+  { owner: "store", handlers: store_workerHandlers },
+  { owner: "product", handlers: product_workerHandlers },
+  { owner: "inventory", handlers: inventory_workerHandlers },
+  { owner: "orders", handlers: orders_workerHandlers },
+  { owner: "payments", handlers: payments_workerHandlers },
+  { owner: "fulfillment", handlers: fulfillment_workerHandlers },
+  { owner: "conversations", handlers: conversations_workerHandlers },
+  { owner: "problem-follow-up", handlers: problem_follow_up_workerHandlers },
+  { owner: "content", handlers: content_workerHandlers },
+  { owner: "discovery", handlers: discovery_workerHandlers },
+  { owner: "media", handlers: media_workerHandlers },
+  { owner: "notifications", handlers: notifications_workerHandlers },
+  { owner: "reporting-analytics", handlers: reporting_analytics_workerHandlers },
 ];
+
+export const canonicalWorkerHandlers: readonly WorkerHandler[] =
+  canonicalWorkerRegistry.flatMap(({ handlers }) => handlers);

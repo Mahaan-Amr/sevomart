@@ -13,9 +13,65 @@
       "types": "./dist/health.d.ts",
       "default": "./dist/health.js"
     },
-    "./*/v1": {
-      "types": "./dist/*/v1/index.d.ts",
-      "default": "./dist/*/v1/index.js"
+    "./platform/v1": {
+      "types": "./dist/platform/v1/index.d.ts",
+      "default": "./dist/platform/v1/index.js"
+    },
+    "./identity-access/v1": {
+      "types": "./dist/identity-access/v1/index.d.ts",
+      "default": "./dist/identity-access/v1/index.js"
+    },
+    "./store/v1": {
+      "types": "./dist/store/v1/index.d.ts",
+      "default": "./dist/store/v1/index.js"
+    },
+    "./product/v1": {
+      "types": "./dist/product/v1/index.d.ts",
+      "default": "./dist/product/v1/index.js"
+    },
+    "./inventory/v1": {
+      "types": "./dist/inventory/v1/index.d.ts",
+      "default": "./dist/inventory/v1/index.js"
+    },
+    "./orders/v1": {
+      "types": "./dist/orders/v1/index.d.ts",
+      "default": "./dist/orders/v1/index.js"
+    },
+    "./payments/v1": {
+      "types": "./dist/payments/v1/index.d.ts",
+      "default": "./dist/payments/v1/index.js"
+    },
+    "./fulfillment/v1": {
+      "types": "./dist/fulfillment/v1/index.d.ts",
+      "default": "./dist/fulfillment/v1/index.js"
+    },
+    "./conversations/v1": {
+      "types": "./dist/conversations/v1/index.d.ts",
+      "default": "./dist/conversations/v1/index.js"
+    },
+    "./problem-follow-up/v1": {
+      "types": "./dist/problem-follow-up/v1/index.d.ts",
+      "default": "./dist/problem-follow-up/v1/index.js"
+    },
+    "./content/v1": {
+      "types": "./dist/content/v1/index.d.ts",
+      "default": "./dist/content/v1/index.js"
+    },
+    "./discovery/v1": {
+      "types": "./dist/discovery/v1/index.d.ts",
+      "default": "./dist/discovery/v1/index.js"
+    },
+    "./media/v1": {
+      "types": "./dist/media/v1/index.d.ts",
+      "default": "./dist/media/v1/index.js"
+    },
+    "./notifications/v1": {
+      "types": "./dist/notifications/v1/index.d.ts",
+      "default": "./dist/notifications/v1/index.js"
+    },
+    "./reporting-analytics/v1": {
+      "types": "./dist/reporting-analytics/v1/index.d.ts",
+      "default": "./dist/reporting-analytics/v1/index.js"
     },
     "./api-errors/v1": {
       "types": "./dist/api-errors-v1.d.ts",

@@ -14,4 +14,8 @@
 4. مدل داده و state machineهای حساس هر قابلیت پس از بسته‌شدن مشخصات همان قابلیت؛
 5. سپس پیاده‌سازی مسیرها روی قراردادهای مصوب.
 
+وضعیت اجرایی و مهاجرت مصرف‌کنندگان هر subpath نسخه‌دار در
+`contract-lifecycle.json` ثبت می‌شود. وجود entrypoint به‌تنهایی به معنی قرارداد
+قابل اجرا نیست؛ evidence همان فایل باید به schema، operation یا event واقعی اشاره کند.
+
 توپولوژی نسخه اول modular monolith باقی می‌ماند. مرزهای service-grade مجوز ساخت microservice، database یا deployment مستقل بدون شواهد بازنگری ADR-002 نیستند.

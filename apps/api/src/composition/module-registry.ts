@@ -41,10 +41,10 @@ import { DevOtpProvider } from "../modules/notifications/composition";
 
 type NestModule = Type<unknown> | DynamicModule;
 
-export function composeCanonicalApiModules(
+function createApiCompositionContext(
   environment: RuntimeEnvironment,
   identityOptions: IdentityAccessModuleOptions = {},
-): NestModule[] {
+) {
   const otpProvider =
     identityOptions.otpProvider ??
     (environment.OTP_PROVIDER === "dev" ? new DevOtpProvider() : undefined);
@@ -71,54 +71,172 @@ export function composeCanonicalApiModules(
     environment.DATABASE_URL,
   );
 
-  return [
-    IdentityAccessModule.register(environment, {
-      ...identityOptions,
+  return {
+    checkoutRepository,
+    environment,
+    identityOptions,
+    inventoryAuthoring,
+    otpProvider,
+    platformAgentSessions,
+    productRepository,
+    storeFollowingRepository,
+    storeRepository,
+  };
+}
+
+type ApiCompositionContext = ReturnType<typeof createApiCompositionContext>;
+
+export const canonicalApiModuleRegistry: readonly {
+  owner: string;
+  artifact: Type<unknown>;
+  compose: (context: ApiCompositionContext) => NestModule;
+}[] = [
+  {
+    owner: "identity-access",
+    artifact: IdentityAccessModule,
+    compose: ({
+      environment,
+      identityOptions,
       otpProvider,
-      approvedSellerStoreProvisioner:
-        identityOptions.approvedSellerStoreProvisioner ?? storeRepository,
-      createStoreTransactionContext:
-        identityOptions.createStoreTransactionContext ??
-        createOpaqueStoreTransactionContext,
-      platformAgentSessionAuthorizer:
-        identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
-    }),
-    MediaModule.register(environment, undefined, async (mediaId) => {
-      if (await storeRepository.isMediaPublished(mediaId)) return true;
-      const storeId = await productRepository.findPublishedMediaStoreId(mediaId);
-      if (!storeId) return false;
-      return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
-    }),
-    StoreModule.register(environment, {
-      repository: storeRepository,
-      publicStoreFollowingReader: storeFollowingRepository,
-    }),
-    ProductModule.register(environment, { repository: productRepository }),
-    InventoryModule,
-    OrdersModule.register(environment, {
+      platformAgentSessions,
+      storeRepository,
+    }) =>
+      IdentityAccessModule.register(environment, {
+        ...identityOptions,
+        otpProvider,
+        approvedSellerStoreProvisioner:
+          identityOptions.approvedSellerStoreProvisioner ?? storeRepository,
+        createStoreTransactionContext:
+          identityOptions.createStoreTransactionContext ??
+          createOpaqueStoreTransactionContext,
+        platformAgentSessionAuthorizer:
+          identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+      }),
+  },
+  {
+    owner: "media",
+    artifact: MediaModule,
+    compose: ({ environment, productRepository, storeRepository }) =>
+      MediaModule.register(environment, undefined, async (mediaId) => {
+        if (await storeRepository.isMediaPublished(mediaId)) return true;
+        const storeId = await productRepository.findPublishedMediaStoreId(mediaId);
+        if (!storeId) return false;
+        return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
+      }),
+  },
+  {
+    owner: "store",
+    artifact: StoreModule,
+    compose: ({ environment, storeFollowingRepository, storeRepository }) =>
+      StoreModule.register(environment, {
+        repository: storeRepository,
+        publicStoreFollowingReader: storeFollowingRepository,
+      }),
+  },
+  {
+    owner: "product",
+    artifact: ProductModule,
+    compose: ({ environment, productRepository }) =>
+      ProductModule.register(environment, { repository: productRepository }),
+  },
+  {
+    owner: "inventory",
+    artifact: InventoryModule,
+    compose: () => InventoryModule,
+  },
+  {
+    owner: "orders",
+    artifact: OrdersModule,
+    compose: ({
       checkoutRepository,
-      products: productRepository,
-      inventory: inventoryAuthoring,
-      createProductTransactionContext: createOpaqueProductTransactionContext,
-      createStoreTransactionContext: createOpaqueStoreTransactionContext,
-      resolveSellerStore: async (identityId) =>
-        (await storeRepository.findBySellerId(identityId))?.id,
-    }),
-    PaymentsModule.register(environment, {
-      inventory: inventoryAuthoring,
-      orders: checkoutRepository,
-      platformAgentSessions:
-        identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
-    }),
-    FulfillmentModule,
-    ConversationsModule,
-    ProblemFollowUpModule,
-    ContentModule,
-    DiscoveryModule.register(environment, {
-      followingRepository: storeFollowingRepository,
-      products: productRepository,
-    }),
-    NotificationsModule,
-    ReportingAnalyticsModule,
-  ];
+      environment,
+      inventoryAuthoring,
+      productRepository,
+      storeRepository,
+    }) =>
+      OrdersModule.register(environment, {
+        checkoutRepository,
+        products: productRepository,
+        inventory: inventoryAuthoring,
+        createProductTransactionContext: createOpaqueProductTransactionContext,
+        createStoreTransactionContext: createOpaqueStoreTransactionContext,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
+      }),
+  },
+  {
+    owner: "payments",
+    artifact: PaymentsModule,
+    compose: ({
+      checkoutRepository,
+      environment,
+      identityOptions,
+      inventoryAuthoring,
+      platformAgentSessions,
+    }) =>
+      PaymentsModule.register(environment, {
+        inventory: inventoryAuthoring,
+        orders: checkoutRepository,
+        platformAgentSessions:
+          identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+      }),
+  },
+  {
+    owner: "fulfillment",
+    artifact: FulfillmentModule,
+    compose: () => FulfillmentModule,
+  },
+  {
+    owner: "conversations",
+    artifact: ConversationsModule,
+    compose: () => ConversationsModule,
+  },
+  {
+    owner: "problem-follow-up",
+    artifact: ProblemFollowUpModule,
+    compose: () => ProblemFollowUpModule,
+  },
+  { owner: "content", artifact: ContentModule, compose: () => ContentModule },
+  {
+    owner: "discovery",
+    artifact: DiscoveryModule,
+    compose: ({ environment, productRepository, storeFollowingRepository }) =>
+      DiscoveryModule.register(environment, {
+        followingRepository: storeFollowingRepository,
+        products: productRepository,
+      }),
+  },
+  {
+    owner: "notifications",
+    artifact: NotificationsModule,
+    compose: () => NotificationsModule,
+  },
+  {
+    owner: "reporting-analytics",
+    artifact: ReportingAnalyticsModule,
+    compose: () => ReportingAnalyticsModule,
+  },
+];
+
+export function assertApiModuleArtifact(
+  slot: { owner: string; artifact: Type<unknown> },
+  composed: NestModule,
+): NestModule {
+  const actualArtifact = typeof composed === "function" ? composed : composed.module;
+  if (actualArtifact !== slot.artifact) {
+    throw new Error(
+      `API composition slot ${slot.owner} returned a different module artifact`,
+    );
+  }
+  return composed;
+}
+
+export function composeCanonicalApiModules(
+  environment: RuntimeEnvironment,
+  identityOptions: IdentityAccessModuleOptions = {},
+): NestModule[] {
+  const context = createApiCompositionContext(environment, identityOptions);
+  return canonicalApiModuleRegistry.map((slot) =>
+    assertApiModuleArtifact(slot, slot.compose(context)),
+  );
 }
