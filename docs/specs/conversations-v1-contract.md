@@ -12,9 +12,9 @@
 از API مشترک و URL پایدار `conversationId` می‌خوانند و بدون ساخت پیام تکراری پاسخ
 می‌دهند.
 
-این برش فقط قرارداد نسخه‌دار، OpenAPI و آزمون سازگاری را تثبیت می‌کند. persistence،
-eligibility adapterهای واقعی، upload رسانه، producer رخداد و رابط خریدار/فروشنده
-در Issueهای وابسته پیاده می‌شوند.
+قرارداد و OpenAPI در تیکت قرارداد تثبیت شدند. اجرای API، persistence، eligibility
+و producer رخداد در [«پیاده‌سازی producer گفت‌وگو»](https://github.com/Mahaan-Amr/sevomart/issues/138)
+اضافه شده‌اند. رابط خریدار/فروشنده همچنان در تیکت‌های مصرف‌کننده ساخته می‌شود.
 
 ## ۲. واژگان و invariantها
 
@@ -37,8 +37,8 @@ eligibility adapterهای واقعی، upload رسانه، producer رخداد �
 ## ۳. eligibility زمینه
 
 producer گفت‌وگو aggregate فروشگاه، کالا یا سفارش را import یا query مستقیم
-نمی‌کند. adapter هر مالک، `ConversationContextV1` را می‌گیرد و یکی از دو نتیجه
-نسخه‌دار زیر را می‌دهد:
+نمی‌کند. سرویس گفت‌وگو فقط readهای عمومی مالکان را ترکیب می‌کند و نتیجه را به معنای
+نسخه‌دار زیر نگاشت می‌کند:
 
 - `ELIGIBLE`: زمینه canonical همراه شناسه دو participant؛
 - `INELIGIBLE`: یکی از `FORBIDDEN_CONTEXT`، `CONTEXT_NOT_FOUND` یا
@@ -118,8 +118,7 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
 ## ۷. مالکیت، سازگاری و آزمون
 
 - مالک artifact: `@sevo/contracts/conversations/v1` و fragment
-  `apps/api/src/openapi/modules/conversations.ts`؛ root export، composer مرکزی،
-  registry، Prisma و migration در این برش تغییر نمی‌کنند.
+  `apps/api/src/openapi/modules/conversations.ts` است. producer بدون تغییر این قرارداد به composer مرکزی متصل است.
 - افزودن optional سازگار در `v1` مجاز است. تغییر context، scope idempotency، ترتیب
   cursor، code یا payload رخداد ناسازگار است و نسخه تازه و مهاجرت مصرف‌کنندگان
   می‌خواهد.
@@ -127,6 +126,41 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
   repository یا جدول producer دسترسی ندارند.
 - آزمون منفی strictness زمینه، منع فیلد تماس، payload بدون PII رخداد، نقش دو فضای
   خریدار/فروشنده، cursor، denial و هدر idempotency را پوشش می‌دهد.
-- این تغییر runtime، env، port، dependency یا migration ندارد؛ بنابراین مسیرهای
-  Docker و native تغییر رفتاری ندارند. producer واقعی باید هر دو مسیر را طبق قاعده
-  موقت اجرای محلی دوباره بررسی کند.
+- migration `20260827110000__conversations__private-threads` پس از
+  `20260827100000__media__conversation-attachments` شش جدول متعلق به گفت‌وگو
+  می‌سازد؛ هیچ جدول دامنه دیگر تغییر نمی‌کند و FK میان دامنه‌ها اضافه نمی‌شود.
+- هر دو مسیر `docker compose up --build` و `pnpm dev` همین migration و composer
+  را اجرا می‌کنند. dependency، env و port تازه لازم نیست.
+
+
+## ۸. اجرای producer و نگهداری
+
+- خواندن فروشگاه از `StoreAuthoritativeRead`، وضعیت فروشندگی از `SellerAccessRead`،
+  کالا از `ProductAuthoritativeRead` و سفارش از `OrderConversationEligibility`
+  انجام می‌شود. eligibility سفارش به وضعیت پرداخت وابسته نیست.
+- فروشنده در هر درخواست باید همان مالک فعلی فروشگاه و دارای فروشندگی فعال باشد.
+  خریدار فعال دسترسی به تاریخچه خودش را بعد از خارج‌شدن فروشگاه از انتشار یا
+  تعلیق فروشندگی از دست نمی‌دهد. ساخت زمینه فروشگاه/کالا همچنان انتشار را می‌خواهد.
+- رسانه فقط از `ConversationAttachmentReader` بررسی می‌شود. دسترسی upload و
+  preview مالک نیازمند عضویت زنده است؛ طرف دیگر فقط پس از ثبت پیام حاوی همان
+  `mediaId` دسترسی دارد. ترکیب دو ماژول در composer مرکزی و با پیش‌فرض deny انجام
+  می‌شود؛ هیچ ماژولی جدول دیگری را نمی‌خواند.
+- ثبت پیام، نسخه رشته، نتیجه idempotency، audit موفق و outbox یک transaction
+  PostgreSQL هستند. شکست هر write همه آن‌ها را rollback می‌کند. قفل transaction
+  برای کلید تکراری پاسخ in-progress می‌دهد؛ unique tuple مانع رشته تکراری است.
+- snapshot در جدول‌های خصوصی `conversation_snapshots` و
+  `conversation_snapshot_entries` فقط شناسه و tuple ترتیب را نگه می‌دارد؛ متن یا
+  کپی داده حساب در آن نیست. پیام/رشته تازه یا فعالیت بعدی ترتیب پیمایش جاری را
+  جابه‌جا نمی‌کند. دسترسی زنده در ادامه پیمایش همچنان بررسی می‌شود.
+- snapshotها ۲۴ ساعت اعتبار دارند و هنگام ساخت snapshot بعدی پاک‌سازی می‌شوند.
+  cursor با HMAC و کلید مشتق‌شده با دامنه `sevo.conversations.cursor.v1` از
+  `CART_TOKEN_DERIVATION_SECRET` امضا می‌شود؛ تعویض این secret cursorهای قبلی را
+  نامعتبر می‌کند. مقدار secret در همه replicaها باید یکسان و پایدار بماند.
+- همه پاسخ‌های موفق گفت‌وگو `Cache-Control: private, no-store` دارند. audit فقط
+  operation، outcome، correlation، زمان و شناسه داخلی لازم را نگه می‌دارد؛ بدون
+  متن، caption، شناسه رسانه، token یا داده تماس. log و trace از پالایش عمومی
+  privacy-safe استفاده می‌کنند.
+- آزمون یکپارچه `tests/integration/conversations-api.test.ts` مسیر HTTP واقعی با
+  نشست و PostgreSQL را برای eligibility، دسترسی، retry، snapshot، رسانه، rollback
+  و payload خصوصی outbox بررسی می‌کند. آزمون‌های media همان قرارداد storage را
+  روی fake و PostgreSQL/MinIO نیز اجرا می‌کنند.

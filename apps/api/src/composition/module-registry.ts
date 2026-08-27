@@ -17,6 +17,7 @@ import {
   InventoryModule,
   PostgresInventoryAuthoring,
 } from "../modules/inventory/composition";
+import type { ConversationMediaAccess } from "../modules/media/public";
 import { MediaModule } from "../modules/media/composition";
 import { NotificationsModule } from "../modules/notifications/composition";
 import {
@@ -71,7 +72,13 @@ function createApiCompositionContext(
     environment.DATABASE_URL,
   );
 
+  let conversationMediaAccess: ConversationMediaAccess = async () => false;
   return {
+    authorizeConversationMedia: (input: Parameters<ConversationMediaAccess>[0]) =>
+      conversationMediaAccess(input),
+    setConversationMediaAccess: (access: ConversationMediaAccess) => {
+      conversationMediaAccess = access;
+    },
     checkoutRepository,
     environment,
     identityOptions,
@@ -116,13 +123,23 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "media",
     artifact: MediaModule,
-    compose: ({ environment, productRepository, storeRepository }) =>
-      MediaModule.register(environment, undefined, async (mediaId) => {
-        if (await storeRepository.isMediaPublished(mediaId)) return true;
-        const storeId = await productRepository.findPublishedMediaStoreId(mediaId);
-        if (!storeId) return false;
-        return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
-      }),
+    compose: ({
+      environment,
+      productRepository,
+      storeRepository,
+      authorizeConversationMedia,
+    }) =>
+      MediaModule.register(
+        environment,
+        undefined,
+        async (mediaId) => {
+          if (await storeRepository.isMediaPublished(mediaId)) return true;
+          const storeId = await productRepository.findPublishedMediaStoreId(mediaId);
+          if (!storeId) return false;
+          return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
+        },
+        authorizeConversationMedia,
+      ),
   },
   {
     owner: "store",
@@ -189,7 +206,17 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "conversations",
     artifact: ConversationsModule,
-    compose: () => ConversationsModule,
+    compose: ({
+      environment,
+      productRepository,
+      checkoutRepository,
+      setConversationMediaAccess,
+    }) =>
+      ConversationsModule.register(environment, {
+        products: productRepository,
+        orders: checkoutRepository,
+        onMediaAccessReady: setConversationMediaAccess,
+      }),
   },
   {
     owner: "problem-follow-up",

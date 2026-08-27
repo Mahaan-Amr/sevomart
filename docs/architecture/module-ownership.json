@@ -81,7 +81,13 @@
     "media_variants": "media",
     "platform_outbox_events": "platform",
     "platform_outbox_consumptions": "platform",
-    "reporting_store_publications": "reporting-analytics"
+    "reporting_store_publications": "reporting-analytics",
+    "conversation_threads": "conversations",
+    "conversation_idempotency": "conversations",
+    "conversation_audits": "conversations",
+    "conversation_messages": "conversations",
+    "conversation_snapshots": "conversations",
+    "conversation_snapshot_entries": "conversations"
   },
   "contracts": {
     "@sevo/contracts/platform/v1": "platform",
