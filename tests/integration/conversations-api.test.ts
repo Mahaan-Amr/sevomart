@@ -575,67 +575,119 @@ it("canonicalizes UUID spelling before idempotency and cursor binding", async ()
   ).toHaveLength(1);
 });
 
-it("does not hold a thread transaction during attachment I/O and rechecks access afterwards", async () => {
+it.each(["identity revocation", "claim takeover"])(
+  "does not hold a thread transaction during attachment I/O and fences %s",
+  async (change) => {
+    const f = await fixture();
+    const id = (await f.open()).json().conversationId,
+      mediaId = randomUUID(),
+      key = randomUUID();
+    const storage = f.app.get<MediaStorage>(MEDIA_STORAGE);
+    await storage.put({
+      key: mediaId,
+      purpose: "CONVERSATION_ATTACHMENT",
+      contentType: "image/png",
+      bytes: new Uint8Array([1]),
+      checksum: "test",
+      width: 1,
+      height: 1,
+      ownerSellerId: f.buyer.identityId,
+      ownerReferenceId: id,
+      visibility: "PRIVATE",
+      variants: [
+        {
+          key: randomUUID(),
+          name: "attachment-preview",
+          contentType: "image/webp",
+          bytes: new Uint8Array([1]),
+          width: 1,
+          height: 1,
+        },
+      ],
+    });
+    let release = () => {},
+      entered = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const originalGet = storage.get.bind(storage);
+    const get = vi.spyOn(storage, "get").mockImplementationOnce(async (...args) => {
+      entered();
+      await barrier;
+      return originalGet(...args);
+    });
+    const pending = f.server
+      .inject({
+        method: "POST",
+        url: `/v1/conversations/${id}/messages`,
+        headers: { cookie: f.buyer.cookie, "idempotency-key": key },
+        payload: { content: { type: "MEDIA", mediaId } },
+      })
+      .then((response) => response);
+    await started;
+    const replica = await createApiApp({
+      ...apiTestEnvironment,
+      DEV_OTP_TEST_MOBILES: undefined,
+    });
+    try {
+      const duplicate = await replica
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: "POST",
+          url: `/v1/conversations/${id}/messages`,
+          headers: { cookie: f.buyer.cookie, "idempotency-key": key },
+          payload: { content: { type: "MEDIA", mediaId } },
+        });
+      expect(duplicate.statusCode).toBe(409);
+      expect(duplicate.json().code).toBe("IDEMPOTENCY_IN_PROGRESS");
+      expect(duplicate.headers["retry-after"]).toBe("1");
+      expect(get).toHaveBeenCalledTimes(1);
+      await f.sql.begin(async (sql) => {
+        await sql`select id from conversation_threads where id = ${id} for update nowait`;
+      });
+      if (change === "identity revocation") {
+        await f.sql`update identity_identities set status = 'SUSPENDED' where id = ${f.buyer.identityId}`;
+      } else {
+        await f.sql`update conversation_idempotency set claim_id = ${randomUUID()}, locked_until = now() + interval '60 seconds' where scope = ${`send:${f.buyer.identityId}:${id}`} and key = ${key}`;
+      }
+    } finally {
+      release();
+      get.mockRestore();
+      await replica.close();
+    }
+    expect((await pending).json().code).toBe(
+      change === "identity revocation"
+        ? "IDENTITY_INACTIVE"
+        : "IDEMPOTENCY_IN_PROGRESS",
+    );
+    if (change === "claim takeover")
+      expect(
+        await f.sql`select key from conversation_idempotency where scope = ${`send:${f.buyer.identityId}:${id}`} and key = ${key} and response is null`,
+      ).toHaveLength(1);
+    expect(
+      await f.sql`select id from conversation_messages where conversation_id = ${id}`,
+    ).toHaveLength(0);
+  },
+);
+
+it("recovers an abandoned send claim after its lease expires", async () => {
   const f = await fixture();
   const id = (await f.open()).json().conversationId,
-    mediaId = randomUUID();
-  const storage = f.app.get<MediaStorage>(MEDIA_STORAGE);
-  await storage.put({
-    key: mediaId,
-    purpose: "CONVERSATION_ATTACHMENT",
-    contentType: "image/png",
-    bytes: new Uint8Array([1]),
-    checksum: "test",
-    width: 1,
-    height: 1,
-    ownerSellerId: f.buyer.identityId,
-    ownerReferenceId: id,
-    visibility: "PRIVATE",
-    variants: [
-      {
-        key: randomUUID(),
-        name: "attachment-preview",
-        contentType: "image/webp",
-        bytes: new Uint8Array([1]),
-        width: 1,
-        height: 1,
-      },
-    ],
-  });
-  let release = () => {},
-    entered = () => {};
-  const barrier = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const started = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  const originalGet = storage.get.bind(storage);
-  const get = vi.spyOn(storage, "get").mockImplementation(async (...args) => {
-    entered();
-    await barrier;
-    return originalGet(...args);
-  });
-  const pending = f.server
-    .inject({
-      method: "POST",
-      url: `/v1/conversations/${id}/messages`,
-      headers: { cookie: f.buyer.cookie, "idempotency-key": randomUUID() },
-      payload: { content: { type: "MEDIA", mediaId } },
-    })
-    .then((response) => response);
-  await started;
-  try {
-    await f.sql.begin(async (sql) => {
-      await sql`select id from conversation_threads where id = ${id} for update nowait`;
-    });
-    await f.sql`update identity_identities set status = 'SUSPENDED' where id = ${f.buyer.identityId}`;
-  } finally {
-    release();
-    get.mockRestore();
-  }
-  expect((await pending).json().code).toBe("IDENTITY_INACTIVE");
+    key = randomUUID();
+  const scope = `send:${f.buyer.identityId}:${id}`;
+  await f.sql`insert into conversation_idempotency (scope, key, request_hash, response, claim_id, locked_until) values (${scope}, ${key}, ${"0".repeat(64)}, null, ${randomUUID()}, now() + interval '60 seconds')`;
+  expect((await send(f, id, "تلاش دوباره", key)).json().code).toBe(
+    "IDEMPOTENCY_IN_PROGRESS",
+  );
+  await f.sql`update conversation_idempotency set locked_until = now() - interval '1 second' where scope = ${scope} and key = ${key}`;
+  const sent = await send(f, id, "تلاش دوباره", key);
+  expect(sent.statusCode).toBe(201);
+  expect((await send(f, id, "تلاش دوباره", key)).json()).toEqual(sent.json());
   expect(
-    await f.sql`select id from conversation_messages where conversation_id = ${id}`,
-  ).toHaveLength(0);
+    await f.sql`select claim_id, locked_until from conversation_idempotency where scope = ${scope} and key = ${key}`,
+  ).toEqual([{ claim_id: null, locked_until: null }]);
 });

@@ -23,7 +23,9 @@ model ConversationIdempotency {
   scope       String   @db.VarChar(128)
   key         String   @db.VarChar(200)
   requestHash String   @map("request_hash") @db.Char(64)
-  response    Json     @db.JsonB
+  response    Json?    @db.JsonB
+  claimId     String?  @map("claim_id") @db.Uuid
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(3)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([scope, key])

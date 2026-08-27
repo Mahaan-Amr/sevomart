@@ -128,7 +128,9 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
   خریدار/فروشنده، cursor، denial و هدر idempotency را پوشش می‌دهد.
 - migration `20260827110000__conversations__private-threads` پس از
   `20260827100000__media__conversation-attachments` شش جدول متعلق به گفت‌وگو
-  می‌سازد؛ هیچ جدول دامنه دیگر تغییر نمی‌کند و FK میان دامنه‌ها اضافه نمی‌شود.
+  می‌سازد. migration بعدی `20260827120000__conversations__send-claims` فقط
+  claim موقت ارسال را به جدول idempotency همین دامنه اضافه می‌کند؛ هیچ جدول
+  دامنه دیگر تغییر نمی‌کند و FK میان دامنه‌ها اضافه نمی‌شود.
 - هر دو مسیر `docker compose up --build` و `pnpm dev` همین migration و composer
   را اجرا می‌کنند. dependency، env و port تازه لازم نیست.
 
@@ -152,7 +154,11 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
 - ثبت پیام، نسخه رشته، نتیجه idempotency، audit موفق و outbox یک transaction
   PostgreSQL هستند. خواندن bytes رسانه پیش از بازشدن transaction انجام می‌شود و
   هویت/دسترسی پیش از commit دوباره بررسی می‌شوند. replay موفق به دسترس‌پذیری
-  object storage وابسته نیست. شکست هر write همه آن‌ها را rollback می‌کند. قفل transaction
+  object storage وابسته نیست. claim ارسال پیش از I/O ثبت می‌شود، ۶۰ ثانیه اعتبار
+  دارد و با token مستقل fencing می‌شود؛ درخواست هم‌کلید در همه replicaها in-progress
+  می‌گیرد. claim شکست‌خورده در finally پاک می‌شود و پس از crash با پایان lease قابل
+  بازیابی است. مالک claim منقضی/جایگزین‌شده حق commit ندارد. شکست هر write موفق
+  همه آثار پیام را rollback می‌کند. قفل transaction
   برای کلید تکراری پاسخ in-progress می‌دهد؛ unique tuple مانع رشته تکراری است.
 - snapshot در جدول‌های خصوصی `conversation_snapshots` و
   `conversation_snapshot_entries` فقط شناسه و tuple ترتیب را نگه می‌دارد؛ متن یا
