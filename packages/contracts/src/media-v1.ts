@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { identityIdContract } from "./platform/v1/index";
 import { createJsonSchemaMap } from "./json-schema";
 
 export const mediaIdContract = z.string().uuid().brand<"MediaId">();
@@ -17,6 +18,7 @@ export const MEDIA_UPLOAD_PURPOSES = [
   "PRODUCT_IMAGE",
 ] as const;
 export const MEDIA_VARIANTS = [
+  "attachment-preview",
   "logo-small",
   "logo-large",
   "cover-mobile",
@@ -43,7 +45,32 @@ export const mediaNotFoundErrorContract = z.object({
   correlationId: z.string().min(1),
 });
 
+export const conversationMediaContextIdContract = z.uuid();
+export const conversationMediaUploadInputContract = z
+  .object({ file: z.string().min(1) })
+  .strict();
+export const conversationAttachmentInputContract = z
+  .object({
+    identityId: identityIdContract,
+    conversationId: conversationMediaContextIdContract,
+    mediaId: mediaIdContract,
+  })
+  .strict();
+export const conversationAttachmentResultContract = z.enum([
+  "READY",
+  "MEDIA_NOT_READY",
+  "MESSAGE_REJECTED",
+]);
+export type ConversationAttachmentInput = z.infer<
+  typeof conversationAttachmentInputContract
+>;
+export type ConversationAttachmentResult = z.infer<
+  typeof conversationAttachmentResultContract
+>;
+
 export const mediaV1Schemas = {
+  MediaConversationId: conversationMediaContextIdContract,
+  ConversationMediaUploadInput: conversationMediaUploadInputContract,
   MediaId: mediaIdContract,
   MediaUploadInput: mediaUploadInputContract,
   MediaReference: mediaReferenceContract,
@@ -55,6 +82,8 @@ export function createMediaV1JsonSchemas() {
 }
 
 export const mediaV1Examples = {
+  MediaConversationId: "20000000-0000-4000-8000-000000000002",
+  ConversationMediaUploadInput: { file: "(binary)" },
   MediaId: "6014fdd4-e393-4100-a037-030b781b6637",
   MediaUploadInput: {
     purpose: "STORE_LOGO",

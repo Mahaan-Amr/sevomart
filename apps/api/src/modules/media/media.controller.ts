@@ -13,15 +13,15 @@ import {
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
+  conversationMediaContextIdContract,
   MEDIA_UPLOAD_ACCEPTED_TYPES,
   MEDIA_UPLOAD_MAX_BYTES,
   MEDIA_UPLOAD_MAX_PIXELS,
   mediaIdContract,
   mediaUploadPurposeContract,
   type MediaReference,
-  type MediaUploadPurpose,
 } from "@sevo/contracts/media/v1";
-import { productIdContract, type ProductId } from "@sevo/contracts/platform/v1";
+import { productIdContract } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
 
@@ -31,6 +31,9 @@ import {
   type IdentitySessionReader,
 } from "../identity-access/public";
 import {
+  CONVERSATION_MEDIA_ACCESS,
+  type ConversationMediaAccess,
+  type StoredMediaPurpose,
   MEDIA_STORAGE,
   PUBLISHED_MEDIA_ACCESS,
   SELLER_UPLOAD_RATE_LIMITER,
@@ -55,6 +58,8 @@ type MediaIssueCode =
 @Controller("v1")
 export class MediaController {
   constructor(
+    @Inject(CONVERSATION_MEDIA_ACCESS)
+    private readonly conversationAccess: ConversationMediaAccess,
     @Inject(MEDIA_STORAGE) private readonly storage: MediaStorage,
     @Inject(IDENTITY_SESSION_READER)
     private readonly sessions: IdentitySessionReader,
@@ -76,20 +81,34 @@ export class MediaController {
   ) {
     const productId = productIdContract.safeParse(rawProductId);
     if (!productId.success) throw mediaNotFound(request.id);
-    return this.uploadOwnedMedia(request, productId.data);
+    return this.uploadOwnedMedia(request, productId.data, "PRODUCT_IMAGE");
+  }
+
+  @Post("conversations/:conversationId/media")
+  async uploadConversationAttachment(
+    @Param("conversationId") value: string,
+    @Req() request: FastifyRequest,
+  ) {
+    const identityId = await requireIdentity(request, this.sessions);
+    const parsed = conversationMediaContextIdContract.safeParse(value);
+    if (
+      !parsed.success ||
+      !(await this.conversationAccess({ identityId, conversationId: parsed.data }))
+    )
+      throw mediaNotFound(request.id);
+    return this.uploadOwnedMedia(request, parsed.data, "CONVERSATION_ATTACHMENT");
   }
 
   private async uploadOwnedMedia(
     request: FastifyRequest,
-    ownerReferenceId?: ProductId,
+    ownerReferenceId?: string,
+    fixedPurpose?: StoredMediaPurpose,
   ) {
     const identityId = await requireIdentity(request, this.sessions);
     if (!this.uploadRateLimiter.accept(identityId)) {
       throw mediaError(request.id, "RATE_LIMITED");
     }
-    let purpose: MediaUploadPurpose | undefined = ownerReferenceId
-      ? "PRODUCT_IMAGE"
-      : undefined;
+    let purpose: StoredMediaPurpose | undefined = fixedPurpose;
     let fileName = "";
     let declaredContentType = "";
     let bytes: Buffer | undefined;
@@ -97,12 +116,9 @@ export class MediaController {
       for await (const part of request.parts()) {
         if (part.type === "field" && part.fieldname === "purpose") {
           const parsed = mediaUploadPurposeContract.safeParse(part.value);
-          if (
-            parsed.success &&
-            (!ownerReferenceId || parsed.data === "PRODUCT_IMAGE")
-          ) {
-            purpose = parsed.data;
-          }
+          if (!parsed.success || (fixedPurpose && parsed.data !== fixedPurpose))
+            throw mediaError(request.id, "REQUIRED");
+          purpose = parsed.data;
         } else if (part.type === "file" && part.fieldname === "file") {
           fileName = part.filename;
           declaredContentType = part.mimetype;
@@ -155,15 +171,32 @@ export class MediaController {
     @Res() reply: FastifyReply,
   ) {
     const parsed = mediaIdContract.safeParse(value);
-    const media = parsed.success ? await this.storage.get(parsed.data) : undefined;
+    const media = parsed.success ? await this.storage.inspect(parsed.data) : undefined;
     if (!media) throw mediaNotFound(request.id);
+    const isAttachment = media.purpose === "CONVERSATION_ATTACHMENT";
     const publiclyReadable =
-      media.visibility === "PUBLIC" && (await this.isPublishedMedia(media.key));
-    if (!publiclyReadable) {
+      !isAttachment &&
+      media.visibility === "PUBLIC" &&
+      (await this.isPublishedMedia(media.key));
+    if (isAttachment) {
+      const identityId = await requireIdentity(request, this.sessions);
+      if (
+        !media.ownerReferenceId ||
+        !(await this.conversationAccess({
+          identityId,
+          conversationId: media.ownerReferenceId,
+          ...(media.ownerSellerId === identityId ? {} : { mediaId: media.key }),
+        }))
+      )
+        throw mediaNotFound(request.id);
+    } else if (!publiclyReadable) {
       const identityId = await requireIdentity(request, this.sessions);
       if (media.ownerSellerId !== identityId) throw mediaNotFound(request.id);
     }
-    return reply.type(media.contentType).send(Buffer.from(media.bytes));
+    const readable = await this.storage.get(media.key);
+    if (!readable) throw mediaNotFound(request.id);
+    if (!publiclyReadable) reply.header("cache-control", "private, no-store");
+    return reply.type(readable.contentType).send(Buffer.from(readable.bytes));
   }
 }
 
@@ -202,24 +235,26 @@ async function inspectImage(
 
 async function createVariants(
   id: string,
-  purpose: MediaUploadPurpose,
+  purpose: StoredMediaPurpose,
   bytes: Buffer,
 ): Promise<StoredMediaVariant[]> {
   const definitions =
-    purpose === "STORE_LOGO"
-      ? ([
-          ["logo-small", 128, 128, true],
-          ["logo-large", 512, 512, true],
-        ] as const)
-      : purpose === "STORE_COVER"
+    purpose === "CONVERSATION_ATTACHMENT"
+      ? ([["attachment-preview", 1600, 1600, false]] as const)
+      : purpose === "STORE_LOGO"
         ? ([
-            ["cover-mobile", 960, undefined, false],
-            ["cover-desktop", 1920, undefined, false],
+            ["logo-small", 128, 128, true],
+            ["logo-large", 512, 512, true],
           ] as const)
-        : ([
-            ["product-card", 640, 640, false],
-            ["product-detail", 1600, 1600, false],
-          ] as const);
+        : purpose === "STORE_COVER"
+          ? ([
+              ["cover-mobile", 960, undefined, false],
+              ["cover-desktop", 1920, undefined, false],
+            ] as const)
+          : ([
+              ["product-card", 640, 640, false],
+              ["product-detail", 1600, 1600, false],
+            ] as const);
   return Promise.all(
     definitions.map(async ([name, width, height, lossless]) => {
       const result = await sharp(bytes, { limitInputPixels: MEDIA_UPLOAD_MAX_PIXELS })

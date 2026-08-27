@@ -19,11 +19,13 @@ export class FakeObjectStorage implements ObjectStoragePort {
     const object = this.#objects.get(key);
     if (!object) return undefined;
     const canonical =
-      object.purpose === "STORE_LOGO"
-        ? "logo-large"
-        : object.purpose === "STORE_COVER"
-          ? "cover-desktop"
-          : "product-detail";
+      object.purpose === "CONVERSATION_ATTACHMENT"
+        ? "attachment-preview"
+        : object.purpose === "STORE_LOGO"
+          ? "logo-large"
+          : object.purpose === "STORE_COVER"
+            ? "cover-desktop"
+            : "product-detail";
     const variant = object.variants.find(
       (candidate) => candidate.name === (requestedVariant ?? canonical),
     );
@@ -55,7 +57,11 @@ export class FakeObjectStorage implements ObjectStoragePort {
 
   async makePublic(key: string, ownerSellerId: string): Promise<void> {
     const object = this.#objects.get(key);
-    if (!object || object.ownerSellerId !== ownerSellerId) {
+    if (
+      !object ||
+      object.ownerSellerId !== ownerSellerId ||
+      object.purpose === "CONVERSATION_ATTACHMENT"
+    ) {
       throw new Error("Media is not owned by the publishing seller");
     }
     this.#objects.set(key, { ...object, visibility: "PUBLIC" });
