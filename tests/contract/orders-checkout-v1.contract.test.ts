@@ -1,4 +1,6 @@
 import {
+  orderConversationEligibilityInputContract,
+  orderConversationEligibilityResultContract,
   checkoutPreparationContract,
   checkoutRevisionConflictContract,
   createOrderInputContract,
@@ -73,6 +75,26 @@ const preparation = {
 } as const;
 
 describe("checkout and CreateOrder.v1 contracts", () => {
+  it("limits conversation eligibility to an actor/order/store tuple and a boolean", () => {
+    const input = {
+      identityId: "10000000-0000-4000-8000-000000000001",
+      orderId: ids.order,
+      storeId: ids.store,
+    };
+    expect(orderConversationEligibilityInputContract.parse(input)).toEqual(input);
+    expect(
+      orderConversationEligibilityInputContract.safeParse({ ...input, status: "PAID" })
+        .success,
+    ).toBe(false);
+    expect(orderConversationEligibilityResultContract.parse(true)).toBe(true);
+    expect(orderConversationEligibilityResultContract.parse(false)).toBe(false);
+    expect(
+      orderConversationEligibilityResultContract.safeParse({
+        eligible: true,
+        address: "private",
+      }).success,
+    ).toBe(false);
+  });
   it("accepts only confirmed revisions and returns an immutable review snapshot", () => {
     expect(
       prepareCheckoutInputContract.parse({

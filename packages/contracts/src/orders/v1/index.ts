@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createJsonSchemaMap } from "../../json-schema";
 import { mediaIdContract } from "../../media-v1";
 import {
+  identityIdContract,
   eventActorV1Contract,
   eventEnvelopeV1Contract,
   moneyV1Contract,
@@ -11,6 +12,18 @@ import {
   storeIdContract,
   variantIdContract,
 } from "../../platform/v1/index";
+
+export const orderConversationEligibilityInputContract = z
+  .object({
+    identityId: identityIdContract,
+    orderId: orderIdContract,
+    storeId: storeIdContract,
+  })
+  .strict();
+export const orderConversationEligibilityResultContract = z.boolean();
+export type OrderConversationEligibilityInput = z.infer<
+  typeof orderConversationEligibilityInputContract
+>;
 
 export const ordersV1Operations = {
   listSellerActionableOrders: {

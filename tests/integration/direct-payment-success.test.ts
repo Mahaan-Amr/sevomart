@@ -1,5 +1,8 @@
 import postgres from "postgres";
-import { orderTerminalStatuses } from "@sevo/contracts/orders/v1";
+import {
+  orderConversationEligibilityInputContract,
+  orderTerminalStatuses,
+} from "@sevo/contracts/orders/v1";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
@@ -99,6 +102,43 @@ describe("successful direct payment transaction seam", () => {
     await inventory.onModuleDestroy();
     await sql.end();
   });
+
+  it("recognizes an owned order in its store before payment is confirmed", async () => {
+    const input = orderConversationEligibilityInputContract.parse({
+      identityId: ids.buyer,
+      orderId: ids.order,
+      storeId: ids.store,
+    });
+    expect(await orders.checkConversationOrder(input)).toBe(true);
+  });
+
+  it("denies unrelated buyers, mismatched stores and nonexistent orders without details", async () => {
+    const input = orderConversationEligibilityInputContract.parse({
+      identityId: ids.buyer,
+      orderId: ids.order,
+      storeId: ids.store,
+    });
+    for (const field of ["identityId", "storeId", "orderId"] as const) {
+      const unrelated = orderConversationEligibilityInputContract.parse({
+        ...input,
+        [field]: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      });
+      expect(await orders.checkConversationOrder(unrelated)).toBe(false);
+    }
+  });
+
+  it.each(["PAYMENT_REVIEW", "PAID", "EXPIRED"])(
+    "allows conversation eligibility for an owned %s order",
+    async (status) => {
+      await sql`update order_orders set status = ${status} where id = ${ids.order}`;
+      const input = orderConversationEligibilityInputContract.parse({
+        identityId: ids.buyer,
+        orderId: ids.order,
+        storeId: ids.store,
+      });
+      expect(await orders.checkConversationOrder(input)).toBe(true);
+    },
+  );
 
   it("stores the order reference without a cross-module foreign key", async () => {
     expect(
