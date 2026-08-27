@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 
 import type { RuntimeEnvironment } from "@sevo/config";
-import type { MediaUploadPurpose, MediaVariant } from "@sevo/contracts/media/v1";
+import type { MediaVariant } from "@sevo/contracts/media/v1";
 import { Client } from "minio";
 import postgres, { type Sql } from "postgres";
 
-import type { MediaStorage, StoredMedia } from "../public";
+import type { MediaStorage, StoredMedia, StoredMediaPurpose } from "../public";
 
 type MediaRow = {
   key: string;
-  purpose: MediaUploadPurpose;
+  purpose: StoredMediaPurpose;
   originalContentType: "image/jpeg" | "image/png" | "image/webp";
   checksum: string;
   width: number;
@@ -114,6 +114,7 @@ export class PostgresMinioMediaStorage implements MediaStorage {
         and v.name = coalesce(
           ${requestedVariant ?? null},
           case
+            when a.purpose = 'CONVERSATION_ATTACHMENT' then 'attachment-preview'
             when a.purpose = 'STORE_LOGO' then 'logo-large'
             when a.purpose = 'STORE_COVER' then 'cover-desktop'
             else 'product-detail'
@@ -146,7 +147,7 @@ export class PostgresMinioMediaStorage implements MediaStorage {
     const rows = await this.#sql<
       Array<{
         key: string;
-        purpose: MediaUploadPurpose;
+        purpose: StoredMediaPurpose;
         contentType: "image/jpeg" | "image/png" | "image/webp";
         checksum: string;
         width: number;
@@ -185,6 +186,7 @@ export class PostgresMinioMediaStorage implements MediaStorage {
     const result = await this.#sql`
       update media_assets set visibility = ${visibility}
       where id = ${key} and owner_seller_id = ${ownerSellerId}
+        and (purpose <> 'CONVERSATION_ATTACHMENT' or ${visibility} = 'PRIVATE')
       returning id
     `;
     if (!result.length) throw new Error("Media is not owned by the publishing seller");

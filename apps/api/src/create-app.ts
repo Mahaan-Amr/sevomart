@@ -7,6 +7,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import type { RuntimeEnvironment } from "@sevo/config";
 import { MEDIA_UPLOAD_MAX_BYTES } from "@sevo/contracts/media/v1";
 
+import { serializeApiRequest } from "./http/request-log";
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./http/api-exception.filter";
 import { composeOpenApi } from "./openapi/compose-openapi";
@@ -22,7 +23,10 @@ export async function createApiApp(
   }
 
   const adapter = new FastifyAdapter({
-    logger: environment.NODE_ENV === "test" ? false : { level: "info" },
+    logger:
+      environment.NODE_ENV === "test"
+        ? false
+        : { level: "info", serializers: { req: serializeApiRequest } },
     requestIdHeader: "x-correlation-id",
     genReqId: () => randomUUID(),
   });

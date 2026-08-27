@@ -1,4 +1,9 @@
-import type { MediaUploadPurpose, MediaVariant } from "@sevo/contracts/media/v1";
+import type {
+  ConversationAttachmentInput,
+  ConversationAttachmentResult,
+  MediaUploadPurpose,
+  MediaVariant,
+} from "@sevo/contracts/media/v1";
 
 export type StoredMediaVariant = {
   key: string;
@@ -11,7 +16,7 @@ export type StoredMediaVariant = {
 
 export type StoredMedia = {
   key: string;
-  purpose: MediaUploadPurpose;
+  purpose: StoredMediaPurpose;
   contentType: "image/jpeg" | "image/png" | "image/webp";
   bytes: Uint8Array;
   checksum: string;
@@ -47,3 +52,18 @@ export interface MediaStorage {
 
 /** @deprecated Use the module-owned MediaStorage port. */
 export type ObjectStoragePort = MediaStorage;
+
+export type StoredMediaPurpose = MediaUploadPurpose | "CONVERSATION_ATTACHMENT";
+export const CONVERSATION_MEDIA_ACCESS = Symbol("CONVERSATION_MEDIA_ACCESS");
+export const CONVERSATION_ATTACHMENT_READER = Symbol("CONVERSATION_ATTACHMENT_READER");
+/** No mediaId: active membership for upload/owner preview. With mediaId: membership AND a sent message in that thread. */
+export type ConversationMediaAccess = (input: {
+  identityId: string;
+  conversationId: string;
+  mediaId?: string;
+}) => Promise<boolean>;
+export interface ConversationAttachmentReader {
+  checkConversationAttachment(
+    input: ConversationAttachmentInput,
+  ): Promise<ConversationAttachmentResult>;
+}

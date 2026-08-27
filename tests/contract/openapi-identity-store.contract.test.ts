@@ -23,6 +23,12 @@ const contractSchemas = {
 };
 
 const frozenConsumerOperations = [
+  [
+    "post",
+    "/v1/conversations/{conversationId}/media",
+    "identity",
+    [201, 401, 404, 413, 422, 429, 500],
+  ],
   ["post", "/v1/auth/otp/requests", "none", [202, 422, 429, 500]],
   ["post", "/v1/auth/otp/verifications", "none", [200, 401, 422, 500]],
   ["get", "/v1/auth/session", "identity", [200, 401, 500]],
@@ -64,7 +70,7 @@ const frozenConsumerOperations = [
   ["put", "/v1/seller/store/draft", "identity", [200, 401, 409, 422, 428, 500]],
   ["get", "/v1/store-slugs/{slug}/availability", "identity", [200, 401, 422, 500]],
   ["post", "/v1/seller/media", "identity", [201, 401, 413, 422, 429, 500]],
-  ["get", "/v1/media/{mediaId}", "none", [200, 404, 500]],
+  ["get", "/v1/media/{mediaId}", "none", [200, 401, 404, 500]],
   ["get", "/v1/seller/store/preview", "identity", [200, 401, 404, 500]],
   [
     "post",
@@ -196,7 +202,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "abe42434cf7e0c0a889770f881dfd6696ca93ff635f07d17abdc7809d7278cc6",
+      "8b464a11b76de68454ff1d127d7ede9a50f4b8df2e1bf8a7db30619bbb74c4cf",
     );
   });
 
