@@ -73,6 +73,8 @@ composer را تغییر نمی‌دهد.
 | پرداخت             | `DirectPaymentAttempt.v1`                                                                                                                                                                                        | ساخت/خواندن تلاش و اعمال نتیجه معتبر                                        | سفارش، موجودی و رابط خریدار                                                                                  | sync                 | strong                                            | callback خام و metadata provider ممنوع؛ reference غیرحساس مجاز                        | ساخت تلاش پس از commit سفارش؛ اعمال نتیجه با سفارش و موجودی اتمیک                            | قرارداد producer-owned در Spec checkout                                               |
 | پرداخت             | `DirectPaymentProvider.v1`                                                                                                                                                                                       | adapter توسعه یا provider واقعی                                             | پرداخت                                                                                                       | sync با سرویس بیرونی | نتیجه provider تا verify غیرقطعی                  | callback ورودی فقط در مرز adapter و هرگز در log/event نیست                            | تماس provider خارج از transaction پایگاه داده                                                | انتخاب و adapter واقعی پیش‌نیاز عرضه MVP؛ adapter توسعه فقط local/test است            |
 | پرداخت             | `DirectPaymentAttemptCreated.v1`، `DirectPaymentAttemptDispatched.v1`، `DirectPaymentAttemptConfirmed.v1`، `DirectPaymentAttemptFailed.v1` و `DirectPaymentAttemptReviewRequired.v1`                             | ثبت چرخه تلاش پرداخت                                                        | سفارش، موجودی، اعلان‌ها و گزارش عملیاتی                                                                      | event                | eventual؛ نهایی‌سازی مالی idempotent              | ندارد                                                                                 | همراه تغییر پرداخت در outbox                                                                 | `contract-blocks` schema رخداد؛ `integration-blocks` تطبیق و handoff                  |
+| اختلاف             | `DisputeCase.v1` و `ViolationCase.v1`؛ command/query/errorهای متناظر در `@sevo/contracts/problem-follow-up/v1`                                                                                                   | بازکردن، پاسخ، حل، بازگشایی و پیگیری تخلف                                   | رابط خریدار، فضای کار فروشنده و فضای کار پلتفرم                                                              | sync                 | گذار و deadline در producer strong                | شرح و مدرک فقط در view مجاز پرونده؛ صف کم‌جزئیات فاقد آن‌هاست                         | تغییر پرونده، audit و outbox مالک اتمیک‌اند؛ مجوز عامل داخل transaction بازبینی می‌شود       | `contract-blocks` رابط‌های سه جایگاه؛ `integration-blocks` producer واقعی             |
+| اختلاف             | `DisputeOpened.v1`، `DisputeResponded.v1`، `DisputeResolved.v1`، `DisputeReopened.v1` و `ViolationRecorded.v1`                                                                                                   | ثبت تغییر پرونده اختلاف یا ثبت تخلف                                         | اعلان‌ها، timeline پیگیری و گزارش عملیاتی                                                                    | event                | eventual؛ تحویل حداقل یک‌بار                      | فقط شناسه، وضعیت، deadline و reason code؛ شرح و شناسه/محتوای مدرک ممنوع               | همراه تغییر پرونده در outbox                                                                 | `contract-blocks` schema رخداد؛ `integration-blocks` اعلان و timeline                 |
 | گفت‌وگو            | `ConversationContextEligibility.v1`، thread/message/cursor/errorهای `@sevo/contracts/conversations/v1` و `MessageSent.v1`                                                                                        | producer گفت‌وگو با adapterهای فروشگاه، کالا و سفارش                        | فهرست و رشته خریدار و فروشنده؛ اعلان‌ها فقط از رخداد کمینه                                                   | sync/event           | eligibility و write strong؛ رخداد eventual        | query مجاز فقط محتوای نوشته‌شده کاربر؛ event فاقد متن، رسانه و اطلاعات تماس           | thread/message/idempotency/outbox در transaction مالک؛ eligibility پیش از write بررسی می‌شود | `contract-blocks` producer و دو رابط؛ adapter واقعی `integration-blocks`              |
 | فیدها و دنبال‌کردن | `StoreFollowing.v1`                                                                                                                                                                                              | PUT/DELETE رابطه دنبال‌کردن                                                 | رابط خریدار و projection شمار دنبال‌کنندگان                                                                  | sync                 | strong                                            | `identityId` فقط در command شخصی؛ خروجی فروشنده هویت دنبال‌کننده ندارد                | رابطه، revision مجموعه و outbox اتمیک                                                        | قرارداد producer-owned در Spec کشف                                                    |
 | فیدها و دنبال‌کردن | `StoreFollowActivated.v1` و `StoreFollowDeactivated.v1`                                                                                                                                                          | فعال/غیرفعال‌شدن رابطه                                                      | شمار عمومی و invalidation cursor دنبال‌شده‌ها                                                                | event                | eventual، idempotent و نامنفی                     | ندارد                                                                                 | همراه رابطه و `followSetRevision` در outbox                                                  | قرارداد producer-owned در Spec کشف                                                    |
@@ -137,14 +139,15 @@ projection تعیین می‌کند. اگر projection خراب یا عقب‌م
 | فروشگاه/کالا/موجودی → فیدها  | رخدادهای عمومی نسخه‌دار                                            | `contract-blocks` سپس `integration-blocks` | ranking با fixture ساخته می‌شود؛ projection واقعی منتظر outbox تولیدکننده است.     |
 | دنبال‌کردن/هویت → شمار عمومی | رخداد رابطه و وضعیت هویت                                           | `integration-blocks`                       | شمار فقط active identity + active relation را نشان می‌دهد.                         |
 | سفارش → انجام سفارش          | `OrderBecameActionable.v1`                                         | `contract-blocks` سپس `integration-blocks` | پرداخت و موجودی participantهای بالادست‌اند؛ فقط سفارش handoff را منتشر می‌کند.     |
+| هویت/سفارش → اختلاف          | actor، دسترسی حساس و snapshot سفارش                                | `contract-blocks` سپس `integration-blocks` | صف کم‌جزئیات بدون reveal دیده می‌شود و پرونده state سفارش را تغییر نمی‌دهد.        |
 | فروشگاه/کالا/سفارش → گفت‌وگو | `ConversationContextEligibility.v1`                                | `contract-blocks` سپس `integration-blocks` | قرارداد با fake آزموده می‌شود؛ ساخت رشته واقعی منتظر adapterهای authoritative است. |
 | گفت‌وگو → رابط‌های دو طرف    | thread/message/cursor/error و `MessageSent.v1`                     | `contract-blocks` سپس `integration-blocks` | دو فضا قرارداد مشترک را مصرف می‌کنند و به aggregate داخلی دسترسی ندارند.           |
 
 نقاط fan-out نسخه اول عبارت‌اند از: هویت و actor به هر سه Spec؛ وضعیت فروشگاه به
 کالا، checkout و فید؛ انتشار/قیمت/availability کالا به checkout و فید؛ نتیجه
 پرداخت به سفارش و موجودی؛ `OrderBecameActionable.v1` از سفارش به انجام سفارش؛ و
-eligibility فروشگاه/کالا/سفارش به گفت‌وگو. مالک producer schema را یک‌بار منتشر
-می‌کند و هر مصرف‌کننده contract test خودش را نگه می‌دارد.
+eligibility فروشگاه/کالا/سفارش به گفت‌وگو؛ و هویت/سفارش به اختلاف. مالک producer
+schema را یک‌بار منتشر می‌کند و هر مصرف‌کننده contract test خودش را نگه می‌دارد.
 
 ## گراف مشتق‌شده
 
@@ -163,6 +166,7 @@ flowchart LR
   Pay[پرداخت]
   F[فیدها و دنبال‌کردن]
   Ful[انجام سفارش]
+  PF[اختلاف و پیگیری تخلف]
   Conv[گفت‌وگو]
 
   P -->|C| IA
@@ -180,6 +184,7 @@ flowchart LR
   IA -->|C| Pay
   IA -->|C| F
   IA -->|C| Ful
+  IA -->|C/I| PF
   IA -->|C| Conv
   S -->|C/I| C
   M -->|C/I| C
@@ -192,6 +197,7 @@ flowchart LR
   C -->|C/I| F
   I -->|C/I| F
   O -->|C/I| Ful
+  O -->|C/I| PF
   S -->|C/I| Conv
   C -->|C/I| Conv
   O -->|C/I| Conv
