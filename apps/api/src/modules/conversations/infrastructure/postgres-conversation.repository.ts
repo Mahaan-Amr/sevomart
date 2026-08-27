@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql } from "postgres";
+import postgres, { type JSONValue, type Sql } from "postgres";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import {
   conversationMessageV1Contract,
@@ -8,6 +8,7 @@ import {
 } from "@sevo/contracts/conversations/v1";
 import {
   ConversationFault,
+  type ConversationMutation,
   type ConversationRepository,
   type ConversationSnapshot,
   type ConversationSnapshotEntry,
@@ -23,7 +24,10 @@ export class PostgresConversationRepository implements ConversationRepository {
     await this.#sql.end();
   }
   async read(conversationId: string) {
-    const rows = await this.#sql<StoredConversation[]>`
+    return this.readThread(this.#sql, conversationId);
+  }
+  private async readThread(sql: Sql, conversationId: string) {
+    const rows = await sql<StoredConversation[]>`
       select id as "conversationId", buyer_identity_id as "buyerIdentityId", seller_identity_id as "sellerIdentityId", context, created_at as "createdAt", updated_at as "updatedAt", version
       from conversation_threads where id = ${conversationId}
     `;
@@ -107,24 +111,27 @@ export class PostgresConversationRepository implements ConversationRepository {
     validateContent: () => Promise<void>,
   ) {
     const scope = `send:${command.identityId}:${command.conversationId}`;
+    // External storage I/O must not hold a database transaction or thread lock.
+    // Committed replays need live access, but do not depend on storage availability.
+    if (!(await this.readIdempotency(this.#sql, scope, command.key))) {
+      const thread = await this.read(command.conversationId);
+      if (!thread) throw new ConversationFault("CONVERSATION_NOT_FOUND");
+      await authorize(thread);
+      await validateContent();
+    }
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const [lock] =
-        await sql`select pg_try_advisory_xact_lock(hashtextextended(${scope + ":" + command.key}, 0)) as acquired`;
-      if (!lock?.acquired) throw new ConversationFault("IDEMPOTENCY_IN_PROGRESS");
+      await this.lockIdempotency(sql, scope, command.key);
       const [thread] = await sql<
         StoredConversation[]
       >`select id as "conversationId", buyer_identity_id as "buyerIdentityId", seller_identity_id as "sellerIdentityId", context, created_at as "createdAt", updated_at as "updatedAt", version from conversation_threads where id = ${command.conversationId} for update`;
       if (!thread) throw new ConversationFault("CONVERSATION_NOT_FOUND");
       const senderRole = await authorize(thread);
-      const [previous] =
-        await sql`select request_hash, response from conversation_idempotency where scope = ${scope} and key = ${command.key}`;
-      if (previous) {
-        if (previous.request_hash !== command.requestHash)
-          throw new ConversationFault("IDEMPOTENCY_CONFLICT");
-        return conversationMessageV1Contract.parse(previous.response);
-      }
-      await validateContent();
+      const previous = await this.readIdempotency(sql, scope, command.key);
+      if (previous)
+        return conversationMessageV1Contract.parse(
+          replayResponse(previous, command.requestHash),
+        );
       const [updated] = await sql<
         { version: number; updatedAt: Date }[]
       >`update conversation_threads set version = version + 1, updated_at = greatest(clock_timestamp(), updated_at + interval '1 millisecond') where id = ${command.conversationId} returning version, updated_at as "updatedAt"`;
@@ -139,7 +146,7 @@ export class PostgresConversationRepository implements ConversationRepository {
         createdAt: updated.updatedAt.toISOString(),
       });
       await sql`insert into conversation_messages (id, conversation_id, sender_role, content, created_at) values (${response.messageId}, ${command.conversationId}, ${senderRole}, ${sql.json(command.content)}, ${updated.updatedAt})`;
-      await sql`insert into conversation_idempotency (scope, key, request_hash, response) values (${scope}, ${command.key}, ${command.requestHash}, ${sql.json(response)})`;
+      await this.storeIdempotency(sql, scope, command, response);
       await sql`insert into conversation_audits (id, identity_id, conversation_id, operation, outcome, correlation_id) values (${randomUUID()}, ${command.identityId}, ${command.conversationId}, 'SendMessage.v1', 'SUCCESS', ${command.correlationId})`;
       await enqueueOutboxEvent(
         sql,
@@ -166,22 +173,23 @@ export class PostgresConversationRepository implements ConversationRepository {
   }
   async open(
     command: Parameters<ConversationRepository["open"]>[0],
-    authorize: () => Promise<void>,
+    resolveSeller: Parameters<ConversationRepository["open"]>[1],
   ) {
     const scope = `open:${command.identityId}`;
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const [lock] =
-        await sql`select pg_try_advisory_xact_lock(hashtextextended(${scope + ":" + command.key}, 0)) as acquired`;
-      if (!lock?.acquired) throw new ConversationFault("IDEMPOTENCY_IN_PROGRESS");
-      await authorize();
-      const [previous] =
-        await sql`select request_hash, response from conversation_idempotency where scope = ${scope} and key = ${command.key}`;
+      await this.lockIdempotency(sql, scope, command.key);
+      const previous = await this.readIdempotency(sql, scope, command.key);
       if (previous) {
-        if (previous.request_hash !== command.requestHash)
-          throw new ConversationFault("IDEMPOTENCY_CONFLICT");
-        return conversationThreadV1Contract.parse(previous.response);
+        const response = conversationThreadV1Contract.parse(previous.response);
+        const thread = await this.readThread(sql, response.conversationId);
+        if (!thread) throw new ConversationFault("CONVERSATION_NOT_FOUND");
+        await resolveSeller(thread);
+        return conversationThreadV1Contract.parse(
+          replayResponse(previous, command.requestHash),
+        );
       }
+      const sellerIdentityId = await resolveSeller();
       const context = command.context;
       const referenceId =
         context.kind === "PRODUCT"
@@ -191,7 +199,7 @@ export class PostgresConversationRepository implements ConversationRepository {
             : context.storeId;
       const [row] = await sql<StoredConversation[]>`
         insert into conversation_threads (id, buyer_identity_id, seller_identity_id, store_id, context_kind, context_reference_id, context)
-        values (${randomUUID()}, ${command.identityId}, ${command.sellerIdentityId}, ${context.storeId}, ${context.kind}, ${referenceId}, ${sql.json(context)})
+        values (${randomUUID()}, ${command.identityId}, ${sellerIdentityId}, ${context.storeId}, ${context.kind}, ${referenceId}, ${sql.json(context)})
         on conflict (buyer_identity_id, seller_identity_id, store_id, context_kind, context_reference_id) do update set id = conversation_threads.id
         returning id as "conversationId", context, created_at as "createdAt", updated_at as "updatedAt"
       `;
@@ -204,9 +212,35 @@ export class PostgresConversationRepository implements ConversationRepository {
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       });
-      await sql`insert into conversation_idempotency (scope, key, request_hash, response) values (${scope}, ${command.key}, ${command.requestHash}, ${sql.json(response)})`;
+      await this.storeIdempotency(sql, scope, command, response);
       await sql`insert into conversation_audits (id, identity_id, conversation_id, operation, outcome, correlation_id) values (${randomUUID()}, ${command.identityId}, ${row.conversationId}, 'OpenConversation.v1', 'SUCCESS', ${command.correlationId})`;
       return response;
     });
   }
+  private async lockIdempotency(sql: Sql, scope: string, key: string) {
+    const [lock] =
+      await sql`select pg_try_advisory_xact_lock(hashtextextended(${scope + ":" + key}, 0)) as acquired`;
+    if (!lock?.acquired) throw new ConversationFault("IDEMPOTENCY_IN_PROGRESS");
+  }
+  private async readIdempotency(sql: Sql, scope: string, key: string) {
+    const [record] = await sql<
+      IdempotencyRecord[]
+    >`select request_hash as "requestHash", response from conversation_idempotency where scope = ${scope} and key = ${key}`;
+    return record;
+  }
+  private async storeIdempotency(
+    sql: Sql,
+    scope: string,
+    command: ConversationMutation,
+    response: JSONValue,
+  ) {
+    await sql`insert into conversation_idempotency (scope, key, request_hash, response) values (${scope}, ${command.key}, ${command.requestHash}, ${sql.json(response)})`;
+  }
+}
+
+type IdempotencyRecord = { requestHash: string; response: JSONValue };
+function replayResponse(record: IdempotencyRecord, requestHash: string) {
+  if (record.requestHash !== requestHash)
+    throw new ConversationFault("IDEMPOTENCY_CONFLICT");
+  return record.response;
 }

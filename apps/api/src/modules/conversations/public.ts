@@ -71,8 +71,7 @@ export interface ConversationRepository {
   open(
     command: ConversationMutation & {
       context: ConversationContextV1;
-      sellerIdentityId: string;
     },
-    authorize: () => Promise<void>,
+    resolveSeller: (existing?: StoredConversation) => Promise<string>,
   ): Promise<ConversationThreadV1>;
 }

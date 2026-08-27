@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { conversationThreadV1Contract } from "@sevo/contracts/conversations/v1";
 import { createApiApp } from "../../apps/api/src/create-app";
 import {
@@ -543,4 +543,99 @@ it("does not reuse a messages cursor in another accessible conversation", async 
   });
   expect(response.statusCode).toBe(400);
   expect(response.json().code).toBe("INVALID_CURSOR");
+});
+
+it("replays a successful open after publication eligibility changes", async () => {
+  const f = await fixture(),
+    key = randomUUID();
+  const opened = await f.open(key);
+  expect(opened.statusCode).toBe(200);
+  await f.sql`update store_stores set status = 'DRAFT' where id = ${f.storeId}`;
+  const replay = await f.open(key);
+  expect(replay.statusCode).toBe(200);
+  expect(replay.json()).toEqual(opened.json());
+  expect((await f.open()).json().code).toBe("CONTEXT_UNAVAILABLE");
+});
+
+it("canonicalizes UUID spelling before idempotency and cursor binding", async () => {
+  const f = await fixture(),
+    key = randomUUID();
+  const opened = await f.open(key);
+  expect(
+    (await f.open(key, { kind: "STORE", storeId: f.storeId.toUpperCase() })).json(),
+  ).toEqual(opened.json());
+  const id = opened.json().conversationId,
+    sendKey = randomUUID();
+  const sent = await send(f, id, "یک پیام", sendKey);
+  expect((await send(f, id.toUpperCase(), "یک پیام", sendKey)).json()).toEqual(
+    sent.json(),
+  );
+  expect(
+    await f.sql`select id from conversation_messages where conversation_id = ${id}`,
+  ).toHaveLength(1);
+});
+
+it("does not hold a thread transaction during attachment I/O and rechecks access afterwards", async () => {
+  const f = await fixture();
+  const id = (await f.open()).json().conversationId,
+    mediaId = randomUUID();
+  const storage = f.app.get<MediaStorage>(MEDIA_STORAGE);
+  await storage.put({
+    key: mediaId,
+    purpose: "CONVERSATION_ATTACHMENT",
+    contentType: "image/png",
+    bytes: new Uint8Array([1]),
+    checksum: "test",
+    width: 1,
+    height: 1,
+    ownerSellerId: f.buyer.identityId,
+    ownerReferenceId: id,
+    visibility: "PRIVATE",
+    variants: [
+      {
+        key: randomUUID(),
+        name: "attachment-preview",
+        contentType: "image/webp",
+        bytes: new Uint8Array([1]),
+        width: 1,
+        height: 1,
+      },
+    ],
+  });
+  let release = () => {},
+    entered = () => {};
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const originalGet = storage.get.bind(storage);
+  const get = vi.spyOn(storage, "get").mockImplementation(async (...args) => {
+    entered();
+    await barrier;
+    return originalGet(...args);
+  });
+  const pending = f.server
+    .inject({
+      method: "POST",
+      url: `/v1/conversations/${id}/messages`,
+      headers: { cookie: f.buyer.cookie, "idempotency-key": randomUUID() },
+      payload: { content: { type: "MEDIA", mediaId } },
+    })
+    .then((response) => response);
+  await started;
+  try {
+    await f.sql.begin(async (sql) => {
+      await sql`select id from conversation_threads where id = ${id} for update nowait`;
+    });
+    await f.sql`update identity_identities set status = 'SUSPENDED' where id = ${f.buyer.identityId}`;
+  } finally {
+    release();
+    get.mockRestore();
+  }
+  expect((await pending).json().code).toBe("IDENTITY_INACTIVE");
+  expect(
+    await f.sql`select id from conversation_messages where conversation_id = ${id}`,
+  ).toHaveLength(0);
 });

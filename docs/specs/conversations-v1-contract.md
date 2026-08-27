@@ -135,6 +135,10 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
 
 ## ۸. اجرای producer و نگهداری
 
+- شناسه‌های UUID در مرز سرویس به حروف کوچک canonical می‌شوند تا تغییر شکل
+  حروف، scope idempotency یا cursor تازه‌ای برای همان منبع نسازد. replay موفق
+  بازکردن رشته فقط هویت و دسترسی زنده را می‌خواهد؛ خارج‌شدن زمینه از انتشار
+  مانع بازیابی پاسخ قبلی نیست. ساخت با کلید تازه همچنان eligibility را می‌خواهد.
 - خواندن فروشگاه از `StoreAuthoritativeRead`، وضعیت فروشندگی از `SellerAccessRead`،
   کالا از `ProductAuthoritativeRead` و سفارش از `OrderConversationEligibility`
   انجام می‌شود. eligibility سفارش به وضعیت پرداخت وابسته نیست.
@@ -146,7 +150,9 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
   `mediaId` دسترسی دارد. ترکیب دو ماژول در composer مرکزی و با پیش‌فرض deny انجام
   می‌شود؛ هیچ ماژولی جدول دیگری را نمی‌خواند.
 - ثبت پیام، نسخه رشته، نتیجه idempotency، audit موفق و outbox یک transaction
-  PostgreSQL هستند. شکست هر write همه آن‌ها را rollback می‌کند. قفل transaction
+  PostgreSQL هستند. خواندن bytes رسانه پیش از بازشدن transaction انجام می‌شود و
+  هویت/دسترسی پیش از commit دوباره بررسی می‌شوند. replay موفق به دسترس‌پذیری
+  object storage وابسته نیست. شکست هر write همه آن‌ها را rollback می‌کند. قفل transaction
   برای کلید تکراری پاسخ in-progress می‌دهد؛ unique tuple مانع رشته تکراری است.
 - snapshot در جدول‌های خصوصی `conversation_snapshots` و
   `conversation_snapshot_entries` فقط شناسه و tuple ترتیب را نگه می‌دارد؛ متن یا

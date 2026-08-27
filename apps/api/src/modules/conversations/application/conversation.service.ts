@@ -95,22 +95,24 @@ export class ConversationService {
     const idempotency = conversationIdempotencyKeyContract.safeParse(key);
     if (!input.success || !idempotency.success)
       throw new ConversationFault("FORBIDDEN_CONTEXT");
-    const sellerIdentityId = await this.eligible(identityId, input.data.context);
+    const context = canonicalContext(input.data.context);
     return this.repository.open(
       {
         identityId,
-        sellerIdentityId,
-        context: input.data.context,
+        context,
         key: idempotency.data,
         requestHash: createHash("sha256")
-          .update(JSON.stringify(input.data))
+          .update(JSON.stringify({ context }))
           .digest("hex"),
         correlationId: request.correlationId,
       },
-      async () => {
+      async (existing) => {
         await this.actor(request);
-        if ((await this.eligible(identityId, input.data.context)) !== sellerIdentityId)
-          throw new ConversationFault("CONTEXT_UNAVAILABLE");
+        if (existing) {
+          await this.role(identityId, existing);
+          return existing.sellerIdentityId;
+        }
+        return this.eligible(identityId, context);
       },
     );
   }
@@ -121,12 +123,17 @@ export class ConversationService {
     key: unknown,
   ) {
     const identityId = await this.actor(request);
-    const id = conversationIdContract.safeParse(value);
+    const id = conversationIdContract.safeParse(
+      typeof value === "string" ? value.toLowerCase() : value,
+    );
     if (!id.success) throw new ConversationFault("CONVERSATION_NOT_FOUND");
     const input = sendConversationMessageInputV1Contract.safeParse(content);
     const idempotency = conversationIdempotencyKeyContract.safeParse(key);
     if (!input.success || !idempotency.success)
       throw new ConversationFault("MESSAGE_REJECTED");
+    if (input.data.content.type === "MEDIA")
+      input.data.content.mediaId =
+        input.data.content.mediaId.toLowerCase() as typeof input.data.content.mediaId;
     return this.repository.send(
       {
         identityId,
@@ -165,7 +172,9 @@ export class ConversationService {
     const operation = value === undefined ? "THREADS" : "MESSAGES";
     let conversationId: string | undefined;
     if (value !== undefined) {
-      const id = conversationIdContract.safeParse(value);
+      const id = conversationIdContract.safeParse(
+        typeof value === "string" ? value.toLowerCase() : value,
+      );
       const thread = id.success ? await this.repository.read(id.data) : undefined;
       if (!thread) throw new ConversationFault("CONVERSATION_NOT_FOUND");
       await this.role(identityId, thread);
@@ -277,7 +286,9 @@ export class ConversationService {
   }
   async read(request: ConversationRequest, value: unknown) {
     const identityId = await this.actor(request);
-    const id = conversationIdContract.safeParse(value);
+    const id = conversationIdContract.safeParse(
+      typeof value === "string" ? value.toLowerCase() : value,
+    );
     const thread = id.success ? await this.repository.read(id.data) : undefined;
     if (!thread) throw new ConversationFault("CONVERSATION_NOT_FOUND");
     const viewerRole = await this.role(identityId, thread);
@@ -297,4 +308,17 @@ export class ConversationService {
       updatedAt: thread.updatedAt.toISOString(),
     });
   }
+}
+
+function canonicalContext(context: ConversationContextV1): ConversationContextV1 {
+  return openConversationInputV1Contract.parse({
+    context: {
+      ...context,
+      storeId: context.storeId.toLowerCase(),
+      ...(context.kind === "PRODUCT"
+        ? { productId: context.productId.toLowerCase() }
+        : {}),
+      ...(context.kind === "ORDER" ? { orderId: context.orderId.toLowerCase() } : {}),
+    },
+  }).context;
 }
