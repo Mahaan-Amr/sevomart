@@ -226,15 +226,20 @@ export class PostgresConversationRepository implements ConversationRepository {
   }
   private async claimSend(scope: string, command: ConversationMutation) {
     const claimId = randomUUID();
-    const claimed = await this
-      .#sql`insert into conversation_idempotency (scope, key, request_hash, response, claim_id, locked_until)
+    return this.#sql.begin(async (transaction) => {
+      const sql = transaction as unknown as Sql;
+      // Check before the UPSERT: an active sender may already lock the claim row.
+      await this.lockIdempotency(sql, scope, command.key);
+      const claimed =
+        await sql`insert into conversation_idempotency (scope, key, request_hash, response, claim_id, locked_until)
       values (${scope}, ${command.key}, ${command.requestHash}, null, ${claimId}, clock_timestamp() + interval '60 seconds')
       on conflict (scope, key) do update set request_hash = excluded.request_hash, claim_id = excluded.claim_id, locked_until = excluded.locked_until
       where conversation_idempotency.response is null and conversation_idempotency.locked_until <= clock_timestamp()
       returning claim_id`;
-    if (claimed.length) return claimId;
-    if (await this.readIdempotency(this.#sql, scope, command.key)) return undefined;
-    throw new ConversationFault("IDEMPOTENCY_IN_PROGRESS");
+      if (claimed.length) return claimId;
+      if (await this.readIdempotency(sql, scope, command.key)) return undefined;
+      throw new ConversationFault("IDEMPOTENCY_IN_PROGRESS");
+    });
   }
   private async requireSendClaim(
     sql: Sql,

@@ -691,3 +691,34 @@ it("recovers an abandoned send claim after its lease expires", async () => {
     await f.sql`select claim_id, locked_until from conversation_idempotency where scope = ${scope} and key = ${key}`,
   ).toEqual([{ claim_id: null, locked_until: null }]);
 });
+
+it("returns in-progress without waiting behind a committing claim row", async () => {
+  const f = await fixture();
+  const id = (await f.open()).json().conversationId,
+    key = randomUUID();
+  const scope = `send:${f.buyer.identityId}:${id}`;
+  await f.sql`insert into conversation_idempotency (scope, key, request_hash, response, claim_id, locked_until) values (${scope}, ${key}, ${"0".repeat(64)}, null, ${randomUUID()}, now() + interval '60 seconds')`;
+  let pending: ReturnType<typeof send> | undefined;
+  try {
+    await f.sql.begin(async (sql) => {
+      await sql`select pg_advisory_xact_lock(hashtextextended(${scope + ":" + key}, 0))`;
+      await sql`select key from conversation_idempotency where scope = ${scope} and key = ${key} for update`;
+      pending = send(f, id, "پیام در حال ثبت", key);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const result = await Promise.race([
+          pending,
+          new Promise<undefined>((resolve) => {
+            timer = setTimeout(() => resolve(undefined), 1500);
+          }),
+        ]);
+        expect(result?.statusCode).toBe(409);
+        expect(result?.json().code).toBe("IDEMPOTENCY_IN_PROGRESS");
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+  } finally {
+    await pending;
+  }
+});
