@@ -5,6 +5,7 @@ import {
   sellerApplicationV1Paths,
   platformSellerApplicationV1Paths,
   platformAgentAuthV1Paths,
+  platformAccessV1Paths,
 } from "@sevo/contracts/identity-access/v1";
 
 import {
@@ -19,6 +20,104 @@ const retryAfterHeader = {
     schema: { type: "string" as const },
   },
 };
+
+const idempotencyHeaderParameters = [
+  {
+    name: "Idempotency-Key",
+    schema: "IdempotencyKey",
+    example: identityAccessV1Examples.IdempotencyKey,
+    required: true,
+  },
+] as const;
+
+const platformAccessGrantPathParameter = {
+  name: "grantId",
+  schema: "PlatformAccessGrantId",
+  example: identityAccessV1Examples.PlatformAccessGrantId,
+} as const;
+
+const platformAccessListQueryParameters = [
+  {
+    name: "subjectIdentityId",
+    schema: "PlatformAccessSubjectIdentityId",
+    example: identityAccessV1Examples.PlatformAccessSubjectIdentityId,
+    required: false,
+  },
+  {
+    name: "status",
+    schema: "PlatformAccessStatus",
+    example: identityAccessV1Examples.PlatformAccessStatus,
+    required: false,
+  },
+  {
+    name: "cursor",
+    schema: "PlatformAccessCursor",
+    example: identityAccessV1Examples.PlatformAccessCursor,
+    required: false,
+  },
+  {
+    name: "limit",
+    schema: "PlatformAccessPageLimit",
+    example: identityAccessV1Examples.PlatformAccessPageLimit,
+    required: false,
+  },
+] as const;
+
+const platformAccessAuditQueryParameters = [
+  {
+    name: "grantId",
+    schema: "PlatformAccessGrantId",
+    example: identityAccessV1Examples.PlatformAccessGrantId,
+    required: false,
+  },
+  {
+    name: "actorIdentityId",
+    schema: "PlatformAccessSubjectIdentityId",
+    example: identityAccessV1Examples.PlatformAccessSubjectIdentityId,
+    required: false,
+  },
+  ...platformAccessListQueryParameters.slice(2),
+] as const;
+
+const platformAccessMutationResponses = [
+  { status: 200, schema: "PlatformAccessGrant" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 404, schema: "PlatformAccessError" },
+  { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
+
+const platformAccessRejectionResponses = [
+  { status: 200, schema: "PlatformAccessRejection" },
+  ...platformAccessMutationResponses.slice(1),
+] as const;
+
+const platformAccessListResponses = [
+  { status: 200, schema: "PlatformAccessGrantPage" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
+
+const platformAccessRequestResponses = [
+  { status: 202, schema: "PlatformAccessGrant" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 409, schema: "PlatformAccessError", headers: retryAfterHeader },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
+
+const platformAccessAuditResponses = [
+  { status: 200, schema: "PlatformAccessAuditPage" },
+  { status: 401, schema: "UnauthorizedError" },
+  { status: 403, schema: "PlatformAccessError" },
+  { status: 422, schema: "ValidationError" },
+  { status: 500, schema: "InternalServerError" },
+] as const;
 
 const operations = [
   {
@@ -84,14 +183,7 @@ const operations = [
     path: sellerApplicationV1Paths.submit,
     tag: "identity-access",
     auth: "identity-session",
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "SellerApplicationInput",
       example: identityAccessV1Examples.SellerApplicationInput,
@@ -146,14 +238,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "ResubmitSellerApplication",
       example: identityAccessV1Examples.ResubmitSellerApplication,
@@ -182,14 +267,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "WithdrawSellerApplication",
       example: identityAccessV1Examples.WithdrawSellerApplication,
@@ -308,14 +386,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "RequestSellerApplicationInformation",
       example: identityAccessV1Examples.RequestSellerApplicationInformation,
@@ -341,14 +412,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "ApproveSellerApplication",
       example: identityAccessV1Examples.ApproveSellerApplication,
@@ -374,14 +438,7 @@ const operations = [
       schema: "SellerApplicationId",
       example: identityAccessV1Examples.SellerApplicationId,
     },
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "IdempotencyKey",
-        example: identityAccessV1Examples.IdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "RejectSellerApplication",
       example: identityAccessV1Examples.RejectSellerApplication,
@@ -396,6 +453,249 @@ const operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    operationId: "requestResponsibilityGrant",
+    method: "post",
+    path: platformAccessV1Paths.responsibilityGrants,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "ResponsibilityGrantRequestInput",
+      example: identityAccessV1Examples.ResponsibilityGrantRequestInput,
+    },
+    responses: platformAccessRequestResponses,
+  },
+  {
+    operationId: "listResponsibilityGrants",
+    method: "get",
+    path: platformAccessV1Paths.responsibilityGrants,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    queryParameters: platformAccessListQueryParameters,
+    responses: platformAccessListResponses,
+  },
+  {
+    operationId: "approveResponsibilityGrant",
+    method: "post",
+    path: platformAccessV1Paths.responsibilityGrantApproval,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessApprovalInput",
+      example: identityAccessV1Examples.PlatformAccessApprovalInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "revokeResponsibilityGrant",
+    method: "post",
+    path: platformAccessV1Paths.responsibilityGrantRevocation,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRevocationInput",
+      example: identityAccessV1Examples.PlatformAccessRevocationInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "rejectResponsibilityGrant",
+    method: "post",
+    path: platformAccessV1Paths.responsibilityGrantRejection,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRejectionInput",
+      example: identityAccessV1Examples.PlatformAccessRejectionInput,
+    },
+    responses: platformAccessRejectionResponses,
+  },
+  {
+    operationId: "requestSensitiveAccess",
+    method: "post",
+    path: platformAccessV1Paths.sensitiveAccessGrants,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "SensitiveAccessRequestInput",
+      example: identityAccessV1Examples.SensitiveAccessRequestInput,
+    },
+    responses: platformAccessRequestResponses,
+  },
+  {
+    operationId: "listSensitiveAccessGrants",
+    method: "get",
+    path: platformAccessV1Paths.sensitiveAccessGrants,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    queryParameters: platformAccessListQueryParameters,
+    responses: platformAccessListResponses,
+  },
+  {
+    operationId: "approveSensitiveAccess",
+    method: "post",
+    path: platformAccessV1Paths.sensitiveAccessApproval,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessApprovalInput",
+      example: identityAccessV1Examples.PlatformAccessApprovalInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "revokeSensitiveAccess",
+    method: "post",
+    path: platformAccessV1Paths.sensitiveAccessRevocation,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRevocationInput",
+      example: identityAccessV1Examples.PlatformAccessRevocationInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "rejectSensitiveAccess",
+    method: "post",
+    path: platformAccessV1Paths.sensitiveAccessRejection,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRejectionInput",
+      example: identityAccessV1Examples.PlatformAccessRejectionInput,
+    },
+    responses: platformAccessRejectionResponses,
+  },
+  {
+    operationId: "requestEmergencyAccess",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessGrants,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "EmergencyAccessRequestInput",
+      example: identityAccessV1Examples.EmergencyAccessRequestInput,
+    },
+    responses: platformAccessRequestResponses,
+  },
+  {
+    operationId: "listEmergencyAccessGrants",
+    method: "get",
+    path: platformAccessV1Paths.emergencyAccessGrants,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    queryParameters: platformAccessListQueryParameters,
+    responses: platformAccessListResponses,
+  },
+  {
+    operationId: "approveEmergencyAccess",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessApproval,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessApprovalInput",
+      example: identityAccessV1Examples.PlatformAccessApprovalInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "activateEmergencyAccess",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessActivation,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "EmergencyAccessActivationInput",
+      example: identityAccessV1Examples.EmergencyAccessActivationInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "revokeEmergencyAccess",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessRevocation,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRevocationInput",
+      example: identityAccessV1Examples.PlatformAccessRevocationInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "closeEmergencyAccess",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessClosure,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "EmergencyAccessClosureInput",
+      example: identityAccessV1Examples.EmergencyAccessClosureInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "rejectEmergencyAccess",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessRejection,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "PlatformAccessRejectionInput",
+      example: identityAccessV1Examples.PlatformAccessRejectionInput,
+    },
+    responses: platformAccessRejectionResponses,
+  },
+  {
+    operationId: "completeEmergencyAccessReview",
+    method: "post",
+    path: platformAccessV1Paths.emergencyAccessReview,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: platformAccessGrantPathParameter,
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "EmergencyAccessReviewInput",
+      example: identityAccessV1Examples.EmergencyAccessReviewInput,
+    },
+    responses: platformAccessMutationResponses,
+  },
+  {
+    operationId: "listPlatformAccessAudit",
+    method: "get",
+    path: platformAccessV1Paths.audit,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    queryParameters: platformAccessAuditQueryParameters,
+    responses: platformAccessAuditResponses,
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 const responseMetadata = {
@@ -406,8 +706,8 @@ const responseMetadata = {
     204: "Session ended",
     401: "Identity session is missing or invalid",
     403: "Platform permission is missing or self-review is forbidden",
-    404: "Seller application was not found",
-    409: "Seller application command conflicts with current state",
+    404: "The requested application or access grant was not found",
+    409: "The command conflicts with the current state",
     429: "Request rate limit exceeded",
     422: "Request validation failed",
     500: "Unexpected server error",
@@ -443,7 +743,7 @@ export const contribute_identity_access_openApi: OpenApiContributor = (document)
     in: "cookie",
     name: "sevo_platform_session",
     description:
-      "HTTP-only platform-agent session with a live seller-application review grant.",
+      "HTTP-only platform-agent session; every operation rechecks its live responsibility and scoped access grants.",
   };
   return addModuleOpenApiContract(
     document,
