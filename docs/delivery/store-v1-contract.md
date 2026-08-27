@@ -9,8 +9,9 @@
 ## قرارداد قابل اجرا
 
 مرجع شکل داده `@sevo/contracts/store/v1` است. schemaهای خواندن داخلی، نتیجه
-فعال‌بودن فروشندگی، خطاهای داخلی و سه رخداد، همراه مثال معتبر در OpenAPI نیز
-منتشر می‌شوند. ثبت schema داخلی به معنی ایجاد endpoint عمومی برای آن نیست.
+فعال‌بودن فروشندگی، خطاهای داخلی و سه رخداد در OpenAPI نیز منتشر می‌شوند؛
+مثال‌های معتبر در بسته قرارداد موجودند. ثبت schema داخلی به معنی ایجاد
+endpoint عمومی برای آن نیست.
 
 - `StoreAuthoritativeSnapshotV1`: شناسه، مالک، slug، هویت نمایشی، revision،
   publicationVersion، وضعیت انتشار، روش‌های ارسال و سیاست مرجوعی نسخه‌دار و
@@ -68,6 +69,17 @@
   مشاهده مجوز فعال/تعلیق/لغو بدون تغییر revision فروشگاه و خواندن تراکنشی.
 - مسیر native از runnerهای رسمی تست و مسیر Docker با Compose همان کد بررسی
   می‌شوند؛ فایل‌های مرکزی runtime و تست تغییر نمی‌کنند.
+
+نتیجه اجرای محلی در ۲۰۲۶-۰۸-۲۷: `pnpm test` سبز با ۹۳ unit، ۹۱ contract،
+۱۱۰ integration و ۱۳۶ E2E؛ `format:check`، `lint`، `typecheck` و `build` نیز
+سبزند. بررسی E2E چهار viewport و حالت‌های RTL، keyboard، کنتراست و reduced
+motion موجود را بدون تغییر baseline گذراند. هر دو محور مرور مستقل Standards
+و Spec بدون یافته قابل اقدام بودند.
+
+ساخت کامل Compose محلی هنگام دریافت pnpm از `registry.npmjs.org` به خطای شبکه
+`ECONNRESET` خورد؛ درخواست مستقیم از host نیز timeout شد. این failure قبل از
+کامپایل کد پروژه است. نتیجه ساخت image و smoke در CI به Issue پیوست می‌شود؛
+موفقیت آزمون native به‌جای موفقیت ساخت container گزارش نمی‌شود.
 
 مرور انسانی نهایی و هماهنگی مصرف‌کنندگان با ferpheri است. تکمیل producer و UI
 در [[ساخت] تکمیل producer راه‌اندازی و انتشار فروشگاه](https://github.com/Mahaan-Amr/sevomart/issues/130)
