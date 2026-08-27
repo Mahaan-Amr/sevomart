@@ -78,8 +78,11 @@ motion موجود را بدون تغییر baseline گذراند. هر دو مح
 
 ساخت کامل Compose محلی هنگام دریافت pnpm از `registry.npmjs.org` به خطای شبکه
 `ECONNRESET` خورد؛ درخواست مستقیم از host نیز timeout شد. این failure قبل از
-کامپایل کد پروژه است. نتیجه ساخت image و smoke در CI به Issue پیوست می‌شود؛
-موفقیت آزمون native به‌جای موفقیت ساخت container گزارش نمی‌شود.
+کامپایل کد پروژه است. [اجرای CI شاخه تأیید](https://github.com/Mahaan-Amr/sevomart/actions/runs/33044079593)
+روی `160e466f4be5047ea63786dc66ab65127e3da11f` سبز شد: quality، build،
+۱۳۶ آزمون مرورگر و ساخت/اسکن هر چهار image تولیدی API، web، worker و migrate.
+پس از آن فقط این ثبت شواهد تغییر کرده است. ساخت کامل Compose محلی به‌عنوان
+موفق گزارش نمی‌شود؛ شاهد container از CI است.
 
 مرور انسانی نهایی و هماهنگی مصرف‌کنندگان با ferpheri است. تکمیل producer و UI
 در [[ساخت] تکمیل producer راه‌اندازی و انتشار فروشگاه](https://github.com/Mahaan-Amr/sevomart/issues/130)
