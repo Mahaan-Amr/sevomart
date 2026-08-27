@@ -2,7 +2,15 @@ import {
   directPaymentErrorContract,
   createDirectPaymentAttemptInputContract,
   directPaymentAttemptContract,
+  directPaymentAttemptConfirmedV1Contract,
+  directPaymentAttemptCreatedV1Contract,
+  directPaymentAttemptDispatchedV1Contract,
   directPaymentAttemptFailedV1Contract,
+  directPaymentAttemptReviewRequiredV1Contract,
+  directPaymentAttemptStatusContract,
+  directPaymentAttemptTerminalStatuses,
+  paymentAttemptAuditContract,
+  paymentsV1Operations,
   paymentReviewErrorContract,
   paymentReviewQueueContract,
   providerCallbackInputContract,
@@ -132,5 +140,83 @@ describe("direct payment v1 contract", () => {
         ],
       }).items[0]?.reviewKind,
     ).toBe("PROVIDER_CONFLICT");
+  });
+
+  it("keeps operation paths, terminal states, audits, and events versioned", () => {
+    expect(paymentsV1Operations.createDirectPaymentAttempt).toEqual({
+      operationId: "createDirectPaymentAttempt",
+      method: "post",
+      path: "/v1/orders/{orderId}/payment-attempts",
+    });
+    expect(directPaymentAttemptStatusContract.options).toEqual([
+      "CREATED",
+      "DISPATCHED",
+      "CONFIRMED",
+      "FAILED",
+      "REVIEW_REQUIRED",
+    ]);
+    expect(directPaymentAttemptTerminalStatuses).toEqual(["CONFIRMED", "FAILED"]);
+
+    const envelope = {
+      eventId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+      version: 1 as const,
+      aggregateId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      occurredAt: "2026-08-25T08:01:00.000Z",
+      correlationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+      causationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+    };
+    const amount = { amount: 4_500_000, currency: "IRR" } as const;
+    const events = [
+      directPaymentAttemptCreatedV1Contract.parse({
+        ...envelope,
+        eventType: "DirectPaymentAttemptCreated.v1",
+        aggregateVersion: 1,
+        actor: { type: "IDENTITY", id: "27a3f408-858c-45d7-a0bd-ab84a28718ef" },
+        payload: { status: "CREATED", amount },
+      }),
+      directPaymentAttemptDispatchedV1Contract.parse({
+        ...envelope,
+        eventType: "DirectPaymentAttemptDispatched.v1",
+        aggregateVersion: 2,
+        actor: { type: "SYSTEM" },
+        payload: { status: "DISPATCHED" },
+      }),
+      directPaymentAttemptConfirmedV1Contract.parse({
+        ...envelope,
+        eventType: "DirectPaymentAttemptConfirmed.v1",
+        aggregateVersion: 3,
+        actor: { type: "SYSTEM" },
+        payload: { status: "CONFIRMED", amount },
+      }),
+      directPaymentAttemptReviewRequiredV1Contract.parse({
+        ...envelope,
+        eventType: "DirectPaymentAttemptReviewRequired.v1",
+        aggregateVersion: 3,
+        actor: { type: "SYSTEM" },
+        payload: { status: "REVIEW_REQUIRED" },
+      }),
+    ];
+    expect(events.map((event) => event.eventType)).toEqual([
+      "DirectPaymentAttemptCreated.v1",
+      "DirectPaymentAttemptDispatched.v1",
+      "DirectPaymentAttemptConfirmed.v1",
+      "DirectPaymentAttemptReviewRequired.v1",
+    ]);
+    const audit = {
+      attemptId: envelope.aggregateId,
+      fromStatus: "DISPATCHED",
+      toStatus: "CONFIRMED",
+      reasonCode: "PROVIDER_CONFIRMED",
+      actorKind: "PAYMENTS_SERVICE",
+      correlationId: envelope.correlationId,
+      occurredAt: envelope.occurredAt,
+    } as const;
+    expect(paymentAttemptAuditContract.parse(audit)).toEqual(audit);
+    expect(
+      paymentAttemptAuditContract.safeParse({
+        ...audit,
+        providerMetadata: { rawStatus: "sensitive" },
+      }).success,
+    ).toBe(false);
   });
 });

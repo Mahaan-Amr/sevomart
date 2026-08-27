@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { ordersV1Operations } from "@sevo/contracts/orders/v1";
+import { paymentsV1Operations } from "@sevo/contracts/payments/v1";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
@@ -82,6 +84,36 @@ describe("OpenAPI guest cart and login attachment", () => {
     );
     expect(document.components.schemas.CartError.properties.code.enum).toContain(
       "GUEST_SCOPE_REQUIRED",
+    );
+  });
+
+  it("derives every order and payment path from its versioned contract", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    close = () => app.close();
+    const response = await app.getHttpAdapter().getInstance().inject({
+      method: "GET",
+      url: "/openapi.json",
+    });
+    const document = response.json();
+
+    for (const operation of [
+      ...Object.values(ordersV1Operations),
+      ...Object.values(paymentsV1Operations),
+    ]) {
+      expect(
+        document.paths[operation.path]?.[operation.method]?.operationId,
+        `${operation.method.toUpperCase()} ${operation.path}`,
+      ).toBe(operation.operationId);
+    }
+    expect(document.components.schemas).toEqual(
+      expect.objectContaining({
+        OrderStatus: expect.any(Object),
+        OrderStateTransitionAudit: expect.any(Object),
+        OrderBecameActionableV1: expect.any(Object),
+        DirectPaymentAttemptStatus: expect.any(Object),
+        PaymentAttemptAudit: expect.any(Object),
+        DirectPaymentAttemptConfirmedV1: expect.any(Object),
+      }),
     );
   });
 });
