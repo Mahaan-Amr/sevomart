@@ -107,3 +107,20 @@
 - رابط خریدار و فروشنده فارسی و RTL است؛ layout، validation، اعداد، تاریخ، پول و متن‌های طولانی فارسی باید آزموده شوند.
 - وابستگی جدید فقط با دلیل، وضعیت نگهداری، مجوز و اثر امنیتی ثبت‌شده پذیرفته می‌شود.
 - مستندات هم‌زمان با تغییر قرارداد یا رفتار به‌روزرسانی می‌شوند؛ کد تنها منبع حقیقت تصمیم محصول نیست.
+
+## Agent skills
+
+### Issue tracker
+
+Work is tracked in GitHub Issues. Before ticket or Wayfinder operations,
+read `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage roles. Before triaging issues,
+read `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the shared, single-context documentation layout. Before domain
+exploration, read `docs/agents/domain.md`.
