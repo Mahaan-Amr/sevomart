@@ -53,3 +53,12 @@ Docker با migrate deploy هنگام startup و native با مسیر رسمی p
 و adapter را مصرف می‌کنند؛ env، پورت و dependency تازه‌ای وجود ندارد. integration
 رسانه با PostgreSQL و MinIO واقعی، upload، خواندن دوطرفه پس از ارسال، منع URL مستقیم،
 لغو دسترسی، آمادگی و منع عمومی‌شدن را بررسی می‌کند.
+
+## حریم خصوصی مشاهده‌پذیری
+
+logger درخواست فقط method و route template را نگه می‌دارد؛ URL خام، query، header
+و body وارد آن نمی‌شوند. exporter trace پیش از OTLP فقط ویژگی‌های عملیاتی allow-list
+روش/وضعیت HTTP، نسخه پروتکل و پورت را صادر می‌کند؛ نام span عمومی است، متن status،
+event و attributeهای link حذف می‌شوند. این محدودیت آگاهانه برای همه spanهای خودکار
+از جمله درخواست خروجی ذخیره‌ساز برقرار است. service، زمان‌بندی، trace/span ID و کد
+وضعیت برای عیب‌یابی باقی می‌مانند؛ متن پیام و mediaId در collector جای ندارند.
