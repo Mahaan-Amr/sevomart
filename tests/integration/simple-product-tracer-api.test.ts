@@ -1,5 +1,9 @@
 import {
   productPreviewContract,
+  productAuthoritativeVariantV1Contract,
+  productPublishedV2Contract,
+  productUnpublishedV1Contract,
+  variantPriceChangedV1Contract,
   productViewContract,
   publicProductContract,
   publicSimpleProductContract,
@@ -7,10 +11,17 @@ import {
   simpleProductPreviewContract,
 } from "@sevo/contracts/product/v1";
 import postgres from "postgres";
+import { variantAvailabilityChangedV1Contract } from "@sevo/contracts/inventory/v1";
+import { replayOutboxEventHistory } from "@sevo/outbox";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
+import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
+import {
+  createOpaqueProductTransactionContext,
+  PostgresProductRepository,
+} from "../../apps/api/src/modules/product/composition";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("simple product tracer HTTP API", () => {
@@ -505,6 +516,41 @@ describe("simple product tracer HTTP API", () => {
       },
     });
     expect(changedOffers.statusCode).toBe(200);
+    const inventoryReader = new PostgresInventoryAuthoring(
+      apiTestEnvironment.DATABASE_URL,
+    );
+    const productReader = new PostgresProductRepository(
+      apiTestEnvironment.DATABASE_URL,
+      inventoryReader,
+    );
+    const readSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      const firstVariant = ready.product.workingCopy!.variants[0]!.variantId;
+      const authoritative = await productReader.readAuthoritativeVariant(firstVariant);
+      expect(productAuthoritativeVariantV1Contract.parse(authoritative)).toMatchObject({
+        productId,
+        variantId: firstVariant,
+        name: "پیراهن روزمره",
+        unitPrice: { amount: 8_100_000, currency: "IRR" },
+        publicationVersion: 1,
+        sellable: true,
+      });
+      expect(
+        await readSql.begin((transaction) =>
+          productReader.readAuthoritativeVariantInTransaction(
+            createOpaqueProductTransactionContext(transaction),
+            firstVariant,
+          ),
+        ),
+      ).toEqual(authoritative);
+      expect(
+        await productReader.readAuthoritativeVariant(crypto.randomUUID() as never),
+      ).toBeUndefined();
+    } finally {
+      await productReader.onModuleDestroy();
+      await inventoryReader.onModuleDestroy();
+      await readSql.end();
+    }
 
     const stockRace = await Promise.all(
       [crypto.randomUUID(), crypto.randomUUID()].map((key) =>
@@ -675,6 +721,36 @@ describe("simple product tracer HTTP API", () => {
       expect(eventCounts).toEqual([
         { eventType: "VariantAvailabilityChanged.v1", count: 2 },
         { eventType: "VariantPriceChanged.v1", count: 2 },
+      ]);
+      const schemas = {
+        "ProductPublished.v2": productPublishedV2Contract,
+        "ProductUnpublished.v1": productUnpublishedV1Contract,
+        "VariantPriceChanged.v1": variantPriceChangedV1Contract,
+        "VariantAvailabilityChanged.v1": variantAvailabilityChangedV1Contract,
+      };
+      const observed: string[] = [];
+      await replayOutboxEventHistory(sql, {
+        eventTypes: [...Object.keys(schemas), "ProductPublished.v1"],
+        handler: async (event) => {
+          if (
+            event.aggregateId !== productId &&
+            !variantIds.includes(event.aggregateId)
+          )
+            return;
+          expect(event.eventType).not.toBe("ProductPublished.v1");
+          const schema = schemas[event.eventType as keyof typeof schemas];
+          expect(schema.parse(event)).toEqual(event);
+          observed.push(event.eventType);
+        },
+      });
+      expect(observed.sort()).toEqual([
+        "ProductPublished.v2",
+        "ProductPublished.v2",
+        "ProductUnpublished.v1",
+        "VariantAvailabilityChanged.v1",
+        "VariantAvailabilityChanged.v1",
+        "VariantPriceChanged.v1",
+        "VariantPriceChanged.v1",
       ]);
     } finally {
       await sql.end();

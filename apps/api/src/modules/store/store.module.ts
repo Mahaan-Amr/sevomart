@@ -1,6 +1,7 @@
 import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 import { MEDIA_STORAGE, type MediaStorage } from "../media/public";
+import { SELLER_ACCESS_READ, type SellerAccessRead } from "../identity-access/public";
 
 import { StoreService } from "./application/store.service";
 import { PostgresStoreRepository } from "./infrastructure/postgres-store.repository";
@@ -48,11 +49,17 @@ export class StoreModule {
         },
         {
           provide: STORE_SERVICE,
-          inject: [STORE_REPOSITORY, SETTLEMENT_DESTINATION_VERIFIER, MEDIA_STORAGE],
+          inject: [
+            STORE_REPOSITORY,
+            SETTLEMENT_DESTINATION_VERIFIER,
+            MEDIA_STORAGE,
+            SELLER_ACCESS_READ,
+          ],
           useFactory: (
             repository: StoreRepository,
             verifier: SettlementDestinationVerifier,
             mediaStorage: MediaStorage,
+            sellerAccess: SellerAccessRead,
           ) =>
             new StoreService(
               repository,
@@ -61,6 +68,7 @@ export class StoreModule {
               (id) => mediaStorage.get(id),
               (id, sellerId) => mediaStorage.makePublic(id, sellerId),
               (id, sellerId) => mediaStorage.makePrivate(id, sellerId),
+              sellerAccess,
             ),
         },
         { provide: STORE_AUTHORITATIVE_READ, useExisting: STORE_SERVICE },

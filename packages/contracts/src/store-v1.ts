@@ -73,6 +73,17 @@ export const storeDisplayIdentityV1Contract = z
   })
   .strict();
 
+// This is the current eligibility result from identity-access, not a second
+// seller-grant lifecycle owned by Store. false does not imply a particular cause.
+export const storeSellerAccessV1Contract = z.object({ active: z.boolean() }).strict();
+
+export const storeAuthoritativeReadErrorV1Contract = z
+  .object({
+    code: z.enum(["STORE_OWNERSHIP_REQUIRED", "STORE_NOT_SELLABLE"]),
+    storeId: storeIdContract,
+  })
+  .strict();
+
 export const storeAuthoritativeSnapshotV1Contract = z
   .object({
     storeId: storeIdContract,
@@ -80,6 +91,8 @@ export const storeAuthoritativeSnapshotV1Contract = z
     publicationVersion: z.int().nonnegative(),
     publicationStatus: z.enum(["DRAFT", "PUBLISHED"]),
     owner: z.object({ identityId: identityIdContract }).strict(),
+    // Optional for v1 readers predating live seller-access composition.
+    sellerAccess: storeSellerAccessV1Contract.optional(),
     slug: storeSlugContract.optional(),
     displayIdentity: storeDisplayIdentityV1Contract.partial(),
     shippingMethods: z.array(storeShippingMethodSnapshotV1Contract).max(5),
@@ -307,6 +320,12 @@ export const storePolicyChangedV1Contract = eventEnvelopeV1Contract.extend({
 });
 
 export const storeV1Schemas = {
+  StoreAuthoritativeSnapshotV1: storeAuthoritativeSnapshotV1Contract,
+  StoreSellerAccessV1: storeSellerAccessV1Contract,
+  StoreAuthoritativeReadErrorV1: storeAuthoritativeReadErrorV1Contract,
+  StorePublishedV1: storePublishedV1Contract,
+  StoreUnpublishedV1: storeUnpublishedV1Contract,
+  StorePolicyChangedV1: storePolicyChangedV1Contract,
   StoreSlug: storeSlugContract,
   StoreIdempotencyKey: storeIdempotencyKeyContract,
   StoreRevisionTag: storeRevisionTagContract,
@@ -390,7 +409,74 @@ const publicStoreExample = {
   },
 } as const;
 
+const storeEventExample = {
+  version: 1,
+  eventId: "b47ac10b-58cc-4372-a567-0e02b2c3d479",
+  aggregateId: completeDraftExample.id,
+  aggregateVersion: 2,
+  occurredAt: "2026-08-16T09:30:00.000Z",
+  correlationId: "d47ac10b-58cc-4372-a567-0e02b2c3d479",
+  actor: { type: "IDENTITY", id: "e47ac10b-58cc-4372-a567-0e02b2c3d479" },
+} as const;
+
 export const storeV1Examples = {
+  StoreAuthoritativeSnapshotV1: {
+    storeId: completeDraftExample.id,
+    revision: 2,
+    publicationVersion: 1,
+    publicationStatus: "PUBLISHED",
+    owner: { identityId: storeEventExample.actor.id },
+    sellerAccess: { active: true },
+    slug: completeDraftExample.slug,
+    displayIdentity: {
+      name: completeDraftExample.name,
+      bio: completeDraftExample.bio,
+      logoMediaId: null,
+      coverMediaId: null,
+      themeColor: completeDraftExample.themeColor,
+    },
+    shippingMethods: completeDraftExample.shippingMethods,
+    returnPolicy: { revision: 1, text: completeDraftExample.returnPolicy },
+    settlement: { mode: "DIRECT", status: "TEST_VERIFIED" },
+    updatedAt: storeEventExample.occurredAt,
+    publishedAt: storeEventExample.occurredAt,
+  },
+  StoreSellerAccessV1: { active: true },
+  StoreAuthoritativeReadErrorV1: {
+    code: "STORE_NOT_SELLABLE",
+    storeId: completeDraftExample.id,
+  },
+  StorePublishedV1: {
+    ...storeEventExample,
+    eventType: "StorePublished.v1",
+    payload: {
+      storeId: completeDraftExample.id,
+      publicationStatus: "PUBLISHED",
+      publicationVersion: 1,
+    },
+  },
+  StoreUnpublishedV1: {
+    ...storeEventExample,
+    aggregateVersion: 3,
+    eventType: "StoreUnpublished.v1",
+    payload: {
+      storeId: completeDraftExample.id,
+      publicationStatus: "DRAFT",
+      publicationVersion: 1,
+    },
+  },
+  StorePolicyChangedV1: {
+    ...storeEventExample,
+    aggregateVersion: 3,
+    eventType: "StorePolicyChanged.v1",
+    payload: {
+      storeId: completeDraftExample.id,
+      returnPolicyRevision: 2,
+      shippingMethods: [
+        { id: completeDraftExample.shippingMethods[0].id, revision: 1 },
+      ],
+    },
+  },
   StoreSlug: "khane-sofal-mah",
   StoreIdempotencyKey: "01K3F7W5M8S7A4N2Z6Q9H1J3RC",
   StoreRevisionTag: '"1"',
@@ -431,6 +517,10 @@ export const storeV1Examples = {
 } as const;
 
 export type StoreSlug = z.infer<typeof storeSlugContract>;
+export type StoreSellerAccessV1 = z.infer<typeof storeSellerAccessV1Contract>;
+export type StoreAuthoritativeReadErrorV1 = z.infer<
+  typeof storeAuthoritativeReadErrorV1Contract
+>;
 export type StoreDraftInput = z.infer<typeof storeDraftInputContract>;
 export type StoreDraft = z.infer<typeof storeDraftContract>;
 export type SlugAvailability = z.infer<typeof slugAvailabilityContract>;

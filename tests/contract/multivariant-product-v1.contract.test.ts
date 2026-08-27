@@ -4,9 +4,9 @@ import {
   replaceProductInventoryBatchContract,
   replaceProductOffersBatchContract,
   replaceProductWorkingCopyContract,
-  variantAvailabilityChangedV1Contract,
   variantPriceChangedV1Contract,
 } from "@sevo/contracts/product/v1";
+import { variantAvailabilityChangedV1Contract } from "@sevo/contracts/inventory/v1";
 import { describe, expect, it } from "vitest";
 
 const ids = {
@@ -253,6 +253,21 @@ describe("multivariant product v1 contract", () => {
       },
     });
     expect(JSON.stringify([price, availability])).not.toMatch(/sku|onHand/i);
+    for (const [schema, event] of [
+      [variantPriceChangedV1Contract, price],
+      [variantAvailabilityChangedV1Contract, availability],
+    ] as const) {
+      for (const invalid of [
+        { ...event, version: 2 },
+        { ...event, aggregateVersion: 0 },
+        { ...event, actor: undefined },
+        { ...event, payload: { ...event.payload, variantId: "invalid" } },
+        { ...event, payload: { ...event.payload, publicationVersion: 0 } },
+        { ...event, payload: { ...event.payload, onHand: 9 } },
+        { ...event, payload: { ...event.payload, sku: "PRIVATE" } },
+      ])
+        expect(schema.safeParse(invalid).success).toBe(false);
+    }
   });
 });
 

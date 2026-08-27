@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import postgres, { type Sql } from "postgres";
 import { variantIdContract, type VariantId } from "@sevo/contracts/platform/v1";
+import {
+  inventoryAvailabilityReadV1Contract,
+  variantAvailabilityChangedV1Contract,
+} from "@sevo/contracts/inventory/v1";
+import { enqueueOutboxEvent } from "@sevo/outbox";
 
 import {
   InventoryRevisionConflictError,
@@ -175,6 +180,31 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
            ${command.reasonCode}, ${current.onHand}, ${row.onHand}, ${revision},
            ${command.correlationId})
       `;
+      const reserved = reservedById.get(row.variantId) ?? 0;
+      const wasAvailable = current.onHand - reserved > 0;
+      const isAvailable = updated[0]!.onHand - reserved > 0;
+      if (command.publication && wasAvailable !== isAvailable) {
+        await enqueueOutboxEvent(
+          sql,
+          variantAvailabilityChangedV1Contract.parse({
+            version: 1,
+            eventId: randomUUID(),
+            eventType: "VariantAvailabilityChanged.v1",
+            aggregateId: row.variantId,
+            aggregateVersion: revision,
+            occurredAt: new Date().toISOString(),
+            correlationId: command.correlationId,
+            actor: { type: "IDENTITY", id: command.actorId },
+            payload: {
+              storeId: command.storeId,
+              ...command.publication,
+              variantId: row.variantId,
+              availabilityVersion: revision,
+              availability: isAvailable ? "AVAILABLE" : "OUT_OF_STOCK",
+            },
+          }),
+        );
+      }
       results.push({
         variantId: variantIdContract.parse(row.variantId),
         ...updated[0]!,
@@ -225,9 +255,9 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       group by level.variant_id
       order by level.variant_id
     `;
-    return rows.map((row) => ({
-      ...row,
-      variantId: variantIdContract.parse(row.variantId),
+    return rows.map(({ variantId, ...snapshot }) => ({
+      ...inventoryAvailabilityReadV1Contract.parse(snapshot),
+      variantId: variantIdContract.parse(variantId),
     }));
   }
 
@@ -263,7 +293,7 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       where level.variant_id = ${variantId}::uuid
       group by level.variant_id
     `;
-    return rows[0];
+    return rows[0] ? inventoryAvailabilityReadV1Contract.parse(rows[0]) : undefined;
   }
 
   async reserveForOrder(

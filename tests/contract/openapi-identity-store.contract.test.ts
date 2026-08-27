@@ -196,8 +196,46 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "9e4d05544791cde9fb0c0a6de5a39a058122b2aaecc17ef670e26775abb36cbf",
+      "11c0623c85c0647a213bebb47a6033453fc57d262e97dd6d1906b838358088ce",
     );
+  });
+
+  it("documents internal Store reads and durable events without exposing an owner HTTP endpoint", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    close = () => app.close();
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({ method: "GET", url: "/openapi.json" });
+    const document = response.json();
+    const schemas = document.components.schemas;
+    expect(schemas.StoreAuthoritativeSnapshotV1.properties).toHaveProperty(
+      "sellerAccess",
+    );
+    expect(schemas.StoreAuthoritativeSnapshotV1.required).not.toContain("sellerAccess");
+    expect(schemas.StoreSellerAccessV1.properties.active).toMatchObject({
+      type: "boolean",
+    });
+    expect(schemas.StorePublishedV1.properties.payload.required).not.toContain(
+      "publicationVersion",
+    );
+    expect(schemas.StoreUnpublishedV1.properties.payload.required).toContain(
+      "publicationVersion",
+    );
+    for (const name of [
+      "StorePublishedV1",
+      "StoreUnpublishedV1",
+      "StorePolicyChangedV1",
+    ]) {
+      expect(schemas[name].properties.payload.additionalProperties).toBe(false);
+    }
+    expect(schemas.PublicStore.properties).not.toHaveProperty("owner");
+    expect(schemas.PublicStore.properties).not.toHaveProperty("sellerAccess");
+    expect(
+      document.paths["/v1/stores/{slug}"].get.responses["200"].content[
+        "application/json"
+      ].schema,
+    ).toEqual({ $ref: "#/components/schemas/PublicStore" });
   });
 
   it("publishes each owned module schema without ambiguous any", async () => {
