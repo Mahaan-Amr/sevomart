@@ -73,6 +73,7 @@ composer را تغییر نمی‌دهد.
 | پرداخت             | `DirectPaymentAttempt.v1`                                                                                                                                                                                        | ساخت/خواندن تلاش و اعمال نتیجه معتبر                                        | سفارش، موجودی و رابط خریدار                                                                                  | sync                 | strong                                            | callback خام و metadata provider ممنوع؛ reference غیرحساس مجاز                        | ساخت تلاش پس از commit سفارش؛ اعمال نتیجه با سفارش و موجودی اتمیک                            | قرارداد producer-owned در Spec checkout                                               |
 | پرداخت             | `DirectPaymentProvider.v1`                                                                                                                                                                                       | adapter توسعه یا provider واقعی                                             | پرداخت                                                                                                       | sync با سرویس بیرونی | نتیجه provider تا verify غیرقطعی                  | callback ورودی فقط در مرز adapter و هرگز در log/event نیست                            | تماس provider خارج از transaction پایگاه داده                                                | انتخاب و adapter واقعی پیش‌نیاز عرضه MVP؛ adapter توسعه فقط local/test است            |
 | پرداخت             | `DirectPaymentAttemptCreated.v1`، `DirectPaymentAttemptDispatched.v1`، `DirectPaymentAttemptConfirmed.v1`، `DirectPaymentAttemptFailed.v1` و `DirectPaymentAttemptReviewRequired.v1`                             | ثبت چرخه تلاش پرداخت                                                        | سفارش، موجودی، اعلان‌ها و گزارش عملیاتی                                                                      | event                | eventual؛ نهایی‌سازی مالی idempotent              | ندارد                                                                                 | همراه تغییر پرداخت در outbox                                                                 | `contract-blocks` schema رخداد؛ `integration-blocks` تطبیق و handoff                  |
+| گفت‌وگو            | `ConversationContextEligibility.v1`، thread/message/cursor/errorهای `@sevo/contracts/conversations/v1` و `MessageSent.v1`                                                                                        | producer گفت‌وگو با adapterهای فروشگاه، کالا و سفارش                        | فهرست و رشته خریدار و فروشنده؛ اعلان‌ها فقط از رخداد کمینه                                                   | sync/event           | eligibility و write strong؛ رخداد eventual        | query مجاز فقط محتوای نوشته‌شده کاربر؛ event فاقد متن، رسانه و اطلاعات تماس           | thread/message/idempotency/outbox در transaction مالک؛ eligibility پیش از write بررسی می‌شود | `contract-blocks` producer و دو رابط؛ adapter واقعی `integration-blocks`              |
 | فیدها و دنبال‌کردن | `StoreFollowing.v1`                                                                                                                                                                                              | PUT/DELETE رابطه دنبال‌کردن                                                 | رابط خریدار و projection شمار دنبال‌کنندگان                                                                  | sync                 | strong                                            | `identityId` فقط در command شخصی؛ خروجی فروشنده هویت دنبال‌کننده ندارد                | رابطه، revision مجموعه و outbox اتمیک                                                        | قرارداد producer-owned در Spec کشف                                                    |
 | فیدها و دنبال‌کردن | `StoreFollowActivated.v1` و `StoreFollowDeactivated.v1`                                                                                                                                                          | فعال/غیرفعال‌شدن رابطه                                                      | شمار عمومی و invalidation cursor دنبال‌شده‌ها                                                                | event                | eventual، idempotent و نامنفی                     | ندارد                                                                                 | همراه رابطه و `followSetRevision` در outbox                                                  | قرارداد producer-owned در Spec کشف                                                    |
 | فیدها و دنبال‌کردن | `DiscoveryFeed.v1` و `FollowingFeed.v1`                                                                                                                                                                          | query روی projection کالا/فروشگاه و رابطه دنبال‌کردن                        | رابط خریدار و مهمان؛ following فقط خریدار واردشده                                                            | sync روی read model  | eventual؛ cursor snapshot قطعی و تازگی قابل نمایش | ندارد                                                                                 | read-only؛ projection منبع حقیقت عملیاتی نیست                                                | به رخدادهای فروشگاه/کالا/موجودی `integration-blocks`                                  |
@@ -91,6 +92,19 @@ composer را تغییر نمی‌دهد.
 - `StorePublished.v1`، `StoreUnpublished.v1` و `StorePolicyChanged.v1` فقط شناسه،
   وضعیت و version لازم را حمل می‌کنند. متن سیاست، اطلاعات تماس و مقصد تسویه در
   outbox ممنوع‌اند.
+
+### جزئیات سازگاری قرارداد گفت‌وگو
+
+- قرارداد اجرایی و قواعد eligibility، cursor، idempotency و PII در
+  [قرارداد نسخه اول گفت‌وگو و eligibility زمینه](../specs/conversations-v1-contract.md)
+  ثبت شده‌اند. مصرف‌کننده فقط entrypoint نسخه‌دار و OpenAPI را می‌بیند و aggregate
+  فروشگاه، کالا یا سفارش را import نمی‌کند.
+- `storeId` در هر context مرز فروشگاه را صریح نگه می‌دارد. adapter مالک باید تعلق
+  `productId` یا `orderId` و participant را authoritative بررسی کند؛ projection
+  عمومی حق تصمیم eligibility ندارد.
+- `MessageSent.v1` محتوای پیام، رسانه، اطلاعات تماس یا شناسه participant را در
+  payload منتشر نمی‌کند. تغییر این allow-list یا scope کلید idempotency ناسازگار
+  است و نسخه تازه می‌خواهد.
 
 ## مرجع عملیاتی و projection
 
@@ -111,24 +125,26 @@ projection تعیین می‌کند. اگر projection خراب یا عقب‌م
 
 ## یال‌های blocking و نقاط fan-out
 
-| تولیدکننده → مصرف‌کننده      | artifact لازم                                                      | نوع یال                                    | نتیجه عملی                                                                     |
-| ---------------------------- | ------------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------ |
-| platform → همه ماژول‌ها      | envelopeهای مشترک، entrypoint نسخه‌دار، composer و outbox baseline | `contract-blocks`                          | هیچ Spec قرارداد مشترک محلی یا barrel برخوردپذیر نمی‌سازد.                     |
-| هویت و دسترسی → هر سه Spec   | session/actor و وضعیت زنده هویت                                    | `contract-blocks`                          | مجوز و actor از ابتدا یک معنا دارند.                                           |
-| اعطای فروشندگی → فروشگاه     | provision اتمیک فروشگاه و عضویت مالک                               | `integration-blocks`                       | ساخت با fake مجاز است؛ ورود و E2E فروشنده منتظر implementation واقعی می‌ماند.  |
-| فروشگاه و رسانه → کالا       | وضعیت انتشار فروشگاه و رسانه محصول                                 | `contract-blocks` سپس `integration-blocks` | schema پیش از ساخت ثابت و E2E انتشار منتظر adapter واقعی است.                  |
-| کالا → سفارش                 | قیمت و قابلیت فروش authoritative                                   | `contract-blocks` سپس `integration-blocks` | checkout با fake ساخته می‌شود، اما integration قیمت واقعی منتظر کالا است.      |
-| موجودی → سفارش/پرداخت        | availability و رزرو/مصرف                                           | `contract-blocks` سپس `integration-blocks` | oversell و handoff فقط با implementation واقعی آزموده می‌شوند.                 |
-| فروشگاه → سفارش              | روش ارسال و سیاست مرجوعی نسخه‌دار                                  | `contract-blocks` سپس `integration-blocks` | سفارش snapshot را تکرار می‌کند، نه قرارداد مالک را.                            |
-| فروشگاه/کالا/موجودی → فیدها  | رخدادهای عمومی نسخه‌دار                                            | `contract-blocks` سپس `integration-blocks` | ranking با fixture ساخته می‌شود؛ projection واقعی منتظر outbox تولیدکننده است. |
-| دنبال‌کردن/هویت → شمار عمومی | رخداد رابطه و وضعیت هویت                                           | `integration-blocks`                       | شمار فقط active identity + active relation را نشان می‌دهد.                     |
-| سفارش → انجام سفارش          | `OrderBecameActionable.v1`                                         | `contract-blocks` سپس `integration-blocks` | پرداخت و موجودی participantهای بالادست‌اند؛ فقط سفارش handoff را منتشر می‌کند. |
+| تولیدکننده → مصرف‌کننده      | artifact لازم                                                      | نوع یال                                    | نتیجه عملی                                                                         |
+| ---------------------------- | ------------------------------------------------------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| platform → همه ماژول‌ها      | envelopeهای مشترک، entrypoint نسخه‌دار، composer و outbox baseline | `contract-blocks`                          | هیچ Spec قرارداد مشترک محلی یا barrel برخوردپذیر نمی‌سازد.                         |
+| هویت و دسترسی → هر سه Spec   | session/actor و وضعیت زنده هویت                                    | `contract-blocks`                          | مجوز و actor از ابتدا یک معنا دارند.                                               |
+| اعطای فروشندگی → فروشگاه     | provision اتمیک فروشگاه و عضویت مالک                               | `integration-blocks`                       | ساخت با fake مجاز است؛ ورود و E2E فروشنده منتظر implementation واقعی می‌ماند.      |
+| فروشگاه و رسانه → کالا       | وضعیت انتشار فروشگاه و رسانه محصول                                 | `contract-blocks` سپس `integration-blocks` | schema پیش از ساخت ثابت و E2E انتشار منتظر adapter واقعی است.                      |
+| کالا → سفارش                 | قیمت و قابلیت فروش authoritative                                   | `contract-blocks` سپس `integration-blocks` | checkout با fake ساخته می‌شود، اما integration قیمت واقعی منتظر کالا است.          |
+| موجودی → سفارش/پرداخت        | availability و رزرو/مصرف                                           | `contract-blocks` سپس `integration-blocks` | oversell و handoff فقط با implementation واقعی آزموده می‌شوند.                     |
+| فروشگاه → سفارش              | روش ارسال و سیاست مرجوعی نسخه‌دار                                  | `contract-blocks` سپس `integration-blocks` | سفارش snapshot را تکرار می‌کند، نه قرارداد مالک را.                                |
+| فروشگاه/کالا/موجودی → فیدها  | رخدادهای عمومی نسخه‌دار                                            | `contract-blocks` سپس `integration-blocks` | ranking با fixture ساخته می‌شود؛ projection واقعی منتظر outbox تولیدکننده است.     |
+| دنبال‌کردن/هویت → شمار عمومی | رخداد رابطه و وضعیت هویت                                           | `integration-blocks`                       | شمار فقط active identity + active relation را نشان می‌دهد.                         |
+| سفارش → انجام سفارش          | `OrderBecameActionable.v1`                                         | `contract-blocks` سپس `integration-blocks` | پرداخت و موجودی participantهای بالادست‌اند؛ فقط سفارش handoff را منتشر می‌کند.     |
+| فروشگاه/کالا/سفارش → گفت‌وگو | `ConversationContextEligibility.v1`                                | `contract-blocks` سپس `integration-blocks` | قرارداد با fake آزموده می‌شود؛ ساخت رشته واقعی منتظر adapterهای authoritative است. |
+| گفت‌وگو → رابط‌های دو طرف    | thread/message/cursor/error و `MessageSent.v1`                     | `contract-blocks` سپس `integration-blocks` | دو فضا قرارداد مشترک را مصرف می‌کنند و به aggregate داخلی دسترسی ندارند.           |
 
 نقاط fan-out نسخه اول عبارت‌اند از: هویت و actor به هر سه Spec؛ وضعیت فروشگاه به
 کالا، checkout و فید؛ انتشار/قیمت/availability کالا به checkout و فید؛ نتیجه
-پرداخت به سفارش و موجودی؛ و `OrderBecameActionable.v1` از سفارش به انجام سفارش.
-مالک producer schema را یک‌بار منتشر می‌کند و هر مصرف‌کننده contract test خودش
-را نگه می‌دارد.
+پرداخت به سفارش و موجودی؛ `OrderBecameActionable.v1` از سفارش به انجام سفارش؛ و
+eligibility فروشگاه/کالا/سفارش به گفت‌وگو. مالک producer schema را یک‌بار منتشر
+می‌کند و هر مصرف‌کننده contract test خودش را نگه می‌دارد.
 
 ## گراف مشتق‌شده
 
@@ -147,6 +163,7 @@ flowchart LR
   Pay[پرداخت]
   F[فیدها و دنبال‌کردن]
   Ful[انجام سفارش]
+  Conv[گفت‌وگو]
 
   P -->|C| IA
   P -->|C| S
@@ -155,6 +172,7 @@ flowchart LR
   P -->|C| O
   P -->|C| Pay
   P -->|C| F
+  P -->|C| Conv
   IA -->|C/I| S
   IA -->|C| C
   IA -->|C| I
@@ -162,6 +180,7 @@ flowchart LR
   IA -->|C| Pay
   IA -->|C| F
   IA -->|C| Ful
+  IA -->|C| Conv
   S -->|C/I| C
   M -->|C/I| C
   S -->|C/I| O
@@ -173,6 +192,9 @@ flowchart LR
   C -->|C/I| F
   I -->|C/I| F
   O -->|C/I| Ful
+  S -->|C/I| Conv
+  C -->|C/I| Conv
+  O -->|C/I| Conv
 ```
 
 ## پیش‌نیازهای platform
