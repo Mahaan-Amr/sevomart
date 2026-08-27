@@ -6,12 +6,16 @@ import {
   buyerDisputeViewContract,
   disputeAuditEntryContract,
   disputeOpenedV1Contract,
+  disputeReopenedV1Contract,
+  disputeResolvedV1Contract,
+  disputeRespondedV1Contract,
   disputeTransitionContract,
   openDisputeCommandContract,
   platformDisputeQueueItemContract,
+  platformDisputeViewContract,
   sellerDisputeViewContract,
-  violationCaseOpenedV1Contract,
-  violationCaseTransitionContract,
+  violationCaseAuditEntryContract,
+  violationRecordedV1Contract,
 } from "@sevo/contracts/problem-follow-up/v1";
 import { describe, expect, it } from "vitest";
 
@@ -55,10 +59,24 @@ describe("problem follow-up v1 transitions", () => {
         toStatus: "RESOLVED",
       },
       {
+        action: "RESOLVE",
+        actorKind: "PLATFORM_AGENT",
+        actorIdentityId: agentId,
+        fromStatus: "UNDER_REVIEW",
+        toStatus: "CLOSED",
+      },
+      {
         action: "REOPEN",
         actorKind: "PLATFORM_AGENT",
         actorIdentityId: agentId,
         fromStatus: "RESOLVED",
+        toStatus: "UNDER_REVIEW",
+      },
+      {
+        action: "REOPEN",
+        actorKind: "PLATFORM_AGENT",
+        actorIdentityId: agentId,
+        fromStatus: "CLOSED",
         toStatus: "UNDER_REVIEW",
       },
     ] as const;
@@ -146,6 +164,45 @@ describe("problem follow-up v1 least-data views", () => {
       }),
     ).toThrow();
   });
+
+  it("reveals platform details only for a live scope bound to the same case", () => {
+    const platformView = {
+      ...visibleCase,
+      access: {
+        grantId: "00000000-0000-4000-8000-000000000013",
+        mode: "REVEALED_MINIMUM",
+        scope: {
+          resourceType: "DISPUTE_CASE",
+          resourceId: disputeId,
+          allowedActions: ["REVEAL_MINIMUM"],
+        },
+        accessedAt: "2026-08-27T12:00:00+03:30",
+        expiresAt: "2026-08-27T12:30:00+03:30",
+      },
+    } as const;
+    expect(platformDisputeViewContract.parse(platformView)).toEqual(platformView);
+    expect(() =>
+      platformDisputeViewContract.parse({
+        ...platformView,
+        access: {
+          ...platformView.access,
+          scope: {
+            ...platformView.access.scope,
+            resourceId: orderId,
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      platformDisputeViewContract.parse({
+        ...platformView,
+        access: {
+          ...platformView.access,
+          expiresAt: platformView.access.accessedAt,
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe("problem follow-up v1 audit and events", () => {
@@ -202,6 +259,77 @@ describe("problem follow-up v1 audit and events", () => {
         description: "شرح خصوصی خریدار",
       }),
     ).toThrow();
+
+    expect(() =>
+      disputeAuditEntryContract.parse({
+        ...audit,
+        reasonCode: "NEW_EVIDENCE_RECEIVED",
+      }),
+    ).toThrow();
+  });
+
+  it("binds each event name to its legal state transition", () => {
+    const envelope = {
+      version: 1,
+      eventId: "00000000-0000-4000-8000-000000000014",
+      aggregateId: disputeId,
+      aggregateVersion: 2,
+      occurredAt: "2026-08-27T12:10:00+03:30",
+      correlationId: "00000000-0000-4000-8000-000000000009",
+      actor: { type: "IDENTITY", id: agentId },
+    } as const;
+    expect(
+      disputeRespondedV1Contract.parse({
+        ...envelope,
+        eventType: "DisputeResponded.v1",
+        payload: {
+          disputeId,
+          fromStatus: "AWAITING_SELLER_RESPONSE",
+          toStatus: "UNDER_REVIEW",
+          nextDeadlineAt: null,
+          reasonCode: "SELLER_SUBMITTED_RESPONSE",
+        },
+      }).payload.toStatus,
+    ).toBe("UNDER_REVIEW");
+    expect(
+      disputeResolvedV1Contract.parse({
+        ...envelope,
+        eventType: "DisputeResolved.v1",
+        payload: {
+          disputeId,
+          fromStatus: "UNDER_REVIEW",
+          toStatus: "CLOSED",
+          nextDeadlineAt: "2026-09-03T12:10:00+03:30",
+          reasonCode: "PLATFORM_CLOSED_CASE",
+        },
+      }).payload.toStatus,
+    ).toBe("CLOSED");
+    expect(
+      disputeReopenedV1Contract.parse({
+        ...envelope,
+        eventType: "DisputeReopened.v1",
+        payload: {
+          disputeId,
+          fromStatus: "RESOLVED",
+          toStatus: "UNDER_REVIEW",
+          nextDeadlineAt: null,
+          reasonCode: "NEW_EVIDENCE_RECEIVED",
+        },
+      }).payload.toStatus,
+    ).toBe("UNDER_REVIEW");
+    expect(() =>
+      disputeRespondedV1Contract.parse({
+        ...envelope,
+        eventType: "DisputeResponded.v1",
+        payload: {
+          disputeId,
+          fromStatus: "RESOLVED",
+          toStatus: "DRAFT",
+          nextDeadlineAt: null,
+          reasonCode: "SELLER_SUBMITTED_RESPONSE",
+        },
+      }),
+    ).toThrow();
   });
 
   it("derives the actor from the authenticated command context", () => {
@@ -222,26 +350,11 @@ describe("problem follow-up v1 audit and events", () => {
     ).toThrow();
   });
 
-  it("keeps violation state independent from the related order and dispute", () => {
-    const transition = {
-      action: "START_REVIEW",
-      actorIdentityId: agentId,
-      fromStatus: "OPEN",
-      toStatus: "UNDER_REVIEW",
-    } as const;
-    expect(violationCaseTransitionContract.parse(transition)).toEqual(transition);
-    expect(() =>
-      violationCaseTransitionContract.parse({
-        ...transition,
-        orderStatus: "CANCELED",
-        disputeStatus: "RESOLVED",
-      }),
-    ).toThrow();
-
+  it("records violation follow-up independently without inventing an order transition", () => {
     const violationEvent = {
       version: 1,
       eventId: "00000000-0000-4000-8000-000000000011",
-      eventType: "ViolationCaseOpened.v1",
+      eventType: "ViolationRecorded.v1",
       aggregateId: "00000000-0000-4000-8000-000000000012",
       aggregateVersion: 1,
       occurredAt: "2026-08-27T12:00:00+03:30",
@@ -255,11 +368,37 @@ describe("problem follow-up v1 audit and events", () => {
         deadlineAt: null,
       },
     } as const;
-    expect(violationCaseOpenedV1Contract.parse(violationEvent)).toEqual(violationEvent);
+    expect(violationRecordedV1Contract.parse(violationEvent)).toEqual(violationEvent);
     expect(() =>
-      violationCaseOpenedV1Contract.parse({
+      violationRecordedV1Contract.parse({
         ...violationEvent,
-        payload: { ...violationEvent.payload, evidence: [evidenceId] },
+        payload: {
+          ...violationEvent.payload,
+          orderStatus: "CANCELED",
+          disputeStatus: "RESOLVED",
+          evidence: [evidenceId],
+        },
+      }),
+    ).toThrow();
+
+    const violationAudit = {
+      auditId: "00000000-0000-4000-8000-000000000015",
+      violationCaseId: violationEvent.payload.violationCaseId,
+      actorIdentityId: agentId,
+      action: "RECORD_VIOLATION",
+      status: "OPEN",
+      reasonCode: "VIOLATION_RECORDED",
+      evidenceCount: 1,
+      occurredAt: "2026-08-27T12:00:00+03:30",
+      correlationId: "00000000-0000-4000-8000-000000000009",
+    } as const;
+    expect(violationCaseAuditEntryContract.parse(violationAudit)).toEqual(
+      violationAudit,
+    );
+    expect(() =>
+      violationCaseAuditEntryContract.parse({
+        ...violationAudit,
+        reasonCode: "شماره خریدار 09120000000 است",
       }),
     ).toThrow();
   });

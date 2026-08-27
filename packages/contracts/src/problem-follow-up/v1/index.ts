@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  platformAccessGrantIdContract,
+  platformAccessScopeContract,
+} from "../../identity-access/v1/index";
 import { createJsonSchemaMap } from "../../json-schema";
 import {
   eventEnvelopeV1Contract,
@@ -151,7 +155,32 @@ export const disputeAuditEntryContract = z
     occurredAt: timestampV1Contract,
     correlationId: z.uuid(),
   })
-  .strict();
+  .strict()
+  .superRefine((audit, context) => {
+    const result = disputeTransitionContract.safeParse({
+      action: audit.action,
+      actorKind: audit.actorKind,
+      actorIdentityId: audit.actorIdentityId,
+      fromStatus: audit.fromStatus,
+      toStatus: audit.toStatus,
+    });
+    if (!result.success) {
+      context.addIssue({ code: "custom", message: "invalid audited transition" });
+    }
+    const expectedReason =
+      audit.action === "OPEN"
+        ? "BUYER_OPENED_CASE"
+        : audit.action === "RESPOND"
+          ? "SELLER_SUBMITTED_RESPONSE"
+          : audit.action === "REOPEN"
+            ? "NEW_EVIDENCE_RECEIVED"
+            : audit.toStatus === "RESOLVED"
+              ? "PLATFORM_RESOLVED_CASE"
+              : "PLATFORM_CLOSED_CASE";
+    if (audit.reasonCode !== expectedReason) {
+      context.addIssue({ code: "custom", message: "audit reason mismatch" });
+    }
+  });
 
 const disputeOpenedPayloadContract = z
   .object({
@@ -169,73 +198,63 @@ export const disputeOpenedV1Contract = eventEnvelopeV1Contract.extend({
   payload: disputeOpenedPayloadContract,
 });
 
-const disputeStatusChangedPayloadContract = z
+const disputeRespondedPayloadContract = z
   .object({
     disputeId: disputeIdContract,
-    fromStatus: disputeStatusContract,
-    toStatus: disputeStatusContract,
+    fromStatus: z.literal("AWAITING_SELLER_RESPONSE"),
+    toStatus: z.literal("UNDER_REVIEW"),
     nextDeadlineAt: timestampV1Contract.nullable(),
-    reasonCode: disputeAuditReasonCodeContract,
+    reasonCode: z.literal("SELLER_SUBMITTED_RESPONSE"),
+  })
+  .strict();
+const disputeResolvedPayloadContract = z
+  .object({
+    disputeId: disputeIdContract,
+    fromStatus: z.literal("UNDER_REVIEW"),
+    toStatus: z.enum(["RESOLVED", "CLOSED"]),
+    nextDeadlineAt: timestampV1Contract,
+    reasonCode: z.enum(["PLATFORM_RESOLVED_CASE", "PLATFORM_CLOSED_CASE"]),
+  })
+  .strict()
+  .superRefine((payload, context) => {
+    const expectedReason =
+      payload.toStatus === "RESOLVED"
+        ? "PLATFORM_RESOLVED_CASE"
+        : "PLATFORM_CLOSED_CASE";
+    if (payload.reasonCode !== expectedReason) {
+      context.addIssue({ code: "custom", message: "resolution reason mismatch" });
+    }
+  });
+const disputeReopenedPayloadContract = z
+  .object({
+    disputeId: disputeIdContract,
+    fromStatus: z.enum(["RESOLVED", "CLOSED"]),
+    toStatus: z.literal("UNDER_REVIEW"),
+    nextDeadlineAt: timestampV1Contract.nullable(),
+    reasonCode: z.literal("NEW_EVIDENCE_RECEIVED"),
   })
   .strict();
 
 export const disputeRespondedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("DisputeResponded.v1"),
-  payload: disputeStatusChangedPayloadContract,
+  payload: disputeRespondedPayloadContract,
 });
 export const disputeResolvedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("DisputeResolved.v1"),
-  payload: disputeStatusChangedPayloadContract,
+  payload: disputeResolvedPayloadContract,
 });
 export const disputeReopenedV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("DisputeReopened.v1"),
-  payload: disputeStatusChangedPayloadContract,
+  payload: disputeReopenedPayloadContract,
 });
 
 export const violationCaseIdContract = z.uuid().brand<"ViolationCaseId">();
 export const violationCaseStatusContract = z.enum([
   "OPEN",
   "UNDER_REVIEW",
-  "ACTION_REQUIRED",
   "RESOLVED",
   "CLOSED",
 ]);
-export const violationCaseTransitionActionContract = z.enum([
-  "OPEN",
-  "START_REVIEW",
-  "REQUIRE_ACTION",
-  "RESOLVE",
-  "CLOSE",
-  "REOPEN",
-]);
-const allowedViolationTransitions = new Set([
-  "OPEN:null:OPEN",
-  "START_REVIEW:OPEN:UNDER_REVIEW",
-  "REQUIRE_ACTION:UNDER_REVIEW:ACTION_REQUIRED",
-  "START_REVIEW:ACTION_REQUIRED:UNDER_REVIEW",
-  "RESOLVE:UNDER_REVIEW:RESOLVED",
-  "CLOSE:UNDER_REVIEW:CLOSED",
-  "REOPEN:RESOLVED:UNDER_REVIEW",
-  "REOPEN:CLOSED:UNDER_REVIEW",
-]);
-export const violationCaseTransitionContract = z
-  .object({
-    action: violationCaseTransitionActionContract,
-    actorIdentityId: identityIdContract,
-    fromStatus: violationCaseStatusContract.nullable(),
-    toStatus: violationCaseStatusContract,
-  })
-  .strict()
-  .superRefine((transition, context) => {
-    const signature = [
-      transition.action,
-      transition.fromStatus ?? "null",
-      transition.toStatus,
-    ].join(":");
-    if (!allowedViolationTransitions.has(signature)) {
-      context.addIssue({ code: "custom", message: "invalid violation transition" });
-    }
-  });
 
 export const problemFollowUpV1Operations = {
   openDispute: {
@@ -373,14 +392,33 @@ export const platformDisputeQueueContract = z
     nextCursor: problemFollowUpCursorContract.nullable(),
   })
   .strict();
-export const platformDisputeViewContract = relatedPartyDisputeViewContract.extend({
-  access: z
-    .object({
-      mode: z.literal("REVEALED_MINIMUM"),
-      expiresAt: timestampV1Contract,
-    })
-    .strict(),
-});
+const caseScopedSensitiveAccessContract = z
+  .object({
+    grantId: platformAccessGrantIdContract,
+    mode: z.literal("REVEALED_MINIMUM"),
+    scope: platformAccessScopeContract,
+    accessedAt: timestampV1Contract,
+    expiresAt: timestampV1Contract,
+  })
+  .strict()
+  .superRefine((access, context) => {
+    if (!access.scope.allowedActions.includes("REVEAL_MINIMUM")) {
+      context.addIssue({ code: "custom", message: "minimum reveal is not allowed" });
+    }
+    if (Date.parse(access.expiresAt) <= Date.parse(access.accessedAt)) {
+      context.addIssue({ code: "custom", message: "sensitive access has expired" });
+    }
+  });
+export const platformDisputeViewContract = relatedPartyDisputeViewContract
+  .extend({ access: caseScopedSensitiveAccessContract })
+  .superRefine((view, context) => {
+    if (
+      view.access.scope.resourceType !== "DISPUTE_CASE" ||
+      view.access.scope.resourceId !== view.disputeId
+    ) {
+      context.addIssue({ code: "custom", message: "access scope does not match case" });
+    }
+  });
 
 export const violationTypeContract = z.enum([
   "FULFILLMENT_NONCOMPLIANCE",
@@ -399,6 +437,11 @@ export const violationNextActionCodeContract = z.enum([
   "REVIEW_EVIDENCE",
   "RECORD_ACTION",
   "NO_ACTION",
+]);
+export const violationReasonCodeContract = z.enum([
+  "VIOLATION_RECORDED",
+  "CASE_NOTE_ADDED",
+  "FOLLOW_UP_UPDATED",
 ]);
 export const platformViolationQueueItemContract = z
   .object({
@@ -420,15 +463,18 @@ export const platformViolationQueueContract = z
 export const platformViolationCaseViewContract = platformViolationQueueItemContract
   .extend({
     evidence: z.array(disputeEvidenceReferenceContract).max(20),
-    actionReasonCodes: z.array(z.string().min(1).max(100)).max(50),
-    access: z
-      .object({
-        mode: z.literal("REVEALED_MINIMUM"),
-        expiresAt: timestampV1Contract,
-      })
-      .strict(),
+    actionReasonCodes: z.array(violationReasonCodeContract).max(50),
+    access: caseScopedSensitiveAccessContract,
   })
-  .strict();
+  .strict()
+  .superRefine((view, context) => {
+    if (
+      view.access.scope.resourceType !== "VIOLATION_CASE" ||
+      view.access.scope.resourceId !== view.violationCaseId
+    ) {
+      context.addIssue({ code: "custom", message: "access scope does not match case" });
+    }
+  });
 
 const violationCaseOpenedPayloadContract = z
   .object({
@@ -439,36 +485,39 @@ const violationCaseOpenedPayloadContract = z
     deadlineAt: timestampV1Contract.nullable(),
   })
   .strict();
-export const violationCaseOpenedV1Contract = eventEnvelopeV1Contract.extend({
-  eventType: z.literal("ViolationCaseOpened.v1"),
+export const violationRecordedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("ViolationRecorded.v1"),
   payload: violationCaseOpenedPayloadContract,
 });
-export const violationCaseStatusChangedV1Contract = eventEnvelopeV1Contract.extend({
-  eventType: z.literal("ViolationCaseStatusChanged.v1"),
-  payload: z
-    .object({
-      violationCaseId: violationCaseIdContract,
-      fromStatus: violationCaseStatusContract,
-      toStatus: violationCaseStatusContract,
-      reasonCode: z.string().min(1).max(100),
-      nextDeadlineAt: timestampV1Contract.nullable(),
-    })
-    .strict(),
-});
+export const violationAuditActionContract = z.enum([
+  "RECORD_VIOLATION",
+  "ADD_CASE_NOTE",
+  "UPDATE_FOLLOW_UP",
+]);
 export const violationCaseAuditEntryContract = z
   .object({
     auditId: z.uuid().brand<"ViolationCaseAuditId">(),
     violationCaseId: violationCaseIdContract,
     actorIdentityId: identityIdContract,
-    action: violationCaseTransitionActionContract,
-    fromStatus: violationCaseStatusContract.nullable(),
-    toStatus: violationCaseStatusContract,
-    reasonCode: z.string().min(1).max(100),
+    action: violationAuditActionContract,
+    status: violationCaseStatusContract,
+    reasonCode: violationReasonCodeContract,
     evidenceCount: z.int().nonnegative().max(20),
     occurredAt: timestampV1Contract,
     correlationId: z.uuid(),
   })
-  .strict();
+  .strict()
+  .superRefine((audit, context) => {
+    const expectedReason =
+      audit.action === "RECORD_VIOLATION"
+        ? "VIOLATION_RECORDED"
+        : audit.action === "ADD_CASE_NOTE"
+          ? "CASE_NOTE_ADDED"
+          : "FOLLOW_UP_UPDATED";
+    if (audit.reasonCode !== expectedReason) {
+      context.addIssue({ code: "custom", message: "audit reason mismatch" });
+    }
+  });
 
 export const problemFollowUpErrorContract = z
   .object({
@@ -511,8 +560,7 @@ export const problemFollowUpV1Schemas = {
   DisputeRespondedV1: disputeRespondedV1Contract,
   DisputeResolvedV1: disputeResolvedV1Contract,
   DisputeReopenedV1: disputeReopenedV1Contract,
-  ViolationCaseOpenedV1: violationCaseOpenedV1Contract,
-  ViolationCaseStatusChangedV1: violationCaseStatusChangedV1Contract,
+  ViolationRecordedV1: violationRecordedV1Contract,
 } as const;
 
 export function createProblemFollowUpV1JsonSchemas() {
@@ -606,7 +654,14 @@ export const problemFollowUpV1Examples = {
   PlatformDisputeView: {
     ...exampleDispute,
     access: {
+      grantId: "6df3e69a-4d9c-4c5b-9bf2-75af372e18e5",
       mode: "REVEALED_MINIMUM",
+      scope: {
+        resourceType: "DISPUTE_CASE",
+        resourceId: exampleDispute.disputeId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+      accessedAt: "2026-08-27T08:45:00.000Z",
       expiresAt: "2026-08-27T09:00:00.000Z",
     },
   },
@@ -616,7 +671,14 @@ export const problemFollowUpV1Examples = {
     evidence: [],
     actionReasonCodes: [],
     access: {
+      grantId: "6df3e69a-4d9c-4c5b-9bf2-75af372e18e5",
       mode: "REVEALED_MINIMUM",
+      scope: {
+        resourceType: "VIOLATION_CASE",
+        resourceId: exampleViolation.violationCaseId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+      accessedAt: "2026-08-27T09:00:00.000Z",
       expiresAt: "2026-08-27T09:30:00.000Z",
     },
   },
@@ -627,14 +689,44 @@ export const problemFollowUpV1Examples = {
   },
 } as const;
 
-const allowedDisputeTransitions = new Set([
-  "OPEN:BUYER:null:AWAITING_SELLER_RESPONSE",
-  "RESPOND:SELLER:AWAITING_SELLER_RESPONSE:UNDER_REVIEW",
-  "RESOLVE:PLATFORM_AGENT:UNDER_REVIEW:RESOLVED",
-  "RESOLVE:PLATFORM_AGENT:UNDER_REVIEW:CLOSED",
-  "REOPEN:PLATFORM_AGENT:RESOLVED:UNDER_REVIEW",
-  "REOPEN:PLATFORM_AGENT:CLOSED:UNDER_REVIEW",
-]);
+const allowedDisputeTransitions = [
+  {
+    action: "OPEN",
+    actorKind: "BUYER",
+    fromStatus: null,
+    toStatus: "AWAITING_SELLER_RESPONSE",
+  },
+  {
+    action: "RESPOND",
+    actorKind: "SELLER",
+    fromStatus: "AWAITING_SELLER_RESPONSE",
+    toStatus: "UNDER_REVIEW",
+  },
+  {
+    action: "RESOLVE",
+    actorKind: "PLATFORM_AGENT",
+    fromStatus: "UNDER_REVIEW",
+    toStatus: "RESOLVED",
+  },
+  {
+    action: "RESOLVE",
+    actorKind: "PLATFORM_AGENT",
+    fromStatus: "UNDER_REVIEW",
+    toStatus: "CLOSED",
+  },
+  {
+    action: "REOPEN",
+    actorKind: "PLATFORM_AGENT",
+    fromStatus: "RESOLVED",
+    toStatus: "UNDER_REVIEW",
+  },
+  {
+    action: "REOPEN",
+    actorKind: "PLATFORM_AGENT",
+    fromStatus: "CLOSED",
+    toStatus: "UNDER_REVIEW",
+  },
+] as const;
 
 export const disputeTransitionContract = z
   .object({
@@ -646,13 +738,14 @@ export const disputeTransitionContract = z
   })
   .strict()
   .superRefine((transition, context) => {
-    const signature = [
-      transition.action,
-      transition.actorKind,
-      transition.fromStatus ?? "null",
-      transition.toStatus,
-    ].join(":");
-    if (!allowedDisputeTransitions.has(signature)) {
+    const isAllowed = allowedDisputeTransitions.some(
+      (allowed) =>
+        allowed.action === transition.action &&
+        allowed.actorKind === transition.actorKind &&
+        allowed.fromStatus === transition.fromStatus &&
+        allowed.toStatus === transition.toStatus,
+    );
+    if (!isAllowed) {
       context.addIssue({
         code: "custom",
         message: "invalid dispute transition",
