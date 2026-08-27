@@ -5,6 +5,11 @@ export class FakeObjectStorage implements ObjectStoragePort {
   readonly #objects = new Map<string, StoredMedia>();
 
   async put(object: StoredMedia): Promise<void> {
+    if (
+      object.purpose === "CONVERSATION_ATTACHMENT" &&
+      (object.visibility !== "PRIVATE" || !object.ownerReferenceId)
+    )
+      throw new Error("Conversation attachments must be private and bound to a thread");
     this.#objects.set(object.key, {
       ...object,
       bytes: object.bytes.slice(),

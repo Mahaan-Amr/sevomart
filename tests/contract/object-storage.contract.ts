@@ -169,3 +169,90 @@ export function runObjectStorageContract(
     });
   });
 }
+
+import { randomUUID } from "node:crypto";
+import { conversationAttachmentInputContract } from "@sevo/contracts/media/v1";
+import { MediaAttachmentReader } from "../../apps/api/src/modules/media/composition";
+import type { StoredMedia } from "../../apps/api/src/modules/media/public";
+
+export function runConversationAttachmentStorageContract(
+  name: string,
+  createStorage: () => ObjectStoragePort,
+) {
+  describe(`${name} private attachment contract`, () => {
+    const attachment = (): StoredMedia => ({
+      key: randomUUID(),
+      ownerSellerId: randomUUID(),
+      ownerReferenceId: randomUUID(),
+      purpose: "CONVERSATION_ATTACHMENT",
+      contentType: "image/png",
+      bytes: new Uint8Array([1]),
+      checksum: "0".repeat(64),
+      width: 1,
+      height: 1,
+      visibility: "PRIVATE",
+      variants: [
+        {
+          key: `media/${randomUUID()}/preview.webp`,
+          name: "attachment-preview",
+          contentType: "image/webp",
+          bytes: new Uint8Array([2]),
+          width: 1,
+          height: 1,
+        },
+      ],
+    });
+    it("requires private visibility and a conversation reference at ingestion", async () => {
+      const storage = createStorage();
+      await expect(
+        storage.put({ ...attachment(), visibility: "PUBLIC" }),
+      ).rejects.toThrow();
+      await expect(
+        storage.put({ ...attachment(), ownerReferenceId: undefined }),
+      ).rejects.toThrow();
+    });
+    it("keeps processed attachments private and checks actor and context", async () => {
+      const storage = createStorage();
+      const media = attachment();
+      await storage.put(media);
+      const reader = new MediaAttachmentReader(storage);
+      const input = conversationAttachmentInputContract.parse({
+        identityId: media.ownerSellerId,
+        conversationId: media.ownerReferenceId,
+        mediaId: media.key,
+      });
+      expect(await reader.checkConversationAttachment(input)).toBe("READY");
+      await expect(
+        storage.makePublic(media.key, media.ownerSellerId),
+      ).rejects.toThrow();
+      expect((await storage.inspect(media.key))?.visibility).toBe("PRIVATE");
+      for (const field of ["identityId", "conversationId", "mediaId"] as const)
+        expect(
+          await reader.checkConversationAttachment(
+            conversationAttachmentInputContract.parse({
+              ...input,
+              [field]: randomUUID(),
+            }),
+          ),
+        ).toBe("MESSAGE_REJECTED");
+    });
+    it("does not accept a missing processed derivative or malformed identifier", async () => {
+      const storage = createStorage();
+      const media = attachment();
+      media.variants[0]!.name = "product-detail";
+      await storage.put(media);
+      const reader = new MediaAttachmentReader(storage);
+      const input = conversationAttachmentInputContract.parse({
+        identityId: media.ownerSellerId,
+        conversationId: media.ownerReferenceId,
+        mediaId: media.key,
+      });
+      expect(await reader.checkConversationAttachment(input)).toBe("MEDIA_NOT_READY");
+      expect(
+        await reader.checkConversationAttachment(
+          Object.assign({}, input, { mediaId: "invalid" }),
+        ),
+      ).toBe("MESSAGE_REJECTED");
+    });
+  });
+}

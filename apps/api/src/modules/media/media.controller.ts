@@ -114,6 +114,11 @@ export class MediaController {
     let bytes: Buffer | undefined;
     try {
       for await (const part of request.parts()) {
+        if (
+          fixedPurpose === "CONVERSATION_ATTACHMENT" &&
+          (part.type !== "file" || part.fieldname !== "file")
+        )
+          throw mediaError(request.id, "REQUIRED");
         if (part.type === "field" && part.fieldname === "purpose") {
           const parsed = mediaUploadPurposeContract.safeParse(part.value);
           if (!parsed.success || (fixedPurpose && parsed.data !== fixedPurpose))

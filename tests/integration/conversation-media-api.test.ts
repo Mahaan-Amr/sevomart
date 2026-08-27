@@ -180,3 +180,34 @@ it("denies uploads to another thread, invalid images and anonymous requests", as
     ).statusCode,
   ).toBe(422);
 });
+
+it("rejects unexpected attachment multipart fields", async () => {
+  const f = await start();
+  const prefix = Buffer.from(
+    '--attachment\r\nContent-Disposition: form-data; name="caption"\r\n\r\nignored text\r\n',
+  );
+  const response = await f.server.inject({
+    method: "POST",
+    url: `/v1/conversations/${f.conversationId}/media`,
+    headers: {
+      cookie: f.cookie,
+      "content-type": "multipart/form-data; boundary=attachment",
+    },
+    payload: Buffer.concat([prefix, uploadBody()]),
+  });
+  expect(response.statusCode).toBe(422);
+});
+
+import { PostgresMinioMediaStorage } from "../../apps/api/src/modules/media/composition";
+import { runConversationAttachmentStorageContract } from "../contract/object-storage.contract";
+const contractStorages: PostgresMinioMediaStorage[] = [];
+afterEach(async () => {
+  await Promise.all(
+    contractStorages.splice(0).map((storage) => storage.onModuleDestroy()),
+  );
+});
+runConversationAttachmentStorageContract("PostgresMinioMediaStorage", () => {
+  const storage = new PostgresMinioMediaStorage(apiTestEnvironment);
+  contractStorages.push(storage);
+  return storage;
+});

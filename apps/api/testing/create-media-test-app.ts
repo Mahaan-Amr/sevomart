@@ -11,8 +11,8 @@ import { MediaModule } from "../src/modules/media/composition";
 import { PostgresMinioMediaStorage } from "../src/modules/media/infrastructure/postgres-minio-media-storage";
 import type { ConversationMediaAccess } from "../src/modules/media/public";
 
-@Module({})
 class MediaTestModule {}
+Module({})(MediaTestModule);
 
 export async function createMediaTestApp(
   environment: RuntimeEnvironment,
