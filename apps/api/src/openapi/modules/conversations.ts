@@ -31,6 +31,15 @@ const conversationIdParameter = {
   example: conversationsV1Examples.ConversationId,
 } as const;
 
+const idempotencyHeaderParameters = [
+  {
+    name: "Idempotency-Key",
+    schema: "ConversationIdempotencyKey",
+    example: conversationsV1Examples.ConversationIdempotencyKey,
+    required: true,
+  },
+] as const;
+
 const operations = [
   {
     ...conversationsV1Operations.listConversations,
@@ -50,14 +59,7 @@ const operations = [
     ...conversationsV1Operations.openConversation,
     tag: "conversations",
     auth: "identity-session",
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "ConversationIdempotencyKey",
-        example: conversationsV1Examples.ConversationIdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "OpenConversationInputV1",
       example: conversationsV1Examples.OpenConversationInputV1,
@@ -114,14 +116,7 @@ const operations = [
     tag: "conversations",
     auth: "identity-session",
     pathParameter: conversationIdParameter,
-    headerParameters: [
-      {
-        name: "Idempotency-Key",
-        schema: "ConversationIdempotencyKey",
-        example: conversationsV1Examples.ConversationIdempotencyKey,
-        required: true,
-      },
-    ],
+    headerParameters: idempotencyHeaderParameters,
     request: {
       schema: "SendConversationMessageInputV1",
       example: conversationsV1Examples.SendConversationMessageInputV1,
@@ -155,7 +150,7 @@ const responseMetadata = {
     401: "Identity session is missing or invalid",
     403: "Identity cannot access this context or conversation",
     404: "Conversation context or resource was not found",
-    409: "Context, cursor, or idempotent send conflicts with current state",
+    409: "Context, cursor, or idempotent mutation conflicts with current state",
     410: "Conversation cursor has expired",
     422: "Message content or media was rejected",
     500: "Unexpected server error",

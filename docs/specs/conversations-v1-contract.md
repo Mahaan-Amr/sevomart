@@ -76,7 +76,8 @@ producer گفت‌وگو aggregate فروشگاه، کالا یا سفارش ر�
 scope کلید اول برابر `OpenConversation.v1 + actor identity + key` و scope کلید
 دوم برابر `SendMessage.v1 + actor identity + conversationId + key` است:
 
-- payload یکسان، همان status/body و همان `messageId` را replay می‌کند؛
+- payload یکسان، همان status/body و شناسه پایدار همان operation یعنی
+  `conversationId` یا `messageId` را replay می‌کند؛
 - payload متفاوت، `409 IDEMPOTENCY_CONFLICT` است؛
 - درخواست هم‌زمان، `409 IDEMPOTENCY_IN_PROGRESS` با `Retry-After` و
   `details.retryAfterSeconds` است؛
