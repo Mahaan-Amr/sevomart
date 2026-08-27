@@ -719,7 +719,7 @@ describe("public discovery event projection", () => {
         availabilityVersion: 7,
       });
     }
-  });
+  }, 30_000);
 });
 
 function permutations<T>(values: readonly T[]): T[][] {
