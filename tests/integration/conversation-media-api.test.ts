@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, it } from "vitest";
-import { createMediaTestApp } from "../../apps/api/src/modules/media/testing/create-media-test-app";
+import { createMediaTestApp } from "../../apps/api/testing/create-media-test-app";
 import { conversationAttachmentInputContract } from "@sevo/contracts/media/v1";
 import {
   CONVERSATION_ATTACHMENT_READER,

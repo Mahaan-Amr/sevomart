@@ -4,12 +4,12 @@ import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import type { RuntimeEnvironment } from "@sevo/config";
 import { MEDIA_UPLOAD_MAX_BYTES } from "@sevo/contracts/media/v1";
-import { ApiExceptionFilter } from "../../../http/api-exception.filter";
-import { IdentityAccessModule } from "../../identity-access/composition";
-import { DevOtpProvider } from "../../notifications/composition";
-import { MediaModule } from "../composition";
-import { PostgresMinioMediaStorage } from "../infrastructure/postgres-minio-media-storage";
-import type { ConversationMediaAccess } from "../public";
+import { ApiExceptionFilter } from "../src/http/api-exception.filter";
+import { IdentityAccessModule } from "../src/modules/identity-access/composition";
+import { DevOtpProvider } from "../src/modules/notifications/composition";
+import { MediaModule } from "../src/modules/media/composition";
+import { PostgresMinioMediaStorage } from "../src/modules/media/infrastructure/postgres-minio-media-storage";
+import type { ConversationMediaAccess } from "../src/modules/media/public";
 
 @Module({})
 class MediaTestModule {}
