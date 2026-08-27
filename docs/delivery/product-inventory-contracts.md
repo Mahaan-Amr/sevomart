@@ -65,5 +65,28 @@ availability از مرز رزرو، rollback، revision conflict و replay تر�
 پوشش می‌دهند. سفر HTTP موجود، انتشار/توقف/بازانتشار، قیمت زنده و رخدادهای واقعی
 outbox را نیز با schema مالک می‌سنجد. UI یا baseline بصری تغییر نکرده است.
 
-نتایج نهایی اجرای native، Docker و مرور مستقل پس از اتمام بررسی‌ها در این سند
-و comment تحویل ثبت می‌شوند. مرور انسانی @ferpheri جداگانه لازم است.
+نتایج نهایی ۲۰۲۶-۰۸-۲۷ روی `efb8c99c565f027a26c95d4787984a77d0b62303`:
+
+- native: ۹۳ unit، ۹۳ contract، ۱۱۲ integration و ۱۳۶ E2E سبزند؛ `format:check`،
+  `lint`، architecture، `typecheck` و `pnpm build` نیز سبز هستند. آزمون‌های مرورگر
+  چهار viewport، RTL، focus، کنتراست و reduced motion موجود را بدون تغییر baseline گذراندند.
+- اجرای نخست integration در تست ۱۲۰ ترتیب رخداد به بودجه سراسری ۱۵ ثانیه خورد
+  و following-feed بعدی نیز 503 گرفت. با بودجه ۳۰ ثانیه فقط برای همان تست، بدون
+  حذف ترتیب یا assertion، هر ۱۱۲ integration سبز شدند. E2E ابتدا پیش از شروع
+  به برخورد پورت با سرویس QA این کار خورد؛ سرویس QA متوقف و اجرای مستقل
+  `pnpm test:e2e` با ۱۳۶ آزمون موفق کامل شد. یک اجرای واحد `pnpm test` سراسرسبز
+  ادعا نمی‌شود؛ نتایج هر چهار suite نهایی سبزند.
+- `docker compose up --build --wait` با context `7e54fd9` (کد اجرایی یکسان با SHA
+  نهایی؛ پیش از تغییر بودجه آزمون) و سرویس‌های جدا
+  بررسی شد؛ دریافت pnpm از `registry.npmjs.org` پیش از کامپایل به `ECONNRESET`
+  خورد. ساخت کامل Compose محلی موفق گزارش نمی‌شود. شاهد container از
+  [اجرای سبز CI](https://github.com/Mahaan-Amr/sevomart/actions/runs/33051631989)
+  است: quality، build، ۱۳۶ آزمون مرورگر و ساخت/اسکن امنیتی هر چهار image تولیدی
+  API، web، worker و migrate موفق‌اند.
+- مرور مستقل Standards و Spec هیچ یافته باز ندارد. یافته مستندی حفظ زمان
+  انتشار تاریخی v1 اصلاح و دوباره مرور شد. پس از SHA آزموده فقط ثبت شواهد و
+  اصلاح عنوان لینک تصمیم تغییر کرده‌اند؛ کد اجرایی تغییری نکرده است.
+
+مرور انسانی ferpheri جداگانه لازم است؛ Issue تا ثبت آن باز می‌ماند. مالک مخزن
+push مستقیم و fast-forward به `origin/main` پس از بررسی‌های سبز را در همین کار
+صریحاً درخواست کرده است.
