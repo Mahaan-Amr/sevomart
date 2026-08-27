@@ -31,6 +31,16 @@ describe("conversations v1 OpenAPI contract", () => {
     expect(collection.post.requestBody.content["application/json"].schema.$ref).toBe(
       "#/components/schemas/OpenConversationInputV1",
     );
+    expect(collection.post.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Idempotency-Key",
+          in: "header",
+          required: true,
+        }),
+      ]),
+    );
+    expect(collection.post.responses["409"].headers).toHaveProperty("Retry-After");
 
     const thread = document.paths["/v1/conversations/{conversationId}"].get;
     expect(thread.operationId).toBe("readConversation");
@@ -61,6 +71,7 @@ describe("conversations v1 OpenAPI contract", () => {
       ConversationContextEligibilityV1: expect.any(Object),
       ConversationThreadV1: expect.any(Object),
       ConversationMessageV1: expect.any(Object),
+      ConversationOutgoingMessageV1: expect.any(Object),
       ConversationErrorV1: expect.any(Object),
       MessageSentV1: expect.any(Object),
     });

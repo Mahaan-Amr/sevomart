@@ -50,6 +50,14 @@ const operations = [
     ...conversationsV1Operations.openConversation,
     tag: "conversations",
     auth: "identity-session",
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "ConversationIdempotencyKey",
+        example: conversationsV1Examples.ConversationIdempotencyKey,
+        required: true,
+      },
+    ],
     request: {
       schema: "OpenConversationInputV1",
       example: conversationsV1Examples.OpenConversationInputV1,
@@ -59,7 +67,16 @@ const operations = [
       { status: 401, schema: "ConversationErrorV1" },
       { status: 403, schema: "ConversationErrorV1" },
       { status: 404, schema: "ConversationErrorV1" },
-      { status: 409, schema: "ConversationErrorV1" },
+      {
+        status: 409,
+        schema: "ConversationErrorV1",
+        headers: {
+          "Retry-After": {
+            description: "Seconds before retrying an in-progress idempotent open",
+            schema: { type: "string" },
+          },
+        },
+      },
       { status: 500, schema: "InternalServerError" },
     ],
   },

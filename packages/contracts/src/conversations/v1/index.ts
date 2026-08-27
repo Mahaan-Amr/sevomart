@@ -137,6 +137,22 @@ export const conversationMessageV1Contract = z
   })
   .strict();
 
+export const unsentConversationMessageV1Contract = z
+  .object({
+    version: z.literal(1),
+    status: z.literal("UNSENT"),
+    conversationId: conversationIdContract,
+    idempotencyKey: conversationIdempotencyKeyContract,
+    content: conversationMessageContentV1Contract,
+    retryable: z.literal(true),
+  })
+  .strict();
+
+export const conversationOutgoingMessageV1Contract = z.discriminatedUnion("status", [
+  conversationMessageV1Contract,
+  unsentConversationMessageV1Contract,
+]);
+
 export const conversationMessagePageV1Contract = z
   .object({
     version: z.literal(1),
@@ -206,6 +222,7 @@ export const conversationsV1Schemas = {
   ConversationMessageContentV1: conversationMessageContentV1Contract,
   SendConversationMessageInputV1: sendConversationMessageInputV1Contract,
   ConversationMessageV1: conversationMessageV1Contract,
+  ConversationOutgoingMessageV1: conversationOutgoingMessageV1Contract,
   ConversationMessagePageV1: conversationMessagePageV1Contract,
   ConversationErrorV1: conversationErrorV1Contract,
   MessageSentV1: messageSentV1Contract,
@@ -275,6 +292,14 @@ export const conversationsV1Examples = {
     status: "SENT",
     createdAt: "2026-08-27T09:00:00.000Z",
   },
+  ConversationOutgoingMessageV1: {
+    version: 1,
+    status: "UNSENT",
+    conversationId: "7a30197b-85fb-4209-83e8-743ab3bea71c",
+    idempotencyKey: "send-message-01",
+    content: { type: "TEXT", text: "سلام، این کالا هنوز موجود است؟" },
+    retryable: true,
+  },
   ConversationMessagePageV1: {
     version: 1,
     items: [],
@@ -319,5 +344,8 @@ export type SendConversationMessageInputV1 = z.infer<
   typeof sendConversationMessageInputV1Contract
 >;
 export type ConversationMessageV1 = z.infer<typeof conversationMessageV1Contract>;
+export type ConversationOutgoingMessageV1 = z.infer<
+  typeof conversationOutgoingMessageV1Contract
+>;
 export type ConversationErrorV1 = z.infer<typeof conversationErrorV1Contract>;
 export type MessageSentV1 = z.infer<typeof messageSentV1Contract>;

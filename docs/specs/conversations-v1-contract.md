@@ -27,7 +27,8 @@ eligibility adapterهای واقعی، upload رسانه، producer رخداد �
   URL را ندارد.
 - یک رشته با tuple
   `buyerIdentityId + sellerIdentityId + canonical context` یکتا است. تکرار
-  `OpenConversation.v1` همان `conversationId` و thread را برمی‌گرداند.
+  `OpenConversation.v1` با همان payload و `Idempotency-Key` همان
+  `conversationId` و thread را برمی‌گرداند.
 - فقط خریدار واجد شرایط رشته تازه می‌سازد. فروشنده رشته موجود همان فروشگاه را
   می‌خواند و پاسخ می‌دهد؛ هویت دیگر یا فروشگاه دیگر حتی با URL مستقیم منع می‌شود.
 - `viewerRole` فقط `BUYER | SELLER` است و از نشست و عضویت زنده محاسبه می‌شود؛
@@ -57,7 +58,7 @@ producer گفت‌وگو aggregate فروشگاه، کالا یا سفارش ر�
 | operation                     | مسیر                                               | نتیجه                                    |
 | ----------------------------- | -------------------------------------------------- | ---------------------------------------- |
 | `ListConversations.v1`        | `GET /v1/conversations`                            | صفحه رشته‌های همان participant           |
-| `OpenConversation.v1`         | `POST /v1/conversations`                           | رشته موجود یا تازه برای زمینه واجد شرایط |
+| `OpenConversation.v1`         | `POST /v1/conversations` با `Idempotency-Key`      | رشته موجود یا تازه برای زمینه واجد شرایط |
 | `ReadConversation.v1`         | `GET /v1/conversations/{conversationId}`           | زمینه و نقش viewer بدون داده تماس        |
 | `ListConversationMessages.v1` | `GET /v1/conversations/{conversationId}/messages`  | صفحه پیام‌های مجاز همان رشته             |
 | `SendMessage.v1`              | `POST /v1/conversations/{conversationId}/messages` | پیام ثبت‌شده با `messageId/status`       |
@@ -71,8 +72,9 @@ producer گفت‌وگو aggregate فروشگاه، کالا یا سفارش ر�
 
 ## ۵. ارسال idempotent و شکست قابل بازیابی
 
-`SendMessage.v1` هدر الزامی `Idempotency-Key` دارد. scope کلید برابر
-`SendMessage.v1 + actor identity + conversationId + key` است:
+`OpenConversation.v1` و `SendMessage.v1` هدر الزامی `Idempotency-Key` دارند.
+scope کلید اول برابر `OpenConversation.v1 + actor identity + key` و scope کلید
+دوم برابر `SendMessage.v1 + actor identity + conversationId + key` است:
 
 - payload یکسان، همان status/body و همان `messageId` را replay می‌کند؛
 - payload متفاوت، `409 IDEMPOTENCY_CONFLICT` است؛
@@ -95,10 +97,16 @@ producer گفت‌وگو aggregate فروشگاه، کالا یا سفارش ر�
 مجاز رسانه را پیش از ثبت بررسی کند؛ contract آدرس object storage یا metadata خام
 را حمل نمی‌کند.
 
-نمای authenticated پیام فقط `messageId`، `conversationId`، نقش فرستنده، محتوای
-نوشته/انتخاب‌شده کاربر، status و زمان دارد. شماره موبایل حساب، نشانی، روش ورود،
-token، شناسه بانکی، داده سفارش حساس و شناسه داخلی participant به‌عنوان فیلد پیام
-ممنوع‌اند. محتوایی که خود کاربر نوشته با داده حساب پلتفرم enrich نمی‌شود.
+نمای authenticated پیام ثبت‌شده فقط `messageId`، `conversationId`، نقش فرستنده،
+محتوای نوشته/انتخاب‌شده کاربر، status و زمان دارد. شماره موبایل حساب، نشانی، روش
+ورود، token، شناسه بانکی، داده سفارش حساس و شناسه داخلی participant به‌عنوان فیلد
+پیام ممنوع‌اند. محتوایی که خود کاربر نوشته با داده حساب پلتفرم enrich نمی‌شود.
+
+شکست پیش از persistence پیام سروری یا `MessageSent.v1` نمی‌سازد. consumer همان
+محتوا و کلید را در `ConversationOutgoingMessageV1` با `status: UNSENT` و
+`retryable: true` نگه می‌دارد و retry را با همان payload و کلید انجام می‌دهد.
+حالت `UNSENT` محلی است و در `ListConversationMessages.v1` برنمی‌گردد؛ در نتیجه
+شکست موفقیت کاذب یا پیام دوم ایجاد نمی‌کند.
 
 `MessageSent.v1` فقط `conversationId`، `messageId`، نوع زمینه و نقش فرستنده را
 در payload دارد. متن، caption، `mediaId`، اطلاعات تماس و metadata رسانه در outbox،

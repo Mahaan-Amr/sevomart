@@ -7,6 +7,7 @@ import {
   conversationIdempotencyKeyContract,
   conversationMessagePageV1Contract,
   conversationMessageV1Contract,
+  conversationOutgoingMessageV1Contract,
   conversationThreadPageV1Contract,
   conversationThreadV1Contract,
   createConversationsV1JsonSchemas,
@@ -151,9 +152,24 @@ describe("conversations v1 public contract", () => {
         details: { retryAfterSeconds: 2 },
       }),
     ).toMatchObject({ details: { retryAfterSeconds: 2 } });
+    expect(
+      conversationOutgoingMessageV1Contract.parse({
+        version: 1,
+        status: "UNSENT",
+        conversationId,
+        idempotencyKey: "send-message-01",
+        content: { type: "TEXT", text: "سلام، این کالا هنوز موجود است؟" },
+        retryable: true,
+      }),
+    ).toMatchObject({
+      status: "UNSENT",
+      idempotencyKey: "send-message-01",
+      retryable: true,
+    });
     expect(createConversationsV1JsonSchemas()).toMatchObject({
       ConversationThreadV1: expect.any(Object),
       ConversationMessageV1: expect.any(Object),
+      ConversationOutgoingMessageV1: expect.any(Object),
       ConversationErrorV1: expect.any(Object),
       MessageSentV1: expect.any(Object),
     });
