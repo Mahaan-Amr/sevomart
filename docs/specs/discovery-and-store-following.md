@@ -235,7 +235,8 @@ producerها برقرار باشند:
 موجودی مثبت شرط eligibility نیست. `OUT_OF_STOCK` فقط availability کارت و امکان
 خرید را تغییر می‌دهد.
 
-- `firstPublishedAt` در نخستین `ProductPublished.v2` پذیرفته‌شده از
+- `firstPublishedAt` در نخستین `ProductPublished.v2` پذیرفته‌شده (یا رخداد تاریخی
+  `ProductPublished.v1` در پنجره سازگاری) از
   `EventEnvelope.v1.occurredAt` گرفته و برای عمر `productId` تغییرناپذیر می‌شود.
   rebuild باید از اولین رخداد همان aggregate replay شود.
 - `eligibleSince` آغاز دوره جاری واجدشرایط‌بودن است. ویرایش publication، قیمت یا
