@@ -140,6 +140,35 @@ describe("successful direct payment transaction seam", () => {
     },
   );
 
+  it("rejects malformed runtime identifiers without a database error", async () => {
+    const input = orderConversationEligibilityInputContract.parse({
+      identityId: ids.buyer,
+      orderId: ids.order,
+      storeId: ids.store,
+    });
+    expect(
+      await orders.checkConversationOrder(
+        Object.assign({}, input, { storeId: "invalid" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("propagates a disconnected database instead of reporting eligibility", async () => {
+    const disconnected = new PostgresCheckoutRepository(
+      apiTestEnvironment.DATABASE_URL,
+      inventory,
+    );
+    await disconnected.onModuleDestroy();
+    const input = orderConversationEligibilityInputContract.parse({
+      identityId: ids.buyer,
+      orderId: ids.order,
+      storeId: ids.store,
+    });
+    await expect(disconnected.checkConversationOrder(input)).rejects.toMatchObject({
+      code: "CONNECTION_ENDED",
+    });
+  });
+
   it("stores the order reference without a cross-module foreign key", async () => {
     expect(
       await sql`
