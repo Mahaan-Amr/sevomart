@@ -343,18 +343,26 @@ PAYMENT_REVIEW ──confirmed + inventory committed──▶ PAID
        ├──failed before original deadline─────────▶ PENDING_PAYMENT
        ├──failed at/after original deadline───────▶ EXPIRED
        └──late success without stock──────────────▶ PAYMENT_REVIEW
+
+EXPIRED ──late success / provider conflict─────────▶ PAYMENT_REVIEW
 ```
 
-`PAID` و `EXPIRED` در محدوده این برش terminal هستند. وضعیت‌های
+`PAID` در محدوده این برش terminal است. `EXPIRED` تلاش پرداخت تازه را می‌بندد،
+اما نتیجه دیررس یا متناقض می‌تواند آن را برای پیگیری به `PAYMENT_REVIEW` ببرد؛
+این گذار رزرو آزادشده را باز نمی‌کند و سفارش قابل اقدام نمی‌سازد. وضعیت‌های
 `CANCELLATION_PENDING_REFUND` و `CANCELED` برای کار آینده رزرو شده‌اند و operation
 این Spec آن‌ها را تولید نمی‌کند.
 
 ### state machine تلاش پرداخت
 
 ```text
-CREATED → DISPATCHED → PENDING_RESULT → CONFIRMED | FAILED | REVIEW_REQUIRED
+CREATED → DISPATCHED → CONFIRMED | FAILED | REVIEW_REQUIRED
                          REVIEW_REQUIRED → CONFIRMED | FAILED
 ```
+
+`DISPATCHED` وضعیت پایدار انتظار برای نخستین نتیجه Provider است. نتیجه
+`PENDING` خودِ Provider به `REVIEW_REQUIRED` نگاشت می‌شود و state پایدار جداگانه‌ای
+به نام `PENDING_RESULT` در قرارداد اجرایی ندارد.
 
 `CONFIRMED` downgrade نمی‌شود. `FAILED` همان تلاش terminal است و فقط تلاش تازه،
 در صورت مجاز بودن سفارش و رزرو، ساخته می‌شود. نتیجه متناقض state قطعی را عوض
@@ -411,12 +419,17 @@ CREATED → DISPATCHED → PENDING_RESULT → CONFIRMED | FAILED | REVIEW_REQUIR
 گروه routeهای OpenAPI سفارش:
 
 - `/v1/cart` و `/v1/cart/items/{variantId}` برای سبد جاری؛
-- `/v1/cart/store-replacement` و `/v1/cart/identity-resolution` برای تصمیم صریح؛
+- `/v1/cart/store-replacement`، `/v1/cart/attach` و `/v1/cart/resolve` برای تصمیم
+  صریح و اتصال پس از ورود؛
 - `/v1/addresses` و `/v1/addresses/{addressId}` برای نشانی نسخه‌دار؛
 - `/v1/checkout/prepare` و `/v1/orders` برای مرور و ساخت؛
-- `/v1/orders/{orderId}` برای خریدار؛
-- `/v1/seller/orders`، `/v1/seller/orders/{orderId}` و
-  `/v1/seller/orders/{orderId}/delivery-details:reveal` برای فروشنده.
+- `/v1/seller/orders` برای فهرست سفارش‌های قابل اقدام فروشنده.
+
+`ordersV1Operations` مرجع اجرایی operationId، method و path مسیرهای موجود این
+نسخه است و fragment OpenAPI مستقیماً از آن ساخته می‌شود. مسیر جزئیات خریدار،
+جزئیات فروشنده و reveal که در نتیجه نهایی این Spec تعریف شده‌اند تا زمان ساخت
+controller و قرارداد پاسخ خود وارد این مرجع و OpenAPI نمی‌شوند؛ ثبت path بدون
+runtime مجاز نیست.
 
 رخدادهای سفارش:
 
@@ -426,10 +439,10 @@ CREATED → DISPATCHED → PENDING_RESULT → CONFIRMED | FAILED | REVIEW_REQUIR
 
 ### پرداخت — `@sevo/contracts/payments/v1`
 
-| قرارداد                    | operationهای عمومی/داخلی                       | خطاهای دامنه اصلی                                                                                                                  | PII و consistency                                 |
-| -------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `DirectPaymentAttempt.v1`  | ساخت و خواندن تلاش، dispatch و ثبت نتیجه معتبر | `ORDER_NOT_PAYABLE`، `DUPLICATE_ATTEMPT`، `ATTEMPT_NOT_READY`، `AMOUNT_MISMATCH`، `UNKNOWN_PROVIDER_REFERENCE`، `DUPLICATE_RESULT` | بدون callback خام؛ نهایی‌سازی strong و idempotent |
-| `DirectPaymentProvider.v1` | `initiate`، `verifyAndMapCallback` و `query`   | خطای typed adapter، بدون نشت پاسخ خام                                                                                              | تماس بیرونی خارج از transaction                   |
+| قرارداد                    | operationهای عمومی/داخلی                       | خطاهای دامنه اصلی                                                                                                                                           | PII و consistency                                 |
+| -------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `DirectPaymentAttempt.v1`  | ساخت و خواندن تلاش، dispatch و ثبت نتیجه معتبر | `ORDER_NOT_PAYABLE`، `IDEMPOTENCY_CONFLICT`، `IDEMPOTENCY_IN_PROGRESS`، `AMOUNT_MISMATCH`، `ATTEMPT_NOT_FOUND`، `INVALID_CALLBACK`، `PRECONDITION_REQUIRED` | بدون callback خام؛ نهایی‌سازی strong و idempotent |
+| `DirectPaymentProvider.v1` | `initiate`، `verifyAndMapCallback` و `query`   | خطای typed adapter، بدون نشت پاسخ خام                                                                                                                       | تماس بیرونی خارج از transaction                   |
 
 گروه routeهای OpenAPI پرداخت:
 
@@ -438,7 +451,11 @@ CREATED → DISPATCHED → PENDING_RESULT → CONFIRMED | FAILED | REVIEW_REQUIR
 - `/internal/v1/payment-providers/{provider}/callbacks` برای callback
   اعتبارسنجی‌شده؛
 - operation داخلی worker برای claim و تطبیق تلاش‌های نیازمند بررسی، بدون route
-  عمومی.
+  عمومی؛
+- `/v1/platform/payment-reviews` برای صف محدود بررسی عملیاتی عامل دارای مجوز.
+
+`paymentsV1Operations` مرجع اجرایی operationId، method و path این routeهاست و
+fragment OpenAPI مستقیماً از همان مرجع ساخته می‌شود.
 
 رخدادهای پرداخت:
 
@@ -447,6 +464,16 @@ CREATED → DISPATCHED → PENDING_RESULT → CONFIRMED | FAILED | REVIEW_REQUIR
 - `DirectPaymentAttemptConfirmed.v1`؛
 - `DirectPaymentAttemptFailed.v1`؛
 - `DirectPaymentAttemptReviewRequired.v1`.
+
+stateهای سفارش و تلاش، stateهای terminal و شکل audit در همان entrypointهای
+نسخه‌دار با `OrderStatus`، `OrderStateTransitionAudit`،
+`DirectPaymentAttemptStatus` و `PaymentAttemptAudit` منتشر می‌شوند. فقط `PAID`
+برای سفارش و `CONFIRMED` و `FAILED` برای همان تلاش پرداخت terminal هستند.
+`EXPIRED` برای سفارش terminal نیست: پرداخت تازه بسته است، اما پیگیری نتیجه
+دیررس یا متناقض با گذار به `PAYMENT_REVIEW` ممکن می‌ماند.
+`REVIEW_REQUIRED` پرداخت دوباره را می‌بندد اما برای تطبیق همان تلاش
+terminal نیست. audit فقط شناسه aggregate، وضعیت قبل/بعد، reason code غیرحساس،
+`actorKind` سرویس، correlation و زمان را دارد.
 
 ### envelope رخداد
 

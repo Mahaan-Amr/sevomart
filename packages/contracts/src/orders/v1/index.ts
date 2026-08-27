@@ -12,6 +12,115 @@ import {
   variantIdContract,
 } from "../../platform/v1/index";
 
+export const ordersV1Operations = {
+  listSellerActionableOrders: {
+    operationId: "listSellerActionableOrders",
+    method: "get",
+    path: "/v1/seller/orders",
+  },
+  readCart: { operationId: "readCart", method: "get", path: "/v1/cart" },
+  upsertCartItem: {
+    operationId: "upsertCartItem",
+    method: "put",
+    path: "/v1/cart/items/{variantId}",
+  },
+  removeCartItem: {
+    operationId: "removeCartItem",
+    method: "delete",
+    path: "/v1/cart/items/{variantId}",
+  },
+  confirmCartReview: {
+    operationId: "confirmCartReview",
+    method: "post",
+    path: "/v1/cart/review",
+  },
+  replaceCartStore: {
+    operationId: "replaceCartStore",
+    method: "post",
+    path: "/v1/cart/store-replacement",
+  },
+  attachGuestCart: {
+    operationId: "attachGuestCart",
+    method: "post",
+    path: "/v1/cart/attach",
+  },
+  resolveCartConflict: {
+    operationId: "resolveCartConflict",
+    method: "post",
+    path: "/v1/cart/resolve",
+  },
+  readCheckoutOptions: {
+    operationId: "readCheckoutOptions",
+    method: "get",
+    path: "/v1/checkout/options",
+  },
+  prepareCheckout: {
+    operationId: "prepareCheckout",
+    method: "post",
+    path: "/v1/checkout/prepare",
+  },
+  createOrder: {
+    operationId: "createOrder",
+    method: "post",
+    path: "/v1/orders",
+  },
+  listSavedAddresses: {
+    operationId: "listSavedAddresses",
+    method: "get",
+    path: "/v1/addresses",
+  },
+  createSavedAddress: {
+    operationId: "createSavedAddress",
+    method: "post",
+    path: "/v1/addresses",
+  },
+  updateSavedAddress: {
+    operationId: "updateSavedAddress",
+    method: "put",
+    path: "/v1/addresses/{addressId}",
+  },
+  deleteSavedAddress: {
+    operationId: "deleteSavedAddress",
+    method: "delete",
+    path: "/v1/addresses/{addressId}",
+  },
+} as const;
+
+export const orderStatusContract = z.enum([
+  "PENDING_PAYMENT",
+  "PAYMENT_REVIEW",
+  "PAID",
+  "EXPIRED",
+]);
+// EXPIRED closes payment retry, but late results can still require PAYMENT_REVIEW.
+export const orderTerminalStatuses = ["PAID"] as const satisfies readonly z.infer<
+  typeof orderStatusContract
+>[];
+export const orderPaymentReviewReasonCodeContract = z.enum([
+  "PAYMENT_DISPATCH_UNRESOLVED",
+  "PAYMENT_CONFIRMED_STOCK_CONFLICT",
+  "PAYMENT_PROVIDER_CONFLICT",
+]);
+export const orderStateTransitionReasonCodeContract = z.enum([
+  "PAYMENT_CONFIRMED",
+  "PAYMENT_DISPATCH_UNRESOLVED",
+  "PAYMENT_CONFIRMED_STOCK_CONFLICT",
+  "PAYMENT_PROVIDER_CONFLICT",
+  "PAYMENT_FAILED",
+  "PAID_STOCK_CONFLICT",
+]);
+export const orderStateTransitionAuditContract = z
+  .object({
+    orderId: orderIdContract,
+    fromStatus: orderStatusContract.nullable(),
+    toStatus: orderStatusContract,
+    reasonCode: orderStateTransitionReasonCodeContract,
+    actorKind: z.literal("PAYMENTS_SERVICE"),
+    correlationId: z.string().min(1).max(128),
+    occurredAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
 export const cartIdContract = z.uuid().brand("CartId");
 export const cartIdempotencyKeyContract = z.string().min(1).max(200);
 export const cartGuestScopeContract = z.uuid();
@@ -528,6 +637,14 @@ export const ordersV1Schemas = {
   SavedAddress: savedAddressContract,
   SavedAddressList: savedAddressListContract,
   SavedAddressError: savedAddressErrorContract,
+  OrderStatus: orderStatusContract,
+  OrderPaymentReviewReasonCode: orderPaymentReviewReasonCodeContract,
+  OrderStateTransitionReasonCode: orderStateTransitionReasonCodeContract,
+  OrderStateTransitionAudit: orderStateTransitionAuditContract,
+  OrderCreatedV1: orderCreatedV1Contract,
+  OrderExpiredV1: orderExpiredV1Contract,
+  OrderPaymentReviewRequiredV1: orderPaymentReviewRequiredV1Contract,
+  OrderBecameActionableV1: orderBecameActionableV1Contract,
 } as const;
 
 export function createOrdersV1JsonSchemas() {
@@ -815,6 +932,10 @@ export type CheckoutOptions = z.infer<typeof checkoutOptionsContract>;
 export type CreateOrderInput = z.infer<typeof createOrderInputContract>;
 export type CheckoutChange = z.infer<typeof checkoutChangeContract>;
 export type Order = z.infer<typeof orderContract>;
+export type OrderStatus = z.infer<typeof orderStatusContract>;
+export type OrderPaymentReviewReasonCode = z.infer<
+  typeof orderPaymentReviewReasonCodeContract
+>;
 export type SellerActionableOrder = z.infer<typeof sellerActionableOrderContract>;
 export type CartReviewChange = z.infer<typeof cartReviewChangeContract>;
 export type CartItemRemovalInput = z.infer<typeof cartItemRemovalInputContract>;

@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { orderTerminalStatuses } from "@sevo/contracts/orders/v1";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
@@ -529,6 +530,11 @@ describe("successful direct payment transaction seam", () => {
       where id = ${ids.reservation}
     `;
     await sql`update order_orders set status = 'EXPIRED' where id = ${ids.order}`;
+    const [expiredOrder] = await sql<Array<{ status: string }>>`
+      select status from order_orders where id = ${ids.order}
+    `;
+    expect(expiredOrder?.status).toBe("EXPIRED");
+    expect(orderTerminalStatuses).not.toContain(expiredOrder?.status);
 
     await expect(
       service.applyCallback(
