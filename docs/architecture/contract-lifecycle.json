@@ -1,0 +1,212 @@
+{
+  "contracts": {
+    "@sevo/contracts/platform/v1": {
+      "owner": "platform",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["moneyV1Contract"],
+        "operations": [],
+        "events": ["eventEnvelopeV1Contract"]
+      }
+    },
+    "@sevo/contracts/api-errors/v1": {
+      "owner": "platform",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["validationErrorContract"],
+        "operations": [],
+        "events": []
+      }
+    },
+    "@sevo/contracts/identity-access/v1": {
+      "owner": "identity-access",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["identitySessionContract"],
+        "operations": [],
+        "events": ["sensitiveAccessGrantedV1Contract"]
+      }
+    },
+    "@sevo/contracts/store/v1": {
+      "owner": "store",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["storeAuthoritativeSnapshotV1Contract"],
+        "operations": [],
+        "events": ["storePublishedV1Contract"]
+      }
+    },
+    "@sevo/contracts/product/v1": {
+      "owner": "product",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["productAuthoritativeVariantV1Contract"],
+        "operations": [],
+        "events": ["productPublishedV2Contract"]
+      }
+    },
+    "@sevo/contracts/inventory/v1": {
+      "owner": "inventory",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["inventoryAvailabilityReadV1Contract"],
+        "operations": [],
+        "events": ["variantAvailabilityChangedV1Contract"]
+      }
+    },
+    "@sevo/contracts/orders/v1": {
+      "owner": "orders",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["orderContract"],
+        "operations": ["ordersV1Operations"],
+        "events": ["orderBecameActionableV1Contract"]
+      }
+    },
+    "@sevo/contracts/payments/v1": {
+      "owner": "payments",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["directPaymentAttemptContract"],
+        "operations": ["paymentsV1Operations"],
+        "events": ["directPaymentAttemptConfirmedV1Contract"]
+      }
+    },
+    "@sevo/contracts/fulfillment/v1": {
+      "owner": "fulfillment",
+      "approved": true,
+      "executable": false,
+      "consumersMigrated": "not-applicable",
+      "removable": false,
+      "evidence": { "schemas": [], "operations": [], "events": [] }
+    },
+    "@sevo/contracts/conversations/v1": {
+      "owner": "conversations",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": ["conversationContextEligibilityV1Contract"],
+        "operations": ["conversationsV1Operations"],
+        "events": ["messageSentV1Contract"]
+      }
+    },
+    "@sevo/contracts/problem-follow-up/v1": {
+      "owner": "problem-follow-up",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": ["buyerDisputeViewContract"],
+        "operations": ["problemFollowUpV1Operations"],
+        "events": ["disputeOpenedV1Contract"]
+      }
+    },
+    "@sevo/contracts/content/v1": {
+      "owner": "content",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": ["salesContentProductEligibilityDecisionContract"],
+        "operations": ["contentV1Operations"],
+        "events": ["salesContentPublishedV1Contract"]
+      }
+    },
+    "@sevo/contracts/discovery/v1": {
+      "owner": "discovery",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["discoveryFeedPageV1Contract"],
+        "operations": [],
+        "events": ["storeFollowActivatedV1Contract"]
+      }
+    },
+    "@sevo/contracts/media/v1": {
+      "owner": "media",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["mediaReferenceContract"],
+        "operations": [],
+        "events": []
+      }
+    },
+    "@sevo/contracts/notifications/v1": {
+      "owner": "notifications",
+      "approved": false,
+      "executable": false,
+      "consumersMigrated": "not-applicable",
+      "removable": false,
+      "evidence": { "schemas": [], "operations": [], "events": [] }
+    },
+    "@sevo/contracts/reporting-analytics/v1": {
+      "owner": "reporting-analytics",
+      "approved": false,
+      "executable": false,
+      "consumersMigrated": "not-applicable",
+      "removable": false,
+      "evidence": { "schemas": [], "operations": [], "events": [] }
+    }
+  },
+  "artifacts": {
+    "ProductPublished.v1": {
+      "contract": "@sevo/contracts/product/v1",
+      "owner": "product",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": [],
+        "operations": [],
+        "events": ["productPublishedV1Contract"]
+      }
+    },
+    "ProductPublished.v2": {
+      "contract": "@sevo/contracts/product/v1",
+      "owner": "product",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": [],
+        "operations": [],
+        "events": ["productPublishedV2Contract"]
+      }
+    }
+  }
+}

@@ -17,27 +17,36 @@ import { contribute_reporting_analytics_openApi } from "./modules/reporting-anal
 import { contribute_store_openApi } from "./modules/store";
 import type { OpenApiContributor } from "./public";
 
-const canonicalModuleContributors: readonly OpenApiContributor[] = [
-  contribute_identity_access_openApi,
-  contribute_store_openApi,
-  contribute_product_openApi,
-  contribute_inventory_openApi,
-  contribute_orders_openApi,
-  contribute_payments_openApi,
-  contribute_fulfillment_openApi,
-  contribute_conversations_openApi,
-  contribute_problem_follow_up_openApi,
-  contribute_content_openApi,
-  contribute_discovery_openApi,
-  contribute_media_openApi,
-  contribute_notifications_openApi,
-  contribute_reporting_analytics_openApi,
-  contributeApiErrorsOpenApi,
+export const canonicalOpenApiRegistry: readonly {
+  owner: string;
+  contribute: OpenApiContributor;
+}[] = [
+  { owner: "identity-access", contribute: contribute_identity_access_openApi },
+  { owner: "store", contribute: contribute_store_openApi },
+  { owner: "product", contribute: contribute_product_openApi },
+  { owner: "inventory", contribute: contribute_inventory_openApi },
+  { owner: "orders", contribute: contribute_orders_openApi },
+  { owner: "payments", contribute: contribute_payments_openApi },
+  { owner: "fulfillment", contribute: contribute_fulfillment_openApi },
+  { owner: "conversations", contribute: contribute_conversations_openApi },
+  {
+    owner: "problem-follow-up",
+    contribute: contribute_problem_follow_up_openApi,
+  },
+  { owner: "content", contribute: contribute_content_openApi },
+  { owner: "discovery", contribute: contribute_discovery_openApi },
+  { owner: "media", contribute: contribute_media_openApi },
+  { owner: "notifications", contribute: contribute_notifications_openApi },
+  {
+    owner: "reporting-analytics",
+    contribute: contribute_reporting_analytics_openApi,
+  },
+  { owner: "platform", contribute: contributeApiErrorsOpenApi },
 ];
 
 export function composeOpenApi(document: OpenAPIObject): OpenAPIObject {
-  return canonicalModuleContributors.reduce(
-    (composed, contribute) => contribute(composed),
+  return canonicalOpenApiRegistry.reduce(
+    (composed, { contribute }) => contribute(composed),
     document,
   );
 }
