@@ -12,6 +12,7 @@ import type {
 } from "@sevo/contracts/store/v1";
 import type { MediaId } from "@sevo/contracts/media/v1";
 import type { IdentityId, StoreId } from "@sevo/contracts/platform/v1";
+import type { SellerAccessRead } from "../../identity-access/public";
 
 import type {
   SettlementDestination,
@@ -71,6 +72,7 @@ export class StoreService implements StoreAuthoritativeRead {
     private readonly resolveMedia: ResolveMedia = async () => undefined,
     private readonly publishMedia: PublishMedia = async () => undefined,
     private readonly unpublishMedia: UnpublishMedia = async () => undefined,
+    private readonly sellerAccess?: SellerAccessRead,
   ) {}
 
   async readDraft(sellerId: string): Promise<StoreDraft> {
@@ -240,7 +242,7 @@ export class StoreService implements StoreAuthoritativeRead {
 
   async readStore(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
     const row = await this.repository.findById(storeId);
-    return row ? toAuthoritativeStore(row) : undefined;
+    return row ? this.toAuthoritativeStore(row) : undefined;
   }
 
   async readStoreInTransaction(
@@ -248,21 +250,21 @@ export class StoreService implements StoreAuthoritativeRead {
     storeId: StoreId,
   ): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
     const row = await this.repository.findByIdInTransaction?.(transaction, storeId);
-    return row ? toAuthoritativeStore(row) : undefined;
+    return row ? this.toAuthoritativeStore(row) : undefined;
   }
 
   async readOwnedStore(
     identityId: IdentityId,
   ): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
     const row = await this.repository.findBySellerId(identityId);
-    return row ? toAuthoritativeStore(row) : undefined;
+    return row ? this.toAuthoritativeStore(row) : undefined;
   }
 
   async readPublishedStoreBySlug(
     slug: StoreSlug,
   ): Promise<StoreAuthoritativeSnapshotV1 | undefined> {
     const row = await this.repository.findBySlug(slug);
-    return row?.status === "PUBLISHED" ? toAuthoritativeStore(row) : undefined;
+    return row?.status === "PUBLISHED" ? this.toAuthoritativeStore(row) : undefined;
   }
 
   async requireOwnership(
@@ -296,6 +298,19 @@ export class StoreService implements StoreAuthoritativeRead {
       throw new StoreNotSellableError(storeId);
     }
     return store;
+  }
+
+  private async toAuthoritativeStore(
+    row: StoreRow,
+  ): Promise<StoreAuthoritativeSnapshotV1> {
+    const snapshot = toAuthoritativeStore(row);
+    if (!this.sellerAccess) return snapshot;
+    return {
+      ...snapshot,
+      sellerAccess: {
+        active: await this.sellerAccess.isActiveSeller(snapshot.owner.identityId),
+      },
+    };
   }
 
   private async toPublicStore(row: StoreRow): Promise<PublicStore> {
