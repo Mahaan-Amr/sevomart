@@ -92,10 +92,10 @@ export const orderStatusContract = z.enum([
   "PAID",
   "EXPIRED",
 ]);
-export const orderTerminalStatuses = [
-  "PAID",
-  "EXPIRED",
-] as const satisfies readonly z.infer<typeof orderStatusContract>[];
+// EXPIRED closes payment retry, but late results can still require PAYMENT_REVIEW.
+export const orderTerminalStatuses = ["PAID"] as const satisfies readonly z.infer<
+  typeof orderStatusContract
+>[];
 export const orderPaymentReviewReasonCodeContract = z.enum([
   "PAYMENT_DISPATCH_UNRESOLVED",
   "PAYMENT_CONFIRMED_STOCK_CONFLICT",

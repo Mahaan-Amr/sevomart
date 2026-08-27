@@ -179,6 +179,23 @@ describe("checkout and CreateOrder.v1 contracts", () => {
     ).toEqual({ status: "PAID" });
   });
 
+  it("keeps expired orders open to late-result review in the versioned contract", () => {
+    expect(orderTerminalStatuses).not.toContain("EXPIRED");
+    for (const reasonCode of ["PAID_STOCK_CONFLICT", "PAYMENT_PROVIDER_CONFLICT"]) {
+      expect(
+        orderStateTransitionAuditContract.parse({
+          orderId: ids.order,
+          fromStatus: "EXPIRED",
+          toStatus: "PAYMENT_REVIEW",
+          reasonCode,
+          actorKind: "PAYMENTS_SERVICE",
+          correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+          occurredAt: "2026-08-24T20:01:00.000Z",
+        }).toStatus,
+      ).toBe("PAYMENT_REVIEW");
+    }
+  });
+
   it("keeps operation paths, terminal states, and state audits versioned", () => {
     expect(ordersV1Operations.createOrder).toEqual({
       operationId: "createOrder",
@@ -191,7 +208,7 @@ describe("checkout and CreateOrder.v1 contracts", () => {
       "PAID",
       "EXPIRED",
     ]);
-    expect(orderTerminalStatuses).toEqual(["PAID", "EXPIRED"]);
+    expect(orderTerminalStatuses).toEqual(["PAID"]);
     expect(orderStateTransitionReasonCodeContract.options).toEqual([
       "PAYMENT_CONFIRMED",
       "PAYMENT_DISPATCH_UNRESOLVED",

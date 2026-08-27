@@ -343,9 +343,13 @@ PAYMENT_REVIEW ──confirmed + inventory committed──▶ PAID
        ├──failed before original deadline─────────▶ PENDING_PAYMENT
        ├──failed at/after original deadline───────▶ EXPIRED
        └──late success without stock──────────────▶ PAYMENT_REVIEW
+
+EXPIRED ──late success / provider conflict─────────▶ PAYMENT_REVIEW
 ```
 
-`PAID` و `EXPIRED` در محدوده این برش terminal هستند. وضعیت‌های
+`PAID` در محدوده این برش terminal است. `EXPIRED` تلاش پرداخت تازه را می‌بندد،
+اما نتیجه دیررس یا متناقض می‌تواند آن را برای پیگیری به `PAYMENT_REVIEW` ببرد؛
+این گذار رزرو آزادشده را باز نمی‌کند و سفارش قابل اقدام نمی‌سازد. وضعیت‌های
 `CANCELLATION_PENDING_REFUND` و `CANCELED` برای کار آینده رزرو شده‌اند و operation
 این Spec آن‌ها را تولید نمی‌کند.
 
@@ -463,9 +467,11 @@ fragment OpenAPI مستقیماً از همان مرجع ساخته می‌شو�
 
 stateهای سفارش و تلاش، stateهای terminal و شکل audit در همان entrypointهای
 نسخه‌دار با `OrderStatus`، `OrderStateTransitionAudit`،
-`DirectPaymentAttemptStatus` و `PaymentAttemptAudit` منتشر می‌شوند. `PAID` و
-`EXPIRED` برای سفارش و `CONFIRMED` و `FAILED` برای همان تلاش پرداخت terminal
-هستند؛ `REVIEW_REQUIRED` پرداخت دوباره را می‌بندد اما برای تطبیق همان تلاش
+`DirectPaymentAttemptStatus` و `PaymentAttemptAudit` منتشر می‌شوند. فقط `PAID`
+برای سفارش و `CONFIRMED` و `FAILED` برای همان تلاش پرداخت terminal هستند.
+`EXPIRED` برای سفارش terminal نیست: پرداخت تازه بسته است، اما پیگیری نتیجه
+دیررس یا متناقض با گذار به `PAYMENT_REVIEW` ممکن می‌ماند.
+`REVIEW_REQUIRED` پرداخت دوباره را می‌بندد اما برای تطبیق همان تلاش
 terminal نیست. audit فقط شناسه aggregate، وضعیت قبل/بعد، reason code غیرحساس،
 `actorKind` سرویس، correlation و زمان را دارد.
 
