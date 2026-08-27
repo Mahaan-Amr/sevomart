@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { createJsonSchemaMap } from "../../json-schema";
+import { orderStatusContract } from "../../orders/v1/index";
 import {
   eventActorV1Contract,
   eventEnvelopeV1Contract,
@@ -8,6 +9,29 @@ import {
   orderIdContract,
   paymentAttemptIdContract,
 } from "../../platform/v1/index";
+
+export const paymentsV1Operations = {
+  createDirectPaymentAttempt: {
+    operationId: "createDirectPaymentAttempt",
+    method: "post",
+    path: "/v1/orders/{orderId}/payment-attempts",
+  },
+  readDirectPaymentAttempt: {
+    operationId: "readDirectPaymentAttempt",
+    method: "get",
+    path: "/v1/payment-attempts/{attemptId}",
+  },
+  acceptDevPaymentCallback: {
+    operationId: "acceptDevPaymentCallback",
+    method: "post",
+    path: "/internal/v1/payment-providers/{provider}/callbacks",
+  },
+  listPlatformPaymentReviews: {
+    operationId: "listPlatformPaymentReviews",
+    method: "get",
+    path: "/v1/platform/payment-reviews",
+  },
+} as const;
 
 export const createDirectPaymentAttemptInputContract = z.object({}).strict();
 export const paymentIdempotencyKeyContract = z.string().min(1).max(200);
@@ -19,6 +43,10 @@ export const directPaymentAttemptStatusContract = z.enum([
   "FAILED",
   "REVIEW_REQUIRED",
 ]);
+export const directPaymentAttemptTerminalStatuses = [
+  "CONFIRMED",
+  "FAILED",
+] as const satisfies readonly z.infer<typeof directPaymentAttemptStatusContract>[];
 
 export const directPaymentAttemptContract = z
   .object({
@@ -31,9 +59,7 @@ export const directPaymentAttemptContract = z
     providerReference: z.string().min(1).max(128).optional(),
     createdAt: z.iso.datetime({ offset: true }),
     confirmedAt: z.iso.datetime({ offset: true }).optional(),
-    orderStatus: z
-      .enum(["PENDING_PAYMENT", "PAYMENT_REVIEW", "PAID", "EXPIRED"])
-      .optional(),
+    orderStatus: orderStatusContract.optional(),
     reservationExpiresAt: z.iso.datetime({ offset: true }).optional(),
   })
   .strict();
@@ -140,6 +166,23 @@ export const paymentAttemptAuditReasonCodeContract = z.enum([
   "PROVIDER_REFERENCE_RECOVERED",
 ]);
 
+export const paymentAttemptAuditContract = z
+  .object({
+    attemptId: paymentAttemptIdContract,
+    fromStatus: directPaymentAttemptStatusContract.nullable(),
+    toStatus: directPaymentAttemptStatusContract,
+    reasonCode: paymentAttemptAuditReasonCodeContract,
+    actorKind: z.literal("PAYMENTS_SERVICE"),
+    correlationId: z.string().min(1).max(128),
+    occurredAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+const paymentAttemptAuditSummaryContract = paymentAttemptAuditContract.omit({
+  attemptId: true,
+  actorKind: true,
+});
+
 export const paymentReviewItemContract = z
   .object({
     attempt: directPaymentAttemptContract,
@@ -158,19 +201,7 @@ export const paymentReviewItemContract = z
         ]),
       )
       .readonly(),
-    audits: z
-      .array(
-        z
-          .object({
-            fromStatus: directPaymentAttemptStatusContract.nullable(),
-            toStatus: directPaymentAttemptStatusContract,
-            reasonCode: paymentAttemptAuditReasonCodeContract,
-            correlationId: z.string().min(1).max(128),
-            occurredAt: z.iso.datetime({ offset: true }),
-          })
-          .strict(),
-      )
-      .readonly(),
+    audits: z.array(paymentAttemptAuditSummaryContract).readonly(),
   })
   .strict();
 
@@ -190,6 +221,14 @@ export const paymentsV1Schemas = {
   PaymentReviewQueue: paymentReviewQueueContract,
   PaymentReviewError: paymentReviewErrorContract,
   DirectPaymentError: directPaymentErrorContract,
+  DirectPaymentAttemptStatus: directPaymentAttemptStatusContract,
+  PaymentAttemptAuditReasonCode: paymentAttemptAuditReasonCodeContract,
+  PaymentAttemptAudit: paymentAttemptAuditContract,
+  DirectPaymentAttemptCreatedV1: directPaymentAttemptCreatedV1Contract,
+  DirectPaymentAttemptDispatchedV1: directPaymentAttemptDispatchedV1Contract,
+  DirectPaymentAttemptConfirmedV1: directPaymentAttemptConfirmedV1Contract,
+  DirectPaymentAttemptFailedV1: directPaymentAttemptFailedV1Contract,
+  DirectPaymentAttemptReviewRequiredV1: directPaymentAttemptReviewRequiredV1Contract,
 } as const;
 
 export function createPaymentsV1JsonSchemas() {

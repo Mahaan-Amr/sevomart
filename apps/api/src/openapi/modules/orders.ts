@@ -1,4 +1,8 @@
-import { createOrdersV1JsonSchemas, ordersV1Examples } from "@sevo/contracts/orders/v1";
+import {
+  createOrdersV1JsonSchemas,
+  ordersV1Examples,
+  ordersV1Operations,
+} from "@sevo/contracts/orders/v1";
 
 import {
   addModuleOpenApiContract,
@@ -41,9 +45,7 @@ const idempotencyRetryHeader = {
 
 const operations = [
   {
-    operationId: "listSellerActionableOrders",
-    method: "get",
-    path: "/v1/seller/orders",
+    ...ordersV1Operations.listSellerActionableOrders,
     tag: "orders",
     auth: "identity-session",
     responses: [
@@ -54,9 +56,7 @@ const operations = [
     ],
   },
   {
-    operationId: "readCart",
-    method: "get",
-    path: "/v1/cart",
+    ...ordersV1Operations.readCart,
     tag: "orders",
     auth: "none",
     responses: [
@@ -65,9 +65,7 @@ const operations = [
     ],
   },
   {
-    operationId: "upsertCartItem",
-    method: "put",
-    path: "/v1/cart/items/{variantId}",
+    ...ordersV1Operations.upsertCartItem,
     tag: "orders",
     auth: "none",
     pathParameter: {
@@ -89,9 +87,7 @@ const operations = [
     ],
   },
   {
-    operationId: "removeCartItem",
-    method: "delete",
-    path: "/v1/cart/items/{variantId}",
+    ...ordersV1Operations.removeCartItem,
     tag: "orders",
     auth: "none",
     pathParameter: {
@@ -113,9 +109,7 @@ const operations = [
     ],
   },
   {
-    operationId: "confirmCartReview",
-    method: "post",
-    path: "/v1/cart/review",
+    ...ordersV1Operations.confirmCartReview,
     tag: "orders",
     auth: "none",
     headerParameters: idempotencyHeader,
@@ -132,9 +126,7 @@ const operations = [
     ],
   },
   {
-    operationId: "replaceCartStore",
-    method: "post",
-    path: "/v1/cart/store-replacement",
+    ...ordersV1Operations.replaceCartStore,
     tag: "orders",
     auth: "none",
     headerParameters: idempotencyHeader,
@@ -151,9 +143,7 @@ const operations = [
     ],
   },
   {
-    operationId: "attachGuestCart",
-    method: "post",
-    path: "/v1/cart/attach",
+    ...ordersV1Operations.attachGuestCart,
     tag: "orders",
     auth: "identity-session",
     headerParameters: idempotencyHeader,
@@ -170,9 +160,7 @@ const operations = [
     ],
   },
   {
-    operationId: "resolveCartConflict",
-    method: "post",
-    path: "/v1/cart/resolve",
+    ...ordersV1Operations.resolveCartConflict,
     tag: "orders",
     auth: "identity-session",
     headerParameters: idempotencyHeader,
@@ -190,9 +178,7 @@ const operations = [
     ],
   },
   {
-    operationId: "readCheckoutOptions",
-    method: "get",
-    path: "/v1/checkout/options",
+    ...ordersV1Operations.readCheckoutOptions,
     tag: "orders",
     auth: "identity-session",
     responses: [
@@ -203,9 +189,7 @@ const operations = [
     ],
   },
   {
-    operationId: "prepareCheckout",
-    method: "post",
-    path: "/v1/checkout/prepare",
+    ...ordersV1Operations.prepareCheckout,
     tag: "orders",
     auth: "identity-session",
     request: {
@@ -221,9 +205,7 @@ const operations = [
     ],
   },
   {
-    operationId: "createOrder",
-    method: "post",
-    path: "/v1/orders",
+    ...ordersV1Operations.createOrder,
     tag: "orders",
     auth: "identity-session",
     headerParameters: idempotencyHeader,
@@ -245,9 +227,7 @@ const operations = [
     ],
   },
   {
-    operationId: "listSavedAddresses",
-    method: "get",
-    path: "/v1/addresses",
+    ...ordersV1Operations.listSavedAddresses,
     tag: "orders",
     auth: "identity-session",
     responses: [
@@ -257,9 +237,7 @@ const operations = [
     ],
   },
   {
-    operationId: "createSavedAddress",
-    method: "post",
-    path: "/v1/addresses",
+    ...ordersV1Operations.createSavedAddress,
     tag: "orders",
     auth: "identity-session",
     headerParameters: idempotencyHeader,
@@ -277,9 +255,7 @@ const operations = [
     ],
   },
   {
-    operationId: "updateSavedAddress",
-    method: "put",
-    path: "/v1/addresses/{addressId}",
+    ...ordersV1Operations.updateSavedAddress,
     tag: "orders",
     auth: "identity-session",
     pathParameter: {
@@ -303,9 +279,7 @@ const operations = [
     ],
   },
   {
-    operationId: "deleteSavedAddress",
-    method: "delete",
-    path: "/v1/addresses/{addressId}",
+    ...ordersV1Operations.deleteSavedAddress,
     tag: "orders",
     auth: "identity-session",
     pathParameter: {
