@@ -1,4 +1,10 @@
-import type { IdentityId, StoreId, VariantId } from "@sevo/contracts/platform/v1";
+import type {
+  IdentityId,
+  ProductId,
+  StoreId,
+  VariantId,
+} from "@sevo/contracts/platform/v1";
+import type { InventoryAvailabilityReadV1 } from "@sevo/contracts/inventory/v1";
 
 declare const inventoryTransactionContext: unique symbol;
 
@@ -6,12 +12,7 @@ export type InventoryTransactionContext = Readonly<{
   [inventoryTransactionContext]: never;
 }>;
 
-export type InventorySnapshot = Readonly<{
-  onHand: number;
-  reserved: number;
-  available: number;
-  revision: number;
-}>;
+export type InventorySnapshot = Readonly<InventoryAvailabilityReadV1>;
 
 export interface InventoryAuthoring {
   replaceForProduct(
@@ -35,6 +36,7 @@ export interface InventoryAuthoring {
     transaction: InventoryTransactionContext,
     command: Readonly<{
       storeId: StoreId;
+      publication?: Readonly<{ productId: ProductId; publicationVersion: number }>;
       rows: ReadonlyArray<{
         variantId: VariantId;
         onHand: number;

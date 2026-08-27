@@ -1,4 +1,11 @@
 import postgres from "postgres";
+import {
+  storeAuthoritativeSnapshotV1Contract,
+  storePublishedV1Contract,
+  storeUnpublishedV1Contract,
+  storePolicyChangedV1Contract,
+} from "@sevo/contracts/store/v1";
+import { storeIdContract } from "@sevo/contracts/platform/v1";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
@@ -151,9 +158,15 @@ describe("versioned Store contract with PostgreSQL", () => {
     });
     expect(replay.json()).toEqual(published.json());
 
-    const storeId = (published.json() as { store: { id: string } }).store.id as never;
+    const storeId = storeIdContract.parse(
+      (published.json() as { store: { id: string } }).store.id,
+    );
     const stores = app.get<StoreAuthoritativeRead>(STORE_AUTHORITATIVE_READ);
     const authoritative = await stores.readStore(storeId);
+    expect(storeAuthoritativeSnapshotV1Contract.parse(authoritative)).toEqual(
+      authoritative,
+    );
+    expect(authoritative).toHaveProperty("sellerAccess.active");
     const productStore = await new ProductStoreContractConsumer(
       stores,
     ).requireProductPublicationStore(authoritative!.owner.identityId, storeId);
@@ -178,6 +191,7 @@ describe("versioned Store contract with PostgreSQL", () => {
     const publicBody = publicRead.json<Record<string, unknown>>();
     expect(publicRead.statusCode).toBe(200);
     expect(publicBody).not.toHaveProperty("owner");
+    expect(publicBody).not.toHaveProperty("sellerAccess");
     expect(publicBody).toMatchObject({
       settlementDestination: { kind: "TEST", status: "TEST_VERIFIED" },
     });
@@ -204,6 +218,27 @@ describe("versioned Store contract with PostgreSQL", () => {
       publicationVersion: 1,
       returnPolicyRevision: 2,
     });
+    const stoppedRead = await server.inject({
+      method: "GET",
+      url: "/v1/stores/public-versioned-store",
+    });
+    expect(stoppedRead.statusCode).toBe(404);
+    await expect(stores.requireSellable(storeId)).rejects.toMatchObject({
+      code: "STORE_NOT_SELLABLE",
+    });
+    const republished = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: {
+        cookie,
+        "idempotency-key": "republish-public-store-2",
+        "if-match": '"3"',
+      },
+    });
+    expect(republished.statusCode).toBe(200);
+    expect(republished.json()).toMatchObject({
+      store: { revision: 4, publicationVersion: 2 },
+    });
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const events = await sql<
@@ -213,7 +248,30 @@ describe("versioned Store contract with PostgreSQL", () => {
       where aggregate_id = ${(published.json() as { store: { id: string } }).store.id}
       order by created_at, event_type
     `;
+    const envelopes = await sql`
+      select envelope_version as version, event_id as "eventId", event_type as "eventType",
+        aggregate_id as "aggregateId", aggregate_version as "aggregateVersion",
+        occurred_at as "occurredAt", correlation_id as "correlationId",
+        actor_type as "actorType", actor_id as "actorId", payload
+      from platform_outbox_events where aggregate_id = ${storeId}
+      order by aggregate_version, event_type
+    `;
     await sql.end();
+    for (const { actorType, actorId, occurredAt, ...event } of envelopes) {
+      const schema =
+        event.eventType === "StorePublished.v1"
+          ? storePublishedV1Contract
+          : event.eventType === "StoreUnpublished.v1"
+            ? storeUnpublishedV1Contract
+            : storePolicyChangedV1Contract;
+      expect(
+        schema.safeParse({
+          ...event,
+          occurredAt: occurredAt.toISOString(),
+          actor: { type: actorType, id: actorId },
+        }).success,
+      ).toBe(true);
+    }
     expect(events).toEqual(
       expect.arrayContaining([
         {
@@ -241,6 +299,9 @@ describe("versioned Store contract with PostgreSQL", () => {
     );
     expect(
       events.filter(({ eventType }) => eventType === "StorePublished.v1"),
+    ).toHaveLength(2);
+    expect(
+      events.filter(({ eventType }) => eventType === "StoreUnpublished.v1"),
     ).toHaveLength(1);
     expect(JSON.stringify(events)).not.toMatch(
       /mobile|address|returnPolicyText|settlementDestination/i,

@@ -126,6 +126,8 @@ export class StoreNotSellableError extends Error {
 }
 
 export interface StoreAuthoritativeRead {
+  // Internal owner-aware reads, never a public HTTP response. sellerAccess is
+  // a live identity-access observation, not part of the Store revision.
   readOwnedStore(
     identityId: IdentityId,
   ): Promise<StoreAuthoritativeSnapshotV1 | undefined>;
@@ -141,6 +143,8 @@ export interface StoreAuthoritativeRead {
     identityId: IdentityId,
     storeId: StoreId,
   ): Promise<StoreAuthoritativeSnapshotV1>;
+  // These methods check Store-owned publication/settlement invariants only.
+  // Acting-identity authorization remains the caller's SellerAccessRead check.
   requireSellable(storeId: StoreId): Promise<StoreAuthoritativeSnapshotV1>;
   requireOwnedSellable(
     identityId: IdentityId,

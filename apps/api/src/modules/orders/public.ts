@@ -8,6 +8,8 @@ import type {
   CreateSavedAddressInput,
   CreateOrderInput,
   Order,
+  OrderPaymentReviewReasonCode,
+  OrderStatus,
   SellerActionableOrder,
   PrepareCheckoutInput,
   SavedAddress,
@@ -32,14 +34,16 @@ export type PayableOrder = Readonly<{
   reservationId: string;
   totalAmount: number;
   reservationExpiresAt: Date;
-  status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+  status: OrderStatus;
 }>;
 
 export type PaymentResultOrder = PayableOrder &
-  Readonly<{ status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "EXPIRED" }>;
+  Readonly<{
+    status: Extract<OrderStatus, "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "EXPIRED">;
+  }>;
 
 export type BuyerPaymentState = Readonly<{
-  status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+  status: OrderStatus;
   reservationExpiresAt: Date;
 }>;
 
@@ -74,10 +78,7 @@ export interface OrderPaymentWorkflow {
       attemptId: PaymentAttemptId;
       occurredAt: Date;
       correlationId: string;
-      reasonCode:
-        | "PAYMENT_DISPATCH_UNRESOLVED"
-        | "PAYMENT_CONFIRMED_STOCK_CONFLICT"
-        | "PAYMENT_PROVIDER_CONFLICT";
+      reasonCode: OrderPaymentReviewReasonCode;
     },
   ): Promise<void>;
   resolvePaymentFailure(
@@ -88,7 +89,7 @@ export interface OrderPaymentWorkflow {
       occurredAt: Date;
       correlationId: string;
     },
-  ): Promise<"PENDING_PAYMENT" | "EXPIRED">;
+  ): Promise<Extract<OrderStatus, "PENDING_PAYMENT" | "EXPIRED">>;
   markPaidStockConflict(
     transaction: OrderPaymentTransactionContext,
     command: {

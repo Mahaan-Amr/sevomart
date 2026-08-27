@@ -1,5 +1,6 @@
 import {
   createSimpleProductInputContract,
+  productAuthoritativeVariantV1Contract,
   productPublishedV1Contract,
   productPublishedV2Contract,
   productUnpublishedV1Contract,
@@ -21,6 +22,34 @@ const ids = {
 };
 
 describe("simple product v1 contract", () => {
+  it("defines the live price read independently of publication snapshots and stock counts", () => {
+    const variant = {
+      productId: ids.product,
+      variantId: ids.variant,
+      storeId: ids.store,
+      name: "فنجان سرامیکی",
+      image: { id: ids.media, url: `/v1/media/${ids.media}` },
+      unitPrice: { amount: 4_500_000, currency: "IRR" },
+      publicationVersion: 1,
+      sellable: true,
+    };
+    expect(productAuthoritativeVariantV1Contract.parse(variant)).toEqual(variant);
+    expect(
+      productAuthoritativeVariantV1Contract.parse({ ...variant, sellable: false })
+        .sellable,
+    ).toBe(false);
+    for (const invalid of [
+      { ...variant, unitPrice: { amount: 0, currency: "IRR" } },
+      { ...variant, unitPrice: { amount: 11, currency: "IRR" } },
+      { ...variant, publicationVersion: 0 },
+      { ...variant, onHand: 8 },
+      { ...variant, sku: "PRIVATE" },
+    ]) {
+      expect(productAuthoritativeVariantV1Contract.safeParse(invalid).success).toBe(
+        false,
+      );
+    }
+  });
   it("keeps creation free of caller-supplied ownership", () => {
     expect(createSimpleProductInputContract.parse({})).toEqual({});
     expect(
@@ -151,6 +180,21 @@ describe("simple product v1 contract", () => {
     expect(JSON.stringify(privacySafeEvent.payload)).not.toMatch(
       /onHand|sku|name|description|image|url/i,
     );
+    for (const invalid of [
+      { ...privacySafeEvent, eventType: "ProductPublished.v1" },
+      { ...privacySafeEvent, version: 2 },
+      { ...privacySafeEvent, actor: undefined },
+      {
+        ...privacySafeEvent,
+        payload: { ...privacySafeEvent.payload, snapshot: event.payload.snapshot },
+      },
+      {
+        ...privacySafeEvent,
+        payload: { ...privacySafeEvent.payload, snapshot: { variantIds: [] } },
+      },
+      { ...privacySafeEvent, payload: { ...privacySafeEvent.payload, onHand: 8 } },
+    ])
+      expect(productPublishedV2Contract.safeParse(invalid).success).toBe(false);
 
     const unpublished = productUnpublishedV1Contract.parse({
       ...event,

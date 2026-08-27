@@ -19,6 +19,23 @@ const productPriceContract = moneyV1Contract.refine(
   "Price must be a positive safe IRR amount divisible by ten",
 );
 
+export const productAuthoritativeVariantV1Contract = z
+  .object({
+    productId: productIdContract,
+    variantId: variantIdContract,
+    storeId: storeIdContract,
+    name: z.string().min(1),
+    image: z.object({ id: mediaIdContract, url: z.string().min(1) }).strict(),
+    unitPrice: productPriceContract,
+    publicationVersion: z.int().positive(),
+    sellable: z.boolean(),
+  })
+  .strict();
+
+export type ProductAuthoritativeVariantV1 = z.infer<
+  typeof productAuthoritativeVariantV1Contract
+>;
+
 const clientKeyContract = z.string().trim().min(1).max(100);
 
 export function productCombinationKey(
@@ -661,22 +678,12 @@ export const variantPriceChangedV1Contract = eventEnvelopeV1Contract.extend({
     .strict(),
 });
 
-export const variantAvailabilityChangedV1Contract = eventEnvelopeV1Contract.extend({
-  eventType: z.literal("VariantAvailabilityChanged.v1"),
-  actor: eventActorV1Contract,
-  payload: z
-    .object({
-      storeId: storeIdContract,
-      productId: productIdContract,
-      variantId: variantIdContract,
-      publicationVersion: z.int().positive(),
-      availabilityVersion: z.int().positive(),
-      availability: z.enum(["AVAILABLE", "OUT_OF_STOCK"]),
-    })
-    .strict(),
-});
-
 export const productV1Schemas = {
+  ProductAuthoritativeVariantV1: productAuthoritativeVariantV1Contract,
+  ProductPublishedV1: productPublishedV1Contract,
+  ProductPublishedV2: productPublishedV2Contract,
+  ProductUnpublishedV1: productUnpublishedV1Contract,
+  VariantPriceChangedV1: variantPriceChangedV1Contract,
   ProductId: productIdContract,
   ProductIdempotencyKey: productIdempotencyKeyContract,
   ProductRevisionTag: productRevisionTagContract,
@@ -809,9 +816,6 @@ export type PublicSimpleProductSummary = z.infer<
 export type ProductPublishedV1 = z.infer<typeof productPublishedV1Contract>;
 export type ProductPublishedV2 = z.infer<typeof productPublishedV2Contract>;
 export type VariantPriceChangedV1 = z.infer<typeof variantPriceChangedV1Contract>;
-export type VariantAvailabilityChangedV1 = z.infer<
-  typeof variantAvailabilityChangedV1Contract
->;
 export type ReplaceProductWorkingCopy = z.infer<
   typeof replaceProductWorkingCopyContract
 >;

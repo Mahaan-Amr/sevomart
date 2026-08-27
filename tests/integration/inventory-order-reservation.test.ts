@@ -1,4 +1,6 @@
 import postgres from "postgres";
+import { replayOutboxEventHistory, type StoredOutboxEvent } from "@sevo/outbox";
+import { variantAvailabilityChangedV1Contract } from "@sevo/contracts/inventory/v1";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkoutPreparationContract,
@@ -118,6 +120,135 @@ describe("inventory reservation transaction seam", () => {
       available: 0,
     });
     await inventory.onModuleDestroy();
+  });
+
+  it("emits inventory-owned availability when an adjustment crosses reserved stock", async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    clients.push(sql);
+    const inventory = new PostgresInventoryAuthoring(apiTestEnvironment.DATABASE_URL);
+    const correlationId = crypto.randomUUID();
+    try {
+      await sql.begin((transaction) =>
+        inventory.reserveForOrder(
+          transaction as unknown as InventoryTransactionContext,
+          {
+            orderId: crypto.randomUUID(),
+            reservationId: crypto.randomUUID(),
+            storeId: storeId as never,
+            expiresAt: new Date(Date.now() + 60_000),
+            items: [{ variantId: variantId as never, quantity: 1 }],
+          },
+        ),
+      );
+      const command = {
+        storeId: storeId as never,
+        publication: { productId: productId as never, publicationVersion: 1 },
+        rows: [{ variantId: variantId as never, onHand: 2, expectedRevision: 1 }],
+        reasonCode: "MANUAL_COUNT" as const,
+        actorId: "9370e311-bf7a-4f91-a00b-3b9b5a141f51" as never,
+        correlationId,
+      };
+      await sql.begin((transaction) =>
+        inventory.replaceBatchForProduct(
+          transaction as unknown as InventoryTransactionContext,
+          command,
+        ),
+      );
+      const events: StoredOutboxEvent[] = [];
+      await replayOutboxEventHistory(sql, {
+        eventTypes: ["VariantAvailabilityChanged.v1"],
+        handler: async (event) => {
+          if (event.correlationId === correlationId) events.push(event);
+        },
+      });
+      expect(events).toHaveLength(1);
+      expect(variantAvailabilityChangedV1Contract.parse(events[0])).toMatchObject({
+        aggregateId: variantId,
+        aggregateVersion: 2,
+        payload: {
+          productId,
+          variantId,
+          availability: "AVAILABLE",
+          availabilityVersion: 2,
+        },
+      });
+      expect(await inventory.read(variantId as never)).toEqual({
+        onHand: 2,
+        reserved: 1,
+        available: 1,
+        revision: 2,
+      });
+      const adjust = (onHand: number, expectedRevision: number) =>
+        sql.begin((transaction) =>
+          inventory.replaceBatchForProduct(
+            transaction as unknown as InventoryTransactionContext,
+            {
+              ...command,
+              rows: [{ variantId: variantId as never, onHand, expectedRevision }],
+            },
+          ),
+        );
+      await adjust(3, 2); // Available stays positive: no public event.
+      await adjust(0, 3); // Availability crosses zero even with a reservation.
+      await expect(adjust(1, 3)).rejects.toMatchObject({ code: "REVISION_CONFLICT" });
+      await expect(
+        sql.begin(async (transaction) => {
+          await inventory.replaceBatchForProduct(
+            transaction as unknown as InventoryTransactionContext,
+            {
+              ...command,
+              rows: [{ variantId: variantId as never, onHand: 2, expectedRevision: 4 }],
+            },
+          );
+          throw new Error("rollback after inventory event");
+        }),
+      ).rejects.toThrow("rollback after inventory event");
+      events.length = 0;
+      await replayOutboxEventHistory(sql, {
+        eventTypes: ["VariantAvailabilityChanged.v1"],
+        handler: async (event) => {
+          if (event.correlationId === correlationId) events.push(event);
+        },
+      });
+      expect(
+        events.map(
+          (event) => variantAvailabilityChangedV1Contract.parse(event).payload,
+        ),
+      ).toEqual([
+        {
+          storeId,
+          productId,
+          variantId,
+          publicationVersion: 1,
+          availabilityVersion: 2,
+          availability: "AVAILABLE",
+        },
+        {
+          storeId,
+          productId,
+          variantId,
+          publicationVersion: 1,
+          availabilityVersion: 4,
+          availability: "OUT_OF_STOCK",
+        },
+      ]);
+      const finalSnapshot = { onHand: 0, reserved: 1, available: -1, revision: 4 };
+      expect(await inventory.read(variantId as never)).toEqual(finalSnapshot);
+      expect(await inventory.readMany([variantId as never])).toEqual([
+        { variantId, ...finalSnapshot },
+      ]);
+      expect(
+        await sql.begin((transaction) =>
+          inventory.readInTransaction(
+            transaction as unknown as InventoryTransactionContext,
+            variantId as never,
+          ),
+        ),
+      ).toEqual(finalSnapshot);
+      expect(await inventory.read(crypto.randomUUID() as never)).toBeUndefined();
+    } finally {
+      await inventory.onModuleDestroy();
+    }
   });
 
   it("makes an expired unpaid reservation sellable without reducing on-hand", async () => {

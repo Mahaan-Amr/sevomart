@@ -235,7 +235,8 @@ producerها برقرار باشند:
 موجودی مثبت شرط eligibility نیست. `OUT_OF_STOCK` فقط availability کارت و امکان
 خرید را تغییر می‌دهد.
 
-- `firstPublishedAt` در نخستین `ProductPublished.v1` پذیرفته‌شده از
+- `firstPublishedAt` در نخستین `ProductPublished.v2` پذیرفته‌شده (یا رخداد تاریخی
+  `ProductPublished.v1` در پنجره سازگاری) از
   `EventEnvelope.v1.occurredAt` گرفته و برای عمر `productId` تغییرناپذیر می‌شود.
   rebuild باید از اولین رخداد همان aggregate replay شود.
 - `eligibleSince` آغاز دوره جاری واجدشرایط‌بودن است. ویرایش publication، قیمت یا
@@ -421,7 +422,7 @@ Spec adapter مصرف یا fixture را ثبت می‌کند و قرارداد �
 | فروشگاه: `StoreAuthoritativeRead.v1`                                            | انتشار، مالکیت برای self-follow و خلاصه عمومی | `contract-blocks` سپس `integration-blocks` | fixture منتشر/متوقف/خودی؛ integration با read واقعی         |
 | فروشگاه: `StorePublished.v1` و `StoreUnpublished.v1`                            | eligibility فروشگاه                           | `contract-blocks` سپس `integration-blocks` | fixture out-of-order؛ projection واقعی پس از outbox فروشگاه |
 | کالا: `ProductAuthoritativeRead.v1`                                             | route جزئیات و fallback حقیقت                 | `contract-blocks` سپس `integration-blocks` | fixture 200/404؛ جزئیات واقعی پیش از E2E                    |
-| کالا: `ProductPublished.v1`، `ProductUnpublished.v1` و `VariantPriceChanged.v1` | publication، کارت، قیمت و tombstone           | `contract-blocks` سپس `integration-blocks` | fixture versionدار؛ integration پس از outbox کالا           |
+| کالا: `ProductPublished.v2`، `ProductUnpublished.v1` و `VariantPriceChanged.v1` | publication، کارت، قیمت و tombstone           | `contract-blocks` سپس `integration-blocks` | fixture versionدار؛ integration پس از outbox کالا           |
 | موجودی: `VariantAvailabilityChanged.v1`                                         | availability کارت بدون مقدار دقیق             | `contract-blocks` سپس `integration-blocks` | fixture مرز صفر؛ integration پس از outbox موجودی            |
 | فروشگاه عمومی ← `PublicFollowerCount.v1` و viewer follow                        | ترکیب شمار و viewer در پاسخ producer فروشگاه  | خروجی این Spec؛ `integration-blocks`       | consumer contract با spy؛ composer تک‌مالک پیش از E2E       |
 
@@ -625,7 +626,7 @@ data به‌عنوان موفقیت پنهان نمی‌شود.
 | سخت‌سازی E2E، RTL و privacy   | PostgreSQL، outbox واقعی، cursor edgeها، projection failure، accessibility و عدم افشا                   | ادغام همه producerها؛ candidate ثابت و بدون fake مرز داخلی                                   |
 
 Issue projection می‌تواند با fixture قرارداد شروع شود، اما integration و E2E آن
-تا تولید واقعی `StorePublished/Unpublished.v1`، `ProductPublished/Unpublished.v1`،
+تا تولید واقعی `StorePublished/Unpublished.v1`، `ProductPublished.v2` و `ProductUnpublished.v1`،
 `VariantPriceChanged.v1`، `VariantAvailabilityChanged.v1` و
 `IdentityStatusChanged.v1` blocked می‌ماند. هیچ consumer قرارداد یا migration
 موقت producer را در ماژول کشف تکرار نمی‌کند.

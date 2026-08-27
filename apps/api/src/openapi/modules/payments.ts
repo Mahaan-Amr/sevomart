@@ -1,6 +1,7 @@
 import {
   createPaymentsV1JsonSchemas,
   paymentsV1Examples,
+  paymentsV1Operations,
 } from "@sevo/contracts/payments/v1";
 
 import {
@@ -11,9 +12,7 @@ import type { OpenApiContributor } from "../public";
 
 const operations = [
   {
-    operationId: "createDirectPaymentAttempt",
-    method: "post",
-    path: "/v1/orders/{orderId}/payment-attempts",
+    ...paymentsV1Operations.createDirectPaymentAttempt,
     tag: "payments",
     auth: "identity-session",
     pathParameter: {
@@ -42,9 +41,7 @@ const operations = [
     ],
   },
   {
-    operationId: "readDirectPaymentAttempt",
-    method: "get",
-    path: "/v1/payment-attempts/{attemptId}",
+    ...paymentsV1Operations.readDirectPaymentAttempt,
     tag: "payments",
     auth: "identity-session",
     pathParameter: {
@@ -60,9 +57,7 @@ const operations = [
     ],
   },
   {
-    operationId: "acceptDevPaymentCallback",
-    method: "post",
-    path: "/internal/v1/payment-providers/{provider}/callbacks",
+    ...paymentsV1Operations.acceptDevPaymentCallback,
     tag: "payments",
     auth: "none",
     pathParameter: {
@@ -81,9 +76,7 @@ const operations = [
     ],
   },
   {
-    operationId: "listPlatformPaymentReviews",
-    method: "get",
-    path: "/v1/platform/payment-reviews",
+    ...paymentsV1Operations.listPlatformPaymentReviews,
     tag: "payments",
     auth: "platform-agent-session",
     responses: [

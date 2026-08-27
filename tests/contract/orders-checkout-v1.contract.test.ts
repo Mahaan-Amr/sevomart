@@ -3,8 +3,14 @@ import {
   checkoutRevisionConflictContract,
   createOrderInputContract,
   orderContract,
+  orderBecameActionableV1Contract,
   orderCreatedV1Contract,
   orderExpiredV1Contract,
+  orderStateTransitionAuditContract,
+  orderStateTransitionReasonCodeContract,
+  orderStatusContract,
+  orderTerminalStatuses,
+  ordersV1Operations,
   prepareCheckoutInputContract,
 } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
@@ -162,5 +168,58 @@ describe("checkout and CreateOrder.v1 contracts", () => {
         payload: { status: "EXPIRED" },
       }).aggregateVersion,
     ).toBe(2);
+    expect(
+      orderBecameActionableV1Contract.parse({
+        ...base,
+        eventType: "OrderBecameActionable.v1",
+        aggregateVersion: 2,
+        actor: { type: "SYSTEM" },
+        payload: { status: "PAID" },
+      }).payload,
+    ).toEqual({ status: "PAID" });
+  });
+
+  it("keeps operation paths, terminal states, and state audits versioned", () => {
+    expect(ordersV1Operations.createOrder).toEqual({
+      operationId: "createOrder",
+      method: "post",
+      path: "/v1/orders",
+    });
+    expect(orderStatusContract.options).toEqual([
+      "PENDING_PAYMENT",
+      "PAYMENT_REVIEW",
+      "PAID",
+      "EXPIRED",
+    ]);
+    expect(orderTerminalStatuses).toEqual(["PAID", "EXPIRED"]);
+    expect(orderStateTransitionReasonCodeContract.options).toEqual([
+      "PAYMENT_CONFIRMED",
+      "PAYMENT_DISPATCH_UNRESOLVED",
+      "PAYMENT_CONFIRMED_STOCK_CONFLICT",
+      "PAYMENT_PROVIDER_CONFLICT",
+      "PAYMENT_FAILED",
+      "PAID_STOCK_CONFLICT",
+    ]);
+    const audit = {
+      orderId: ids.order,
+      fromStatus: "PENDING_PAYMENT",
+      toStatus: "PAID",
+      reasonCode: "PAYMENT_CONFIRMED",
+      actorKind: "PAYMENTS_SERVICE",
+      correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+      occurredAt: "2026-08-24T20:01:00.000Z",
+    } as const;
+    expect(orderStateTransitionAuditContract.parse(audit)).toEqual(audit);
+    for (const reasonCode of orderStateTransitionReasonCodeContract.options) {
+      expect(
+        orderStateTransitionAuditContract.parse({ ...audit, reasonCode }).reasonCode,
+      ).toBe(reasonCode);
+    }
+    expect(
+      orderStateTransitionAuditContract.safeParse({
+        ...audit,
+        reasonText: "provider returned a sensitive reason",
+      }).success,
+    ).toBe(false);
   });
 });
