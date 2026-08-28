@@ -216,7 +216,7 @@ export function IdentityLogin({
         )}
         {cancelTo ? (
           <a className={styles.cancelLink} href={cancelTo}>
-            انصراف و بازگشت به فروشگاه
+            انصراف و بازگشت
           </a>
         ) : null}
       </section>

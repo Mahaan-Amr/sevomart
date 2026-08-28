@@ -272,8 +272,8 @@ export function CartView() {
               </section>
             ) : null}
             {checkoutReady ? (
-              <a className={styles.addressLink} href="/checkout">
-                رفتن به مرور نهایی سفارش
+              <a className={styles.addressLink} href="/checkout/delivery">
+                ادامه به تحویل سفارش
               </a>
             ) : null}
             {conflict ? (
@@ -286,7 +286,7 @@ export function CartView() {
           </>
         )}
         {message ? <p role="status">{message}</p> : null}
-        <a className={styles.addressLink} href="/addresses">
+        <a className={styles.addressLink} href="/account/addresses?returnTo=%2Fcart">
           مدیریت نشانی‌های تحویل
         </a>
       </section>

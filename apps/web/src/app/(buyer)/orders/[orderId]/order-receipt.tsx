@@ -25,7 +25,9 @@ export function OrderReceipt({
       setFailed(true);
       return;
     }
-    void fetch(`/api/payment-attempts/${attemptId}`, { cache: "no-store" })
+    void fetch(`/api/payment-attempts/${encodeURIComponent(attemptId)}`, {
+      cache: "no-store",
+    })
       .then(async (response) => {
         const parsed = directPaymentAttemptContract.safeParse(await response.json());
         if (!response.ok || !parsed.success || parsed.data.orderId !== orderId) {
@@ -77,6 +79,9 @@ export function OrderReceipt({
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="receipt-title">
+        <a className={styles.back} href="/cart">
+          بازگشت به سبد
+        </a>
         <h1 id="receipt-title">{title}</h1>
         {attempt?.status === "CONFIRMED" && attempt.orderStatus === "PAYMENT_REVIEW" ? (
           <>
@@ -166,7 +171,9 @@ export function OrderReceipt({
             </p>
           </>
         ) : failed ? (
-          <p role="alert">رسید در دسترس نیست. از پیگیری سفارش دوباره تلاش کنید.</p>
+          <p role="alert">
+            رسید در دسترس نیست. نشانی رسید را بررسی کنید یا به سبد برگردید.
+          </p>
         ) : (
           <p>نتیجه پرداخت در حال دریافت است؛ این صفحه را نبندید.</p>
         )}

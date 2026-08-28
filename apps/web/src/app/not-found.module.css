@@ -1,0 +1,16 @@
+.panel {
+  width: min(100%, 520px);
+  overflow-wrap: anywhere;
+}
+.panel a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  margin-block-start: 16px;
+  margin-inline-end: 16px;
+  color: var(--color-primary-dark);
+}
+.panel a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}

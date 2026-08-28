@@ -74,3 +74,14 @@
     animation: none !important;
   }
 }
+.back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--color-primary-dark);
+  margin-block-end: 12px;
+}
+.back:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}

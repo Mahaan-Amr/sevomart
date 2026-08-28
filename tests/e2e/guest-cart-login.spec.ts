@@ -238,9 +238,11 @@ test("guest adds a product, signs in and continues the same cart", async ({
   ).toBeLessThan(0.001);
   await page.getByRole("link", { name: "بازگشت به سبد" }).click();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
-  await page.getByRole("link", { name: "رفتن به مرور نهایی سفارش" }).click();
-  await expect(page.getByRole("heading", { name: "مرور نهایی سفارش" })).toBeVisible();
+  await page.getByRole("link", { name: "ادامه به تحویل سفارش" }).click();
+  await expect(page).toHaveURL(/\/checkout\/delivery$/);
+  await expect(page.getByRole("heading", { name: "تحویل سفارش" })).toBeVisible();
   await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
+  await expect(page).toHaveURL(/\/checkout\/review$/);
   await expect(page.getByRole("heading", { name: "تسویه مستقیم" })).toBeVisible();
   await expect(page.getByText("بازپرداخت را تضمین نمی‌کند.")).toBeVisible();
   const stockSql = postgres(databaseUrl, { max: 1 });

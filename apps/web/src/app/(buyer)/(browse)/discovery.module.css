@@ -1,0 +1,71 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px 12px;
+  list-style: none;
+  padding: 0;
+  margin-block: 24px;
+}
+.grid li {
+  min-width: 0;
+}
+.grid .product {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  justify-content: stretch;
+}
+.product img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+.product h2 {
+  margin: 4px 0 0;
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.8;
+}
+.product span {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.product strong {
+  color: var(--color-primary-dark);
+  font-size: 14px;
+  font-weight: 600;
+}
+.state {
+  padding-block: 32px;
+  min-height: 180px;
+}
+.state button {
+  min-height: 40px;
+  margin-block-start: 12px;
+  padding: 8px 16px;
+  font: inherit;
+  border: 0;
+  border-radius: 12px;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  cursor: pointer;
+}
+.state button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+@media (max-width: 480px) {
+  .grid {
+    gap: 16px 8px;
+  }
+  .product h2,
+  .product strong {
+    font-size: 13px;
+  }
+  .product span {
+    font-size: 11px;
+  }
+}

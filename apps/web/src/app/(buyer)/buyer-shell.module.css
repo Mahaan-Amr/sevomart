@@ -1,0 +1,128 @@
+.shell {
+  min-height: 100dvh;
+  background: var(--color-background);
+  font-size: 14px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: min(100%, 1060px);
+  margin-inline: auto;
+  padding: 12px 24px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.shell a,
+.identity summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  color: var(--color-primary-dark);
+  text-decoration: none;
+  border-radius: 12px;
+  padding: 8px 12px;
+  line-height: 1.8;
+}
+
+.shell a:focus-visible,
+.identity summary:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 20px;
+}
+.navigation,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.actions {
+  margin-inline-start: auto;
+}
+.navigation a {
+  color: var(--color-muted);
+}
+.navigation a[aria-current="page"] {
+  color: var(--color-primary-dark);
+  background: var(--color-cover-start);
+  font-weight: 600;
+}
+
+.identity {
+  position: relative;
+}
+.identity summary {
+  cursor: pointer;
+  list-style: none;
+}
+.identity summary::-webkit-details-marker {
+  display: none;
+}
+.identityMenu {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + 8px);
+  display: grid;
+  width: 180px;
+  padding: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  box-shadow: var(--elevation-raised);
+  z-index: 2;
+}
+.identityMenu a {
+  justify-content: start;
+}
+.content {
+  display: block;
+  min-height: auto;
+  width: min(100%, 1060px);
+  margin-inline: auto;
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+.shell .skipLink {
+  position: fixed;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  transform: translateY(-150%);
+  background: var(--color-surface);
+  z-index: 5;
+}
+.shell .skipLink:focus {
+  transform: none;
+}
+
+@media (max-width: 767px) {
+  .header {
+    padding: 8px 16px;
+    gap: 8px;
+  }
+  .content {
+    padding: 24px 16px calc(88px + env(safe-area-inset-bottom));
+  }
+  .navigation {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    justify-content: space-evenly;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    background: var(--color-surface);
+    border-block-start: 1px solid var(--color-divider);
+    z-index: 3;
+  }
+  .navigation a {
+    flex: 1;
+    padding-inline: 4px;
+    font-size: 13px;
+  }
+}
