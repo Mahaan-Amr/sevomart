@@ -83,7 +83,9 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   await page.keyboard.press("Tab");
   const focused = page.locator(":focus");
   await expect(focused).toHaveCSS("outline-style", "solid");
-  await assertMinimumContrast(page.getByRole("link", { name: "دیدن وضعیت فروشگاه" }));
+  await assertMinimumContrast(
+    sellerNavigation.first().getByRole("link", { name: "فروشگاه" }),
+  );
 
   await sql`
     update identity_seller_access set status = 'SUSPENDED' where identity_id = ${identityId}
@@ -95,7 +97,8 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   await expect(
     page.getByRole("navigation", { name: "ناوبری فضای کار فروشنده" }),
   ).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "دیدن وضعیت درخواست" })).toBeVisible();
+  await expect(page.getByText(/وضعیت تعلیق یا لغو را با پشتیبانی سوو/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "بررسی دوباره" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await sql.end();
 });

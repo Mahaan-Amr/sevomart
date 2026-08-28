@@ -76,6 +76,10 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page).toHaveURL(/\/seller\/store$/);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
   await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
+  await expect(page.getByText("قدم ۱ از ۳")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" }),
+  ).toBeVisible();
   await expect(page.getByLabel("نام فروشگاه")).toHaveValue("پیش‌نویس خانه ماه");
   await page.getByLabel("نام فروشگاه").clear();
   await storeNameInput.focus();
@@ -84,10 +88,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   for (const nextControl of [
     page.getByLabel("شناسه لینک"),
     page.getByLabel("معرفی کوتاه"),
-    page.getByLabel("روش ارسال"),
-    page.getByLabel("سیاست مرجوعی"),
-    page.locator("summary"),
-    page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }),
+    page.getByRole("button", { name: "ادامه" }),
   ]) {
     await page.keyboard.press("Tab");
     await expect(nextControl).toBeFocused();
@@ -104,7 +105,6 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
 
   await page.keyboard.press("Enter");
   await expect(page.getByText("نام فروشگاه را کامل‌تر بنویسید.")).toBeVisible();
-  await expect(page.getByText("شرایط مرجوعی را کمی روشن‌تر بنویسید.")).toBeVisible();
   await expect(page).toHaveScreenshot(
     "store-validation-error.png",
     deterministicScreenshotOptions,
@@ -113,9 +113,13 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByLabel("نام فروشگاه").fill(storeName);
   await page.getByLabel("شناسه لینک").fill(slug);
   await page.getByLabel("معرفی کوتاه").fill(storeBio);
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByText("قدم ۲ از ۳")).toBeVisible();
   await page
     .getByLabel("سیاست مرجوعی")
     .fill("تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByText("قدم ۳ از ۳")).toBeVisible();
   for (const validationMessage of [
     "نام فروشگاه را کامل‌تر بنویسید.",
     "شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد.",
@@ -124,11 +128,14 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   ]) {
     await expect(page.getByText(validationMessage)).toHaveCount(0);
   }
-  const appearanceSummary = page.locator("summary");
-  await appearanceSummary.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("details")).toHaveAttribute("open", "");
+  const livePreview = page.getByRole("article", {
+    name: "پیش‌نمایش زنده فروشگاه",
+  });
   await page.getByLabel("رنگ فروشگاه").fill("#760B29");
+  await expect(livePreview.locator("div").first()).toHaveCSS(
+    "background-color",
+    "rgb(118, 11, 41)",
+  );
   const logo = await sharp({
     create: { width: 256, height: 256, channels: 4, background: "#760B29" },
   })
@@ -152,6 +159,10 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.getByText("انتخاب فایل")).toHaveCount(2);
   await expect(page.getByText("logo.png")).toBeVisible();
   await expect(page.getByText("cover.png")).toBeVisible();
+  await expect(livePreview.getByRole("img", { name: "پیش‌نمایش لوگو" })).toBeVisible();
+  await expect(
+    livePreview.getByRole("img", { name: "پیش‌نمایش تصویر روی جلد" }),
+  ).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
   await assertMinimumContrast(
@@ -197,6 +208,20 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
 
   await page.reload();
   await expect(page.getByLabel("نام فروشگاه")).toHaveValue(storeName);
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByText("قدم ۲ از ۳")).toBeVisible();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByText("قدم ۳ از ۳")).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: "پیش‌نمایش زنده فروشگاه" }).getByRole("img", {
+      name: "پیش‌نمایش لوگو",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: "پیش‌نمایش زنده فروشگاه" }).getByRole("img", {
+      name: "پیش‌نمایش تصویر روی جلد",
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).focus();
   await page.keyboard.press("Enter");
   const backButton = page.getByRole("button", { name: "برگشت و ویرایش" });

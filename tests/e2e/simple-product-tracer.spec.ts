@@ -147,6 +147,19 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
 
   const publicLink = page.getByRole("link", { name: "دیدن کالا در فروشگاه" });
   await expect(publicLink).toBeVisible();
+
+  await page.goto("/seller/inventory");
+  await expect(page.getByRole("heading", { name: "مدیریت موجودی" })).toBeVisible();
+  const firstInventory = page.getByRole("spinbutton", {
+    name: "موجودی فنجان سرامیکی، رنگ: قرمز، اندازه: کوچک",
+  });
+  await expect(firstInventory).toHaveValue("8");
+  await firstInventory.fill("9");
+  await page.getByRole("button", { name: "ذخیره موجودی" }).click();
+  await expect(page.getByRole("status")).toHaveText("موجودی ذخیره شد.");
+  await page.reload();
+  await expect(firstInventory).toHaveValue("9");
+
   await page.goto(`/s/${slug}`);
   const storefrontProduct = page.getByRole("link", { name: /فنجان سرامیکی/ });
   await expect(storefrontProduct).toBeVisible();

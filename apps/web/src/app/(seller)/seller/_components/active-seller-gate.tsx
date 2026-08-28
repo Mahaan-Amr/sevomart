@@ -21,7 +21,21 @@ export async function ActiveSellerGate({
   if (access.kind === "APPLICANT") redirect("/seller/application");
   if (access.kind === "ACTIVE") return children;
 
-  const unavailable = access.kind === "UNAVAILABLE";
+  return (
+    <SellerAccessStatus
+      unavailable={access.kind === "UNAVAILABLE"}
+      returnTo={returnTo}
+    />
+  );
+}
+
+export function SellerAccessStatus({
+  unavailable,
+  returnTo,
+}: {
+  unavailable: boolean;
+  returnTo: string;
+}) {
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="seller-access-title">
@@ -35,14 +49,11 @@ export async function ActiveSellerGate({
         <p>
           {unavailable
             ? "ارتباط با سرویس برقرار نشد. کمی بعد دوباره وضعیت را بررسی کنید."
-            : "فروشندگی فعال نیست. برای پیگیری وضعیت، درخواست فروشندگی را ببینید."}
+            : "فروشندگی فعال نیست. اگر انتظار دارید دسترسی فعال باشد، وضعیت تعلیق یا لغو را با پشتیبانی سوو پیگیری کنید."}
         </p>
         <div className={styles.actions}>
-          <Link
-            className={styles.primary}
-            href={unavailable ? returnTo : "/seller/application"}
-          >
-            {unavailable ? "بررسی دوباره" : "دیدن وضعیت درخواست"}
+          <Link className={styles.primary} href={returnTo}>
+            بررسی دوباره
           </Link>
           <Link className={styles.secondary} href="/">
             بازگشت به فضای خریدار

@@ -79,6 +79,28 @@ describe("seller workspace access", () => {
     });
   });
 
+  it("admits an active seller who has not created a store yet", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("{}", { status: 404 })),
+    );
+
+    await expect(readSellerWorkspaceAccess("sevo_session=unknown")).resolves.toEqual({
+      kind: "ACTIVE",
+    });
+  });
+
+  it("fails closed for an unexpected response from the live access check", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("{}", { status: 429 })),
+    );
+
+    await expect(readSellerWorkspaceAccess("sevo_session=unknown")).resolves.toEqual({
+      kind: "UNAVAILABLE",
+    });
+  });
+
   it("requires login when the live check rejects the session", async () => {
     vi.stubGlobal(
       "fetch",

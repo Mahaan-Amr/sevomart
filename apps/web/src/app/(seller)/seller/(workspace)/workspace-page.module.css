@@ -34,6 +34,65 @@
   font-size: 18px;
 }
 
+.inventoryList {
+  display: grid;
+  gap: 16px;
+}
+
+.inventoryProduct {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.inventoryProduct h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.inventoryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.inventoryRow input {
+  width: 104px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.primaryButton {
+  width: fit-content;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.primaryButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.statusMessage {
+  min-height: 24px;
+  color: var(--color-primary-dark);
+}
+
 .primary,
 .secondary {
   display: inline-grid;
@@ -59,7 +118,9 @@
 }
 
 .primary:focus-visible,
-.secondary:focus-visible {
+.secondary:focus-visible,
+.primaryButton:focus-visible,
+.inventoryRow input:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 2px;
 }

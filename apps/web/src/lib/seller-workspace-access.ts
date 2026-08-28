@@ -18,8 +18,11 @@ export async function readSellerWorkspaceAccess(
       cache: "no-store",
     });
     if (accessResponse.status === 401) return { kind: "SIGNED_OUT" };
-    if (accessResponse.status >= 500) return { kind: "UNAVAILABLE" };
-    if (accessResponse.status !== 403) return { kind: "ACTIVE" };
+    if (accessResponse.ok) return { kind: "ACTIVE" };
+    // The orders boundary checks active seller access before resolving a store.
+    // A missing store therefore still proves that the seller access is active.
+    if (accessResponse.status === 404) return { kind: "ACTIVE" };
+    if (accessResponse.status !== 403) return { kind: "UNAVAILABLE" };
 
     const applicationsResponse = await fetch(
       `${API_BASE_URL}/v1/seller-applications/mine?limit=20`,
