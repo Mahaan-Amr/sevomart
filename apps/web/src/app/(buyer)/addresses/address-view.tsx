@@ -6,6 +6,7 @@ import {
   type SavedAddress,
 } from "@sevo/contracts/orders/v1";
 import { FormEvent, useEffect, useState } from "react";
+import { loginHref } from "../../../lib/navigation";
 
 import styles from "./address.module.css";
 
@@ -19,7 +20,7 @@ const emptyAddress: AddressFields = {
   addressLine: "",
 };
 
-export function AddressView() {
+export function AddressView({ returnTo }: { returnTo: string }) {
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [editing, setEditing] = useState<SavedAddress>();
   const [fields, setFields] = useState<AddressFields>(emptyAddress);
@@ -33,7 +34,9 @@ export function AddressView() {
   async function load() {
     const response = await fetch("/api/addresses", { cache: "no-store" });
     if (response.status === 401) {
-      window.location.assign("/login?returnTo=%2Faddresses&cancelTo=%2Fcart");
+      window.location.assign(
+        loginHref(`/account/addresses?${new URLSearchParams({ returnTo })}`, returnTo),
+      );
       return;
     }
     const parsed = savedAddressListContract.safeParse(await response.json());
@@ -112,8 +115,12 @@ export function AddressView() {
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="address-title">
-        <a href="/cart" className={styles.back}>
-          بازگشت به سبد
+        <a href={returnTo} className={styles.back}>
+          {returnTo === "/cart"
+            ? "بازگشت به سبد"
+            : returnTo.startsWith("/checkout/")
+              ? "بازگشت به تحویل سفارش"
+              : "بازگشت"}
         </a>
         <h1 id="address-title">نشانی تحویل</h1>
         <p className={styles.help}>

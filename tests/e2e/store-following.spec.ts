@@ -162,6 +162,11 @@ test.beforeAll(async ({ browserName }, testInfo) => {
 test("guest cancel preserves the store and login completes a retriable follow", async ({
   page,
 }) => {
+  await page.goto("/");
+  await expect(page.getByRole("list", { name: "کالاهای تازه" })).toBeVisible();
+  await expect(
+    page.locator(`a[href="/s/${slug}/products/${feedProducts[0]!.productId}"]`),
+  ).toBeVisible();
   await page.goto(`/s/${slug}?source=discovery#store-actions`);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await assertNoHorizontalOverflow(page);
@@ -181,7 +186,7 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     )
     .not.toBeNull();
 
-  const cancel = page.getByRole("link", { name: "انصراف و بازگشت به فروشگاه" });
+  const cancel = page.getByRole("link", { name: "انصراف و بازگشت", exact: true });
   await focusByTab(page, cancel);
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(`/s/${slug}?source=discovery#store-actions`);

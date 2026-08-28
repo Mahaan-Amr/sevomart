@@ -12,11 +12,16 @@ import {
 } from "@sevo/contracts/orders/v1";
 import { directPaymentAttemptContract } from "@sevo/contracts/payments/v1";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
+import { loginHref } from "../../../lib/navigation";
 import styles from "./checkout.module.css";
 
 export function CheckoutView() {
+  const router = useRouter();
+  const isReview = usePathname() === "/checkout/review";
   const [options, setOptions] = useState<CheckoutOptions>();
   const [shippingId, setShippingId] = useState("");
   const [addressId, setAddressId] = useState("");
@@ -31,15 +36,24 @@ export function CheckoutView() {
   const errorRef = useRef<HTMLDivElement>(null);
   const orderIdempotencyKey = useRef("");
   const paymentIdempotencyKey = useRef("");
+  const deliveryHref = `/checkout/delivery?${new URLSearchParams({ shippingId, addressId })}`;
+  const addressesHref = `/account/addresses?${new URLSearchParams({ returnTo: deliveryHref })}`;
 
   useEffect(() => {
     void loadOptions();
   }, []);
 
+  useEffect(() => {
+    // A review lives only in this checkout session; never restore a stale snapshot.
+    if (isReview && !review && !order) router.replace("/checkout/delivery");
+  }, [isReview, review, order, router]);
+
   async function loadOptions() {
     const response = await fetch("/api/checkout/options", { cache: "no-store" });
     if (response.status === 401) {
-      window.location.assign("/login?returnTo=%2Fcheckout&cancelTo=%2Fcart");
+      window.location.assign(
+        loginHref(`/checkout/delivery${window.location.search}`, "/cart"),
+      );
       return;
     }
     const parsed = checkoutOptionsContract.safeParse(await response.json());
@@ -48,8 +62,21 @@ export function CheckoutView() {
       return;
     }
     setOptions(parsed.data);
-    setShippingId(parsed.data.shippingMethods[0]?.id ?? "");
-    setAddressId(parsed.data.addresses[0]?.addressId ?? "");
+    const selection = new URLSearchParams(window.location.search);
+    setShippingId(
+      parsed.data.shippingMethods.find(
+        (method) => method.id === selection.get("shippingId"),
+      )?.id ??
+        parsed.data.shippingMethods[0]?.id ??
+        "",
+    );
+    setAddressId(
+      parsed.data.addresses.find(
+        (address) => address.addressId === selection.get("addressId"),
+      )?.addressId ??
+        parsed.data.addresses[0]?.addressId ??
+        "",
+    );
   }
 
   async function prepare() {
@@ -81,6 +108,7 @@ export function CheckoutView() {
     if (response.ok && parsed.success) {
       orderIdempotencyKey.current = crypto.randomUUID();
       setReview(parsed.data);
+      router.push("/checkout/review");
     } else showCheckoutError(body);
     setPending(false);
   }
@@ -214,13 +242,13 @@ export function CheckoutView() {
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="checkout-title">
-        <a href="/cart" className={styles.back}>
-          بازگشت به سبد
-        </a>
-        <h1 id="checkout-title">مرور نهایی سفارش</h1>
+        <Link href={isReview ? "/checkout/delivery" : "/cart"} className={styles.back}>
+          {isReview ? "بازگشت به تحویل سفارش" : "بازگشت به سبد"}
+        </Link>
+        <h1 id="checkout-title">{isReview ? "مرور نهایی سفارش" : "تحویل سفارش"}</h1>
         {!options ? (
           <p>در حال آماده‌کردن انتخاب‌ها…</p>
-        ) : !review ? (
+        ) : !isReview || !review ? (
           <>
             <fieldset>
               <legend>روش ارسال</legend>
@@ -230,7 +258,10 @@ export function CheckoutView() {
                     type="radio"
                     name="shipping"
                     checked={shippingId === method.id}
-                    onChange={() => setShippingId(method.id)}
+                    onChange={() => {
+                      setShippingId(method.id);
+                      setReview(undefined);
+                    }}
                   />
                   <span>
                     <b>{method.label}</b>
@@ -252,7 +283,10 @@ export function CheckoutView() {
                       type="radio"
                       name="address"
                       checked={addressId === address.addressId}
-                      onChange={() => setAddressId(address.addressId)}
+                      onChange={() => {
+                        setAddressId(address.addressId);
+                        setReview(undefined);
+                      }}
                     />
                     <span>
                       <b>{address.recipientName}</b>
@@ -263,7 +297,7 @@ export function CheckoutView() {
                     </span>
                   </label>
                 ))}
-                <a href="/addresses">افزودن یا ویرایش نشانی</a>
+                <a href={addressesHref}>افزودن یا ویرایش نشانی</a>
               </fieldset>
             ) : null}
             <button className={styles.primary} disabled={pending} onClick={prepare}>
@@ -325,7 +359,7 @@ export function CheckoutView() {
             {message}
             <div>
               {errorAction === "address" ? (
-                <a href="/addresses">اصلاح نشانی</a>
+                <a href={addressesHref}>اصلاح نشانی</a>
               ) : errorAction === "review" ? (
                 <a href="#checkout-title">مرور دوباره انتخاب‌ها</a>
               ) : errorAction === "retry" ? (

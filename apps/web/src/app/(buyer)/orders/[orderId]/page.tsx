@@ -1,12 +1,19 @@
-import { OrderReceipt } from "./order-receipt";
+import { redirect, notFound } from "next/navigation";
+import { firstParameter } from "../../../../lib/navigation";
 
 export default async function OrderReceiptPage({
   params,
   searchParams,
 }: {
   params: Promise<{ orderId: string }>;
-  searchParams: Promise<{ attemptId?: string }>;
+  searchParams: Promise<{ attemptId?: string | string[] }>;
 }) {
   const [{ orderId }, { attemptId }] = await Promise.all([params, searchParams]);
-  return <OrderReceipt orderId={orderId} attemptId={attemptId} />;
+  const attempt = firstParameter(attemptId);
+  if (attempt)
+    redirect(
+      `/orders/${encodeURIComponent(orderId)}/payment-result?${new URLSearchParams({ attemptId: attempt })}`,
+    );
+  // Full order tracking is delivered by the buyer order journey, not this shell.
+  notFound();
 }

@@ -1,5 +1,5 @@
-import { CheckoutView } from "./checkout-view";
+import { redirect } from "next/navigation";
 
-export default function CheckoutPage() {
-  return <CheckoutView />;
+export default function LegacyCheckoutPage() {
+  redirect("/checkout/delivery");
 }

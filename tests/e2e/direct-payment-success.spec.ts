@@ -94,6 +94,11 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
     });
 
     await page.goto(`/orders/${ids.order}?attemptId=${attempt.attemptId}`);
+    await expect(page).toHaveURL(
+      new RegExp(
+        `/orders/${ids.order}/payment-result\\?attemptId=${attempt.attemptId}$`,
+      ),
+    );
     await expect(page.getByRole("heading", { name: "پرداخت تأیید شد" })).toBeVisible();
     await expect(page.getByText("تسویه مستقیم با فروشگاه")).toBeVisible();
     await expect(page.getByText("زمان پرداخت")).toBeVisible();
