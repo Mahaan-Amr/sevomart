@@ -273,7 +273,7 @@ export function CartView() {
             ) : null}
             {checkoutReady ? (
               <a className={styles.addressLink} href="/checkout/delivery">
-                رفتن به مرور نهایی سفارش
+                ادامه به تحویل سفارش
               </a>
             ) : null}
             {conflict ? (
