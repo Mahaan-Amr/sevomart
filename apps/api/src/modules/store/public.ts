@@ -78,6 +78,7 @@ export type StoreWriteContext = {
 };
 
 export interface StoreRepository {
+  readWriteResult(context: StoreWriteContext): Promise<StoreRow | undefined>;
   findById(id: string): Promise<StoreRow | undefined>;
   findByIdInTransaction?(
     transaction: OpaqueStoreTransactionContext,
@@ -98,6 +99,12 @@ export class StoreRevisionConflictError extends Error {
     readonly currentRevision: number,
   ) {
     super("Store revision does not match the expected revision");
+  }
+}
+
+export class StoreSlugConflictError extends Error {
+  constructor(readonly slug: string) {
+    super("Store slug is already in use");
   }
 }
 

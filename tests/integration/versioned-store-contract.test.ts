@@ -6,6 +6,7 @@ import {
   storePolicyChangedV1Contract,
 } from "@sevo/contracts/store/v1";
 import { storeIdContract } from "@sevo/contracts/platform/v1";
+import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
@@ -33,17 +34,25 @@ describe("versioned Store contract with PostgreSQL", () => {
   });
 
   async function startApp() {
-    const app = await createApiApp(apiTestEnvironment);
+    const app = await createApiApp({
+      ...apiTestEnvironment,
+      DEV_OTP_TEST_MOBILES: ["09123456789", "09123456788"].map((mobile) =>
+        iranianMobileContract.parse(mobile),
+      ),
+    });
     apps.push(app);
     return app;
   }
 
-  async function signIn(app: Awaited<ReturnType<typeof startApp>>) {
+  async function signIn(
+    app: Awaited<ReturnType<typeof startApp>>,
+    mobile = "09123456789",
+  ) {
     const server = app.getHttpAdapter().getInstance();
     const requested = await server.inject({
       method: "POST",
       url: "/v1/auth/otp/requests",
-      payload: { mobile: "09123456789" },
+      payload: { mobile },
     });
     const challengeId = requested.json<{ challengeId: string }>().challengeId;
     const verified = await server.inject({
@@ -53,6 +62,218 @@ describe("versioned Store contract with PostgreSQL", () => {
     });
     return verified.headers["set-cookie"]!;
   }
+
+  it("versions shipping terms only when their meaning changes", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const method = {
+      code: "NATIONAL_POST",
+      label: "پست پیشتاز",
+      fixedFee: { amount: 650_000, currency: "IRR" },
+      estimatedDeliveryText: "سه تا پنج روز کاری",
+      enabled: true,
+    };
+    const save = (revision: number, payload: unknown) =>
+      server.inject({
+        method: "PUT",
+        url: "/v1/seller/store/draft",
+        headers: {
+          cookie,
+          "idempotency-key": crypto.randomUUID(),
+          "if-match": `"${revision}"`,
+        },
+        payload: payload as Record<string, unknown>,
+      });
+    const first = await save(0, {
+      ...completeStore("shipping-terms"),
+      shippingMethods: [method],
+    });
+    expect(first.statusCode).toBe(200);
+    const original = first.json().shippingMethods[0];
+    expect(original).toMatchObject({ ...method, revision: 1 });
+    const unchanged = await save(1, { shippingMethods: [method] });
+    expect(unchanged.json().shippingMethods[0]).toEqual(original);
+    const edited = await save(2, {
+      shippingMethods: [{ ...method, fixedFee: { amount: 800_000, currency: "IRR" } }],
+    });
+    expect(edited.json().shippingMethods[0]).toMatchObject({
+      id: original.id,
+      revision: 2,
+      fixedFee: { amount: 800_000, currency: "IRR" },
+    });
+    const legacy = await save(3, {
+      shippingMethods: [{ code: method.code, label: method.label }],
+    });
+    expect(legacy.json().shippingMethods[0]).toEqual(edited.json().shippingMethods[0]);
+    const read = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+    });
+    expect(read.json().shippingMethods).toEqual(legacy.json().shippingMethods);
+  });
+
+  it("requires an enabled shipping method before publication and preserves zero-cost pickup", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie, "idempotency-key": "disabled-shipping", "if-match": '"0"' },
+      payload: {
+        ...completeStore("disabled-shipping"),
+        shippingMethods: [{ code: "PICKUP", label: "دریافت حضوری", enabled: false }],
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    const preview = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/preview",
+      headers: { cookie },
+    });
+    expect(preview.json().publicationReadiness).toEqual({
+      ready: false,
+      missingFields: ["SHIPPING_METHOD"],
+    });
+    const rejected = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: { cookie, "idempotency-key": "reject-disabled", "if-match": '"1"' },
+    });
+    expect(rejected.statusCode).toBe(422);
+    const enabled = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie, "idempotency-key": "enable-pickup", "if-match": '"1"' },
+      payload: {
+        shippingMethods: [
+          {
+            code: "PICKUP",
+            label: "دریافت حضوری",
+            enabled: true,
+            fixedFee: { amount: 0, currency: "IRR" },
+            estimatedDeliveryText: "فردا از ساعت ده",
+          },
+        ],
+      },
+    });
+    expect(enabled.json().shippingMethods[0]).toMatchObject({
+      revision: 2,
+      enabled: true,
+      requiresDeliveryAddress: false,
+      requiresPostalCode: false,
+    });
+    const published = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: { cookie, "idempotency-key": "publish-pickup", "if-match": '"2"' },
+    });
+    expect(published.statusCode).toBe(200);
+    expect(published.json().store.shippingMethods[0]).toMatchObject({
+      fixedFee: { amount: 0, currency: "IRR" },
+      estimatedDeliveryText: "فردا از ساعت ده",
+    });
+  });
+
+  it("returns a human slug conflict when two sellers claim the same link concurrently", async () => {
+    const app = await startApp();
+    const cookies = await Promise.all([signIn(app), signIn(app, "09123456788")]);
+    const server = app.getHttpAdapter().getInstance();
+    const responses = await Promise.all(
+      cookies.map((cookie) =>
+        server.inject({
+          method: "PUT",
+          url: "/v1/seller/store/draft",
+          headers: {
+            cookie,
+            "idempotency-key": crypto.randomUUID(),
+            "if-match": '"0"',
+          },
+          payload: completeStore("concurrent-slug"),
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+    expect(
+      responses.find((response) => response.statusCode === 409)?.json(),
+    ).toMatchObject({ code: "SLUG_CONFLICT", details: { slug: "concurrent-slug" } });
+  });
+
+  it("reorders shipping methods atomically without replacing their identity or revision", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const methods = [
+      { code: "NATIONAL_POST", label: "پست پیشتاز" },
+      { code: "PICKUP", label: "دریافت حضوری" },
+    ];
+    const first = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie, "idempotency-key": "two-methods", "if-match": '"0"' },
+      payload: { ...completeStore("reordered-shipping"), shippingMethods: methods },
+    });
+    expect(first.statusCode).toBe(200);
+    const original = first.json().shippingMethods;
+    const reordered = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie, "idempotency-key": "reorder-methods", "if-match": '"1"' },
+      payload: { shippingMethods: [...methods].reverse() },
+    });
+    expect(reordered.statusCode).toBe(200);
+    expect(reordered.json().shippingMethods).toEqual([...original].reverse());
+  });
+
+  it("replays a saved response even after its old slug belongs to another seller", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const otherCookie = await signIn(app, "09123456788");
+    const server = app.getHttpAdapter().getInstance();
+    const headers = { cookie, "idempotency-key": "original-slug", "if-match": '"0"' };
+    const payload = completeStore("released-slug");
+    const original = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload,
+    });
+    expect(original.statusCode).toBe(200);
+    const renamed = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: { cookie, "idempotency-key": "rename-slug", "if-match": '"1"' },
+      payload: { slug: "current-slug" },
+    });
+    expect(renamed.statusCode).toBe(200);
+    const claimed = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: {
+        cookie: otherCookie,
+        "idempotency-key": "claim-released-slug",
+        "if-match": '"0"',
+      },
+      payload,
+    });
+    expect(claimed.statusCode).toBe(200);
+    const replay = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(original.json());
+    const current = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+    });
+    expect(current.json()).toEqual(renamed.json());
+  });
 
   it("replays writes once and rejects stale revisions or changed payloads", async () => {
     const app = await startApp();
@@ -199,7 +420,7 @@ describe("versioned Store contract with PostgreSQL", () => {
       /view|like|save|share|conversion|cart|growth/i,
     );
 
-    const edited = await server.inject({
+    const policyEdit = {
       method: "PUT",
       url: "/v1/seller/store/draft",
       headers: {
@@ -209,8 +430,45 @@ describe("versioned Store contract with PostgreSQL", () => {
       },
       payload: {
         returnPolicy: "تا چهارده روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
+        shippingMethods: [
+          {
+            code: "NATIONAL_POST",
+            label: "پست پیشتاز",
+            fixedFee: { amount: 650_000, currency: "IRR" },
+          },
+        ],
       },
-    });
+    } as const;
+    const faultSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      // Fail the policy event after the transaction has already written its
+      // unpublication event. Neither event nor the policy/replay state may commit.
+      await faultSql.unsafe(`
+        create function sevo130_reject_policy_event() returns trigger language plpgsql as $$
+        begin
+          if NEW.event_type = 'StorePolicyChanged.v1' then
+            raise exception 'policy event fault injection';
+          end if;
+          return NEW;
+        end $$;
+        create trigger sevo130_policy_event_fault before insert on platform_outbox_events
+        for each row execute function sevo130_reject_policy_event();
+      `);
+      const failedEdit = await server.inject(policyEdit);
+      expect(failedEdit.statusCode).toBe(500);
+      expect(await stores.readStore(storeId)).toEqual(authoritative);
+      const stillPublished = await server.inject({
+        method: "GET",
+        url: "/v1/stores/public-versioned-store",
+      });
+      expect(stillPublished.statusCode).toBe(200);
+    } finally {
+      await faultSql.unsafe(
+        "drop trigger if exists sevo130_policy_event_fault on platform_outbox_events; drop function if exists sevo130_reject_policy_event();",
+      );
+      await faultSql.end();
+    }
+    const edited = await server.inject(policyEdit);
     expect(edited.statusCode).toBe(200);
     expect(edited.json()).toMatchObject({
       status: "DRAFT",
@@ -292,7 +550,7 @@ describe("versioned Store contract with PostgreSQL", () => {
           eventType: "StorePolicyChanged.v1",
           payload: expect.objectContaining({
             returnPolicyRevision: 2,
-            shippingMethods: [expect.objectContaining({ revision: 1 })],
+            shippingMethods: [expect.objectContaining({ revision: 2 })],
           }),
         },
       ]),

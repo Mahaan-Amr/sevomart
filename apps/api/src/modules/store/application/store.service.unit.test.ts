@@ -9,6 +9,9 @@ import {
 import type { StoreRepository, StoreRow, StoreWriteContext } from "../public";
 
 class MemoryStoreRepository implements StoreRepository {
+  async readWriteResult() {
+    return undefined;
+  }
   row?: StoreRow;
   slugOwner?: StoreRow;
 

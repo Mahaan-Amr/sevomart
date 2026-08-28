@@ -20,10 +20,16 @@ import type {
   StoreRepository,
   StoreRow,
   StoreShippingMethod,
+  StoreWriteContext,
   VerifiedSettlementDestination,
   OpaqueStoreTransactionContext,
 } from "../public";
-import { StoreNotSellableError, StoreOwnershipRequiredError } from "../public";
+import {
+  StoreNotSellableError,
+  StoreOwnershipRequiredError,
+  StoreSlugConflictError,
+} from "../public";
+export { StoreSlugConflictError } from "../public";
 
 export type MissingStoreField =
   StorePreview["publicationReadiness"]["missingFields"][number];
@@ -32,11 +38,6 @@ export class StoreNotFoundError extends Error {}
 export class InvalidStoreMediaError extends Error {
   constructor(readonly mediaId: string) {
     super("Store media is missing or belongs to another seller");
-  }
-}
-export class StoreSlugConflictError extends Error {
-  constructor(readonly slug: string) {
-    super("Store slug is already in use");
   }
 }
 export class IncompleteStoreError extends Error {
@@ -86,6 +87,14 @@ export class StoreService implements StoreAuthoritativeRead {
     input: StoreDraftInput,
     context: StoreWriteRequest,
   ): Promise<StoreDraft> {
+    const write: StoreWriteContext = {
+      ...context,
+      operation: "SAVE_STORE_DRAFT",
+      actorId: sellerId,
+      requestHash: hashParsedInput(input),
+    };
+    const replay = await this.repository.readWriteResult(write);
+    if (replay) return toDraft(replay);
     await this.assertOwnedMedia(sellerId, [input.logoMediaId, input.coverMediaId]);
     const current = await this.repository.findBySellerId(sellerId);
     if (input.slug) {
@@ -138,16 +147,14 @@ export class StoreService implements StoreAuthoritativeRead {
         updatedAt,
       },
       {
-        operation: "SAVE_STORE_DRAFT",
-        actorId: sellerId,
-        correlationId: context.correlationId,
-        idempotencyKey: context.idempotencyKey,
-        requestHash: hashParsedInput(input),
-        expectedRevision: context.expectedRevision,
+        ...write,
         policyChanged,
       },
     );
-    if (current?.status === "PUBLISHED") {
+    if (
+      current?.status === "PUBLISHED" &&
+      (saved.revision ?? 0) > (current.revision ?? 0)
+    ) {
       await Promise.all(
         [
           current.logoMediaId,
@@ -184,15 +191,20 @@ export class StoreService implements StoreAuthoritativeRead {
   ): Promise<StorePublication> {
     const row = await this.repository.findBySellerId(sellerId);
     if (!row) throw new StoreNotFoundError();
+    const write: StoreWriteContext = {
+      ...context,
+      operation: "PUBLISH_STORE",
+      actorId: sellerId,
+      requestHash: hashParsedInput({ storeId: row.id }),
+    };
+    const replay = await this.repository.readWriteResult(write);
+    if (replay)
+      return {
+        store: await this.toPublicStore(replay),
+        publicUrl: `/s/${replay.slug!}`,
+      };
     if (row.status === "PUBLISHED") {
-      const published = await this.repository.publish(row.id, this.now(), {
-        operation: "PUBLISH_STORE",
-        correlationId: context.correlationId,
-        actorId: sellerId,
-        idempotencyKey: context.idempotencyKey,
-        requestHash: hashParsedInput({ storeId: row.id }),
-        expectedRevision: context.expectedRevision,
-      });
+      const published = await this.repository.publish(row.id, this.now(), write);
       return {
         store: await this.toPublicStore(published),
         publicUrl: `/s/${published.slug!}`,
@@ -216,14 +228,7 @@ export class StoreService implements StoreAuthoritativeRead {
     }
     let published: StoreRow;
     try {
-      published = await this.repository.publish(row.id, this.now(), {
-        operation: "PUBLISH_STORE",
-        correlationId: context.correlationId,
-        actorId: sellerId,
-        idempotencyKey: context.idempotencyKey,
-        requestHash: hashParsedInput({ storeId: row.id }),
-        expectedRevision: context.expectedRevision,
-      });
+      published = await this.repository.publish(row.id, this.now(), write);
     } catch (error) {
       await Promise.allSettled(mediaIds.map((id) => this.unpublishMedia(id, sellerId)));
       throw error;
@@ -340,11 +345,12 @@ export class StoreService implements StoreAuthoritativeRead {
 
 function publicationReadiness(row: StoreRow): MissingStoreField[] {
   const missing: MissingStoreField[] = [];
-  if (!row.name) missing.push("NAME");
+  if (!row.name?.trim()) missing.push("NAME");
   if (!row.slug) missing.push("SLUG");
-  if (!row.bio) missing.push("BIO");
-  if (!row.shippingMethods?.length) missing.push("SHIPPING_METHOD");
-  if (!row.returnPolicy) missing.push("RETURN_POLICY");
+  if (!row.bio?.trim()) missing.push("BIO");
+  if (!row.shippingMethods?.some((method) => method.enabled))
+    missing.push("SHIPPING_METHOD");
+  if (!row.returnPolicy?.trim()) missing.push("RETURN_POLICY");
   if (!row.settlementDestination) missing.push("SETTLEMENT_DESTINATION");
   return missing;
 }
@@ -421,21 +427,31 @@ function versionShippingMethods(
   return input.map((method) => {
     const previous = current?.find((candidate) => candidate.code === method.code);
     const defaults = shippingDefaults(method.code);
-    const unchanged = previous?.label === method.label;
-    return {
+    const next = {
       id: previous?.id ?? randomUUID(),
-      revision: previous ? previous.revision + (unchanged ? 0 : 1) : 1,
+      revision: previous?.revision ?? 1,
       code: method.code,
       label: method.label,
-      fixedFeeAmount: previous?.fixedFeeAmount ?? 0,
-      currency: "IRR",
+      fixedFeeAmount: method.fixedFee?.amount ?? previous?.fixedFeeAmount ?? 0,
+      currency: "IRR" as const,
       estimatedDeliveryText:
+        method.estimatedDeliveryText ??
         previous?.estimatedDeliveryText ??
         "زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود.",
-      enabled: previous?.enabled ?? true,
+      enabled: method.enabled ?? previous?.enabled ?? true,
       requiresDeliveryAddress: defaults.requiresDeliveryAddress,
       requiresPostalCode: defaults.requiresPostalCode,
     };
+    if (
+      previous &&
+      (next.label !== previous.label ||
+        next.fixedFeeAmount !== previous.fixedFeeAmount ||
+        next.estimatedDeliveryText !== previous.estimatedDeliveryText ||
+        next.enabled !== previous.enabled)
+    ) {
+      next.revision += 1;
+    }
+    return next;
   });
 }
 

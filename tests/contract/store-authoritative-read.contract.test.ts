@@ -43,6 +43,9 @@ function storeRepository(): StoreRepository {
     publishedAt: new Date("2026-08-24T08:00:00.000Z"),
   };
   return {
+    async readWriteResult() {
+      throw new Error("Read-only fixture");
+    },
     async findById(id) {
       return id === storeId ? row : undefined;
     },

@@ -134,21 +134,23 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const privateRead = await server.inject({ method: "GET", url: media.url });
     expect(privateRead.statusCode).toBe(401);
 
+    const saveHeaders = storeWriteHeaders(cookie, 0);
+    const savePayload = {
+      name: "خانه رسانه",
+      slug: "integration-media-store",
+      bio: "فروشگاه آزمایشی با نشان اختصاصی",
+      shippingMethods: [{ code: "NATIONAL_POST", label: "پست پیشتاز" }],
+      returnPolicy: "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
+      settlementDestination: { kind: "TEST" },
+      logoMediaId: media.id,
+      coverMediaId: null,
+      themeColor: "#A41439",
+    };
     const saved = await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
-      headers: storeWriteHeaders(cookie, 0),
-      payload: {
-        name: "خانه رسانه",
-        slug: "integration-media-store",
-        bio: "فروشگاه آزمایشی با نشان اختصاصی",
-        shippingMethods: [{ code: "NATIONAL_POST", label: "پست پیشتاز" }],
-        returnPolicy: "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
-        settlementDestination: { kind: "TEST" },
-        logoMediaId: media.id,
-        coverMediaId: null,
-        themeColor: "#A41439",
-      },
+      headers: saveHeaders,
+      payload: savePayload,
     });
     expect(saved.statusCode).toBe(200);
 
@@ -162,6 +164,16 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const publicRead = await server.inject({ method: "GET", url: media.url });
     expect(publicRead.statusCode).toBe(200);
     expect(publicRead.headers["content-type"]).toContain("image/webp");
+
+    const delayedSaveReplay = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: saveHeaders,
+      payload: savePayload,
+    });
+    expect(delayedSaveReplay.json()).toEqual(saved.json());
+    const stillPublic = await server.inject({ method: "GET", url: media.url });
+    expect(stillPublic.statusCode).toBe(200);
 
     const publicStore = await server.inject({
       method: "GET",
