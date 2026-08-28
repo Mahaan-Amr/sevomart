@@ -14,6 +14,7 @@ import {
   type OpaqueStoreTransactionContext,
   StoreIdempotencyConflictError,
   StoreRevisionConflictError,
+  StoreSlugConflictError,
   type StoreRepository,
   type StoreRow,
   type StoreShippingMethod,
@@ -64,6 +65,22 @@ export class PostgresStoreRepository
 
   async findBySlug(slug: string) {
     return this.#find({ slug });
+  }
+
+  async readWriteResult(context: StoreWriteContext): Promise<StoreRow | undefined> {
+    const records = await this.#sql<StoredIdempotencyRow[]>`
+      select request_hash as "requestHash", response_json as "responseJson"
+      from store_idempotency_records
+      where operation = ${context.operation}
+        and actor_identity_id = ${context.actorId}
+        and idempotency_key = ${context.idempotencyKey}
+    `;
+    const record = records[0];
+    if (!record) return undefined;
+    if (record.requestHash !== context.requestHash) {
+      throw new StoreIdempotencyConflictError(context.idempotencyKey);
+    }
+    return deserializeRow(record.responseJson);
   }
 
   async isMediaPublished(mediaId: string): Promise<boolean> {
@@ -168,12 +185,13 @@ export class PostgresStoreRepository
   }
 
   async saveDraft(row: StoreRow, context: StoreWriteContext): Promise<StoreRow> {
-    return this.#sql.begin((sql) =>
-      this.#idempotentWrite(sql, context, async () => {
-        await sql`select pg_advisory_xact_lock(hashtextextended(${row.sellerId}, 0))`;
-        const currentRows = await sql<
-          Array<{ revision: number; status: string; publicationVersion: number }>
-        >`
+    return this.#sql
+      .begin((sql) =>
+        this.#idempotentWrite(sql, context, async () => {
+          await sql`select pg_advisory_xact_lock(hashtextextended(${row.sellerId}, 0))`;
+          const currentRows = await sql<
+            Array<{ revision: number; status: string; publicationVersion: number }>
+          >`
           select s.revision, s.status,
             s.publication_version as "publicationVersion"
           from store_stores s
@@ -181,16 +199,16 @@ export class PostgresStoreRepository
           where s.id = ${row.id}::uuid or m.seller_id = ${row.sellerId}::uuid
           for update of s
         `;
-        const current = currentRows[0];
-        const currentRevision = current?.revision ?? 0;
-        if (currentRevision !== context.expectedRevision) {
-          throw new StoreRevisionConflictError(
-            context.expectedRevision,
-            currentRevision,
-          );
-        }
-        const revision = currentRevision + 1;
-        await sql`
+          const current = currentRows[0];
+          const currentRevision = current?.revision ?? 0;
+          if (currentRevision !== context.expectedRevision) {
+            throw new StoreRevisionConflictError(
+              context.expectedRevision,
+              currentRevision,
+            );
+          }
+          const revision = currentRevision + 1;
+          await sql`
           insert into store_stores
             (id, name, slug, bio, return_policy, return_policy_revision,
              settlement_kind, settlement_status, settlement_verified_at,
@@ -220,23 +238,30 @@ export class PostgresStoreRepository
             published_at = null, revision = excluded.revision,
             updated_at = excluded.updated_at
         `;
-        await sql`
+          await sql`
           insert into store_memberships (id, store_id, seller_id, role)
           values (${randomUUID()}, ${row.id}, ${row.sellerId}, 'OWNER')
           on conflict (store_id, seller_id) do nothing
         `;
 
-        const shippingMethodIds = row.shippingMethods?.map((method) => method.id) ?? [];
-        if (shippingMethodIds.length > 0) {
-          await sql`
+          const shippingMethodIds =
+            row.shippingMethods?.map((method) => method.id) ?? [];
+          if (shippingMethodIds.length > 0) {
+            await sql`
             delete from store_shipping_methods
             where store_id = ${row.id} and id not in ${sql(shippingMethodIds)}
           `;
-        } else {
-          await sql`delete from store_shipping_methods where store_id = ${row.id}`;
-        }
-        for (const [position, method] of (row.shippingMethods ?? []).entries()) {
+          } else {
+            await sql`delete from store_shipping_methods where store_id = ${row.id}`;
+          }
+          // Vacate the unique positions before a swap; this transaction restores
+          // every retained method to its final nonnegative position below.
           await sql`
+          update store_shipping_methods set position = -position - 1
+          where store_id = ${row.id}
+        `;
+          for (const [position, method] of (row.shippingMethods ?? []).entries()) {
+            await sql`
             insert into store_shipping_methods
               (id, store_id, position, revision, code, label, fixed_fee_amount,
                currency, estimated_delivery_text, enabled,
@@ -256,52 +281,63 @@ export class PostgresStoreRepository
               requires_delivery_address = excluded.requires_delivery_address,
               requires_postal_code = excluded.requires_postal_code
           `;
-        }
+          }
 
-        const eventBase = {
-          version: 1 as const,
-          aggregateId: row.id,
-          aggregateVersion: revision,
-          occurredAt: row.updatedAt.toISOString(),
-          correlationId: context.correlationId,
-          actor: { type: "IDENTITY" as const, id: context.actorId },
-        };
-        if (current?.status === "PUBLISHED") {
-          await enqueueOutboxEvent(
-            sql,
-            storeUnpublishedV1Contract.parse({
-              ...eventBase,
-              eventId: this.#createEventId(),
-              eventType: "StoreUnpublished.v1",
-              payload: {
-                storeId: row.id,
-                publicationStatus: "DRAFT",
-                publicationVersion: current.publicationVersion,
-              },
-            }),
-          );
+          const eventBase = {
+            version: 1 as const,
+            aggregateId: row.id,
+            aggregateVersion: revision,
+            occurredAt: row.updatedAt.toISOString(),
+            correlationId: context.correlationId,
+            actor: { type: "IDENTITY" as const, id: context.actorId },
+          };
+          if (current?.status === "PUBLISHED") {
+            await enqueueOutboxEvent(
+              sql,
+              storeUnpublishedV1Contract.parse({
+                ...eventBase,
+                eventId: this.#createEventId(),
+                eventType: "StoreUnpublished.v1",
+                payload: {
+                  storeId: row.id,
+                  publicationStatus: "DRAFT",
+                  publicationVersion: current.publicationVersion,
+                },
+              }),
+            );
+          }
+          if (context.policyChanged) {
+            await enqueueOutboxEvent(
+              sql,
+              storePolicyChangedV1Contract.parse({
+                ...eventBase,
+                eventId: this.#createEventId(),
+                eventType: "StorePolicyChanged.v1",
+                payload: {
+                  storeId: row.id,
+                  returnPolicyRevision: row.returnPolicyRevision ?? 0,
+                  shippingMethods: (row.shippingMethods ?? []).map((method) => ({
+                    id: method.id,
+                    revision: method.revision,
+                  })),
+                },
+              }),
+            );
+          }
+          return (await this.#findWithSql(sql, { id: row.id }))!;
+        }),
+      )
+      .catch((error: unknown) => {
+        if (
+          error instanceof postgres.PostgresError &&
+          error.code === "23505" &&
+          error.constraint_name === "store_stores_slug_key" &&
+          row.slug
+        ) {
+          throw new StoreSlugConflictError(row.slug);
         }
-        if (context.policyChanged) {
-          await enqueueOutboxEvent(
-            sql,
-            storePolicyChangedV1Contract.parse({
-              ...eventBase,
-              eventId: this.#createEventId(),
-              eventType: "StorePolicyChanged.v1",
-              payload: {
-                storeId: row.id,
-                returnPolicyRevision: row.returnPolicyRevision ?? 0,
-                shippingMethods: (row.shippingMethods ?? []).map((method) => ({
-                  id: method.id,
-                  revision: method.revision,
-                })),
-              },
-            }),
-          );
-        }
-        return (await this.#findWithSql(sql, { id: row.id }))!;
-      }),
-    );
+        throw error;
+      });
   }
 
   async publish(

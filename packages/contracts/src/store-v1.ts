@@ -23,11 +23,21 @@ export const storeRevisionTagContract = z.string().regex(/^"\d+"$/);
 
 export const shippingMethodContract = z.object({
   code: z.enum(["NATIONAL_POST", "COURIER", "PICKUP"]),
-  label: z.string().min(2).max(60),
+  label: z.string().trim().min(2).max(60),
 });
 
 const shippingMethodsInputContract = z
-  .array(shippingMethodContract)
+  .array(
+    shippingMethodContract.extend({
+      fixedFee: moneyV1Contract
+        .extend({
+          amount: z.int().nonnegative().multipleOf(10),
+        })
+        .optional(),
+      estimatedDeliveryText: z.string().trim().min(2).max(120).optional(),
+      enabled: z.boolean().optional(),
+    }),
+  )
   .min(1)
   .max(5)
   .superRefine((methods, context) => {
@@ -117,11 +127,11 @@ const verifiedSettlementDestinationContract = settlementDestinationInputContract
 );
 
 const requiredStoreFields = {
-  name: z.string().min(2).max(80),
+  name: z.string().trim().min(2).max(80),
   slug: storeSlugContract,
-  bio: z.string().min(2).max(240),
+  bio: z.string().trim().min(2).max(240),
   shippingMethods: shippingMethodsInputContract,
-  returnPolicy: z.string().min(10).max(1_000),
+  returnPolicy: z.string().trim().min(10).max(1_000),
   settlementDestination: settlementDestinationInputContract,
 };
 

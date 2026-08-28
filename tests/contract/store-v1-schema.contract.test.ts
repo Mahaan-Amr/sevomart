@@ -2,6 +2,46 @@ import * as store from "@sevo/contracts/store/v1";
 import { describe, expect, it } from "vitest";
 
 describe("Store v1 executable schema surface", () => {
+  it("does not count whitespace-only information as publication prerequisites", () => {
+    for (const field of ["name", "bio", "returnPolicy"]) {
+      expect(
+        store.storeDraftInputContract.safeParse({ [field]: "            " }).success,
+      ).toBe(false);
+    }
+    expect(
+      store.storeDraftInputContract.safeParse({
+        shippingMethods: [{ code: "PICKUP", label: "    " }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts explicit shipping terms while retaining legacy inputs", () => {
+    const method = {
+      code: "NATIONAL_POST",
+      label: "پست پیشتاز",
+      fixedFee: { amount: 650_000, currency: "IRR" },
+      estimatedDeliveryText: "سه تا پنج روز کاری",
+      enabled: true,
+    };
+    expect(store.storeDraftInputContract.parse({ shippingMethods: [method] })).toEqual({
+      shippingMethods: [method],
+    });
+    expect(
+      store.storeDraftInputContract.parse(store.storeV1Examples.StoreDraftInput),
+    ).toEqual(store.storeV1Examples.StoreDraftInput);
+    for (const fixedFee of [
+      { amount: -10, currency: "IRR" },
+      { amount: 11, currency: "IRR" },
+      { amount: 100, currency: "USD" },
+    ]) {
+      expect(
+        store.storeDraftInputContract.safeParse({
+          shippingMethods: [{ ...method, fixedFee }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("exports the authoritative read, seller eligibility, errors and events to OpenAPI", () => {
     const schemas = store.createStoreV1JsonSchemas();
     for (const name of [
