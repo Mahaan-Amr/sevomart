@@ -35,9 +35,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
       where method.mobile = ${mobile}
     )
   `;
-  await sql.end();
-
-  await page.goto("/seller/login");
+  await page.goto("/seller/login?returnTo=%2Fseller%2Fstore%2Fsetup");
   await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
   await expect(page).toHaveScreenshot(
     "seller-login.png",
@@ -55,12 +53,31 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "ورود" })).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(page.getByRole("link", { name: "ادامه کار" })).toBeVisible();
+  const identities = await sql<Array<{ identityId: string }>>`
+    select identity_id as "identityId" from identity_login_methods where mobile = ${mobile}
+  `;
+  const identityId = identities[0]?.identityId;
+  if (!identityId) throw new Error("store builder identity was not created");
+  await sql`
+    insert into identity_seller_access (id, identity_id, status)
+    values (${crypto.randomUUID()}, ${identityId}, 'ACTIVE')
+    on conflict (identity_id) do update set status = 'ACTIVE'
+  `;
+  await sql.end();
   const builderLink = page.getByRole("link", { name: "ادامه کار" });
   await builderLink.focus();
   await page.keyboard.press("Enter");
 
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   const storeNameInput = page.getByLabel("نام فروشگاه");
+  await storeNameInput.fill("پیش‌نویس خانه ماه");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
+  await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
+  await expect(page.getByLabel("نام فروشگاه")).toHaveValue("پیش‌نویس خانه ماه");
+  await page.getByLabel("نام فروشگاه").clear();
   await storeNameInput.focus();
   await expect(storeNameInput).toBeFocused();
   await expect(storeNameInput).toHaveCSS("outline-style", "solid");

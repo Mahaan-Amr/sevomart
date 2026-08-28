@@ -141,27 +141,7 @@ export function StoreBuilder() {
         coverMediaId,
         themeColor: form.themeColor,
       };
-      const savedResponse = await fetch("/api/store/seller/store/draft", {
-        method: "PUT",
-        headers: {
-          "content-type": "application/json",
-          "idempotency-key": crypto.randomUUID(),
-          "if-match": `"${revision}"`,
-        },
-        body: JSON.stringify(input),
-      });
-      const savedBody: unknown = await savedResponse.json();
-      if (!savedResponse.ok) {
-        setMessage(humanError(savedBody));
-        setErrors(apiFieldErrors(savedBody));
-        return;
-      }
-      const parsedSaved = storeDraftContract.safeParse(savedBody);
-      if (!parsedSaved.success) {
-        throw new Error("invalid draft response");
-      }
-      setRevision(parsedSaved.data.revision);
-      setStoredMedia({ logoMediaId, coverMediaId });
+      await persistDraft(input, logoMediaId, coverMediaId);
       const previewResponse = await fetch("/api/store/seller/store/preview", {
         cache: "no-store",
       });
@@ -175,6 +155,44 @@ export function StoreBuilder() {
       setMessage("پیش‌نویس ذخیره شد. حالا پیش‌نمایش را بررسی کنید.");
     } catch (error) {
       setMessage(
+        error instanceof MediaUploadError || error instanceof StoreDraftSaveError
+          ? error.message
+          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function saveAndExit() {
+    setPending(true);
+    setMessage("");
+    try {
+      const logoMediaId = logo
+        ? (await uploadMedia(logo, "STORE_LOGO")).id
+        : storedMedia.logoMediaId;
+      const coverMediaId = cover
+        ? (await uploadMedia(cover, "STORE_COVER")).id
+        : storedMedia.coverMediaId;
+      const input: StoreDraftInput = {
+        ...(form.name.trim().length >= 2 ? { name: form.name.trim() } : {}),
+        ...(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.slug) && form.slug.length >= 3
+          ? { slug: form.slug.trim() as StoreDraftInput["slug"] }
+          : {}),
+        ...(form.bio.trim().length >= 2 ? { bio: form.bio.trim() } : {}),
+        shippingMethods: [shippingMethod(form.shippingCode)],
+        ...(form.returnPolicy.trim().length >= 10
+          ? { returnPolicy: form.returnPolicy.trim() }
+          : {}),
+        settlementDestination: { kind: "TEST" },
+        logoMediaId,
+        coverMediaId,
+        themeColor: form.themeColor,
+      };
+      await persistDraft(input, logoMediaId, coverMediaId);
+      window.location.assign("/seller/store");
+    } catch (error) {
+      setMessage(
         error instanceof MediaUploadError
           ? error.message
           : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
@@ -182,6 +200,33 @@ export function StoreBuilder() {
     } finally {
       setPending(false);
     }
+  }
+
+  async function persistDraft(
+    input: StoreDraftInput,
+    logoMediaId: MediaId | null,
+    coverMediaId: MediaId | null,
+  ) {
+    const response = await fetch("/api/store/seller/store/draft", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+        "if-match": `"${revision}"`,
+      },
+      body: JSON.stringify(input),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok) {
+      setMessage(humanError(body));
+      setErrors(apiFieldErrors(body));
+      throw new StoreDraftSaveError(humanError(body));
+    }
+    const parsed = storeDraftContract.safeParse(body);
+    if (!parsed.success) throw new Error("invalid draft response");
+    setRevision(parsed.data.revision);
+    setStoredMedia({ logoMediaId, coverMediaId });
+    return parsed.data;
   }
 
   async function publish() {
@@ -392,6 +437,14 @@ export function StoreBuilder() {
           <button className={styles.primaryButton} type="submit" disabled={pending}>
             {pending ? "در حال ذخیره…" : "ذخیره و دیدن پیش‌نمایش"}
           </button>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            disabled={pending}
+            onClick={saveAndExit}
+          >
+            ذخیره و خروج
+          </button>
         </form>
       </section>
     </main>
@@ -500,6 +553,7 @@ async function uploadMedia(
 }
 
 class MediaUploadError extends Error {}
+class StoreDraftSaveError extends Error {}
 
 function humanError(body: unknown) {
   return typeof body === "object" &&

@@ -1,4 +1,4 @@
-import { SellerOrders } from "./seller-orders";
+import { SellerOrders } from "../../orders/seller-orders";
 
 export default function SellerOrdersPage() {
   return <SellerOrders />;

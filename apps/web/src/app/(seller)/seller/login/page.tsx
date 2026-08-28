@@ -28,14 +28,14 @@ export default async function SellerLoginPage({
 }
 
 function safeReturnTo(value: string | undefined): string {
-  if (!value?.startsWith("/") || value.startsWith("//")) return "/seller/store";
+  if (!value?.startsWith("/") || value.startsWith("//")) return "/seller";
   try {
     const base = "https://sevo.local";
     const target = new URL(value, base);
     return target.origin === base
       ? `${target.pathname}${target.search}${target.hash}`
-      : "/seller/store";
+      : "/seller";
   } catch {
-    return "/seller/store";
+    return "/seller";
   }
 }

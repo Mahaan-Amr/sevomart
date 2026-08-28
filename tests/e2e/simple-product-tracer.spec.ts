@@ -81,6 +81,13 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page
     .getByLabel("توضیح کالا")
     .fill("فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/products$/);
+  await page.getByRole("link", { name: "ساخت کالای تازه" }).click();
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await expect(page.getByLabel("توضیح کالا")).toHaveValue(
+    "فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه",
+  );
   const image = await sharp({
     create: { width: 900, height: 900, channels: 4, background: "#A41439" },
   })

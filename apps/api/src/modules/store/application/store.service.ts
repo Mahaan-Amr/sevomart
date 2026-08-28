@@ -355,17 +355,17 @@ function toDraft(row: StoreRow): StoreDraft {
     revision: row.revision ?? 1,
     publicationVersion: row.publicationVersion ?? 0,
     returnPolicyRevision: row.returnPolicyRevision ?? (row.returnPolicy ? 1 : 0),
-    name: row.name,
-    slug: row.slug as StoreDraft["slug"],
-    bio: row.bio,
+    name: row.name ?? undefined,
+    slug: (row.slug ?? undefined) as StoreDraft["slug"],
+    bio: row.bio ?? undefined,
     shippingMethods: row.shippingMethods?.map(toShippingMethodSnapshot),
-    returnPolicy: row.returnPolicy,
+    returnPolicy: row.returnPolicy ?? undefined,
     settlementDestination: row.settlementDestination
       ? { kind: "TEST", status: "TEST_VERIFIED" }
       : undefined,
     logoMediaId: row.logoMediaId as StoreDraft["logoMediaId"],
     coverMediaId: row.coverMediaId as StoreDraft["coverMediaId"],
-    themeColor: row.themeColor,
+    themeColor: row.themeColor ?? undefined,
     status: row.status,
     updatedAt: row.updatedAt.toISOString(),
   } as StoreDraft;

@@ -309,6 +309,13 @@ export function SimpleProductBuilder() {
     });
   }
 
+  async function saveAndExit() {
+    await runPending(async () => {
+      await saveWorkingCopy({ uploadImage: Boolean(image) });
+      window.location.assign("/seller/products");
+    });
+  }
+
   async function runPending(action: () => Promise<void>) {
     setPending(true);
     setMessage("");
@@ -365,6 +372,14 @@ export function SimpleProductBuilder() {
         <header className={styles.header}>
           <span className={styles.brand}>سوو</span>
           <span className={styles.progress}>{stepLabel(step)} از ۴</span>
+          <button
+            type="button"
+            className={styles.textButton}
+            disabled={pending}
+            onClick={saveAndExit}
+          >
+            ذخیره و خروج
+          </button>
         </header>
         {step === "details" ? (
           <DetailsStep

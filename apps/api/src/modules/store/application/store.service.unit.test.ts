@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { storeDraftInputContract, storeSlugContract } from "@sevo/contracts/store/v1";
+import {
+  storeDraftContract,
+  storeDraftInputContract,
+  storeSlugContract,
+} from "@sevo/contracts/store/v1";
 
 import {
   IncompleteStoreError,
@@ -51,6 +55,35 @@ class MemoryStoreRepository implements StoreRepository {
 }
 
 describe("StoreService publication", () => {
+  it("omits database nulls from an incomplete draft response", async () => {
+    const repository = new MemoryStoreRepository();
+    repository.saveDraft = async (row) => {
+      repository.row = {
+        ...row,
+        slug: null as never,
+        bio: null as never,
+        returnPolicy: null as never,
+      };
+      return repository.row;
+    };
+    const service = new StoreService(repository, async (destination) => ({
+      ...destination,
+      status: "TEST_VERIFIED",
+      verifiedAt: new Date(),
+    }));
+
+    const draft = await service.saveDraft(
+      "seller-1",
+      { name: "خانه ماه" },
+      writeContext(0),
+    );
+
+    expect(storeDraftContract.safeParse(draft).success).toBe(true);
+    expect(draft.slug).toBeUndefined();
+    expect(draft.bio).toBeUndefined();
+    expect(draft.returnPolicy).toBeUndefined();
+  });
+
   it("reports missing fields and refuses to publish an incomplete draft", async () => {
     const repository = new MemoryStoreRepository();
     const service = new StoreService(repository, async (destination) => ({

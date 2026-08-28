@@ -109,7 +109,7 @@ test("an information-request draft survives a reload without losing applicant ed
   await expect(field).toHaveValue("فروش حضوری و ثبت سفارش در پیام‌رسان");
 });
 
-test("an approved applicant enters the unpublished seller workspace", async ({
+test("an approved application points to the canonical seller workspace", async ({
   page,
 }, testInfo) => {
   const mobile =
@@ -121,10 +121,6 @@ test("an approved applicant enters the unpublished seller workspace", async ({
       body: JSON.stringify({ items: [approvedApplication()], nextCursor: null }),
     }),
   );
-  await page.route("**/api/store/seller/store/draft", (route) =>
-    route.fulfill({ status: 404, contentType: "application/json", body: "{}" }),
-  );
-
   await page.goto("/seller/login?returnTo=%2Fseller%2Fapplication");
   await page.getByLabel("شماره موبایل").fill(mobile);
   await page.getByRole("button", { name: "دریافت کد" }).click();
@@ -132,12 +128,9 @@ test("an approved applicant enters the unpublished seller workspace", async ({
   await page.getByRole("button", { name: "ورود" }).click();
   await page.getByRole("link", { name: "ادامه کار" }).click();
   await expect(page.getByText("درخواست شما تأیید شد.")).toBeVisible();
-  await page.getByRole("link", { name: "رفتن به فضای فروشنده" }).click();
-
-  await expect(page).toHaveURL(/\/seller\/store$/);
-  await expect(page.getByRole("heading", { name: "ساخت فروشگاه" })).toBeVisible();
-  await expect(page.getByLabel("نام فروشگاه")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "رفتن به فضای فروشنده" }),
+  ).toHaveAttribute("href", "/seller");
 });
 
 function informationRequestApplication() {
