@@ -228,9 +228,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
         setMessage("");
         return;
       }
-      setMessage(
-        "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
-      );
+      setMessage("ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.");
     } finally {
       setPending(false);
     }
