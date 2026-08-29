@@ -11,33 +11,8 @@ export async function establishPlatformAgentSession(
   context: BrowserContext,
   permissions: readonly PlatformPermission[],
 ) {
-  const identityId = randomUUID();
   const token = randomBytes(32).toString("base64url");
-  const sql = postgres(databaseUrl, { max: 1 });
-  try {
-    await sql.begin(async (transaction) => {
-      await transaction`
-        insert into identity_identities (id, status)
-        values (${identityId}, 'ACTIVE')
-      `;
-      await transaction`
-        insert into identity_sessions
-          (id, token_hash, identity_id, audience, expires_at)
-        values
-          (${randomUUID()}, ${hash(token)}, ${identityId}, 'PLATFORM_AGENT',
-           now() + interval '1 hour')
-      `;
-      for (const permission of permissions) {
-        await transaction`
-          insert into identity_platform_permission_grants
-            (id, identity_id, permission, granted_at)
-          values (${randomUUID()}, ${identityId}, ${permission}, now())
-        `;
-      }
-    });
-  } finally {
-    await sql.end();
-  }
+  const identityId = await seedPlatformAgent({ permissions, sessionToken: token });
   await context.addCookies([
     {
       name: "sevo_platform_session",
@@ -66,6 +41,60 @@ export async function establishPlatformAgentSession(
       }
     },
   };
+}
+
+export async function establishPlatformAgentIdentity(
+  mobile: string,
+  permissions: readonly PlatformPermission[],
+) {
+  return seedPlatformAgent({ mobile, permissions });
+}
+
+async function seedPlatformAgent({
+  mobile,
+  permissions,
+  sessionToken,
+}: {
+  mobile?: string;
+  permissions: readonly PlatformPermission[];
+  sessionToken?: string;
+}) {
+  const identityId = randomUUID();
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    await sql.begin(async (transaction) => {
+      await transaction`
+        insert into identity_identities (id, status)
+        values (${identityId}, 'ACTIVE')
+      `;
+      if (mobile) {
+        await transaction`
+          insert into identity_login_methods
+            (id, identity_id, kind, mobile, verified_at)
+          values (${randomUUID()}, ${identityId}, 'MOBILE', ${mobile}, now())
+        `;
+      }
+      if (sessionToken) {
+        await transaction`
+          insert into identity_sessions
+            (id, token_hash, identity_id, audience, expires_at)
+          values
+            (${randomUUID()}, ${hash(sessionToken)}, ${identityId}, 'PLATFORM_AGENT',
+             now() + interval '1 hour')
+        `;
+      }
+      for (const permission of permissions) {
+        await transaction`
+          insert into identity_platform_permission_grants
+            (id, identity_id, permission, granted_at)
+          values (${randomUUID()}, ${identityId}, ${permission}, now())
+        `;
+      }
+    });
+  } finally {
+    await sql.end();
+  }
+  return identityId;
 }
 
 function hash(value: string) {
