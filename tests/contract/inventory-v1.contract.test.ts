@@ -48,6 +48,59 @@ describe("inventory seller authoring v1", () => {
         },
       }),
     ).toMatchObject({ version: 1, details: { issues: [{ path: "rows.0.onHand" }] } });
+
+    expect(
+      inventoryErrorContract.parse({
+        version: 1,
+        code: "UNAUTHORIZED",
+        message: "برای ادامه دوباره وارد شوید.",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+        details: { issues: [] },
+      }),
+    ).toMatchObject({ version: 1, code: "UNAUTHORIZED" });
+
+    expect(
+      inventoryErrorContract.parse({
+        version: 1,
+        code: "REVISION_CONFLICT",
+        message: "موجودی بعضی ردیف‌ها تغییر کرده است.",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+        details: {
+          issues: [
+            {
+              path: "rows.0.expectedRevision",
+              code: "REVISION_CONFLICT",
+              variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      version: 1,
+      code: "REVISION_CONFLICT",
+      details: { issues: [{ code: "REVISION_CONFLICT" }] },
+    });
+
+    expect(
+      inventoryErrorContract.parse({
+        version: 1,
+        code: "INVENTORY_NOT_FOUND",
+        message: "بعضی گونه‌ها برای این فروشگاه پیدا نشدند.",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+        details: {
+          issues: [
+            {
+              path: "rows.0.variantId",
+              code: "INVENTORY_NOT_FOUND",
+              variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      code: "INVENTORY_NOT_FOUND",
+      details: { issues: [{ code: "INVENTORY_NOT_FOUND" }] },
+    });
   });
 
   it("keeps exact counts private in a seller-only list and validates destination batches", () => {

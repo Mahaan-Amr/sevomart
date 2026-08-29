@@ -41,6 +41,11 @@ export interface InventoryAuthoring {
     command: Readonly<{
       storeId: StoreId;
       publication?: Readonly<{ productId: ProductId; publicationVersion: number }>;
+      publications?: ReadonlyMap<
+        VariantId,
+        Readonly<{ productId: ProductId; publicationVersion: number }>
+      >;
+      aggregateBatchConflicts?: boolean;
       rows: ReadonlyArray<{
         variantId: VariantId;
         onHand: number;
@@ -137,6 +142,7 @@ export interface SellerInventoryRepository {
             storeId: StoreId;
             productId: ProductId;
             publicationVersion: number;
+            sellable: boolean;
           }>
         | undefined
       >;
@@ -172,6 +178,41 @@ export class InventoryReservedStockConflictError extends Error {
     readonly reserved: number,
   ) {
     super("Inventory cannot be reduced below active reserved stock");
+  }
+}
+
+export type InventoryBatchConflictIssue = Readonly<
+  | {
+      code: "REVISION_CONFLICT";
+      rowIndex: number;
+      variantId: VariantId;
+      expectedRevision: number;
+      currentRevision: number;
+    }
+  | {
+      code: "RESERVED_STOCK_CONFLICT";
+      rowIndex: number;
+      variantId: VariantId;
+      requestedOnHand: number;
+      reserved: number;
+    }
+>;
+
+export class InventoryBatchConflictError extends Error {
+  constructor(readonly issues: readonly InventoryBatchConflictIssue[]) {
+    super("Inventory batch contains conflicting rows");
+  }
+}
+
+export type InventoryBatchNotFoundIssue = Readonly<{
+  code: "INVENTORY_NOT_FOUND";
+  rowIndex: number;
+  variantId: VariantId;
+}>;
+
+export class InventoryBatchNotFoundError extends Error {
+  constructor(readonly issues: readonly InventoryBatchNotFoundIssue[]) {
+    super("Inventory batch contains variants outside the seller store");
   }
 }
 

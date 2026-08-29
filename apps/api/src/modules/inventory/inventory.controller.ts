@@ -28,6 +28,8 @@ import {
 } from "../identity-access/public";
 import { SellerInventoryService } from "./application/seller-inventory.service";
 import {
+  InventoryBatchConflictError,
+  InventoryBatchNotFoundError,
   InventoryIdempotencyConflictError,
   InventoryNotFoundError,
   InventoryReservedStockConflictError,
@@ -44,6 +46,14 @@ const inventoryConflictMetric = inventoryMeter.createCounter(
 const inventoryBatchRejectedMetric = inventoryMeter.createCounter(
   "sevo.inventory.authoring.batch_rejected",
   { description: "Rejected seller inventory batches by rejection kind" },
+);
+const inventoryOperationLatencyMetric = inventoryMeter.createHistogram(
+  "sevo.inventory.authoring.operation_duration",
+  { description: "Inventory operation latency by operationId", unit: "ms" },
+);
+const inventoryOperationErrorMetric = inventoryMeter.createCounter(
+  "sevo.inventory.authoring.operation_errors",
+  { description: "Inventory operation errors by operationId and code" },
 );
 
 @ApiExcludeController()
@@ -63,28 +73,30 @@ export class InventoryController {
     @Query("limit") rawLimit?: string,
     @Query("availability") rawAvailability?: string,
   ) {
-    const identityId = await requireIdentity(request, this.sessions);
-    const cursor = rawCursor ? variantIdContract.safeParse(rawCursor) : undefined;
-    const limit = inventoryPageLimitContract.safeParse(rawLimit ?? 20);
-    const availability = rawAvailability
-      ? inventoryAvailabilityContract.safeParse(rawAvailability)
-      : undefined;
-    if (cursor && !cursor.success) {
-      throw validationError(request.id, cursor.error.issues, "cursor");
-    }
-    if (!limit.success) {
-      throw validationError(request.id, limit.error.issues, "limit");
-    }
-    if (availability && !availability.success) {
-      throw validationError(request.id, availability.error.issues, "availability");
-    }
-    return this.#handle(request, () =>
-      this.inventory.list(identityId, {
-        ...(cursor?.success ? { cursor: cursor.data } : {}),
-        limit: limit.data,
-        ...(availability?.success ? { availability: availability.data } : {}),
-      }),
-    );
+    return this.#observe("listSellerInventory", async () => {
+      const identityId = await this.#requireIdentity(request);
+      const cursor = rawCursor ? variantIdContract.safeParse(rawCursor) : undefined;
+      const limit = inventoryPageLimitContract.safeParse(rawLimit ?? 20);
+      const availability = rawAvailability
+        ? inventoryAvailabilityContract.safeParse(rawAvailability)
+        : undefined;
+      if (cursor && !cursor.success) {
+        throw validationError(request.id, cursor.error.issues, "cursor");
+      }
+      if (!limit.success) {
+        throw validationError(request.id, limit.error.issues, "limit");
+      }
+      if (availability && !availability.success) {
+        throw validationError(request.id, availability.error.issues, "availability");
+      }
+      return this.#handle(request, () =>
+        this.inventory.list(identityId, {
+          ...(cursor?.success ? { cursor: cursor.data } : {}),
+          limit: limit.data,
+          ...(availability?.success ? { availability: availability.data } : {}),
+        }),
+      );
+    });
   }
 
   @Put()
@@ -93,29 +105,79 @@ export class InventoryController {
     @Body() body: unknown,
     @Headers("idempotency-key") rawIdempotencyKey?: string,
   ) {
-    const identityId = await requireIdentity(request, this.sessions);
-    const input = replaceSellerInventoryBatchContract.safeParse(body);
-    if (!input.success) {
-      inventoryBatchRejectedMetric.add(1, { kind: "validation" });
-      throw validationError(request.id, input.error.issues, undefined, body);
+    return this.#observe("replaceInventoryBatch", async () => {
+      const identityId = await this.#requireIdentity(request);
+      const input = replaceSellerInventoryBatchContract.safeParse(body);
+      if (!input.success) {
+        inventoryBatchRejectedMetric.add(1, { kind: "validation" });
+        throw validationError(request.id, input.error.issues, undefined, body);
+      }
+      const idempotencyKey =
+        inventoryIdempotencyKeyContract.safeParse(rawIdempotencyKey);
+      if (!idempotencyKey.success) {
+        inventoryBatchRejectedMetric.add(1, { kind: "precondition" });
+        throw preconditionError(request.id);
+      }
+      return this.#handle(request, () =>
+        this.inventory.replaceBatch(identityId, input.data, {
+          idempotencyKey: idempotencyKey.data,
+          correlationId: request.id,
+        }),
+      );
+    });
+  }
+
+  async #requireIdentity(request: FastifyRequest) {
+    try {
+      return await requireIdentity(request, this.sessions);
+    } catch (error) {
+      if (error instanceof HttpException && error.getStatus() === 401) {
+        throw inventoryError(
+          request.id,
+          HttpStatus.UNAUTHORIZED,
+          "UNAUTHORIZED",
+          "برای ادامه دوباره وارد شوید.",
+        );
+      }
+      throw error;
     }
-    const idempotencyKey = inventoryIdempotencyKeyContract.safeParse(rawIdempotencyKey);
-    if (!idempotencyKey.success) {
-      inventoryBatchRejectedMetric.add(1, { kind: "precondition" });
-      throw preconditionError(request.id);
+  }
+
+  async #observe<T>(operationId: string, operation: () => Promise<T>) {
+    const startedAt = performance.now();
+    try {
+      return await operation();
+    } catch (error) {
+      inventoryOperationErrorMetric.add(1, {
+        operationId,
+        code: errorCode(error),
+      });
+      throw error;
+    } finally {
+      inventoryOperationLatencyMetric.record(performance.now() - startedAt, {
+        operationId,
+      });
     }
-    return this.#handle(request, () =>
-      this.inventory.replaceBatch(identityId, input.data, {
-        idempotencyKey: idempotencyKey.data,
-        correlationId: request.id,
-      }),
-    );
   }
 
   async #handle<T>(request: FastifyRequest, operation: () => Promise<T>) {
     try {
       return await operation();
     } catch (error) {
+      if (error instanceof InventoryBatchNotFoundError) {
+        inventoryBatchRejectedMetric.add(1, { kind: "not_found" });
+        throw inventoryError(
+          request.id,
+          HttpStatus.NOT_FOUND,
+          "INVENTORY_NOT_FOUND",
+          "بعضی گونه‌ها برای این فروشگاه پیدا نشدند.",
+          error.issues.map((issue) => ({
+            path: `rows.${issue.rowIndex}.variantId`,
+            code: issue.code,
+            variantId: issue.variantId,
+          })),
+        );
+      }
       if (error instanceof InventoryNotFoundError) {
         inventoryBatchRejectedMetric.add(1, { kind: "not_found" });
         throw inventoryError(
@@ -142,6 +204,34 @@ export class InventoryController {
           HttpStatus.CONFLICT,
           "REVISION_CONFLICT",
           "موجودی در جای دیگری تغییر کرده است. نسخه تازه را ببینید.",
+        );
+      }
+      if (error instanceof InventoryBatchConflictError) {
+        const hasRevisionConflict = error.issues.some(
+          (issue) => issue.code === "REVISION_CONFLICT",
+        );
+        const code = hasRevisionConflict
+          ? "REVISION_CONFLICT"
+          : "RESERVED_STOCK_CONFLICT";
+        inventoryConflictMetric.add(
+          error.issues.filter((issue) => issue.code === "REVISION_CONFLICT").length,
+          { kind: "revision" },
+        );
+        inventoryBatchRejectedMetric.add(1, { kind: "row_conflict" });
+        throw inventoryError(
+          request.id,
+          HttpStatus.CONFLICT,
+          code,
+          hasRevisionConflict
+            ? "موجودی بعضی ردیف‌ها در جای دیگری تغییر کرده است. نسخه تازه را ببینید."
+            : "موجودی بعضی ردیف‌ها را نمی‌توان کمتر از تعداد رزروشده ثبت کرد.",
+          error.issues.map((issue) => ({
+            path: `rows.${issue.rowIndex}.${
+              issue.code === "REVISION_CONFLICT" ? "expectedRevision" : "onHand"
+            }`,
+            code: issue.code,
+            variantId: issue.variantId,
+          })),
         );
       }
       if (error instanceof InventoryIdempotencyConflictError) {
@@ -173,9 +263,20 @@ function inventoryError(
   status: HttpStatus,
   code: string,
   message: string,
+  issues: readonly {
+    path: string;
+    code:
+      | "INVALID_FORMAT"
+      | "TOO_SHORT"
+      | "DUPLICATE"
+      | "INVENTORY_NOT_FOUND"
+      | "REVISION_CONFLICT"
+      | "RESERVED_STOCK_CONFLICT";
+    variantId?: VariantId;
+  }[] = [],
 ) {
   return new HttpException(
-    { version: 1, code, message, correlationId, details: { issues: [] } },
+    { version: 1, code, message, correlationId, details: { issues } },
     status,
   );
 }
@@ -253,4 +354,16 @@ function preconditionError(correlationId: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function errorCode(error: unknown): string {
+  if (error instanceof HttpException) {
+    const response = error.getResponse();
+    if (isRecord(response) && typeof response.code === "string") {
+      return response.code;
+    }
+    return `HTTP_${error.getStatus()}`;
+  }
+  if (isRecord(error) && typeof error.code === "string") return error.code;
+  return "INTERNAL_ERROR";
 }
