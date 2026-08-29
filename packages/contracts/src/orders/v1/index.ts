@@ -26,6 +26,7 @@ export type OrderConversationEligibilityInput = z.infer<
 >;
 
 export const orderItemIdContract = z.uuid().brand("OrderItemId");
+export type OrderItemId = z.infer<typeof orderItemIdContract>;
 export const orderPurchaseExperienceEligibilityInputContract = z
   .object({
     buyerId: identityIdContract,
