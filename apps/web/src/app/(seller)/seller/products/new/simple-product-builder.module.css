@@ -129,9 +129,12 @@
 }
 
 .textButton {
+  display: inline-grid;
+  place-items: center;
   padding: 8px 12px;
   border-color: transparent;
   color: var(--color-primary-dark);
+  text-decoration: none;
 }
 
 .count,

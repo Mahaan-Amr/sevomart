@@ -13,6 +13,7 @@ import {
   mediaReferenceContract,
   type MediaId,
 } from "@sevo/contracts/media/v1";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
@@ -370,7 +371,9 @@ export function SimpleProductBuilder() {
     <main className={styles.page}>
       <section className={styles.workspace} aria-live="polite">
         <header className={styles.header}>
-          <span className={styles.brand}>سوو</span>
+          <Link className={styles.textButton} href="/seller/products">
+            بازگشت به کالاها
+          </Link>
           <span className={styles.progress}>{stepLabel(step)} از ۴</span>
           <button
             type="button"

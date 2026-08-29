@@ -77,6 +77,12 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("link", { name: "ادامه کار" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
+  const backToProducts = page.getByRole("link", { name: "بازگشت به کالاها" });
+  await expect(backToProducts).toHaveAttribute("href", "/seller/products");
+  await backToProducts.click();
+  await expect(page).toHaveURL(/\/seller\/products$/);
+  await page.getByRole("link", { name: "ساخت کالای تازه" }).click();
+  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
   await page.getByLabel("نام کالا").fill("فنجان سرامیکی");
   await page
     .getByLabel("توضیح کالا")
@@ -149,16 +155,11 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(publicLink).toBeVisible();
 
   await page.goto("/seller/inventory");
-  await expect(page.getByRole("heading", { name: "مدیریت موجودی" })).toBeVisible();
-  const firstInventory = page.getByRole("spinbutton", {
-    name: "موجودی فنجان سرامیکی، رنگ: قرمز، اندازه: کوچک",
-  });
-  await expect(firstInventory).toHaveValue("8");
-  await firstInventory.fill("9");
-  await page.getByRole("button", { name: "ذخیره موجودی" }).click();
-  await expect(page.getByRole("status")).toHaveText("موجودی ذخیره شد.");
-  await page.reload();
-  await expect(firstInventory).toHaveValue("9");
+  await expect(
+    page.getByRole("heading", { name: "مدیریت موجودی هنوز فعال نیست" }),
+  ).toBeVisible();
+  await expect(page.getByRole("spinbutton")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "ذخیره موجودی" })).toHaveCount(0);
 
   await page.goto(`/s/${slug}`);
   const storefrontProduct = page.getByRole("link", { name: /فنجان سرامیکی/ });
