@@ -136,6 +136,17 @@
   line-height: 1.8;
 }
 
+.publicSummary {
+  display: grid;
+  gap: 4px;
+}
+
+.identity .productCount {
+  padding-inline: 8px;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 .follow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -342,6 +353,28 @@
   font-weight: 600;
 }
 
+.shippingList {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shippingList li {
+  display: grid;
+  gap: 4px 8px;
+}
+
+.shippingList li strong {
+  font-size: 13px;
+}
+
+.shippingList li span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
 .footer {
   display: flex;
   justify-content: center;
@@ -491,6 +524,10 @@
   }
 
   .follow {
+    padding-inline: 24px;
+  }
+
+  .identity .productCount {
     padding-inline: 24px;
   }
 
