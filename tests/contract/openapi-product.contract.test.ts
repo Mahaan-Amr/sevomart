@@ -25,11 +25,16 @@ describe("OpenAPI simple product tracer", () => {
       "ProductUnpublishedV1",
       "VariantPriceChangedV1",
       "VariantAvailabilityChangedV1",
+      "SellerInventoryList",
+      "ReplaceSellerInventoryBatch",
+      "SellerInventoryBatchResult",
     ]) {
       expect(document.components.schemas, name).toHaveProperty(name);
     }
 
     const expected = [
+      ["get", "/v1/seller/inventory", "listSellerInventory", true],
+      ["put", "/v1/seller/inventory", "replaceInventoryBatch", true],
       ["post", "/v1/seller/products", "createSellerProduct", true],
       [
         "post",
@@ -88,6 +93,11 @@ describe("OpenAPI simple product tracer", () => {
     }
 
     expect(document.paths["/v1/seller/products"].post.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Idempotency-Key", required: true }),
+      ]),
+    );
+    expect(document.paths["/v1/seller/inventory"].put.parameters).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "Idempotency-Key", required: true }),
       ]),

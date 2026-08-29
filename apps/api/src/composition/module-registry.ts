@@ -159,7 +159,11 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "inventory",
     artifact: InventoryModule,
-    compose: () => InventoryModule,
+    compose: ({ environment, inventoryAuthoring, productRepository }) =>
+      InventoryModule.register(environment, {
+        repository: inventoryAuthoring,
+        products: productRepository,
+      }),
   },
   {
     owner: "orders",

@@ -92,6 +92,12 @@ be safely applied when the constraint is already absent. The architecture checke
 tracks foreign-key additions and removals across the complete SQL migration history
 so a later migration cannot restore a cross-producer constraint.
 
+Issue 132 additively adds the inventory-owned idempotency scope and an optional
+private audit note for seller inventory adjustments. Existing levels,
+reservations and audit rows remain unchanged; no compatibility window is
+required and deployment corrections use a forward migration. The same
+`prisma migrate deploy` history is used by Compose and native startup.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

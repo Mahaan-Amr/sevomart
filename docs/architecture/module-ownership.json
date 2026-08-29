@@ -53,6 +53,7 @@
     "product_idempotency_records": "product",
     "inventory_levels": "inventory",
     "inventory_adjustments": "inventory",
+    "inventory_idempotency_records": "inventory",
     "inventory_reservations": "inventory",
     "inventory_reservation_lines": "inventory",
     "order_carts": "orders",
