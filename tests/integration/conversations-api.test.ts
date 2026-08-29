@@ -237,6 +237,39 @@ async function order(
   return { kind: "ORDER" as const, orderId, storeId };
 }
 
+it("returns the nearest seller thread whose latest message is from its buyer", async () => {
+  const f = await fixture();
+  const answered = (await f.open()).json();
+  await send(f, answered.conversationId, "پرسش پاسخ‌داده‌شده");
+  await send(f, answered.conversationId, "پاسخ فروشنده", randomUUID(), f.seller.cookie);
+  const pending = (await f.open(randomUUID(), await order(f))).json();
+  await send(f, pending.conversationId, "پرسش تازه خریدار");
+
+  const read = () =>
+    f.server.inject({
+      method: "GET",
+      url: "/v1/conversations/needs-reply",
+      headers: { cookie: f.seller.cookie },
+    });
+  expect((await read()).json()).toMatchObject({
+    version: 1,
+    status: "ACTIONABLE",
+    conversation: {
+      conversationId: pending.conversationId,
+      viewerRole: "SELLER",
+    },
+  });
+
+  await send(
+    f,
+    pending.conversationId,
+    "پاسخ تازه فروشنده",
+    randomUUID(),
+    f.seller.cookie,
+  );
+  expect((await read()).json()).toEqual({ version: 1, status: "NONE" });
+});
+
 it("checks authoritative order ownership and store while keeping historical buyer access", async () => {
   const f = await fixture();
   const own = await order(f);

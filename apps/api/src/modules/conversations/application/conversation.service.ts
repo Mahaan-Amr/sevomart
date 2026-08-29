@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   conversationLimitContract,
   conversationMessagePageV1Contract,
+  conversationNeedsReplyV1Contract,
   conversationThreadPageV1Contract,
   sendConversationMessageInputV1Contract,
   conversationIdContract,
@@ -259,6 +260,42 @@ export class ConversationService {
         ? conversationMessagePageV1Contract
         : conversationThreadPageV1Contract
     ).parse({ version: 1, items, ...(nextCursor ? { nextCursor } : {}) });
+  }
+  async readNeedsReply(request: ConversationRequest) {
+    const identityId = await this.actor(request);
+    const thread = await this.repository.findNearestNeedingReply(identityId);
+    if (!thread) {
+      await this.repository.audit(
+        identityId,
+        "ReadConversationNeedsReply.v1",
+        "SUCCESS",
+        request.correlationId,
+      );
+      return conversationNeedsReplyV1Contract.parse({
+        version: 1,
+        status: "NONE",
+      });
+    }
+    const viewerRole = await this.role(identityId, thread);
+    await this.repository.audit(
+      identityId,
+      "ReadConversationNeedsReply.v1",
+      "SUCCESS",
+      request.correlationId,
+      thread.conversationId,
+    );
+    return conversationNeedsReplyV1Contract.parse({
+      version: 1,
+      status: "ACTIONABLE",
+      conversation: {
+        version: 1,
+        conversationId: thread.conversationId,
+        context: thread.context,
+        viewerRole,
+        createdAt: thread.createdAt.toISOString(),
+        updatedAt: thread.updatedAt.toISOString(),
+      },
+    });
   }
   async canAccessMedia(
     input: Parameters<ConversationMediaAccess>[0],
