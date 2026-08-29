@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 
 import {
   releaseAgentTestMobiles,
@@ -9,8 +10,9 @@ import { establishPlatformAgentIdentity } from "../helpers/platform-agent-sessio
 test("platform agent establishes the separate session through the Web journey", async ({
   page,
 }, testInfo) => {
-  const mobile =
-    releaseAgentTestMobiles[visualProjectIndex(testInfo.project.name) + 4]!;
+  const mobile = iranianMobileContract.parse(
+    releaseAgentTestMobiles[visualProjectIndex(testInfo.project.name) + 4],
+  );
   await establishPlatformAgentIdentity(mobile, ["SELLER_APPLICATION_REVIEW"]);
 
   await page.goto("/platform/login");

@@ -1,7 +1,10 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import type { BrowserContext } from "@playwright/test";
-import type { PlatformPermission } from "@sevo/contracts/identity-access/v1";
+import type {
+  IranianMobile,
+  PlatformPermission,
+} from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
 
 const databaseUrl =
@@ -44,7 +47,7 @@ export async function establishPlatformAgentSession(
 }
 
 export async function establishPlatformAgentIdentity(
-  mobile: string,
+  mobile: IranianMobile,
   permissions: readonly PlatformPermission[],
 ) {
   return seedPlatformAgent({ mobile, permissions });
@@ -55,7 +58,7 @@ async function seedPlatformAgent({
   permissions,
   sessionToken,
 }: {
-  mobile?: string;
+  mobile?: IranianMobile;
   permissions: readonly PlatformPermission[];
   sessionToken?: string;
 }) {
