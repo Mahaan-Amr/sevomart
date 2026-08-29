@@ -4,6 +4,17 @@ const runIdPattern = /^[a-z0-9][a-z0-9-]{2,30}$/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export function assertQaProjectIsAbsent(resources) {
+  const existingResource = Object.values(resources).some((resourceIds) =>
+    resourceIds.some(Boolean),
+  );
+  if (existingResource) {
+    throw new Error(
+      "This QA run id already owns Docker resources; choose a new --run-id",
+    );
+  }
+}
+
 export function createQaLifecycleRequest(argumentsList, environment = process.env) {
   if (environment.SEVO_RUNTIME_ENV !== "test") {
     throw new Error("QA lifecycle requires explicit SEVO_RUNTIME_ENV=test");

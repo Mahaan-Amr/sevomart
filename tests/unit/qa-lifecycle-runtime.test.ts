@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createQaLifecycleRequest } from "../../scripts/qa/runtime.mjs";
+import {
+  assertQaProjectIsAbsent,
+  createQaLifecycleRequest,
+} from "../../scripts/qa/runtime.mjs";
 
 const fingerprint = "8e2cd400-e2d7-4ff8-b390-cb265d3eaf9b";
 const safeEnvironment = {
@@ -9,6 +12,20 @@ const safeEnvironment = {
 };
 
 describe("QA environment lifecycle", () => {
+  it("refuses a reused run id before startup can own or remove its resources", () => {
+    expect(() =>
+      assertQaProjectIsAbsent({ containers: [], networks: [], volumes: [] }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertQaProjectIsAbsent({
+        containers: [],
+        networks: [],
+        volumes: ["sevomart-qa-issue-126_postgres-data"],
+      }),
+    ).toThrow("already owns Docker resources");
+  });
+
   it("derives an isolated project and database from the explicit run id", () => {
     expect(
       createQaLifecycleRequest(

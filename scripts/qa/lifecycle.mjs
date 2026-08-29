@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import { createPostgresDemoSeedDatabase } from "../demo/postgres.mjs";
-import { createQaLifecycleRequest } from "./runtime.mjs";
+import { assertQaProjectIsAbsent, createQaLifecycleRequest } from "./runtime.mjs";
 
 const request = createQaLifecycleRequest(process.argv.slice(2));
 const lifecycleEnvironment = { ...process.env };
@@ -43,6 +43,31 @@ function compose(commandArguments, options) {
   );
 }
 
+function projectResourceIds(resourceType) {
+  const allOption = resourceType === "container" ? ["--all"] : [];
+  const output = run(
+    "docker",
+    [
+      resourceType,
+      "ls",
+      ...allOption,
+      "--quiet",
+      "--filter",
+      `label=com.docker.compose.project=${request.projectName}`,
+    ],
+    { capture: true },
+  );
+  return output ? output.split("\n") : [];
+}
+
+function assertProjectAbsent() {
+  assertQaProjectIsAbsent({
+    containers: projectResourceIds("container"),
+    networks: projectResourceIds("network"),
+    volumes: projectResourceIds("volume"),
+  });
+}
+
 function publishedPort(service, containerPort) {
   const output = compose(["port", service, String(containerPort)], { capture: true });
   const port = Number(output.slice(output.lastIndexOf(":") + 1));
@@ -66,10 +91,11 @@ async function inspectQaTarget(databaseUrl) {
 }
 
 async function bringUp() {
-  let started = false;
+  let ownsProjectResources = false;
   try {
+    assertProjectAbsent();
+    ownsProjectResources = true;
     compose(["up", "-d", "--wait", "postgres", "minio"]);
-    started = true;
     const databasePort = publishedPort("postgres", 5432);
     const minioPort = publishedPort("minio", 9000);
     const databaseUrl = `postgresql://sevo:sevo_local@127.0.0.1:${databasePort}/${request.databaseName}`;
@@ -89,7 +115,7 @@ async function bringUp() {
       })}\n`,
     );
   } catch (error) {
-    if (started) {
+    if (ownsProjectResources) {
       try {
         compose(["down", "--volumes", "--remove-orphans"]);
       } catch {

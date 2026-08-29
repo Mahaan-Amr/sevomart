@@ -56,7 +56,8 @@ SEVO_DEMO_FINGERPRINT=<fingerprint> docker compose --profile demo run --rm demo-
 ## lifecycle پایهٔ QA
 
 این Issue فقط محیط disposable و guardهای lifecycle را می‌سازد؛ factory دادهٔ کمینه و اتصال
-آن به runnerهای سناریو در Issue `#162` می‌آید. ساخت محیط به profile و run id صریح نیاز دارد،
+آن به runnerهای سناریو در [ایجاد factory سناریوهای QA ایزوله](https://github.com/Mahaan-Amr/sevomart/issues/162)
+می‌آید. ساخت محیط به profile و run id صریح نیاز دارد،
 پورت‌های آزاد را از Docker می‌گیرد و fingerprint تازه را گزارش می‌کند:
 
 ```bash
@@ -71,9 +72,11 @@ SEVO_RUNTIME_ENV=test OTP_PROVIDER=dev pnpm qa:down -- --profile qa --run-id iss
 ```
 
 `DATABASE_URL` ارثی، runtime غیر test و provider بیرونی پیش از startup رد می‌شوند. نام پروژه
-Compose از run id محدود ساخته می‌شود و teardown فقط volumeهای همان پروژه را هدف می‌گیرد.
+Compose از run id محدود ساخته می‌شود؛ اگر container، volume یا network همان run id از قبل
+وجود داشته باشد startup پیش از مالک‌شدن یا حذف منابع رد می‌شود. teardown فقط volumeهای همان
+پروژه را هدف می‌گیرد.
 
-## شواهد smoke در Issue 126
+## شواهد smoke برای [ایجاد runtime و orchestrator امن demo و QA](https://github.com/Mahaan-Amr/sevomart/issues/126)
 
 در ۱۴۰۵-۰۶-۰۷ روی checkout همین شاخه:
 
