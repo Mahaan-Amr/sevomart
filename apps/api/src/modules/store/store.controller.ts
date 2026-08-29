@@ -84,10 +84,15 @@ export class StoreController {
     }
     const write = requireStoreWriteHeaders(request.id, idempotencyKey, ifMatch);
     const draft = await this.handle(request, () =>
-      this.service.saveDraft(identityId, parsed.data, {
-        correlationId: request.id,
-        ...write,
-      }),
+      this.service.saveDraft(
+        identityId,
+        parsed.data,
+        {
+          correlationId: request.id,
+          ...write,
+        },
+        body,
+      ),
     );
     response.header("etag", `"${draft.revision}"`);
     return draft;

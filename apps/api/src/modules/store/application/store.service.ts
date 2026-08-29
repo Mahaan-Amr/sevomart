@@ -10,6 +10,7 @@ import type {
   StoreAuthoritativeSnapshotV1,
   StoreSlug,
 } from "@sevo/contracts/store/v1";
+import { legacyStoreDraftReplayInputContract } from "@sevo/contracts/store/v1";
 import type { MediaId } from "@sevo/contracts/media/v1";
 import type { IdentityId, StoreId } from "@sevo/contracts/platform/v1";
 import type { SellerAccessRead } from "../../identity-access/public";
@@ -86,12 +87,17 @@ export class StoreService implements StoreAuthoritativeRead {
     sellerId: string,
     input: StoreDraftInput,
     context: StoreWriteRequest,
+    replayInput: unknown = input,
   ): Promise<StoreDraft> {
+    const legacyReplay = legacyStoreDraftReplayInputContract.safeParse(replayInput);
     const write: StoreWriteContext = {
       ...context,
       operation: "SAVE_STORE_DRAFT",
       actorId: sellerId,
       requestHash: hashParsedInput(input),
+      ...(legacyReplay.success
+        ? { compatibleRequestHashes: [hashParsedInput(legacyReplay.data)] }
+        : {}),
     };
     const replay = await this.repository.readWriteResult(write);
     if (replay) return toDraft(replay);

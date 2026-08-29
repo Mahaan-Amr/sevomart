@@ -1,4 +1,5 @@
 import { storeDraftContract, storePublicationContract } from "@sevo/contracts/store/v1";
+import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -103,6 +104,129 @@ describe("seller store HTTP API with PostgreSQL", () => {
     expect(publication.json()).toMatchObject({
       publicUrl: "/s/integration-khane-mah",
       store: { activeProductCount: 0, status: "PUBLISHED" },
+    });
+  });
+
+  it("replays a pre-normalization receipt for the identical payload and rejects a real change", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const key = randomUUID();
+    const payload = { name: " خانه " };
+    const headers = {
+      cookie,
+      "idempotency-key": key,
+      "if-match": '"0"',
+    };
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload,
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const legacyHash = createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex");
+    await sql`
+      update store_idempotency_records
+      set request_hash = ${legacyHash}
+      where operation = 'SAVE_STORE_DRAFT' and idempotency_key = ${key}
+    `;
+    await sql.end();
+
+    const replay = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(saved.json());
+
+    const conflict = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload: { name: "خانه متفاوت" },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+  });
+
+  it("reads legacy store text and saves a corrected draft through the existing API", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const initial = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: storeWriteHeaders(cookie, 0),
+      payload: {
+        name: "فروشگاه قدیمی",
+        slug: "legacy-readable-store",
+        bio: "معرفی معتبر پیش از ارتقا",
+        shippingMethods: [{ code: "PICKUP", label: "تحویل حضوری" }],
+        returnPolicy: "قانون مرجوعی معتبر پیش از ارتقا",
+        settlementDestination: { kind: "TEST" },
+      },
+    });
+    expect(initial.statusCode).toBe(200);
+
+    const publication = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: storeWriteHeaders(cookie, 1),
+    });
+    expect(publication.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update store_stores
+      set name = '  ', bio = ' x', return_policy = '          '
+      where slug = 'legacy-readable-store'
+    `;
+    await sql`
+      update store_shipping_methods
+      set label = '  '
+      where store_id = (select id from store_stores where slug = 'legacy-readable-store')
+    `;
+    await sql.end();
+
+    const draft = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+    });
+    expect(draft.statusCode).toBe(200);
+    expect(draft.headers.etag).toBe('"2"');
+    expect(storeDraftContract.safeParse(draft.json()).success).toBe(true);
+
+    const publicRead = await server.inject({
+      method: "GET",
+      url: "/v1/stores/legacy-readable-store",
+    });
+    expect(publicRead.statusCode).toBe(200);
+    expect(publicRead.json()).toMatchObject({ name: "  ", bio: " x" });
+
+    const corrected = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: storeWriteHeaders(cookie, 2),
+      payload: {
+        name: "فروشگاه اصلاح‌شده",
+        bio: "معرفی اصلاح‌شده فروشگاه",
+        returnPolicy: "قانون اصلاح‌شده مرجوعی فروشگاه",
+        shippingMethods: [{ code: "PICKUP", label: "تحویل حضوری" }],
+      },
+    });
+    expect(corrected.statusCode).toBe(200);
+    expect(corrected.json()).toMatchObject({
+      revision: 3,
+      name: "فروشگاه اصلاح‌شده",
+      status: "DRAFT",
     });
   });
 

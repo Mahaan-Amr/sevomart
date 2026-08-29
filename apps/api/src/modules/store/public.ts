@@ -73,6 +73,7 @@ export type StoreWriteContext = {
   correlationId: string;
   idempotencyKey: string;
   requestHash: string;
+  compatibleRequestHashes?: readonly string[];
   expectedRevision: number;
   policyChanged?: boolean;
 };

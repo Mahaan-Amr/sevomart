@@ -21,8 +21,12 @@ export { storeSlugContract } from "./store-identifiers";
 export const storeIdempotencyKeyContract = z.string().min(1).max(200);
 export const storeRevisionTagContract = z.string().regex(/^"\d+"$/);
 
-export const shippingMethodContract = z.object({
+const readableShippingMethodContract = z.object({
   code: z.enum(["NATIONAL_POST", "COURIER", "PICKUP"]),
+  label: z.string().min(2).max(60),
+});
+
+export const shippingMethodContract = readableShippingMethodContract.extend({
   label: z.string().trim().min(2).max(60),
 });
 
@@ -40,21 +44,32 @@ const shippingMethodsInputContract = z
   )
   .min(1)
   .max(5)
-  .superRefine((methods, context) => {
-    const codes = new Set<string>();
-    methods.forEach((method, index) => {
-      if (codes.has(method.code)) {
-        context.addIssue({
-          code: "custom",
-          message: "Shipping method codes must be unique",
-          path: [index, "code"],
-        });
-      }
-      codes.add(method.code);
-    });
-  });
+  .superRefine(requireUniqueShippingMethodCodes);
 
-export const storeShippingMethodSnapshotV1Contract = shippingMethodContract
+const legacyShippingMethodsInputContract = z
+  .array(readableShippingMethodContract.strict())
+  .min(1)
+  .max(5)
+  .superRefine(requireUniqueShippingMethodCodes);
+
+function requireUniqueShippingMethodCodes(
+  methods: readonly { code: string }[],
+  context: z.RefinementCtx,
+) {
+  const codes = new Set<string>();
+  methods.forEach((method, index) => {
+    if (codes.has(method.code)) {
+      context.addIssue({
+        code: "custom",
+        message: "Shipping method codes must be unique",
+        path: [index, "code"],
+      });
+    }
+    codes.add(method.code);
+  });
+}
+
+export const storeShippingMethodSnapshotV1Contract = readableShippingMethodContract
   .extend({
     id: z.uuid(),
     revision: z.int().positive(),
@@ -126,13 +141,23 @@ const verifiedSettlementDestinationContract = settlementDestinationInputContract
   },
 );
 
-const requiredStoreFields = {
+const writableStoreFields = {
   name: z.string().trim().min(2).max(80),
   slug: storeSlugContract,
   bio: z.string().trim().min(2).max(240),
   shippingMethods: shippingMethodsInputContract,
   returnPolicy: z.string().trim().min(10).max(1_000),
   settlementDestination: settlementDestinationInputContract,
+};
+
+// Output schemas must continue to decode records accepted before write-side
+// normalization was introduced. Publication readiness remains the authority for
+// whether historical values can be published again.
+const readableStoreFields = {
+  name: z.string().min(2).max(80),
+  slug: storeSlugContract,
+  bio: z.string().min(2).max(240),
+  returnPolicy: z.string().min(10).max(1_000),
 };
 
 const optionalStoreFields = {
@@ -142,12 +167,26 @@ const optionalStoreFields = {
 };
 
 export const storeDraftInputContract = z.object({
-  name: requiredStoreFields.name.optional(),
-  slug: requiredStoreFields.slug.optional(),
-  bio: requiredStoreFields.bio.optional(),
-  shippingMethods: requiredStoreFields.shippingMethods.optional(),
-  returnPolicy: requiredStoreFields.returnPolicy.optional(),
-  settlementDestination: requiredStoreFields.settlementDestination.optional(),
+  name: writableStoreFields.name.optional(),
+  slug: writableStoreFields.slug.optional(),
+  bio: writableStoreFields.bio.optional(),
+  shippingMethods: writableStoreFields.shippingMethods.optional(),
+  returnPolicy: writableStoreFields.returnPolicy.optional(),
+  settlementDestination: writableStoreFields.settlementDestination.optional(),
+  logoMediaId: optionalStoreFields.logoMediaId.optional(),
+  coverMediaId: optionalStoreFields.coverMediaId.optional(),
+  themeColor: optionalStoreFields.themeColor.optional(),
+});
+
+// Used only to recognize request hashes written before text normalization and
+// shipping-term extensions. It is not the current write contract.
+export const legacyStoreDraftReplayInputContract = z.object({
+  name: readableStoreFields.name.optional(),
+  slug: readableStoreFields.slug.optional(),
+  bio: readableStoreFields.bio.optional(),
+  shippingMethods: legacyShippingMethodsInputContract.optional(),
+  returnPolicy: readableStoreFields.returnPolicy.optional(),
+  settlementDestination: writableStoreFields.settlementDestination.optional(),
   logoMediaId: optionalStoreFields.logoMediaId.optional(),
   coverMediaId: optionalStoreFields.coverMediaId.optional(),
   themeColor: optionalStoreFields.themeColor.optional(),
@@ -163,15 +202,15 @@ const storeRecordMetadata = {
 
 const draftStoreContract = z.object({
   ...storeRecordMetadata,
-  name: requiredStoreFields.name.optional(),
-  slug: requiredStoreFields.slug.optional(),
-  bio: requiredStoreFields.bio.optional(),
+  name: readableStoreFields.name.optional(),
+  slug: readableStoreFields.slug.optional(),
+  bio: readableStoreFields.bio.optional(),
   shippingMethods: z
     .array(storeShippingMethodSnapshotV1Contract)
     .min(1)
     .max(5)
     .optional(),
-  returnPolicy: requiredStoreFields.returnPolicy.optional(),
+  returnPolicy: readableStoreFields.returnPolicy.optional(),
   settlementDestination: verifiedSettlementDestinationContract.optional(),
   logoMediaId: optionalStoreFields.logoMediaId.optional(),
   coverMediaId: optionalStoreFields.coverMediaId.optional(),
@@ -181,11 +220,11 @@ const draftStoreContract = z.object({
 
 const publishedStoreRecordContract = z.object({
   ...storeRecordMetadata,
-  name: requiredStoreFields.name,
-  slug: requiredStoreFields.slug,
-  bio: requiredStoreFields.bio,
+  name: readableStoreFields.name,
+  slug: readableStoreFields.slug,
+  bio: readableStoreFields.bio,
   shippingMethods: z.array(storeShippingMethodSnapshotV1Contract).min(1).max(5),
-  returnPolicy: requiredStoreFields.returnPolicy,
+  returnPolicy: readableStoreFields.returnPolicy,
   settlementDestination: verifiedSettlementDestinationContract,
   logoMediaId: optionalStoreFields.logoMediaId,
   coverMediaId: optionalStoreFields.coverMediaId,
@@ -266,11 +305,11 @@ export const publicStoreContract = z.object({
   revision: z.number().int().positive(),
   publicationVersion: z.number().int().positive(),
   returnPolicyRevision: z.number().int().positive(),
-  name: requiredStoreFields.name,
-  slug: requiredStoreFields.slug,
-  bio: requiredStoreFields.bio,
+  name: readableStoreFields.name,
+  slug: readableStoreFields.slug,
+  bio: readableStoreFields.bio,
   shippingMethods: z.array(storeShippingMethodSnapshotV1Contract).min(1).max(5),
-  returnPolicy: requiredStoreFields.returnPolicy,
+  returnPolicy: readableStoreFields.returnPolicy,
   settlementDestination: verifiedSettlementDestinationContract,
   logo: mediaReferenceContract.nullable(),
   cover: mediaReferenceContract.nullable(),
