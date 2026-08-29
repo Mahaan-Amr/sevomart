@@ -10,7 +10,7 @@ import styles from "../../../login/identity-login.module.css";
 
 type Step = "mobile" | "code";
 
-export function PlatformAgentLogin() {
+export function PlatformAgentLogin({ returnTo }: { returnTo: string }) {
   const [step, setStep] = useState<Step>("mobile");
   const [mobile, setMobile] = useState("");
   const [code, setCode] = useState("");
@@ -44,7 +44,7 @@ export function PlatformAgentLogin() {
       }
       if (verification) {
         platformAgentSessionContract.parse(body);
-        window.location.replace("/platform");
+        window.location.replace(returnTo);
       } else {
         const challenge = otpChallengeContract.parse(body);
         setChallengeId(challenge.challengeId);

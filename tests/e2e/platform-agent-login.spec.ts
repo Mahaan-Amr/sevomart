@@ -22,3 +22,26 @@ test("platform agent establishes the separate session through the Web journey", 
   await page.getByRole("button", { name: "ورود" }).click();
   await expect(page).toHaveURL(/\/platform\/seller-applications$/);
 });
+
+test("platform agent resumes the protected responsibility requested before login", async ({
+  page,
+}, testInfo) => {
+  const mobile = iranianMobileContract.parse(
+    releaseAgentTestMobiles[visualProjectIndex(testInfo.project.name) + 8],
+  );
+  await establishPlatformAgentIdentity(mobile, [
+    "SELLER_APPLICATION_REVIEW",
+    "PAYMENT_REVIEW",
+  ]);
+
+  await page.goto("/platform/payment-reviews");
+  await expect(page).toHaveURL(
+    /\/platform\/login\?returnTo=%2Fplatform%2Fpayment-reviews$/,
+  );
+  await page.getByLabel("شماره موبایل").fill(mobile);
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByRole("button", { name: "ورود" }).click();
+
+  await expect(page).toHaveURL(/\/platform\/payment-reviews$/);
+});

@@ -7,6 +7,8 @@ import { usePathname } from "next/navigation";
 import { platformDestinationsFor } from "../../../../lib/platform-workspace-access";
 import styles from "./platform-workspace.module.css";
 
+type PlatformDestination = ReturnType<typeof platformDestinationsFor>[number];
+
 export function PlatformShell({
   children,
   permissions,
@@ -23,15 +25,11 @@ export function PlatformShell({
           سوو
           <span>فضای کار پلتفرم</span>
         </Link>
-        <nav className={styles.navigation} aria-label="مسئولیت‌های مجاز پلتفرم">
-          {destinations.map((destination) => (
-            <PlatformNavigationLink
-              key={destination.permission}
-              destination={destination}
-              pathname={pathname}
-            />
-          ))}
-        </nav>
+        <PlatformNavigation
+          destinations={destinations}
+          pathname={pathname}
+          className={styles.navigation}
+        />
         <LogoutButton />
       </aside>
 
@@ -41,16 +39,9 @@ export function PlatformShell({
         </Link>
         <details className={styles.mobileMenu}>
           <summary>مسئولیت‌ها</summary>
-          <nav aria-label="مسئولیت‌های مجاز پلتفرم">
-            {destinations.map((destination) => (
-              <PlatformNavigationLink
-                key={destination.permission}
-                destination={destination}
-                pathname={pathname}
-              />
-            ))}
+          <PlatformNavigation destinations={destinations} pathname={pathname}>
             <LogoutButton />
-          </nav>
+          </PlatformNavigation>
         </details>
       </header>
 
@@ -59,11 +50,36 @@ export function PlatformShell({
   );
 }
 
+function PlatformNavigation({
+  children,
+  className,
+  destinations,
+  pathname,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+  destinations: readonly PlatformDestination[];
+  pathname: string;
+}) {
+  return (
+    <nav className={className} aria-label="مسئولیت‌های مجاز پلتفرم">
+      {destinations.map((destination) => (
+        <PlatformNavigationLink
+          key={destination.permission}
+          destination={destination}
+          pathname={pathname}
+        />
+      ))}
+      {children}
+    </nav>
+  );
+}
+
 function PlatformNavigationLink({
   destination,
   pathname,
 }: {
-  destination: ReturnType<typeof platformDestinationsFor>[number];
+  destination: PlatformDestination;
   pathname: string;
 }) {
   const active = pathname.startsWith(destination.href);
