@@ -335,9 +335,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     mimeType: "image/png",
     buffer: logo,
   });
-  await expect(page.getByText("فایل تصویر خراب است یا کامل خوانده نمی‌شود.")).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByText("فایل تصویر خراب است یا کامل خوانده نمی‌شود."),
+  ).toHaveCount(0);
   await page.getByLabel("تصویر روی جلد").setInputFiles({
     name: "cover.png",
     mimeType: "image/png",
