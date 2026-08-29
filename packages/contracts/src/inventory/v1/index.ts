@@ -111,6 +111,7 @@ export const inventoryErrorContract = errorEnvelopeV1Contract.safeExtend({
               "INVALID_FORMAT",
               "TOO_SHORT",
               "DUPLICATE",
+              "INVENTORY_NOT_FOUND",
               "REVISION_CONFLICT",
               "RESERVED_STOCK_CONFLICT",
             ]),

@@ -29,6 +29,7 @@ import {
 import { SellerInventoryService } from "./application/seller-inventory.service";
 import {
   InventoryBatchConflictError,
+  InventoryBatchNotFoundError,
   InventoryIdempotencyConflictError,
   InventoryNotFoundError,
   InventoryReservedStockConflictError,
@@ -163,6 +164,20 @@ export class InventoryController {
     try {
       return await operation();
     } catch (error) {
+      if (error instanceof InventoryBatchNotFoundError) {
+        inventoryBatchRejectedMetric.add(1, { kind: "not_found" });
+        throw inventoryError(
+          request.id,
+          HttpStatus.NOT_FOUND,
+          "INVENTORY_NOT_FOUND",
+          "بعضی گونه‌ها برای این فروشگاه پیدا نشدند.",
+          error.issues.map((issue) => ({
+            path: `rows.${issue.rowIndex}.variantId`,
+            code: issue.code,
+            variantId: issue.variantId,
+          })),
+        );
+      }
       if (error instanceof InventoryNotFoundError) {
         inventoryBatchRejectedMetric.add(1, { kind: "not_found" });
         throw inventoryError(
@@ -254,6 +269,7 @@ function inventoryError(
       | "INVALID_FORMAT"
       | "TOO_SHORT"
       | "DUPLICATE"
+      | "INVENTORY_NOT_FOUND"
       | "REVISION_CONFLICT"
       | "RESERVED_STOCK_CONFLICT";
     variantId?: VariantId;

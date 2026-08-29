@@ -204,6 +204,18 @@ export class InventoryBatchConflictError extends Error {
   }
 }
 
+export type InventoryBatchNotFoundIssue = Readonly<{
+  code: "INVENTORY_NOT_FOUND";
+  rowIndex: number;
+  variantId: VariantId;
+}>;
+
+export class InventoryBatchNotFoundError extends Error {
+  constructor(readonly issues: readonly InventoryBatchNotFoundIssue[]) {
+    super("Inventory batch contains variants outside the seller store");
+  }
+}
+
 export class InventoryNotFoundError extends Error {}
 export class InventoryIdempotencyConflictError extends Error {
   readonly code = "IDEMPOTENCY_CONFLICT" as const;

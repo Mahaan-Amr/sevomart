@@ -974,6 +974,56 @@ describe("simple product tracer HTTP API", () => {
     ]);
     expect(JSON.stringify(publicProduct)).not.toMatch(/sku|onHand/i);
 
+    const invalidVariantSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const foreignVariantId = saved.inventory[0]!.variantId;
+    const missingVariantIds = [crypto.randomUUID(), crypto.randomUUID()];
+    const [originalProductStore] = await invalidVariantSql<Array<{ storeId: string }>>`
+      select store_id as "storeId"
+      from product_products
+      where id = ${productId}::uuid
+    `;
+    await invalidVariantSql`
+      update product_products
+      set store_id = ${crypto.randomUUID()}::uuid
+      where id = ${productId}::uuid
+    `;
+    try {
+      const invalidVariants = await server.inject({
+        method: "PUT",
+        url: "/v1/seller/inventory",
+        headers: { cookie, "idempotency-key": crypto.randomUUID() },
+        payload: {
+          reasonCode: "MANUAL_COUNT",
+          rows: [foreignVariantId, ...missingVariantIds].map((variantId) => ({
+            variantId,
+            onHand: 1,
+            expectedRevision: 0,
+          })),
+        },
+      });
+      expect(invalidVariants.statusCode).toBe(404);
+      expect(invalidVariants.json()).toMatchObject({
+        version: 1,
+        code: "INVENTORY_NOT_FOUND",
+        details: {
+          issues: [foreignVariantId, ...missingVariantIds].map(
+            (variantId, rowIndex) => ({
+              path: `rows.${rowIndex}.variantId`,
+              code: "INVENTORY_NOT_FOUND",
+              variantId,
+            }),
+          ),
+        },
+      });
+    } finally {
+      await invalidVariantSql`
+        update product_products
+        set store_id = ${originalProductStore!.storeId}::uuid
+        where id = ${productId}::uuid
+      `;
+      await invalidVariantSql.end();
+    }
+
     const conflictInventory = new PostgresInventoryAuthoring(
       apiTestEnvironment.DATABASE_URL,
     );
