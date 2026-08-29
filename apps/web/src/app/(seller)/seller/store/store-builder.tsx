@@ -223,10 +223,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       await persistDraft(input, logoMediaId, coverMediaId);
       window.location.assign("/seller/store");
     } catch (error) {
+      if (error instanceof MediaUploadError) {
+        setErrors((current) => ({ ...current, [error.field]: error.message }));
+        setMessage("");
+        return;
+      }
       setMessage(
-        error instanceof MediaUploadError
-          ? error.message
-          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+        "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
       );
     } finally {
       setPending(false);
@@ -658,10 +661,24 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                 />
               </Field>
               <Field label="لوگو" error={errors.logo}>
-                <FilePicker label="لوگو" file={logo} onChange={setLogo} />
+                <FilePicker
+                  label="لوگو"
+                  file={logo}
+                  onChange={(file) => {
+                    setLogo(file);
+                    setErrors((current) => ({ ...current, logo: undefined }));
+                  }}
+                />
               </Field>
               <Field label="تصویر روی جلد" error={errors.cover}>
-                <FilePicker label="تصویر روی جلد" file={cover} onChange={setCover} />
+                <FilePicker
+                  label="تصویر روی جلد"
+                  file={cover}
+                  onChange={(file) => {
+                    setCover(file);
+                    setErrors((current) => ({ ...current, cover: undefined }));
+                  }}
+                />
               </Field>
             </>
           ) : null}
