@@ -23,6 +23,8 @@ describe("versioned demo runtime contract", () => {
     };
     expect(packageJson.scripts["demo:seed"]).toBe("node scripts/demo/seed.mjs");
     expect(packageJson.scripts["demo:target"]).toBe("node scripts/demo/target.mjs");
+    expect(packageJson.scripts["qa:up"]).toBe("node scripts/qa/lifecycle.mjs up");
+    expect(packageJson.scripts["qa:down"]).toBe("node scripts/qa/lifecycle.mjs down");
 
     const result = spawnSync(
       "docker",
@@ -54,6 +56,6 @@ describe("versioned demo runtime contract", () => {
     expect(seed?.depends_on).toHaveProperty("migrate");
     expect(seed?.environment).not.toHaveProperty("DATABASE_URL");
     expect(seed?.command).toContain("scripts/demo/seed.mjs");
-    expect(seed?.command).toContain("--skip-migrate");
+    expect(seed?.command).not.toContain("--skip-migrate");
   });
 });

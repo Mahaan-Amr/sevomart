@@ -5,17 +5,36 @@ const manifest = JSON.parse(
 );
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const supportedTargets = new Set(["local", "staging"]);
+const localHosts = new Set(["127.0.0.1", "localhost", "::1", "postgres"]);
+const localMinioHosts = new Set(["127.0.0.1", "localhost", "minio"]);
+const targetPolicies = new Map([
+  [
+    "local",
+    {
+      acceptsDatabaseName: (name) => name === "sevo",
+      acceptsDatabaseHost: (host) => localHosts.has(host),
+      acceptsMinioHost: (host) => localMinioHosts.has(host),
+    },
+  ],
+  [
+    "staging",
+    {
+      acceptsDatabaseName: (name) => name.startsWith("sevo_demo"),
+      acceptsDatabaseHost: (host, environment) =>
+        Boolean(environment.SEVO_DEMO_STAGING_DATABASE_HOST) &&
+        host === environment.SEVO_DEMO_STAGING_DATABASE_HOST,
+      acceptsMinioHost: (host, environment) =>
+        Boolean(environment.SEVO_DEMO_STAGING_MINIO_HOST) &&
+        host === environment.SEVO_DEMO_STAGING_MINIO_HOST,
+    },
+  ],
+]);
 
-function parseOptions(argumentsList) {
+export function parseCommandOptions(argumentsList) {
   const options = new Map();
   for (let index = 0; index < argumentsList.length; index += 1) {
     const argument = argumentsList[index];
-    if (
-      argument === "--" ||
-      argument === "--dry-run" ||
-      argument === "--skip-migrate"
-    ) {
+    if (argument === "--" || argument === "--dry-run") {
       continue;
     }
     if (!argument?.startsWith("--")) {
@@ -31,35 +50,56 @@ function parseOptions(argumentsList) {
   return options;
 }
 
-export function createDemoSeedRequest(argumentsList, environment = process.env) {
-  if (environment.SEVO_RUNTIME_ENV === "production") {
-    throw new Error("demo:seed is disabled in production");
-  }
+export function requireExplicitDatabaseUrl(
+  options,
+  environment = process.env,
+  commandName = "demo:seed",
+) {
   if (environment.DATABASE_URL) {
     throw new Error(
-      "demo:seed rejects inherited DATABASE_URL; pass --database-url explicitly",
+      `${commandName} rejects inherited DATABASE_URL; pass --database-url explicitly`,
     );
   }
-  if (
-    (environment.OTP_PROVIDER ?? "dev") !== "dev" ||
-    (environment.PAYMENT_PROVIDER ?? "dev") !== "dev" ||
-    (environment.MEDIA_PROVIDER ?? "minio") !== "minio"
-  ) {
-    throw new Error("demo:seed requires internal development providers");
+  const databaseUrl = options.get("--database-url");
+  try {
+    const parsed = new URL(databaseUrl);
+    if (parsed.protocol !== "postgresql:") throw new Error("invalid protocol");
+    return { databaseUrl, parsed };
+  } catch {
+    throw new Error("an explicit PostgreSQL --database-url is required");
+  }
+}
+
+export function createDemoSeedRequest(argumentsList, environment = process.env) {
+  if (environment.SEVO_RUNTIME_ENV !== "development") {
+    throw new Error(
+      "demo:seed requires explicit SEVO_RUNTIME_ENV=development and is disabled in production",
+    );
   }
 
-  const options = parseOptions(argumentsList);
+  const options = parseCommandOptions(argumentsList);
   const profile = options.get("--profile");
   const target = options.get("--target");
-  const databaseUrl = options.get("--database-url");
   const fingerprint = options.get("--fingerprint");
 
   if (profile !== "demo") throw new Error("--profile demo is required");
-  if (!target || !supportedTargets.has(target)) {
+  const targetPolicy = targetPolicies.get(target);
+  if (!target || !targetPolicy) {
     throw new Error("--target must be local or staging");
   }
-  if (!databaseUrl || !databaseUrl.startsWith("postgresql://")) {
-    throw new Error("an explicit PostgreSQL --database-url is required");
+  const { databaseUrl, parsed: parsedDatabaseUrl } = requireExplicitDatabaseUrl(
+    options,
+    environment,
+  );
+  if (!targetPolicy.acceptsDatabaseHost(parsedDatabaseUrl.hostname, environment)) {
+    throw new Error(`Unknown ${target} database destination host`);
+  }
+  if (
+    environment.OTP_PROVIDER !== "dev" ||
+    !environment.MINIO_ENDPOINT ||
+    !targetPolicy.acceptsMinioHost(environment.MINIO_ENDPOINT, environment)
+  ) {
+    throw new Error("demo:seed requires explicit internal development providers");
   }
   if (!fingerprint || !uuidPattern.test(fingerprint)) {
     throw new Error("an explicit UUID --fingerprint is required");
@@ -71,7 +111,6 @@ export function createDemoSeedRequest(argumentsList, environment = process.env) 
     fingerprint,
     namespace: manifest.namespace,
     profile,
-    skipMigrate: argumentsList.includes("--skip-migrate"),
     target,
   });
 }
@@ -85,10 +124,8 @@ function assertKnownTarget(request, target) {
   if (target.fingerprint !== request.fingerprint) {
     throw new Error("Database target fingerprint does not match --fingerprint");
   }
-  const knownDatabase =
-    (request.target === "local" && target.databaseName === "sevo") ||
-    (request.target === "staging" && target.databaseName.startsWith("sevo_demo"));
-  if (!knownDatabase) {
+  const targetPolicy = targetPolicies.get(request.target);
+  if (!targetPolicy?.acceptsDatabaseName(target.databaseName)) {
     throw new Error(`Unknown ${request.target} database destination`);
   }
 }

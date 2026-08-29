@@ -73,13 +73,11 @@ services:
     environment:
       SEVO_RUNTIME_ENV: development
       OTP_PROVIDER: dev
-      PAYMENT_PROVIDER: dev
-      MEDIA_PROVIDER: minio
+      MINIO_ENDPOINT: minio
     command:
       [
         "node",
         "scripts/demo/seed.mjs",
-        "--skip-migrate",
         "--profile",
         "demo",
         "--target",

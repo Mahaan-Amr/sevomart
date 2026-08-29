@@ -24,9 +24,8 @@ function request(...extraArguments: string[]) {
     ],
     {
       SEVO_RUNTIME_ENV: "development",
+      MINIO_ENDPOINT: "127.0.0.1",
       OTP_PROVIDER: "dev",
-      PAYMENT_PROVIDER: "dev",
-      MEDIA_PROVIDER: "minio",
     },
   );
 }

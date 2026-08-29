@@ -19,8 +19,17 @@ describe("demo seed runtime", () => {
     {
       name: "production",
       argumentsList: safeArguments,
-      environment: { SEVO_RUNTIME_ENV: "production" },
+      environment: {
+        SEVO_RUNTIME_ENV: "production",
+        MINIO_ENDPOINT: "127.0.0.1",
+      },
       message: "production",
+    },
+    {
+      name: "an implicit runtime environment",
+      argumentsList: safeArguments,
+      environment: { MINIO_ENDPOINT: "127.0.0.1" },
+      message: "SEVO_RUNTIME_ENV",
     },
     {
       name: "an inherited database URL",
@@ -28,6 +37,7 @@ describe("demo seed runtime", () => {
       environment: {
         SEVO_RUNTIME_ENV: "development",
         DATABASE_URL: "postgresql://human-data.example/sevo",
+        MINIO_ENDPOINT: "127.0.0.1",
       },
       message: "DATABASE_URL",
     },
@@ -36,7 +46,10 @@ describe("demo seed runtime", () => {
       argumentsList: safeArguments.map((argument) =>
         argument === "local" ? "preview" : argument,
       ),
-      environment: { SEVO_RUNTIME_ENV: "development" },
+      environment: {
+        SEVO_RUNTIME_ENV: "development",
+        MINIO_ENDPOINT: "127.0.0.1",
+      },
       message: "target",
     },
     {
@@ -44,9 +57,33 @@ describe("demo seed runtime", () => {
       argumentsList: safeArguments,
       environment: {
         SEVO_RUNTIME_ENV: "development",
+        MINIO_ENDPOINT: "127.0.0.1",
         OTP_PROVIDER: "external",
       },
       message: "provider",
+    },
+    {
+      name: "an external media provider endpoint",
+      argumentsList: safeArguments,
+      environment: {
+        SEVO_RUNTIME_ENV: "development",
+        MINIO_ENDPOINT: "objects.example.com",
+        OTP_PROVIDER: "dev",
+      },
+      message: "provider",
+    },
+    {
+      name: "a remote local destination",
+      argumentsList: safeArguments.map((argument) =>
+        argument.includes("localhost:6432")
+          ? "postgresql://sevo:sevo_local@database.example.com:6432/sevo"
+          : argument,
+      ),
+      environment: {
+        SEVO_RUNTIME_ENV: "development",
+        MINIO_ENDPOINT: "127.0.0.1",
+      },
+      message: "destination",
     },
   ])("rejects $name before inspecting the database", async (scenario) => {
     const inspectTarget = vi.fn();
@@ -60,9 +97,8 @@ describe("demo seed runtime", () => {
   it("reports a dry run without writing and under the single-run lock", async () => {
     const request = createDemoSeedRequest([...safeArguments, "--dry-run"], {
       SEVO_RUNTIME_ENV: "development",
+      MINIO_ENDPOINT: "127.0.0.1",
       OTP_PROVIDER: "dev",
-      PAYMENT_PROVIDER: "dev",
-      MEDIA_PROVIDER: "minio",
     });
     const writeManifestReceipt = vi.fn();
     const withNamespaceLock = vi.fn(async (_namespace, operation) => operation());
@@ -91,6 +127,8 @@ describe("demo seed runtime", () => {
   it("rejects a mismatched registered fingerprint before locking or writing", async () => {
     const request = createDemoSeedRequest(safeArguments, {
       SEVO_RUNTIME_ENV: "development",
+      MINIO_ENDPOINT: "127.0.0.1",
+      OTP_PROVIDER: "dev",
     });
     const withNamespaceLock = vi.fn();
     const writeManifestReceipt = vi.fn();
