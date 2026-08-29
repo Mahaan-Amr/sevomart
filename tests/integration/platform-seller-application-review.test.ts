@@ -721,6 +721,76 @@ describe("platform seller application review API with PostgreSQL", () => {
     );
   });
 
+  it("reads every live workspace permission and invalidates the session on logout", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    await signIn(app, "09123456788");
+    const identityId = await identityIdForMobile("09123456788");
+    const token = await seedPlatformSession(identityId);
+    const headers = { cookie: platformCookie(token) };
+
+    const withoutPermission = await server.inject({
+      method: "GET",
+      url: "/v1/platform/auth/session",
+      headers,
+    });
+    expect(withoutPermission.statusCode).toBe(200);
+    expect(withoutPermission.json()).toMatchObject({
+      actor: { identityId, audience: "PLATFORM_AGENT" },
+      permissions: [],
+    });
+
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`
+        insert into identity_platform_permission_grants
+          (id, identity_id, permission, granted_at)
+        values
+          (${randomUUID()}, ${identityId}, 'PAYMENT_REVIEW', now()),
+          (${randomUUID()}, ${identityId}, 'SELLER_APPLICATION_REVIEW', now())
+      `;
+    } finally {
+      await sql.end();
+    }
+
+    const granted = await server.inject({
+      method: "GET",
+      url: "/v1/platform/auth/session",
+      headers,
+    });
+    expect(granted.statusCode).toBe(200);
+    expect(granted.json()).toMatchObject({
+      permissions: ["PAYMENT_REVIEW", "SELLER_APPLICATION_REVIEW"],
+    });
+
+    await revokeReviewPermission(identityId);
+    const revoked = await server.inject({
+      method: "GET",
+      url: "/v1/platform/auth/session",
+      headers,
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json()).toMatchObject({ permissions: ["PAYMENT_REVIEW"] });
+
+    const loggedOut = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/logout",
+      headers,
+    });
+    expect(loggedOut.statusCode).toBe(204);
+    expect(loggedOut.headers["set-cookie"]).toContain(
+      "sevo_platform_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+    );
+
+    const ended = await server.inject({
+      method: "GET",
+      url: "/v1/platform/auth/session",
+      headers,
+    });
+    expect(ended.statusCode).toBe(401);
+  });
+
   it("lists a stable minimal queue only for a separately authorized agent", async () => {
     const app = await createApiApp(environment);
     apps.push(app);

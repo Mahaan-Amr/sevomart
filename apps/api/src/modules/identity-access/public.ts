@@ -8,6 +8,7 @@ import type {
   PlatformSellerApplicationListQuery,
   PlatformSellerApplicationPage,
   PlatformSellerApplicationView,
+  PlatformAgentWorkspaceSession,
   ReadMySellerApplicationsQuery,
   RejectSellerApplication,
   RequestSellerApplicationInformation,
@@ -138,6 +139,8 @@ export type PlatformAgentActor = {
 };
 
 export interface PlatformAgentSessionAuthorizer {
+  readWorkspaceSession(token: string): Promise<PlatformAgentWorkspaceSession>;
+  revokeSession(token: string): Promise<boolean>;
   authorizeSellerApplicationReview(
     token: string,
   ): Promise<PlatformAgentActor & { permission: "SELLER_APPLICATION_REVIEW" }>;
