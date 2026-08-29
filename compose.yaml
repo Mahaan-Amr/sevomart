@@ -65,6 +65,33 @@ services:
         condition: service_healthy
     restart: "no"
 
+  demo-seed:
+    profiles: ["demo"]
+    build:
+      context: .
+      dockerfile: packages/database/Dockerfile
+    environment:
+      SEVO_RUNTIME_ENV: development
+      OTP_PROVIDER: dev
+      MINIO_ENDPOINT: minio
+    command:
+      [
+        "node",
+        "scripts/demo/seed.mjs",
+        "--profile",
+        "demo",
+        "--target",
+        "local",
+        "--database-url",
+        "postgresql://${POSTGRES_USER:-sevo}:${POSTGRES_PASSWORD:-sevo_local}@postgres:5432/${POSTGRES_DB:-sevo}",
+        "--fingerprint",
+        "${SEVO_DEMO_FINGERPRINT:-00000000-0000-4000-8000-000000000000}",
+      ]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   api:
     build:
       context: .

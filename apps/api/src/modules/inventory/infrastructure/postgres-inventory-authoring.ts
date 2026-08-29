@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import postgres, { type JSONValue, type Sql } from "postgres";
-import { variantIdContract, type VariantId } from "@sevo/contracts/platform/v1";
+import {
+  variantIdContract,
+  type ProductId,
+  type VariantId,
+} from "@sevo/contracts/platform/v1";
 import {
   inventoryAvailabilityReadV1Contract,
   sellerInventoryBatchResultContract,
@@ -10,6 +14,7 @@ import {
 import { enqueueOutboxEvent } from "@sevo/outbox";
 
 import {
+  InventoryBatchConflictError,
   InventoryNotFoundError,
   InventoryRevisionConflictError,
   InventoryReservationUnavailableError,
@@ -17,6 +22,7 @@ import {
   InventoryReservedStockConflictError,
   InventoryIdempotencyConflictError,
   type InventoryAuthoring,
+  type InventoryBatchConflictIssue,
   type InventorySnapshot,
   type InventoryTransactionContext,
   type SellerInventoryRepository,
@@ -35,19 +41,37 @@ export class PostgresInventoryAuthoring
     transaction: InventoryTransactionContext,
     command: Parameters<InventoryAuthoring["replaceForProduct"]>[1],
   ): Promise<InventorySnapshot> {
-    const [result] = await this.replaceBatchForProduct(transaction, {
-      storeId: command.storeId,
-      rows: [
-        {
-          variantId: command.variantId,
-          onHand: command.onHand,
-          expectedRevision: command.expectedRevision,
-        },
-      ],
-      reasonCode: command.reasonCode,
-      actorId: command.actorId,
-      correlationId: command.correlationId,
-    });
+    let result: (InventorySnapshot & { variantId: VariantId }) | undefined;
+    try {
+      [result] = await this.replaceBatchForProduct(transaction, {
+        storeId: command.storeId,
+        rows: [
+          {
+            variantId: command.variantId,
+            onHand: command.onHand,
+            expectedRevision: command.expectedRevision,
+          },
+        ],
+        reasonCode: command.reasonCode,
+        actorId: command.actorId,
+        correlationId: command.correlationId,
+      });
+    } catch (error) {
+      if (error instanceof InventoryBatchConflictError) {
+        const issue = error.issues[0]!;
+        if (issue.code === "REVISION_CONFLICT") {
+          throw new InventoryRevisionConflictError(
+            issue.expectedRevision,
+            issue.currentRevision,
+          );
+        }
+        throw new InventoryReservedStockConflictError(
+          issue.requestedOnHand,
+          issue.reserved,
+        );
+      }
+      throw error;
+    }
     return {
       onHand: result!.onHand,
       reserved: result!.reserved,
@@ -101,18 +125,45 @@ export class PostgresInventoryAuthoring
     const reservedById = new Map(
       reservationRows.map((row) => [row.variantId, row.reserved]),
     );
-    for (const row of ordered) {
+    const conflicts = command.rows.flatMap((row, rowIndex) => {
       const current = currentById.get(row.variantId) ?? { onHand: 0, revision: 0 };
+      const issues: InventoryBatchConflictIssue[] = [];
       if (current.revision !== row.expectedRevision) {
-        throw new InventoryRevisionConflictError(
-          row.expectedRevision,
-          current.revision,
-        );
+        issues.push({
+          code: "REVISION_CONFLICT" as const,
+          rowIndex,
+          variantId: row.variantId,
+          expectedRevision: row.expectedRevision,
+          currentRevision: current.revision,
+        });
       }
       const reserved = reservedById.get(row.variantId) ?? 0;
       if (row.onHand < reserved) {
-        throw new InventoryReservedStockConflictError(row.onHand, reserved);
+        issues.push({
+          code: "RESERVED_STOCK_CONFLICT" as const,
+          rowIndex,
+          variantId: row.variantId,
+          requestedOnHand: row.onHand,
+          reserved,
+        });
       }
+      return issues;
+    });
+    if (conflicts.length > 0) {
+      if (!command.aggregateBatchConflicts) {
+        const issue = conflicts[0]!;
+        if (issue.code === "REVISION_CONFLICT") {
+          throw new InventoryRevisionConflictError(
+            issue.expectedRevision,
+            issue.currentRevision,
+          );
+        }
+        throw new InventoryReservedStockConflictError(
+          issue.requestedOnHand,
+          issue.reserved,
+        );
+      }
+      throw new InventoryBatchConflictError(conflicts);
     }
     const results: Array<InventorySnapshot & { variantId: VariantId }> = [];
     for (const row of ordered) {
@@ -142,7 +193,9 @@ export class PostgresInventoryAuthoring
       const reserved = reservedById.get(row.variantId) ?? 0;
       const wasAvailable = current.onHand - reserved > 0;
       const isAvailable = updated[0]!.onHand - reserved > 0;
-      if (command.publication && wasAvailable !== isAvailable) {
+      const publication =
+        command.publications?.get(row.variantId) ?? command.publication;
+      if (publication && wasAvailable !== isAvailable) {
         await enqueueOutboxEvent(
           sql,
           variantAvailabilityChangedV1Contract.parse({
@@ -157,8 +210,8 @@ export class PostgresInventoryAuthoring
             actor: { type: "IDENTITY", id: command.actorId },
             payload: {
               storeId: command.storeId,
-              productId: command.publication.productId,
-              publicationVersion: command.publication.publicationVersion,
+              productId: publication.productId,
+              publicationVersion: publication.publicationVersion,
               variantId: row.variantId,
               availabilityVersion: revision,
               availability: isAvailable ? "AVAILABLE" : "OUT_OF_STOCK",
@@ -247,10 +300,15 @@ export class PostgresInventoryAuthoring
         return sellerInventoryBatchResultContract.parse(record.response);
       }
 
-      const adjusted = [];
-      for (const row of [...command.input.rows].sort((left, right) =>
+      const orderedRows = [...command.input.rows].sort((left, right) =>
         left.variantId.localeCompare(right.variantId),
-      )) {
+      );
+      const productIds = new Map<VariantId, ProductId>();
+      const publications = new Map<
+        VariantId,
+        { productId: ProductId; publicationVersion: number }
+      >();
+      for (const row of orderedRows) {
         const publication = await command.readPublication(
           sql as unknown as InventoryTransactionContext,
           row.variantId,
@@ -258,25 +316,33 @@ export class PostgresInventoryAuthoring
         if (!publication || publication.storeId !== command.storeId) {
           throw new InventoryNotFoundError();
         }
-        const [result] = await this.replaceBatchForProduct(
-          sql as unknown as InventoryTransactionContext,
-          {
-            storeId: command.storeId,
-            publication,
-            rows: [row],
-            reasonCode: command.input.reasonCode,
-            note: command.input.note,
-            actorId: command.actorId,
-            correlationId: command.correlationId,
-            causationId: command.causationId,
-          },
-        );
-        adjusted.push({
-          productId: publication.productId,
-          ...result!,
-          availability: result!.available > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
-        });
+        productIds.set(row.variantId, publication.productId);
+        if (publication.sellable) {
+          publications.set(row.variantId, {
+            productId: publication.productId,
+            publicationVersion: publication.publicationVersion,
+          });
+        }
       }
+      const results = await this.replaceBatchForProduct(
+        sql as unknown as InventoryTransactionContext,
+        {
+          storeId: command.storeId,
+          publications,
+          aggregateBatchConflicts: true,
+          rows: command.input.rows,
+          reasonCode: command.input.reasonCode,
+          note: command.input.note,
+          actorId: command.actorId,
+          correlationId: command.correlationId,
+          causationId: command.causationId,
+        },
+      );
+      const adjusted = results.map((result) => ({
+        productId: productIds.get(result.variantId)!,
+        ...result,
+        availability: result.available > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
+      }));
       const response = sellerInventoryBatchResultContract.parse({ rows: adjusted });
       await sql`
         update inventory_idempotency_records
