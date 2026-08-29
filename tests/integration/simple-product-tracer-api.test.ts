@@ -39,12 +39,17 @@ describe("simple product tracer HTTP API", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  it("creates, previews and atomically publishes one sellable physical product", async () => {
+  async function startSellerProductTest() {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
     const cookie = await signIn(server);
     await publishStore(server, cookie);
+    return { server, cookie };
+  }
+
+  it("creates, previews and atomically publishes one sellable physical product", async () => {
+    const { server, cookie } = await startSellerProductTest();
 
     const createKey = crypto.randomUUID();
     const created = await server.inject({
@@ -235,18 +240,24 @@ describe("simple product tracer HTTP API", () => {
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
-      const events = await sql<Array<{ count: number }>>`
-        select count(*)::int as count from platform_outbox_events
+      const events = await sql<Array<{ count: number; hasCausation: boolean }>>`
+        select count(*)::int as count,
+          bool_and(causation_id is not null) as "hasCausation"
+        from platform_outbox_events
         where event_type = 'ProductPublished.v2'
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
-      expect(events[0]?.count).toBe(2);
-      const unpublicationEvents = await sql<Array<{ count: number }>>`
-        select count(*)::int as count from platform_outbox_events
+      expect(events).toEqual([{ count: 2, hasCausation: true }]);
+      const unpublicationEvents = await sql<
+        Array<{ count: number; hasCausation: boolean }>
+      >`
+        select count(*)::int as count,
+          bool_and(causation_id is not null) as "hasCausation"
+        from platform_outbox_events
         where event_type = 'ProductUnpublished.v1'
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
-      expect(unpublicationEvents[0]?.count).toBe(1);
+      expect(unpublicationEvents).toEqual([{ count: 1, hasCausation: true }]);
       const adjustments = await sql<
         Array<{ reasonCode: string; previousOnHand: number; nextOnHand: number }>
       >`
@@ -264,11 +275,7 @@ describe("simple product tracer HTTP API", () => {
   });
 
   it("rejects private product preview when seller access is no longer active", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const cookie = await signIn(server);
-    await publishStore(server, cookie);
+    const { server, cookie } = await startSellerProductTest();
     const created = await server.inject({
       method: "POST",
       url: "/v1/seller/products",
@@ -293,12 +300,241 @@ describe("simple product tracer HTTP API", () => {
     expect(response.statusCode).toBe(403);
   });
 
+  it("retires a published variant only when the edited working copy is published", async () => {
+    const { server, cookie } = await startSellerProductTest();
+
+    const created = await server.inject({
+      method: "POST",
+      url: "/v1/seller/products",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {},
+    });
+    const productId = created.json<{ productId: string }>().productId;
+    const mediaId = await uploadProductImage(server, cookie, productId);
+    const workingCopy = {
+      name: "کفش روزمره",
+      description: "کفش سبک برای استفاده روزانه",
+      orderedMediaIds: [mediaId],
+      axes: [
+        {
+          clientKey: "size",
+          name: "اندازه",
+          values: [
+            { clientKey: "small", name: "کوچک" },
+            { clientKey: "large", name: "بزرگ" },
+          ],
+        },
+      ],
+      variants: [
+        {
+          clientKey: "small",
+          combination: [{ axisClientKey: "size", valueClientKey: "small" }],
+          price: { amount: 6_000_000, currency: "IRR" as const },
+          sku: "SHOE-S",
+        },
+        {
+          clientKey: "large",
+          combination: [{ axisClientKey: "size", valueClientKey: "large" }],
+          price: { amount: 6_500_000, currency: "IRR" as const },
+          sku: "SHOE-L",
+        },
+      ],
+    };
+    const saved = productViewContract.parse(
+      (
+        await server.inject({
+          method: "PUT",
+          url: `/v1/seller/products/${productId}/working-copy`,
+          headers: writeHeaders(cookie, crypto.randomUUID(), 0),
+          payload: {
+            expectedRevision: 0,
+            workingCopy,
+            inventory: {
+              rows: [
+                { variantClientKey: "small", onHand: 2, expectedRevision: 0 },
+                { variantClientKey: "large", onHand: 3, expectedRevision: 0 },
+              ],
+            },
+          },
+        })
+      ).json(),
+    );
+    const variantIds = Object.fromEntries(
+      saved.workingCopy!.variants.map((variant) => [
+        variant.clientKey,
+        variant.variantId,
+      ]),
+    );
+    const firstPublication = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 1),
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(firstPublication.statusCode).toBe(200);
+
+    const edited = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 2),
+      payload: {
+        expectedRevision: 2,
+        workingCopy: {
+          ...workingCopy,
+          axes: [
+            {
+              ...workingCopy.axes[0],
+              values: [workingCopy.axes[0]!.values[0]],
+            },
+          ],
+          variants: [workingCopy.variants[0]],
+        },
+        inventory: null,
+      },
+    });
+    expect(edited.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      const beforePublication = await sql<
+        Array<{ variantId: string; retired: boolean }>
+      >`
+        select id as "variantId", retired from product_variants
+        where product_id = ${productId}::uuid order by id
+      `;
+      expect(beforePublication).toEqual(
+        expect.arrayContaining([
+          { variantId: variantIds.small, retired: false },
+          { variantId: variantIds.large, retired: false },
+        ]),
+      );
+      const stillPublic = publicProductContract.parse(
+        (
+          await server.inject({
+            method: "GET",
+            url: `/v1/stores/product-tracer-store/products/${productId}`,
+          })
+        ).json(),
+      );
+      expect(stillPublic.variants.map((variant) => variant.variantId)).toEqual(
+        expect.arrayContaining([variantIds.small, variantIds.large]),
+      );
+
+      const [ownership] = await sql<
+        Array<{ storeId: string; actorId: string; eventId: string }>
+      >`
+        select product.store_id as "storeId", membership.seller_id as "actorId",
+          event.event_id as "eventId"
+        from product_products product
+        join store_memberships membership on membership.store_id = product.store_id
+        join platform_outbox_events event on event.aggregate_id = product.id
+          and event.event_type = 'ProductPublished.v2'
+        where product.id = ${productId}::uuid
+        limit 1
+      `;
+      const inventoryReader = new PostgresInventoryAuthoring(
+        apiTestEnvironment.DATABASE_URL,
+      );
+      const rollbackProbe = new PostgresProductRepository(
+        apiTestEnvironment.DATABASE_URL,
+        inventoryReader,
+        () => ownership!.eventId,
+      );
+      try {
+        await expect(
+          rollbackProbe.publishProduct(productId, ownership!.storeId, {
+            operation: "PUBLISH_PRODUCT",
+            actorId: ownership!.actorId as never,
+            correlationId: crypto.randomUUID(),
+            idempotencyKey: crypto.randomUUID(),
+            expectedRevision: 3,
+            requestHash: "f".repeat(64),
+          }),
+        ).rejects.toThrow();
+        const rolledBack = await sql<
+          Array<{ revision: number; publicationVersion: number }>
+        >`
+          select revision, publication_version as "publicationVersion"
+          from product_products where id = ${productId}::uuid
+        `;
+        expect(rolledBack).toEqual([{ revision: 3, publicationVersion: 1 }]);
+        expect(
+          await sql<Array<{ count: number }>>`
+            select count(*)::int as count from product_publications
+            where product_id = ${productId}::uuid
+          `,
+        ).toEqual([{ count: 1 }]);
+        expect(
+          await sql<Array<{ retired: boolean }>>`
+            select retired from product_variants
+            where id = ${variantIds.large}::uuid
+          `,
+        ).toEqual([{ retired: false }]);
+
+        const publishKey = crypto.randomUUID();
+        const publicationRequest = {
+          method: "POST" as const,
+          url: `/v1/seller/products/${productId}/publications`,
+          headers: writeHeaders(cookie, publishKey, 3),
+          payload: { expectedRevision: 3, confirmed: true },
+        };
+        const secondPublication = await server.inject(publicationRequest);
+        expect(secondPublication.statusCode).toBe(200);
+        expect((await server.inject(publicationRequest)).json()).toEqual(
+          secondPublication.json(),
+        );
+        expect(
+          await rollbackProbe.readAuthoritativeVariant(variantIds.large as never),
+        ).toBeUndefined();
+      } finally {
+        await rollbackProbe.onModuleDestroy();
+        await inventoryReader.onModuleDestroy();
+      }
+
+      const afterPublication = await sql<
+        Array<{ variantId: string; retired: boolean; everPublished: boolean }>
+      >`
+        select id as "variantId", retired, ever_published as "everPublished"
+        from product_variants where product_id = ${productId}::uuid order by id
+      `;
+      expect(afterPublication).toEqual(
+        expect.arrayContaining([
+          { variantId: variantIds.small, retired: false, everPublished: true },
+          { variantId: variantIds.large, retired: true, everPublished: true },
+        ]),
+      );
+      const publications = await sql<Array<{ snapshot: unknown }>>`
+        select snapshot from product_publications
+        where product_id = ${productId}::uuid order by publication_version
+      `;
+      expect(publications).toHaveLength(2);
+      expect(
+        publicProductContract
+          .parse(publications[0]!.snapshot)
+          .variants.map((variant) => variant.variantId),
+      ).toEqual(expect.arrayContaining([variantIds.small, variantIds.large]));
+      expect(
+        publicProductContract
+          .parse(publications[1]!.snapshot)
+          .variants.map((variant) => variant.variantId),
+      ).toEqual([variantIds.small]);
+      const publicationEvents = await sql<
+        Array<{ count: number; hasCausation: boolean }>
+      >`
+        select count(*)::int as count,
+          bool_and(causation_id is not null) as "hasCausation"
+        from platform_outbox_events
+        where aggregate_id = ${productId}::uuid
+          and event_type = 'ProductPublished.v2'
+      `;
+      expect(publicationEvents).toEqual([{ count: 2, hasCausation: true }]);
+    } finally {
+      await sql.end();
+    }
+  });
+
   it("keeps deterministic variant identities and applies offer and inventory batches atomically", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const cookie = await signIn(server);
-    await publishStore(server, cookie);
+    const { server, cookie } = await startSellerProductTest();
 
     const created = await server.inject({
       method: "POST",

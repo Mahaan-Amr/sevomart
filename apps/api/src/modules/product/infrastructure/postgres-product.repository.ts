@@ -301,6 +301,7 @@ export class PostgresProductRepository implements ProductRepository {
             aggregateVersion: revision,
             occurredAt: new Date().toISOString(),
             correlationId: context.correlationId,
+            causationId: context.correlationId,
             actor: { type: "IDENTITY", id: context.actorId },
             payload: {
               storeId,
@@ -528,9 +529,13 @@ export class PostgresProductRepository implements ProductRepository {
             update product_variants set retired = true
             where product_id = ${productId}
               and id not in ${sql([...submittedIds])}
+              and ever_published = false
           `;
         } else {
-          await sql`update product_variants set retired = true where product_id = ${productId}`;
+          await sql`
+            update product_variants set retired = true
+            where product_id = ${productId} and ever_published = false
+          `;
         }
         const requestedInventory = new Map(
           (input.inventory?.rows ?? []).map((row) => [row.variantClientKey, row]),
@@ -671,6 +676,7 @@ export class PostgresProductRepository implements ProductRepository {
                 aggregateVersion: updated[0]!.revision,
                 occurredAt: new Date().toISOString(),
                 correlationId: context.correlationId,
+                causationId: context.correlationId,
                 actor: { type: "IDENTITY", id: context.actorId },
                 payload: {
                   storeId,
@@ -770,6 +776,14 @@ export class PostgresProductRepository implements ProductRepository {
             publication_version = ${publicationVersion}, published_at = now(),
             updated_at = now() where id = ${productId}
         `;
+        const publishedVariantIds = projection.variants.map(
+          (variant) => variant.variantId,
+        );
+        await sql`
+          update product_variants
+          set retired = (id not in ${sql(publishedVariantIds)})
+          where product_id = ${productId}
+        `;
         await sql`
           update product_variants set ever_published = true
           where product_id = ${productId} and retired = false
@@ -790,6 +804,7 @@ export class PostgresProductRepository implements ProductRepository {
             aggregateVersion: revision,
             occurredAt: new Date().toISOString(),
             correlationId: context.correlationId,
+            causationId: context.correlationId,
             actor: { type: "IDENTITY", id: context.actorId },
             payload: {
               storeId,
@@ -846,6 +861,7 @@ export class PostgresProductRepository implements ProductRepository {
             aggregateVersion: revision,
             occurredAt: new Date().toISOString(),
             correlationId: context.correlationId,
+            causationId: context.correlationId,
             actor: { type: "IDENTITY", id: context.actorId },
             payload: {
               storeId,
