@@ -1,23 +1,30 @@
 import { randomUUID } from "node:crypto";
 
-import postgres, { type Sql } from "postgres";
+import postgres, { type JSONValue, type Sql } from "postgres";
 import { variantIdContract, type VariantId } from "@sevo/contracts/platform/v1";
 import {
   inventoryAvailabilityReadV1Contract,
+  sellerInventoryBatchResultContract,
   variantAvailabilityChangedV1Contract,
 } from "@sevo/contracts/inventory/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 
 import {
+  InventoryNotFoundError,
   InventoryRevisionConflictError,
   InventoryReservationUnavailableError,
   InventoryReservationNotConsumableError,
+  InventoryReservedStockConflictError,
+  InventoryIdempotencyConflictError,
   type InventoryAuthoring,
   type InventorySnapshot,
   type InventoryTransactionContext,
+  type SellerInventoryRepository,
 } from "../public";
 
-export class PostgresInventoryAuthoring implements InventoryAuthoring {
+export class PostgresInventoryAuthoring
+  implements InventoryAuthoring, SellerInventoryRepository
+{
   readonly #sql: Sql;
 
   constructor(databaseUrl: string) {
@@ -26,71 +33,26 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
 
   async replaceForProduct(
     transaction: InventoryTransactionContext,
-    command: {
-      storeId: string;
-      variantId: string;
-      onHand: number;
-      expectedRevision: number;
-      reasonCode: "INITIAL_STOCK";
-      actorId: string;
-      correlationId: string;
-    },
+    command: Parameters<InventoryAuthoring["replaceForProduct"]>[1],
   ): Promise<InventorySnapshot> {
-    const sql = transaction as unknown as Sql;
-    const rows = await sql<Array<{ onHand: number; revision: number }>>`
-      select on_hand as "onHand", revision from inventory_levels
-      where variant_id = ${command.variantId}::uuid for update
-    `;
-    const reservations = await sql<Array<{ reserved: number }>>`
-      select coalesce(sum(line.quantity), 0)::int as reserved
-      from inventory_reservation_lines line
-      join inventory_reservations reservation on reservation.id = line.reservation_id
-      where line.variant_id = ${command.variantId}
-        and (
-          reservation.status = 'HELD_FOR_REVIEW'
-          or (
-            reservation.status = 'ACTIVE'
-            and greatest(
-              reservation.expires_at,
-              coalesce(reservation.hold_lease_until, reservation.expires_at)
-            ) > now()
-          )
-        )
-    `;
-    const current = {
-      ...(rows[0] ?? { onHand: 0, revision: 0 }),
-      reserved: reservations[0]?.reserved ?? 0,
-    };
-    if (current.revision !== command.expectedRevision) {
-      throw new InventoryRevisionConflictError(
-        command.expectedRevision,
-        current.revision,
-      );
-    }
-    const revision = current.revision + 1;
-    const updated = await sql<Array<{ onHand: number; revision: number }>>`
-      insert into inventory_levels
-        (variant_id, store_id, on_hand, revision, updated_at)
-      values
-        (${command.variantId}, ${command.storeId}, ${command.onHand}, ${revision}, now())
-      on conflict (variant_id) do update set
-        on_hand = excluded.on_hand, revision = excluded.revision,
-        updated_at = excluded.updated_at
-      returning on_hand as "onHand", revision
-    `;
-    await sql`
-      insert into inventory_adjustments
-        (id, variant_id, store_id, actor_identity_id, reason_code,
-         previous_on_hand, next_on_hand, revision, correlation_id)
-      values
-        (${randomUUID()}, ${command.variantId}, ${command.storeId}, ${command.actorId},
-         ${command.reasonCode}, ${current.onHand}, ${command.onHand}, ${revision},
-         ${command.correlationId})
-    `;
+    const [result] = await this.replaceBatchForProduct(transaction, {
+      storeId: command.storeId,
+      rows: [
+        {
+          variantId: command.variantId,
+          onHand: command.onHand,
+          expectedRevision: command.expectedRevision,
+        },
+      ],
+      reasonCode: command.reasonCode,
+      actorId: command.actorId,
+      correlationId: command.correlationId,
+    });
     return {
-      ...updated[0]!,
-      reserved: current.reserved,
-      available: updated[0]!.onHand - current.reserved,
+      onHand: result!.onHand,
+      reserved: result!.reserved,
+      available: result!.available,
+      revision: result!.revision,
     };
   }
 
@@ -132,16 +94,7 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
           join inventory_reservations reservation
             on reservation.id = line.reservation_id
           where line.variant_id in ${sql(ordered.map((row) => row.variantId))}
-            and (
-              reservation.status = 'HELD_FOR_REVIEW'
-              or (
-                reservation.status = 'ACTIVE'
-                and greatest(
-                  reservation.expires_at,
-                  coalesce(reservation.hold_lease_until, reservation.expires_at)
-                ) > now()
-              )
-            )
+            and ${activeReservationPredicate(sql)}
           group by line.variant_id
         `
       : [];
@@ -155,6 +108,10 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
           row.expectedRevision,
           current.revision,
         );
+      }
+      const reserved = reservedById.get(row.variantId) ?? 0;
+      if (row.onHand < reserved) {
+        throw new InventoryReservedStockConflictError(row.onHand, reserved);
       }
     }
     const results: Array<InventorySnapshot & { variantId: VariantId }> = [];
@@ -174,11 +131,13 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       await sql`
         insert into inventory_adjustments
           (id, variant_id, store_id, actor_identity_id, reason_code,
-           previous_on_hand, next_on_hand, revision, correlation_id)
+           previous_on_hand, next_on_hand, revision, operation,
+           previous_revision, next_revision, correlation_id, note)
         values
           (${randomUUID()}, ${row.variantId}, ${command.storeId}, ${command.actorId},
            ${command.reasonCode}, ${current.onHand}, ${row.onHand}, ${revision},
-           ${command.correlationId})
+           'REPLACE_ON_HAND', ${current.revision}, ${revision},
+           ${command.correlationId}, ${command.note ?? null})
       `;
       const reserved = reservedById.get(row.variantId) ?? 0;
       const wasAvailable = current.onHand - reserved > 0;
@@ -194,10 +153,12 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
             aggregateVersion: revision,
             occurredAt: new Date().toISOString(),
             correlationId: command.correlationId,
+            causationId: command.causationId ?? command.correlationId,
             actor: { type: "IDENTITY", id: command.actorId },
             payload: {
               storeId: command.storeId,
-              ...command.publication,
+              productId: command.publication.productId,
+              publicationVersion: command.publication.publicationVersion,
               variantId: row.variantId,
               availabilityVersion: revision,
               availability: isAvailable ? "AVAILABLE" : "OUT_OF_STOCK",
@@ -215,6 +176,118 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
     return results;
   }
 
+  async listForStore(
+    command: Parameters<SellerInventoryRepository["listForStore"]>[0],
+  ) {
+    const rows = await this.#sql<
+      Array<{
+        variantId: string;
+        onHand: number;
+        reserved: number;
+        available: number;
+        revision: number;
+      }>
+    >`
+      select level.variant_id as "variantId", level.on_hand as "onHand",
+        ${reservedQuantity(this.#sql)}::int as reserved,
+        (level.on_hand - ${reservedQuantity(this.#sql)})::int as available,
+        level.revision
+      from inventory_levels level
+      left join inventory_reservation_lines line on line.variant_id = level.variant_id
+      left join inventory_reservations reservation on reservation.id = line.reservation_id
+      where level.store_id = ${command.storeId}::uuid
+        ${command.cursor ? this.#sql`and level.variant_id > ${command.cursor}::uuid` : this.#sql``}
+      group by level.variant_id
+      having ${
+        command.availability === "AVAILABLE"
+          ? this.#sql`level.on_hand - coalesce(sum(line.quantity) filter (
+              where ${activeReservationPredicate(this.#sql)}
+            ), 0) > 0`
+          : command.availability === "OUT_OF_STOCK"
+            ? this.#sql`level.on_hand - coalesce(sum(line.quantity) filter (
+                where ${activeReservationPredicate(this.#sql)}
+              ), 0) = 0`
+            : this.#sql`true`
+      }
+      order by level.variant_id
+      limit ${command.limit + 1}
+    `;
+    return rows.map(({ variantId, ...snapshot }) => ({
+      variantId: variantIdContract.parse(variantId),
+      ...inventoryAvailabilityReadV1Contract.parse(snapshot),
+    }));
+  }
+
+  async replaceSellerBatch(
+    command: Parameters<SellerInventoryRepository["replaceSellerBatch"]>[0],
+  ) {
+    return this.#sql.begin(async (sql) => {
+      const operation = "REPLACE_SELLER_INVENTORY_BATCH";
+      const claimed = await sql<Array<{ operation: string }>>`
+        insert into inventory_idempotency_records
+          (operation, actor_identity_id, idempotency_key, request_hash, response_json)
+        values
+          (${operation}, ${command.actorId}, ${command.idempotencyKey},
+           ${command.requestHash}, ${sql.json({})})
+        on conflict (operation, actor_identity_id, idempotency_key) do nothing
+        returning operation
+      `;
+      if (!claimed[0]) {
+        const records = await sql<Array<{ requestHash: string; response: JSONValue }>>`
+          select request_hash as "requestHash", response_json as response
+          from inventory_idempotency_records
+          where operation = ${operation} and actor_identity_id = ${command.actorId}
+            and idempotency_key = ${command.idempotencyKey}
+          for update
+        `;
+        const record = records[0];
+        if (!record || record.requestHash !== command.requestHash) {
+          throw new InventoryIdempotencyConflictError();
+        }
+        return sellerInventoryBatchResultContract.parse(record.response);
+      }
+
+      const adjusted = [];
+      for (const row of [...command.input.rows].sort((left, right) =>
+        left.variantId.localeCompare(right.variantId),
+      )) {
+        const publication = await command.readPublication(
+          sql as unknown as InventoryTransactionContext,
+          row.variantId,
+        );
+        if (!publication || publication.storeId !== command.storeId) {
+          throw new InventoryNotFoundError();
+        }
+        const [result] = await this.replaceBatchForProduct(
+          sql as unknown as InventoryTransactionContext,
+          {
+            storeId: command.storeId,
+            publication,
+            rows: [row],
+            reasonCode: command.input.reasonCode,
+            note: command.input.note,
+            actorId: command.actorId,
+            correlationId: command.correlationId,
+            causationId: command.causationId,
+          },
+        );
+        adjusted.push({
+          productId: publication.productId,
+          ...result!,
+          availability: result!.available > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
+        });
+      }
+      const response = sellerInventoryBatchResultContract.parse({ rows: adjusted });
+      await sql`
+        update inventory_idempotency_records
+        set response_json = ${sql.json(JSON.parse(JSON.stringify(response)) as JSONValue)}
+        where operation = ${operation} and actor_identity_id = ${command.actorId}
+          and idempotency_key = ${command.idempotencyKey}
+      `;
+      return response;
+    });
+  }
+
   async readMany(variantIds: readonly string[]) {
     if (variantIds.length === 0) return [];
     const rows = await this.#sql<
@@ -227,26 +300,8 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       }>
     >`
       select level.variant_id as "variantId", level.on_hand as "onHand",
-        coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0)::int as reserved,
-        (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0))::int as available,
+        ${reservedQuantity(this.#sql)}::int as reserved,
+        (level.on_hand - ${reservedQuantity(this.#sql)})::int as available,
         level.revision
       from inventory_levels level
       left join inventory_reservation_lines line on line.variant_id = level.variant_id
@@ -267,26 +322,8 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
       Array<{ onHand: number; reserved: number; available: number; revision: number }>
     >`
       select level.on_hand as "onHand", level.revision,
-        coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0)::int as reserved,
-        (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0))::int as available
+        ${reservedQuantity(sql)}::int as reserved,
+        (level.on_hand - ${reservedQuantity(sql)})::int as available
       from inventory_levels level
       left join inventory_reservation_lines line on line.variant_id = level.variant_id
       left join inventory_reservations reservation on reservation.id = line.reservation_id
@@ -314,16 +351,7 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
         from inventory_reservation_lines line
         join inventory_reservations reservation on reservation.id = line.reservation_id
         where line.variant_id = ${item.variantId}
-          and (
-            reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-          )
+          and ${activeReservationPredicate(sql)}
       `;
       const current = levels[0];
       if (
@@ -478,4 +506,27 @@ export class PostgresInventoryAuthoring implements InventoryAuthoring {
   async onModuleDestroy() {
     await this.#sql.end();
   }
+}
+
+function activeReservationPredicate(sql: Sql) {
+  return sql`
+    (
+      reservation.status = 'HELD_FOR_REVIEW'
+      or (
+        reservation.status = 'ACTIVE'
+        and greatest(
+          reservation.expires_at,
+          coalesce(reservation.hold_lease_until, reservation.expires_at)
+        ) > now()
+      )
+    )
+  `;
+}
+
+function reservedQuantity(sql: Sql) {
+  return sql`
+    coalesce(sum(line.quantity) filter (
+      where ${activeReservationPredicate(sql)}
+    ), 0)
+  `;
 }

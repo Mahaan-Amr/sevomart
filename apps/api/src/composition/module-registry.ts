@@ -159,7 +159,13 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "inventory",
     artifact: InventoryModule,
-    compose: () => InventoryModule,
+    compose: ({ environment, inventoryAuthoring, productRepository }) =>
+      InventoryModule.register(environment, {
+        repository: inventoryAuthoring,
+        products: productRepository,
+        createProductTransactionContext: (transaction) =>
+          createOpaqueProductTransactionContext(transaction as never),
+      }),
   },
   {
     owner: "orders",

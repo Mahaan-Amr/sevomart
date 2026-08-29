@@ -289,7 +289,7 @@ export class PostgresProductRepository implements ProductRepository {
             offerVersion: current.offerVersion,
             publicationVersion,
           },
-          inventory.onHand,
+          inventory.available,
         );
         await enqueueOutboxEvent(
           sql,
@@ -921,7 +921,9 @@ export class PostgresProductRepository implements ProductRepository {
     `;
     const inventory = await this.inventory.readMany(variantIds);
     const offerById = new Map(offers.map((row) => [row.variantId, Number(row.amount)]));
-    const inventoryById = new Map(inventory.map((row) => [row.variantId, row.onHand]));
+    const inventoryById = new Map(
+      inventory.map((row) => [row.variantId, row.available]),
+    );
     const variants = product.variants.map((variant) => ({
       ...variant,
       price: {
@@ -1058,7 +1060,7 @@ export class PostgresProductRepository implements ProductRepository {
     if (!inventory) {
       throw new Error("Published product inventory is missing");
     }
-    return toPublicProduct(row, inventory.onHand);
+    return toPublicProduct(row, inventory.available);
   }
 
   async #toView(row: ProductRow): Promise<SimpleProductView> {

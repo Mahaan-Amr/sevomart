@@ -1,0 +1,76 @@
+.page {
+  display: block;
+  min-height: 100dvh;
+  padding: 32px 24px;
+}
+
+.workspace {
+  width: min(100%, 760px);
+  margin: 0 auto;
+}
+
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace h1 {
+  margin-top: 4px;
+}
+
+.responsibilities {
+  display: grid;
+  margin-top: 24px;
+  gap: 12px;
+}
+
+.responsibility {
+  display: flex;
+  min-height: 76px;
+  padding: 16px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.responsibility span {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.responsibility small {
+  color: var(--color-muted);
+}
+
+.responsibility:hover {
+  box-shadow: var(--elevation-hover);
+}
+
+.responsibility:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 24px 16px;
+  }
+
+  .responsibility {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .responsibility {
+    transition: none;
+  }
+}

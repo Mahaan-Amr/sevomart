@@ -8,7 +8,7 @@ import {
 describe("conversations API proxy", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("forwards list cursors, the seller session and retry guidance", async () => {
+  it("forwards list cursors, the session and retry guidance without caching", async () => {
     const upstream = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ code: "IDEMPOTENCY_IN_PROGRESS" }), {
         status: 409,
@@ -33,6 +33,31 @@ describe("conversations API proxy", () => {
     );
     expect(response.headers.get("retry-after")).toBe("1");
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("forwards message idempotency and cursors", async () => {
+    const upstream = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ version: 1, items: [] }), {
+        headers: { "content-type": "application/json", "retry-after": "2" },
+      }),
+    );
+    vi.stubGlobal("fetch", upstream);
+    const conversationId = "7a30197b-85fb-4209-83e8-743ab3bea71c";
+
+    await proxyConversationsRequest(
+      new Request(
+        `http://sevo.test/api/conversations/${conversationId}/messages?cursor=older`,
+        { method: "POST", headers: { "idempotency-key": "send-message-01" } },
+      ),
+      [conversationId, "messages"],
+    );
+
+    expect(upstream).toHaveBeenCalledWith(
+      `http://127.0.0.1:3001/v1/conversations/${conversationId}/messages?cursor=older`,
+      expect.any(Object),
+    );
+    const init = upstream.mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get("idempotency-key")).toBe("send-message-01");
   });
 
   it("allows only canonical thread, message and attachment paths", async () => {

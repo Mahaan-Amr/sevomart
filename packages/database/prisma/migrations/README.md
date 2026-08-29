@@ -92,6 +92,15 @@ be safely applied when the constraint is already absent. The architecture checke
 tracks foreign-key additions and removals across the complete SQL migration history
 so a later migration cannot restore a cross-producer constraint.
 
+Issue 132 additively adds the inventory-owned idempotency scope, an optional
+private audit note and explicit operation plus previous/next revision fields for
+seller inventory adjustments. Existing adjustment rows are backfilled from their
+authoritative `revision` (`previous = revision - 1`, `next = revision`) without
+changing quantities, actors, reasons or timestamps; levels and reservations are
+unchanged. No compatibility window is required and deployment corrections use a
+forward migration. The 45-migration history was verified through both
+`docker compose up --build --wait` and `pnpm dev` startup on 2026-08-29.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

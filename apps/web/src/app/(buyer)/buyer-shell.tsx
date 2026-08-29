@@ -12,7 +12,7 @@ const destinations = [
   { href: "/", label: "کشف", ready: true },
   { href: "/following", label: "دنبال‌شده‌ها", ready: false },
   { href: "/orders", label: "سفارش‌ها", ready: false },
-  { href: "/conversations", label: "گفت‌وگوها", ready: false },
+  { href: "/conversations", label: "گفت‌وگوها", ready: true },
 ];
 
 export function BuyerShell({ children }: { children: ReactNode }) {
