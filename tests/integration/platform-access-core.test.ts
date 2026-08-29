@@ -5,8 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { createOpaquePlatformAccessTransactionContext } from "../../apps/api/src/modules/identity-access/composition";
-import { PostgresPlatformAccessRepository } from "../../apps/api/src/modules/identity-access/infrastructure/postgres-platform-access.repository";
-import { PlatformAccessError } from "../../apps/api/src/modules/identity-access/public";
+import {
+  PLATFORM_SENSITIVE_ACCESS,
+  PlatformAccessError,
+  type PlatformSensitiveAccess,
+} from "../../apps/api/src/modules/identity-access/public";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("platform responsibility and sensitive access API with PostgreSQL", () => {
@@ -34,6 +37,21 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     const server = app.getHttpAdapter().getInstance();
     const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
     const recipient = await seedAgent([]);
+
+    const malformedKey = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/responsibility-grants",
+      headers: {
+        ...accessHeaders(manager.token),
+        "idempotency-key": "not-a-uuid",
+      },
+      payload: {
+        recipientIdentityId: recipient.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        reason: "واگذاری مسئولیت بررسی پرداخت پرونده",
+      },
+    });
+    expect(malformedKey.statusCode).toBe(422);
 
     const selfGrant = await server.inject({
       method: "POST",
@@ -92,7 +110,7 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       where grant_id = ${granted.json<{ grantId: string }>().grantId}
     `;
     expect(permissions).toEqual([{ permission: "PAYMENT_OUTCOME_CHANGE" }]);
-    expect(audit).toHaveLength(1);
+    expect(audit).toHaveLength(2);
     await expect(
       sql`update identity_platform_access_audit set outcome = 'DENIED'`,
     ).rejects.toThrow(/append-only/);
@@ -213,6 +231,29 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       ttlMinutes: 30,
     };
 
+    const assigned = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/sensitive-grants",
+      headers: accessHeaders(manager.token),
+      payload: { ...requestPayload, recipientIdentityId: agent.identityId },
+    });
+    expect(assigned.statusCode).toBe(202);
+    expect(assigned.json()).toMatchObject({
+      status: "ACTIVE",
+      singleManagerException: true,
+    });
+    const assignmentSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const assignmentAudit = await assignmentSql<Array<{ action: string }>>`
+      select action from identity_platform_access_audit
+      where grant_id = ${assigned.json<{ grantId: string }>().grantId}
+      order by occurred_at, id
+    `;
+    await assignmentSql.end();
+    expect(assignmentAudit.map((entry) => entry.action).sort()).toEqual([
+      "GRANT_ACTIVATED",
+      "GRANT_REQUESTED",
+    ]);
+
     const overlong = await server.inject({
       method: "POST",
       url: "/v1/platform/access/sensitive-grants",
@@ -245,9 +286,7 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     expect(approved.statusCode).toBe(200);
     expect(approved.json()).toMatchObject({ status: "ACTIVE", revision: 2 });
 
-    const access = new PostgresPlatformAccessRepository(
-      apiTestEnvironment.DATABASE_URL,
-    );
+    const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     await sql.begin((transaction) =>
       access.authorizeSensitiveAction(
@@ -264,6 +303,39 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
         },
       ),
     );
+
+    await sql`
+      update identity_platform_access_grants
+      set expires_at = now() - interval '1 second'
+      where id = ${grantId}
+    `;
+    await expect(
+      sql.begin((transaction) =>
+        access.authorizeSensitiveAction(
+          createOpaquePlatformAccessTransactionContext(transaction),
+          {
+            grantId,
+            actorIdentityId: agent.identityId,
+            responsibility: "PAYMENT_REVIEW",
+            resourceType: "PAYMENT_REVIEW",
+            resourceId,
+            action: "REVEAL_MINIMUM",
+            reason: "تلاش برای مشاهده پس از پایان مهلت دسترسی",
+            correlationId: randomUUID(),
+          },
+        ),
+      ),
+    ).rejects.toMatchObject<Partial<PlatformAccessError>>({
+      code: "SENSITIVE_SCOPE_REQUIRED",
+    });
+    const expired = await sql<Array<{ status: string; eventCount: number }>>`
+      select g.status,
+        (select count(*)::int from platform_outbox_events e
+         where e.aggregate_id = g.id
+           and e.event_type = 'SensitiveAccessExpired.v1') as "eventCount"
+      from identity_platform_access_grants g where g.id = ${grantId}
+    `;
+    expect(expired).toEqual([{ status: "EXPIRED", eventCount: 1 }]);
 
     const revoked = await server.inject({
       method: "POST",
@@ -300,14 +372,17 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       select action from identity_platform_access_audit
       where grant_id = ${grantId} order by occurred_at, id
     `;
-    expect(audit.map((entry) => entry.action)).toEqual([
-      "GRANT_REQUESTED",
-      "GRANT_APPROVED",
-      "SENSITIVE_FIELD_REVEALED",
-      "GRANT_REVOKED",
-    ]);
+    expect(audit.map((entry) => entry.action).sort()).toEqual(
+      [
+        "GRANT_REQUESTED",
+        "GRANT_APPROVED",
+        "GRANT_ACTIVATED",
+        "SENSITIVE_FIELD_REVEALED",
+        "GRANT_EXPIRED",
+        "GRANT_REVOKED",
+      ].sort(),
+    );
     await sql.end();
-    await access.onModuleDestroy();
   });
 });
 

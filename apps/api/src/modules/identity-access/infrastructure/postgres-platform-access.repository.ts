@@ -1,14 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  approveResponsibilityGrantCommandContract,
+  approveSensitiveAccessCommandContract,
   platformPermissionGrantedV1Contract,
   platformPermissionGrantRequestedV1Contract,
   platformPermissionRevokedV1Contract,
   responsibilityGrantViewContract,
+  requestResponsibilityGrantCommandContract,
+  requestSensitiveAccessCommandContract,
+  revokePlatformAccessCommandContract,
   sensitiveAccessGrantedV1Contract,
   sensitiveAccessGrantViewContract,
   sensitiveAccessRequestedV1Contract,
   sensitiveAccessRevokedV1Contract,
+  sensitiveAccessExpiredV1Contract,
   platformAccessGrantContract,
   platformAccessAuditEntryContract,
   type PlatformAccessGrant,
@@ -116,6 +122,15 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       const now = new Date();
       const grantId = randomUUID();
       const singleManagerException = controlMode === "SINGLE_MANAGER_EXCEPTION";
+      requestResponsibilityGrantCommandContract.parse({
+        requesterIdentityId: session.identityId,
+        recipientIdentityId: input.recipientIdentityId,
+        responsibility: input.responsibility,
+        reason: input.reason,
+        activeAccessManagerCount: activeManagerCount,
+        controlMode,
+        strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
+      });
 
       await sql`
         insert into identity_platform_access_grants
@@ -145,6 +160,19 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         correlationId: context.correlationId,
         occurredAt: now,
       });
+      if (status === "ACTIVE") {
+        await insertAudit(sql, {
+          grantId,
+          action: "GRANT_ACTIVATED",
+          actorIdentityId: session.identityId,
+          subjectIdentityId: input.recipientIdentityId,
+          reasonCode: "RESPONSIBILITY_GRANTED",
+          reason: "فعال‌سازی مجوز مسئولیت پس از واگذاری",
+          singleManagerException,
+          correlationId: context.correlationId,
+          occurredAt: now,
+        });
+      }
 
       const view = responsibilityGrantViewContract.parse({
         grantId,
@@ -236,9 +264,19 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       ) {
         throw new PlatformAccessError("SELF_APPROVAL_FORBIDDEN");
       }
-      if ((await countActiveAccessManagers(sql)) < 2) {
+      const activeManagerCount = await countActiveAccessManagers(sql);
+      if (activeManagerCount < 2) {
         throw new PlatformAccessError("SECOND_MANAGER_REQUIRED");
       }
+      approveResponsibilityGrantCommandContract.parse({
+        grantId,
+        requesterIdentityId: grant.requestedByIdentityId,
+        recipientIdentityId: grant.subjectIdentityId,
+        approverIdentityId: session.identityId,
+        responsibility: grant.responsibility,
+        activeAccessManagerCount: activeManagerCount,
+        strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
+      });
       const occurredAt = new Date();
       const revision = grant.revision + 1;
       await sql`
@@ -259,6 +297,17 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         subjectIdentityId: grant.subjectIdentityId,
         reasonCode: "RESPONSIBILITY_GRANTED",
         reason: "تأیید مستقل واگذاری مسئولیت پرخطر",
+        singleManagerException: false,
+        correlationId: context.correlationId,
+        occurredAt,
+      });
+      await insertAudit(sql, {
+        grantId,
+        action: "GRANT_ACTIVATED",
+        actorIdentityId: session.identityId,
+        subjectIdentityId: grant.subjectIdentityId,
+        reasonCode: "RESPONSIBILITY_GRANTED",
+        reason: "فعال‌سازی مجوز مسئولیت پس از تأیید مستقل",
         singleManagerException: false,
         correlationId: context.correlationId,
         occurredAt,
@@ -336,6 +385,12 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         );
         return view;
       }
+      revokePlatformAccessCommandContract.parse({
+        grantId,
+        actorIdentityId: session.identityId,
+        reason: input.reason,
+        expectedRevision: input.expectedRevision,
+      });
       const occurredAt = new Date();
       const revision = grant.revision + 1;
       await sql`
@@ -438,6 +493,19 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       const expiresAt = new Date(now.getTime() + input.ttlMinutes * 60_000);
       const grantId = randomUUID();
       const singleManagerException = controlMode === "SINGLE_MANAGER_EXCEPTION";
+      requestSensitiveAccessCommandContract.parse({
+        requesterIdentityId: session.identityId,
+        recipientIdentityId: subjectIdentityId,
+        responsibility: input.responsibility,
+        purposeCode: input.purposeCode,
+        reason: input.reason,
+        scope: input.scope,
+        ttlMinutes: input.ttlMinutes,
+        requestMode: managerAssignment ? "MANAGER_ASSIGNMENT" : "AGENT_REQUEST",
+        activeAccessManagerCount: managerCount,
+        controlMode,
+        strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
+      });
       await sql`
         insert into identity_platform_access_grants
           (id, grant_kind, subject_identity_id, requested_by_identity_id,
@@ -461,6 +529,20 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         correlationId: context.correlationId,
         occurredAt: now,
       });
+      if (status === "ACTIVE") {
+        await insertAudit(sql, {
+          grantId,
+          action: "GRANT_ACTIVATED",
+          actorIdentityId: session.identityId,
+          subjectIdentityId,
+          scope: input.scope,
+          reasonCode: "CASE_ACCESS_APPROVED",
+          reason: "فعال‌سازی مستقیم دسترسی محدود به پرونده",
+          singleManagerException,
+          correlationId: context.correlationId,
+          occurredAt: now,
+        });
+      }
       const eventBase = {
         version: 1,
         eventId: randomUUID(),
@@ -563,6 +645,15 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         throw new PlatformAccessError("SELF_APPROVAL_FORBIDDEN");
       }
       await requireResponsibility(sql, grant.subjectIdentityId, grant.responsibility);
+      const activeManagerCount = await countActiveAccessManagers(sql);
+      approveSensitiveAccessCommandContract.parse({
+        grantId,
+        requesterIdentityId: grant.requestedByIdentityId,
+        recipientIdentityId: grant.subjectIdentityId,
+        approverIdentityId: session.identityId,
+        activeAccessManagerCount: activeManagerCount,
+        strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
+      });
       const occurredAt = new Date();
       const revision = grant.revision + 1;
       await sql`
@@ -579,6 +670,18 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         scope: grant.scope,
         reasonCode: "CASE_ACCESS_APPROVED",
         reason: "تأیید دسترسی محدود به پرونده مشخص",
+        singleManagerException: false,
+        correlationId: context.correlationId,
+        occurredAt,
+      });
+      await insertAudit(sql, {
+        grantId,
+        action: "GRANT_ACTIVATED",
+        actorIdentityId: session.identityId,
+        subjectIdentityId: grant.subjectIdentityId,
+        scope: grant.scope,
+        reasonCode: "CASE_ACCESS_APPROVED",
+        reason: "فعال‌سازی دسترسی محدود پس از تأیید مستقل",
         singleManagerException: false,
         correlationId: context.correlationId,
         occurredAt,
@@ -640,6 +743,12 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         );
         return view;
       }
+      revokePlatformAccessCommandContract.parse({
+        grantId,
+        actorIdentityId: session.identityId,
+        reason: input.reason,
+        expectedRevision: input.expectedRevision,
+      });
       const occurredAt = new Date();
       const revision = grant.revision + 1;
       await sql`
@@ -697,6 +806,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       correlationId: string;
     },
   ): Promise<void> {
+    await this.#expireSensitiveGrantIfDue(input.grantId);
     const sql = readOpaquePlatformAccessTransaction(transaction);
     const grant = await readSensitiveGrant(sql, input.grantId, "share");
     if (
@@ -726,6 +836,46 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       singleManagerException: grant.singleManagerException,
       correlationId: input.correlationId,
       occurredAt: new Date(),
+    });
+  }
+
+  async #expireSensitiveGrantIfDue(grantId: string): Promise<void> {
+    await this.#sql.begin(async (sql) => {
+      const grant = await readSensitiveGrant(sql, grantId, "update");
+      const occurredAt = new Date();
+      if (!grant || grant.status !== "ACTIVE" || grant.expiresAt > occurredAt) return;
+      const revision = grant.revision + 1;
+      const correlationId = randomUUID();
+      const expiredGrant: SensitiveGrantRow = {
+        ...grant,
+        status: "EXPIRED",
+        revision,
+      };
+      await sql`
+        update identity_platform_access_grants
+        set status = 'EXPIRED', revision = ${revision}
+        where id = ${grantId}
+      `;
+      await insertAudit(sql, {
+        grantId,
+        action: "GRANT_EXPIRED",
+        actorIdentityId: grant.subjectIdentityId,
+        subjectIdentityId: grant.subjectIdentityId,
+        scope: grant.scope,
+        reasonCode: "TTL_EXPIRED",
+        reason: "پایان خودکار مهلت اجازه دسترسی حساس",
+        singleManagerException: grant.singleManagerException,
+        correlationId,
+        occurredAt,
+      });
+      await enqueueSensitiveEvent(sql, {
+        eventType: "SensitiveAccessExpired.v1",
+        status: "EXPIRED",
+        grant: expiredGrant,
+        actorIdentityId: null,
+        correlationId,
+        occurredAt,
+      });
     });
   }
 
@@ -815,10 +965,13 @@ function sensitiveView(grant: SensitiveGrantRow): PlatformAccessGrant {
 async function enqueueSensitiveEvent(
   sql: Sql,
   input: {
-    eventType: "SensitiveAccessGranted.v1" | "SensitiveAccessRevoked.v1";
-    status: "ACTIVE" | "REVOKED";
+    eventType:
+      | "SensitiveAccessGranted.v1"
+      | "SensitiveAccessRevoked.v1"
+      | "SensitiveAccessExpired.v1";
+    status: "ACTIVE" | "REVOKED" | "EXPIRED";
     grant: SensitiveGrantRow;
-    actorIdentityId: string;
+    actorIdentityId: string | null;
     correlationId: string;
     occurredAt: Date;
   },
@@ -832,10 +985,12 @@ async function enqueueSensitiveEvent(
     occurredAt: input.occurredAt.toISOString(),
     correlationId: input.correlationId,
     causationId: input.correlationId,
-    actor: {
-      type: "IDENTITY" as const,
-      id: identityIdContract.parse(input.actorIdentityId),
-    },
+    actor: input.actorIdentityId
+      ? {
+          type: "IDENTITY" as const,
+          id: identityIdContract.parse(input.actorIdentityId),
+        }
+      : { type: "SYSTEM" as const },
     payload: {
       grantKind: "SENSITIVE_ACCESS" as const,
       grantId: input.grant.grantId,
@@ -849,8 +1004,10 @@ async function enqueueSensitiveEvent(
   };
   if (input.eventType === "SensitiveAccessGranted.v1") {
     await enqueueOutboxEvent(sql, sensitiveAccessGrantedV1Contract.parse(event));
-  } else {
+  } else if (input.eventType === "SensitiveAccessRevoked.v1") {
     await enqueueOutboxEvent(sql, sensitiveAccessRevokedV1Contract.parse(event));
+  } else {
+    await enqueueOutboxEvent(sql, sensitiveAccessExpiredV1Contract.parse(event));
   }
 }
 
@@ -895,14 +1052,13 @@ async function authorizePlatformSession(
 }
 
 async function requireAccessAdministrator(sql: Sql, identityId: string): Promise<void> {
-  const rows = await sql<Array<{ allowed: boolean }>>`
-    select exists (
-      select 1 from identity_platform_permission_grants p
-      where p.identity_id = ${identityId}
-        and p.permission = 'ACCESS_ADMINISTRATION' and p.revoked_at is null
-    ) as allowed
+  const rows = await sql<Array<{ id: string }>>`
+    select p.id from identity_platform_permission_grants p
+    where p.identity_id = ${identityId}
+      and p.permission = 'ACCESS_ADMINISTRATION' and p.revoked_at is null
+    for share
   `;
-  if (!rows[0]?.allowed) throw new PlatformPermissionRequiredError();
+  if (!rows[0]) throw new PlatformPermissionRequiredError();
 }
 
 async function requireResponsibility(
@@ -910,15 +1066,14 @@ async function requireResponsibility(
   identityId: string,
   responsibility: Responsibility,
 ): Promise<void> {
-  const rows = await sql<Array<{ allowed: boolean }>>`
-    select exists (
-      select 1 from identity_platform_permission_grants p
-      join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
-      where p.identity_id = ${identityId} and p.permission = ${responsibility}
-        and p.revoked_at is null
-    ) as allowed
+  const rows = await sql<Array<{ id: string }>>`
+    select p.id from identity_platform_permission_grants p
+    join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
+    where p.identity_id = ${identityId} and p.permission = ${responsibility}
+      and p.revoked_at is null
+    for share of p
   `;
-  if (!rows[0]?.allowed) throw new PlatformAccessError("RESPONSIBILITY_REQUIRED");
+  if (!rows[0]) throw new PlatformAccessError("RESPONSIBILITY_REQUIRED");
 }
 
 async function countActiveAccessManagers(sql: Sql): Promise<number> {

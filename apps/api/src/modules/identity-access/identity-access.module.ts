@@ -26,6 +26,7 @@ import { PostgresPlatformAgentSessionAuthorizer } from "./infrastructure/postgre
 import { PostgresSellerApplicationRepository } from "./infrastructure/postgres-seller-application.repository";
 import {
   IDENTITY_SESSION_READER,
+  PLATFORM_SENSITIVE_ACCESS,
   SELLER_ACCESS_READ,
   type IdentityAccessRepository,
   type OtpProvider,
@@ -140,8 +141,9 @@ export class IdentityAccessModule {
           provide: PLATFORM_ACCESS_CORE,
           useValue: new PostgresPlatformAccessRepository(environment.DATABASE_URL),
         },
+        { provide: PLATFORM_SENSITIVE_ACCESS, useExisting: PLATFORM_ACCESS_CORE },
       ],
-      exports: [IDENTITY_SESSION_READER, SELLER_ACCESS_READ],
+      exports: [IDENTITY_SESSION_READER, SELLER_ACCESS_READ, PLATFORM_SENSITIVE_ACCESS],
     };
   }
 }

@@ -16,6 +16,7 @@ import {
   platformAccessRevocationInputContract,
   responsibilityGrantRequestInputContract,
   sensitiveAccessRequestInputContract,
+  idempotencyKeyContract,
 } from "@sevo/contracts/identity-access/v1";
 import type { FastifyRequest } from "fastify";
 
@@ -43,30 +44,13 @@ export class PlatformAccessController {
     @Req() request: FastifyRequest,
   ) {
     const input = responsibilityGrantRequestInputContract.safeParse(body);
-    if (!input.success || !idempotencyKey) {
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!input.success || !commandKey.success) {
       throw accessHttpError("VALIDATION_ERROR", request.id, 422);
     }
-    try {
-      return await this.access.requestResponsibility(
-        {
-          sessionToken: readPlatformSessionToken(request) ?? "",
-          correlationId: request.id,
-          idempotencyKey,
-        },
-        input.data,
-      );
-    } catch (error) {
-      if (error instanceof PlatformAgentSessionUnauthorizedError) {
-        throw accessHttpError("UNAUTHORIZED", request.id, 401);
-      }
-      if (error instanceof PlatformPermissionRequiredError) {
-        throw accessHttpError("RESPONSIBILITY_REQUIRED", request.id, 403);
-      }
-      if (error instanceof PlatformAccessError) {
-        throw accessHttpError(error.code, request.id, accessStatus(error.code));
-      }
-      throw error;
-    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.requestResponsibility(context, input.data),
+    );
   }
 
   @Post("responsibility-grants/:grantId/approval")
@@ -79,10 +63,11 @@ export class PlatformAccessController {
   ) {
     const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
     const input = platformAccessApprovalInputContract.safeParse(body);
-    if (!grantId.success || !input.success || !idempotencyKey) {
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
       throw accessHttpError("VALIDATION_ERROR", request.id, 422);
     }
-    return this.handle(request, idempotencyKey, (context) =>
+    return this.handle(request, commandKey.data, (context) =>
       this.access.approveResponsibility(
         context,
         grantId.data,
@@ -101,10 +86,11 @@ export class PlatformAccessController {
   ) {
     const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
     const input = platformAccessRevocationInputContract.safeParse(body);
-    if (!grantId.success || !input.success || !idempotencyKey) {
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
       throw accessHttpError("VALIDATION_ERROR", request.id, 422);
     }
-    return this.handle(request, idempotencyKey, (context) =>
+    return this.handle(request, commandKey.data, (context) =>
       this.access.revokeResponsibility(context, grantId.data, input.data),
     );
   }
@@ -117,10 +103,11 @@ export class PlatformAccessController {
     @Req() request: FastifyRequest,
   ) {
     const input = sensitiveAccessRequestInputContract.safeParse(body);
-    if (!input.success || !idempotencyKey) {
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!input.success || !commandKey.success) {
       throw accessHttpError("VALIDATION_ERROR", request.id, 422);
     }
-    return this.handle(request, idempotencyKey, (context) =>
+    return this.handle(request, commandKey.data, (context) =>
       this.access.requestSensitiveAccess(context, input.data),
     );
   }
@@ -135,10 +122,11 @@ export class PlatformAccessController {
   ) {
     const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
     const input = platformAccessApprovalInputContract.safeParse(body);
-    if (!grantId.success || !input.success || !idempotencyKey) {
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
       throw accessHttpError("VALIDATION_ERROR", request.id, 422);
     }
-    return this.handle(request, idempotencyKey, (context) =>
+    return this.handle(request, commandKey.data, (context) =>
       this.access.approveSensitiveAccess(
         context,
         grantId.data,
@@ -157,10 +145,11 @@ export class PlatformAccessController {
   ) {
     const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
     const input = platformAccessRevocationInputContract.safeParse(body);
-    if (!grantId.success || !input.success || !idempotencyKey) {
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
       throw accessHttpError("VALIDATION_ERROR", request.id, 422);
     }
-    return this.handle(request, idempotencyKey, (context) =>
+    return this.handle(request, commandKey.data, (context) =>
       this.access.revokeSensitiveAccess(context, grantId.data, input.data),
     );
   }
@@ -209,17 +198,35 @@ function accessStatus(code: PlatformAccessError["code"]): number {
 }
 
 function accessHttpError(code: string, correlationId: string, status: number) {
+  const messages: Record<string, string> = {
+    SELF_GRANT_FORBIDDEN:
+      "مدیر دسترسی نمی‌تواند این مسئولیت را به خودش واگذار کند؛ دریافت‌کننده دیگری را انتخاب کنید.",
+    SELF_APPROVAL_FORBIDDEN:
+      "درخواست‌کننده یا دریافت‌کننده نمی‌تواند این درخواست را تأیید کند؛ مدیر مستقل دیگری باید آن را بررسی کند.",
+    RESPONSIBILITY_REQUIRED:
+      "مسئولیت لازم برای این اقدام فعال نیست؛ با مدیر دسترسی پلتفرم پیگیری کنید.",
+    SENSITIVE_SCOPE_REQUIRED:
+      "اجازه زنده و هم‌محدوده برای این پرونده وجود ندارد؛ دسترسی تازه درخواست کنید.",
+    SECOND_MANAGER_REQUIRED: "برای این واگذاری، تأیید یک مدیر دسترسی دیگر لازم است.",
+    STRONG_AUTHENTICATION_REQUIRED:
+      "برای ادامه، دوباره با رمز یک‌بارمصرف وارد فضای کار پلتفرم شوید.",
+    STRONG_AUTHENTICATION_STALE:
+      "تأیید ورود شما قدیمی شده است؛ دوباره با رمز یک‌بارمصرف وارد شوید.",
+    ACCESS_GRANT_NOT_FOUND: "درخواست دسترسی پیدا نشد؛ فهرست درخواست‌ها را تازه کنید.",
+    ACCESS_GRANT_REVISION_CONFLICT:
+      "این درخواست تغییر کرده است؛ صفحه را تازه کنید و دوباره بررسی کنید.",
+    INVALID_ACCESS_TRANSITION:
+      "این درخواست دیگر در وضعیت قابل انجام نیست؛ وضعیت تازه را ببینید.",
+    ACCESS_ALREADY_REVOKED: "این دسترسی پیش‌تر لغو شده و اکنون قابل استفاده نیست.",
+    IDEMPOTENCY_CONFLICT:
+      "این شناسه قبلاً برای درخواست دیگری استفاده شده است؛ با شناسه تازه دوباره تلاش کنید.",
+    UNAUTHORIZED: "نشست عامل پلتفرم معتبر نیست؛ دوباره وارد شوید.",
+    VALIDATION_ERROR: "اطلاعات درخواست معتبر نیست؛ مقدارهای واردشده را بررسی کنید.",
+  };
   return new HttpException(
     {
       code,
-      message:
-        code === "SELF_GRANT_FORBIDDEN"
-          ? "مدیر دسترسی نمی‌تواند این مسئولیت را به خودش واگذار کند."
-          : code === "RESPONSIBILITY_REQUIRED"
-            ? "مسئولیت لازم برای این اقدام فعال نیست."
-            : code === "UNAUTHORIZED"
-              ? "نشست عامل پلتفرم معتبر نیست."
-              : "درخواست دسترسی قابل انجام نیست.",
+      message: messages[code] ?? "درخواست دسترسی قابل انجام نیست؛ دوباره تلاش کنید.",
       correlationId,
     },
     status,

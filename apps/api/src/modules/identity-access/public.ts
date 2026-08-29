@@ -182,7 +182,25 @@ export type OpaquePlatformAccessTransactionContext = Readonly<{
   kind: "opaque-platform-access-transaction";
 }>;
 
-export interface PlatformAccessCore {
+export type PlatformSensitiveAction = {
+  grantId: string;
+  actorIdentityId: string;
+  responsibility: Responsibility;
+  resourceType: PlatformAccessScope["resourceType"];
+  resourceId: string;
+  action: PlatformAccessScope["allowedActions"][number];
+  reason: string;
+  correlationId: string;
+};
+
+export interface PlatformSensitiveAccess {
+  authorizeSensitiveAction(
+    transaction: OpaquePlatformAccessTransactionContext,
+    input: PlatformSensitiveAction,
+  ): Promise<void>;
+}
+
+export interface PlatformAccessCore extends PlatformSensitiveAccess {
   requestResponsibility(
     context: PlatformAccessCommandContext,
     input: {
@@ -223,19 +241,6 @@ export interface PlatformAccessCore {
     grantId: string,
     input: { expectedRevision: number; reason: string },
   ): Promise<PlatformAccessGrant>;
-  authorizeSensitiveAction(
-    transaction: OpaquePlatformAccessTransactionContext,
-    input: {
-      grantId: string;
-      actorIdentityId: string;
-      responsibility: Responsibility;
-      resourceType: PlatformAccessScope["resourceType"];
-      resourceId: string;
-      action: PlatformAccessScope["allowedActions"][number];
-      reason: string;
-      correlationId: string;
-    },
-  ): Promise<void>;
 }
 
 export type SellerApplicationReviewContext = SellerApplicationCommandContext & {
