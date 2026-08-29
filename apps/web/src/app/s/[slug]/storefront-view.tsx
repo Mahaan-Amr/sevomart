@@ -7,6 +7,7 @@ import type {
 import type { CSSProperties, ReactNode } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
+import { newConversationHref } from "../../../lib/conversation-navigation";
 import styles from "./storefront.module.css";
 import { StoreFollowControl } from "./store-follow-control";
 
@@ -166,6 +167,15 @@ export function ReadyStorefront({
             autoFollow={autoFollow}
           />
         ) : null}
+        <Link
+          className={styles.conversation}
+          href={newConversationHref(
+            { kind: "STORE", storeId: store.id },
+            `/s/${store.slug}`,
+          )}
+        >
+          گفت‌وگو با فروشگاه
+        </Link>
       </header>
       {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">

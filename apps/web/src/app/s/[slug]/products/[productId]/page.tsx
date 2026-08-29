@@ -7,6 +7,7 @@ import {
 import { notFound } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
+import { newProductConversationHref } from "../../../../../lib/conversation-navigation";
 import { AddToCart } from "./add-to-cart";
 import styles from "./product-public.module.css";
 
@@ -55,6 +56,16 @@ export default async function PublicProductPage({
             </ul>
           ) : null}
           <AddToCart variants={cartVariants(product)} />
+          <a
+            className={styles.conversation}
+            href={newProductConversationHref(
+              slug,
+              product.productId,
+              `/s/${slug}/products/${product.productId}`,
+            )}
+          >
+            پرسیدن درباره این کالا
+          </a>
           <p className={styles.payment}>
             روش پرداخت و شرایط مرجوعی پیش از ثبت سفارش نمایش داده می‌شود.
           </p>

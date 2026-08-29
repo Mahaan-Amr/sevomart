@@ -1,0 +1,123 @@
+.page {
+  display: grid;
+  width: min(100%, 560px);
+  margin-inline: auto;
+  gap: 16px;
+}
+
+.heading p,
+.heading h1,
+.state p,
+.state strong,
+.loading {
+  margin: 0;
+}
+
+.heading p {
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.heading h1 {
+  color: var(--color-text);
+  font-size: 24px;
+  line-height: 1.65;
+}
+
+.state {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 24px;
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow: inset 4px 4px 10px var(--shadow-neutral-soft);
+}
+
+.state strong {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.state p,
+.loading {
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+
+.state button,
+.state a,
+.more {
+  min-height: 40px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  padding: 8px 16px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list a {
+  display: grid;
+  justify-content: stretch;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.list span {
+  font-weight: 600;
+}
+
+.list time {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.more {
+  justify-self: center;
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.state button:focus-visible,
+.state a:focus-visible,
+.list a:focus-visible,
+.more:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .state button,
+  .state a,
+  .list a,
+  .more {
+    transition:
+      transform 180ms cubic-bezier(0.22, 0.8, 0.28, 1),
+      box-shadow 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
+  }
+
+  .state button:hover,
+  .state a:hover,
+  .list a:hover,
+  .more:hover {
+    transform: translateY(-2px);
+  }
+}

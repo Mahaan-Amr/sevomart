@@ -83,6 +83,10 @@ test("a guest reads a published empty storefront from the real API", async ({
   await expect(page.getByText("تسویه مستقیم")).toBeVisible();
   await expect(page.getByText(/تأیید آزمایشی/)).toBeVisible();
   await expect(page.getByText("ساخته‌شده با سوو")).toBeVisible();
+  await expect(page.getByRole("link", { name: "گفت‌وگو با فروشگاه" })).toHaveAttribute(
+    "href",
+    /\/conversations\/new\?kind=STORE/,
+  );
   expect(externalRequests).toEqual([]);
 });
 
@@ -146,6 +150,8 @@ test("keyboard order, focus, and interactive targets stay usable", async ({ page
   await expect(page.locator("main")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "دنبال‌کردن فروشگاه" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "گفت‌وگو با فروشگاه" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "رفتن به صفحه اصلی سوو" })).toBeFocused();
 
