@@ -4,6 +4,7 @@ import {
   publishPurchaseExperienceInputContract,
   publishSalesContentInputContract,
 } from "@sevo/contracts/content/v1";
+import { orderItemIdContract } from "@sevo/contracts/orders/v1";
 import {
   identityIdContract,
   productIdContract,
@@ -17,11 +18,15 @@ import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
-import { PostgresContentRepository } from "../../apps/api/src/modules/content/composition";
+import {
+  createContentMediaRead,
+  PostgresContentRepository,
+} from "../../apps/api/src/modules/content/composition";
 import {
   MEDIA_STORAGE,
   type MediaStorage,
 } from "../../apps/api/src/modules/media/public";
+import { createPaidOrderItemFixture } from "../../apps/api/src/modules/orders/testing/paid-order-item.fixture";
 import { projectContentProductState } from "../../apps/worker/src/modules/content/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
@@ -51,6 +56,7 @@ describe("content producer persistence", () => {
     const server = app.getHttpAdapter().getInstance();
     const storage = app.get<MediaStorage>(MEDIA_STORAGE);
     const mediaId = "40000000-0000-4000-8000-000000000091";
+    const attachmentId = "40000000-0000-4000-8000-000000000092";
     try {
       await storage.put({
         key: mediaId,
@@ -73,6 +79,31 @@ describe("content producer persistence", () => {
         ownerSellerId: actorId,
         visibility: "PRIVATE",
       });
+      await storage.put({
+        key: attachmentId,
+        purpose: "CONVERSATION_ATTACHMENT",
+        contentType: "image/png",
+        bytes: Uint8Array.from([1]),
+        checksum: "b".repeat(64),
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: `media/${attachmentId}/variants/attachment-preview.webp`,
+            name: "attachment-preview",
+            contentType: "image/webp",
+            bytes: Uint8Array.from([2]),
+            width: 1,
+            height: 1,
+          },
+        ],
+        ownerSellerId: actorId,
+        ownerReferenceId: randomUUID(),
+        visibility: "PRIVATE",
+      });
+      await expect(
+        createContentMediaRead(storage).readOwnedKind(attachmentId, actorId),
+      ).resolves.toBeUndefined();
       const input = publishSalesContentInputContract.parse({
         storeId,
         media: { mediaId, kind: "IMAGE" },
@@ -168,13 +199,12 @@ describe("content producer persistence", () => {
   it("publishes one purchase experience through HTTP for the buyer's paid order item", async () => {
     const app = await createApiApp(apiTestEnvironment);
     const server = app.getHttpAdapter().getInstance();
-    const cartId = "91000000-0000-4000-8000-000000000091";
-    const checkoutId = "92000000-0000-4000-8000-000000000091";
-    const orderId = "93000000-0000-4000-8000-000000000091";
-    const orderItemId = "94000000-0000-4000-8000-000000000091";
-    const variantId = "95000000-0000-4000-8000-000000000091";
+    const orderItemId = orderItemIdContract.parse(
+      "94000000-0000-4000-8000-000000000091",
+    );
     let buyerId = "";
     let experienceId = "";
+    let paidOrder: Awaited<ReturnType<typeof createPaidOrderItemFixture>> | undefined;
     try {
       const requested = await server.inject({
         method: "POST",
@@ -195,35 +225,12 @@ describe("content producer persistence", () => {
         headers: { cookie },
       });
       buyerId = session.json().actor.identityId;
-      await sql`
-        insert into order_carts
-          (id, store_id, identity_id, status, revision, expires_at)
-        values (${cartId}, ${storeId}, ${buyerId}, 'CONVERTED', 1,
-          now() + interval '1 day')
-      `;
-      await sql`
-        insert into order_checkout_preparations
-          (checkout_revision, identity_id, cart_id, cart_revision,
-           shipping_method_id, shipping_revision, policy_revision, snapshot, expires_at)
-        values (${checkoutId}, ${buyerId}, ${cartId}, 1,
-          '96000000-0000-4000-8000-000000000091', 1, 1, ${sql.json({})},
-          now() + interval '1 day')
-      `;
-      await sql`
-        insert into order_orders
-          (id, identity_id, store_id, checkout_revision, reservation_id, status,
-           total_amount, currency, reservation_expires_at, review_snapshot, paid_at)
-        values (${orderId}, ${buyerId}, ${storeId}, ${checkoutId},
-          '97000000-0000-4000-8000-000000000091', 'PAID', 1000, 'IRR',
-          now() + interval '1 day', ${sql.json({})}, now())
-      `;
-      await sql`
-        insert into order_items
-          (id, order_id, variant_id, product_id, name, quantity,
-           unit_price_amount, publication_version)
-        values (${orderItemId}, ${orderId}, ${variantId}, ${productId},
-          'کالای تأییدشده', 1, 1000, 1)
-      `;
+      paidOrder = await createPaidOrderItemFixture(apiTestEnvironment.DATABASE_URL, {
+        buyerId: identityIdContract.parse(buyerId),
+        storeId,
+        productId,
+        orderItemId,
+      });
       const payload = {
         buyerId,
         orderItemId,
@@ -257,10 +264,7 @@ describe("content producer persistence", () => {
         await sql`delete from content_idempotency_records where actor_id = ${buyerId}`;
         await sql`delete from content_purchase_experiences where buyer_identity_id = ${buyerId}`;
       }
-      await sql`delete from order_items where order_id = ${orderId}`;
-      await sql`delete from order_orders where id = ${orderId}`;
-      await sql`delete from order_checkout_preparations where checkout_revision = ${checkoutId}`;
-      await sql`delete from order_carts where id = ${cartId}`;
+      await paidOrder?.cleanup();
       await app.close();
     }
   });

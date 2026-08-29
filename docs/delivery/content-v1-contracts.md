@@ -77,7 +77,7 @@ contract testها حداقل یک کالای یکتا، هم‌فروشگاهی 
 artifact نسخه‌دار v1 ساخته می‌شود.
 
 نتیجه نهایی محلی اصلاح بازبینی در ۲۰۲۶-۰۸-۲۹: format، lint و architecture،
-typecheck و build سبزند؛ ۱۲۸ unit، ۱۴۱ contract و ۱۶۴ integration سبزند و
-integration همه ۴۶ migration موجود را از صفر اعمال کرد. مسیر native با healthcheck
+typecheck و build سبزند؛ ۱۴۱ unit، ۱۴۸ contract و ۱۶۶ integration سبزند و
+integration همه ۴۷ migration موجود را از صفر اعمال کرد. مسیر native با healthcheck
 هر سه برنامه و مسیر رسمی Compose با build چهار image، migrate تازه و healthcheck
 همه سرویس‌ها سبز شدند.

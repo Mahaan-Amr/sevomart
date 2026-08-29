@@ -3,6 +3,7 @@ import type { RuntimeEnvironment } from "@sevo/config";
 
 import { ConversationsModule } from "../modules/conversations/composition";
 import {
+  createOrderPurchaseEligibilityRead,
   ContentModule,
   PostgresContentRepository,
 } from "../modules/content/composition";
@@ -247,10 +248,7 @@ export const canonicalApiModuleRegistry: readonly {
     }) =>
       ContentModule.register(environment, {
         products: productRepository,
-        purchases: {
-          readEligibility: (input) =>
-            checkoutRepository.readPurchaseExperienceEligibility(input),
-        },
+        purchases: createOrderPurchaseEligibilityRead(checkoutRepository),
         repository: contentRepository,
       }),
   },
