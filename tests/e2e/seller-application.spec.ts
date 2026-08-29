@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import postgres from "postgres";
 
 import {
   assertMinimumContrast,
@@ -199,18 +200,42 @@ test("a legacy store draft loads in the existing form and saves with its revisio
     }),
   );
 
-  await page.goto("/seller/login?returnTo=%2Fseller%2Fstore");
+  await page.goto("/seller/login?returnTo=%2Fseller%2Fstore%2Fsetup");
   await page.getByLabel("شماره موبایل").fill(mobile);
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await page.getByRole("link", { name: "ادامه کار" }).click();
+  const continueLink = page.getByRole("link", { name: "ادامه کار" });
+  await expect(continueLink).toBeVisible();
+
+  const databaseUrl =
+    process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    const identities = await sql<Array<{ identityId: string }>>`
+      select identity_id as "identityId"
+      from identity_login_methods
+      where mobile = ${mobile}
+    `;
+    const identityId = identities[0]?.identityId;
+    if (!identityId) throw new Error("legacy store identity was not created");
+    await sql`
+      insert into identity_seller_access (id, identity_id, status)
+      values (${crypto.randomUUID()}, ${identityId}, 'ACTIVE')
+      on conflict (identity_id) do update set status = 'ACTIVE'
+    `;
+  } finally {
+    await sql.end();
+  }
+  await continueLink.click();
 
   await expect(page.getByLabel("نام فروشگاه")).toHaveValue("  ");
   await expect(page.getByLabel("معرفی کوتاه")).toHaveValue(" x");
   await page.getByLabel("نام فروشگاه").fill("فروشگاه اصلاح‌شده");
   await page.getByLabel("معرفی کوتاه").fill("معرفی اصلاح‌شده فروشگاه");
+  await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByLabel("سیاست مرجوعی").fill("قانون اصلاح‌شده مرجوعی فروشگاه");
+  await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
 
   await expect(page.getByRole("heading", { name: "پیش‌نمایش فروشگاه" })).toBeVisible();

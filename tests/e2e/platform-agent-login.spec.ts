@@ -1,35 +1,47 @@
 import { expect, test } from "@playwright/test";
+import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
+
+import {
+  releaseAgentTestMobiles,
+  visualProjectIndex,
+} from "../helpers/visual-projects";
+import { establishPlatformAgentIdentity } from "../helpers/platform-agent-session";
 
 test("platform agent establishes the separate session through the Web journey", async ({
   page,
-}) => {
-  await page.route("**/api/platform/auth/otp/requests", (route) =>
-    route.fulfill({
-      status: 202,
-      json: {
-        challengeId: "5efea92d-e15f-454e-bc29-0368f667a21d",
-        expiresAt: "2026-08-24T09:05:00.000Z",
-      },
-    }),
+}, testInfo) => {
+  const mobile = iranianMobileContract.parse(
+    releaseAgentTestMobiles[visualProjectIndex(testInfo.project.name) + 4],
   );
-  await page.route("**/api/platform/auth/otp/verifications", (route) =>
-    route.fulfill({
-      status: 200,
-      json: {
-        actor: {
-          identityId: "9921f18f-187f-40dd-a389-1626156366f8",
-          audience: "PLATFORM_AGENT",
-        },
-        permission: "SELLER_APPLICATION_REVIEW",
-        expiresAt: "2026-08-24T17:00:00.000Z",
-      },
-    }),
-  );
+  await establishPlatformAgentIdentity(mobile, ["SELLER_APPLICATION_REVIEW"]);
 
   await page.goto("/platform/login");
-  await page.getByLabel("شماره موبایل").fill("09123456788");
+  await page.getByLabel("شماره موبایل").fill(mobile);
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByRole("link", { name: "رفتن به صف بررسی" })).toBeVisible();
+  await expect(page).toHaveURL(/\/platform\/seller-applications$/);
+});
+
+test("platform agent resumes the protected responsibility requested before login", async ({
+  page,
+}, testInfo) => {
+  const mobile = iranianMobileContract.parse(
+    releaseAgentTestMobiles[visualProjectIndex(testInfo.project.name) + 8],
+  );
+  await establishPlatformAgentIdentity(mobile, [
+    "SELLER_APPLICATION_REVIEW",
+    "PAYMENT_REVIEW",
+  ]);
+
+  await page.goto("/platform/payment-reviews");
+  await expect(page).toHaveURL(
+    /\/platform\/login\?returnTo=%2Fplatform%2Fpayment-reviews$/,
+  );
+  await page.getByLabel("شماره موبایل").fill(mobile);
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByRole("button", { name: "ورود" }).click();
+
+  await expect(page).toHaveURL(/\/platform\/payment-reviews$/);
 });

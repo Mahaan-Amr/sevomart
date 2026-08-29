@@ -23,7 +23,8 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   await expect(
     page.getByRole("banner").getByRole("link", { name: "سبد" }),
   ).toBeVisible();
-  for (const destination of ["دنبال‌شده‌ها", "سفارش‌ها", "گفت‌وگوها"]) {
+  await expect(navigation.getByRole("link", { name: "گفت‌وگوها" })).toBeVisible();
+  for (const destination of ["دنبال‌شده‌ها", "سفارش‌ها"]) {
     await expect(navigation.getByRole("link", { name: destination })).toHaveCount(0);
   }
   await assertNoHorizontalOverflow(page);

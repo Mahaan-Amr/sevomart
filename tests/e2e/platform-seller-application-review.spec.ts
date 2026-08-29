@@ -4,6 +4,11 @@ import {
   assertMinimumContrast,
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
+import { establishPlatformAgentSession } from "../helpers/platform-agent-session";
+
+test.beforeEach(async ({ context }) => {
+  await establishPlatformAgentSession(context, ["SELLER_APPLICATION_REVIEW"]);
+});
 
 test("platform agent reviews a Persian RTL application on the approved compact workspace", async ({
   page,
