@@ -33,7 +33,10 @@ import {
   IDENTITY_SESSION_READER,
   type IdentitySessionReader,
 } from "../identity-access/public";
-import { InventoryRevisionConflictError } from "../inventory/public";
+import {
+  InventoryBatchConflictError,
+  InventoryRevisionConflictError,
+} from "../inventory/public";
 import { StoreNotSellableError } from "../store/public";
 import { ProductService } from "./application/product.service";
 import {
@@ -303,7 +306,8 @@ export class ProductController {
       }
       if (
         error instanceof ProductRevisionConflictError ||
-        error instanceof InventoryRevisionConflictError
+        error instanceof InventoryRevisionConflictError ||
+        error instanceof InventoryBatchConflictError
       ) {
         throw new HttpException(
           {

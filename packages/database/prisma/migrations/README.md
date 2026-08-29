@@ -101,6 +101,13 @@ unchanged. No compatibility window is required and deployment corrections use a
 forward migration. The 45-migration history was verified through both
 `docker compose up --build --wait` and `pnpm dev` startup on 2026-08-29.
 
+[Build: create a safe demo and QA runtime and orchestrator](https://github.com/Mahaan-Amr/sevomart/issues/126)
+additively creates the platform-owned managed-data target fingerprint and versioned
+demo-manifest receipt. Existing product data is not read or changed, no compatibility
+window is required, and deployment corrections use a forward migration. Both supported
+startup paths continue to use the same `prisma migrate deploy` history; their smoke
+evidence is recorded in the delivery note for the Issue.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op

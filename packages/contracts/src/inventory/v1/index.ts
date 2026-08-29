@@ -99,6 +99,7 @@ export const inventoryErrorContract = errorEnvelopeV1Contract.safeExtend({
     "SELLER_ACCESS_INACTIVE",
     "VALIDATION_ERROR",
     "PRECONDITION_REQUIRED",
+    "UNAUTHORIZED",
   ]),
   details: z
     .object({
@@ -106,7 +107,13 @@ export const inventoryErrorContract = errorEnvelopeV1Contract.safeExtend({
         z
           .object({
             path: z.string().min(1),
-            code: z.enum(["INVALID_FORMAT", "TOO_SHORT", "DUPLICATE"]),
+            code: z.enum([
+              "INVALID_FORMAT",
+              "TOO_SHORT",
+              "DUPLICATE",
+              "REVISION_CONFLICT",
+              "RESERVED_STOCK_CONFLICT",
+            ]),
             variantId: variantIdContract.optional(),
           })
           .strict(),

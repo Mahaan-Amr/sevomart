@@ -9,6 +9,7 @@
     "typecheck": "prisma validate"
   },
   "dependencies": {
+    "postgres": "3.4.7",
     "prisma": "7.9.1"
   }
 }
