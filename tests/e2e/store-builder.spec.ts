@@ -23,6 +23,10 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   const storeName = "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران";
   const storeBio =
     "اینجا هر دست‌سازه با حوصله و در شمار محدود آماده می‌شود؛ توضیح روشن کمک می‌کند پیش از سفارش بدانید چه چیزی به دستتان می‌رسد.";
+  const returnPolicy =
+    "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد؛ برای پیگیری، مشکل را از جزئیات سفارش ثبت کنید.";
+  const publishedReturnPolicy =
+    "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.";
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
@@ -76,20 +80,47 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(page).toHaveURL(/\/seller\/store$/);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
-  for (const [path, heading] of [
-    ["profile", "معرفی فروشگاه"],
-    ["shipping", "روش‌های ارسال"],
-    ["returns", "شرایط مرجوعی"],
-    ["appearance", "ظاهر فروشگاه"],
+  for (const [path, heading, firstControl] of [
+    ["profile", "معرفی فروشگاه", "نام فروشگاه"],
+    ["shipping", "روش‌های ارسال", "پست پیشتاز"],
+    ["returns", "شرایط مرجوعی", "سیاست مرجوعی"],
+    ["appearance", "ظاهر فروشگاه", "رنگ فروشگاه"],
   ] as const) {
     await page.goto(`/seller/store/${path}`);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     await expect(page.getByRole("button", { name: "ذخیره و خروج" })).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await assertNoHorizontalOverflow(page);
+    await assertInteractiveTargets(
+      page,
+      path === "shipping"
+        ? "a, button, input:not([type=checkbox]), select, summary, textarea"
+        : undefined,
+    );
+    if (path === "shipping") {
+      for (const checkbox of await page.getByRole("checkbox").all()) {
+        expect(
+          await checkbox.evaluate(
+            (element) => element.closest("label")?.getBoundingClientRect().height ?? 0,
+          ),
+        ).toBeGreaterThanOrEqual(40);
+      }
+    }
+    await assertMinimumContrast(
+      page
+        .getByRole("heading", { name: heading })
+        .or(page.getByRole("button", { name: "ذخیره و خروج" })),
+    );
+    const back = page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" });
+    await back.focus();
+    await page.keyboard.press("Tab");
+    if (path === "shipping") {
+      await expect(page.getByRole("checkbox", { name: firstControl })).toBeFocused();
+    } else {
+      await expect(page.getByLabel(firstControl)).toBeFocused();
+    }
   }
-  await page.goto("/seller/store/shipping");
-  const nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
-  await expect(nationalPost.getByLabel("هزینه ارسال (تومان)")).toHaveValue("0");
-  await expect(nationalPost.getByLabel("زمان تقریبی تحویل")).not.toBeEmpty();
+
   await page.goto("/seller/store/profile");
   await expect(page.getByLabel("نام فروشگاه")).toHaveValue("پیش‌نویس خانه ماه");
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
@@ -98,14 +129,88 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   ).toBeVisible();
   await expect(page.getByText("یک معرفی کوتاه برای فروشگاه بنویسید.")).toBeVisible();
   await expect(page).toHaveURL(/\/seller\/store\/profile$/);
+  await page.getByLabel("نام فروشگاه").fill(storeName);
+  await page.getByLabel("شناسه لینک").fill(slug);
+  await page.getByLabel("معرفی کوتاه").fill(storeBio);
+  await page.getByLabel("شناسه لینک").blur();
+  await expect(page.getByText("این شناسه لینک در دسترس است.")).toBeVisible();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await page.goto("/seller/store/profile");
+  await expect(page.getByLabel("معرفی کوتاه")).toHaveValue(storeBio);
+
+  await page.goto("/seller/store/shipping");
+  let nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
+  await nationalPost
+    .getByLabel("عنوانی که خریدار می‌بیند")
+    .fill("پست پیشتاز با تحویل قابل پیگیری در سراسر ایران");
+  await nationalPost.getByLabel("هزینه ارسال (تومان)").fill("-۱");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(
+    nationalPost.getByText("هزینه را با عدد فارسی یا انگلیسی و بدون جداکننده بنویسید."),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/seller\/store\/shipping$/);
+  await nationalPost.getByLabel("هزینه ارسال (تومان)").fill("۸۵۰۰۰");
+  await nationalPost
+    .getByLabel("زمان تقریبی تحویل")
+    .fill("سه تا پنج روز کاری پس از آماده‌سازی سفارش");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await page.goto("/seller/store/shipping");
+  nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
+  await expect(nationalPost.getByLabel("هزینه ارسال (تومان)")).toHaveValue("85000");
+  await expect(nationalPost.getByLabel("زمان تقریبی تحویل")).toHaveValue(
+    "سه تا پنج روز کاری پس از آماده‌سازی سفارش",
+  );
+  await nationalPost.getByLabel("عنوانی که خریدار می‌بیند").fill("پست پیشتاز");
+  await nationalPost.getByLabel("هزینه ارسال (تومان)").fill("۰");
+  await nationalPost
+    .getByLabel("زمان تقریبی تحویل")
+    .fill("زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود.");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+
+  await page.goto("/seller/store/returns");
+  await page.getByLabel("سیاست مرجوعی").fill(returnPolicy);
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await page.goto("/seller/store/returns");
+  await expect(page.getByLabel("سیاست مرجوعی")).toHaveValue(returnPolicy);
+  await page.getByLabel("سیاست مرجوعی").fill(publishedReturnPolicy);
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+
+  await page.goto("/seller/store/appearance");
+  await page.getByLabel("رنگ فروشگاه").fill("#760B29");
+  await expect(
+    page
+      .getByRole("article", { name: "پیش‌نمایش زنده فروشگاه" })
+      .locator("div")
+      .first(),
+  ).toHaveCSS("background-color", "rgb(118, 11, 41)");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await page
+      .getByRole("button", { name: "ذخیره و خروج" })
+      .evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).transitionDuration),
+      ),
+  ).toBeLessThanOrEqual(0.00001);
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await page.goto("/seller/store/appearance");
+  await expect(page.getByLabel("رنگ فروشگاه")).toHaveValue("#760b29");
+
   await page.goto("/seller/store");
   await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
   await expect(page.getByText("قدم ۱ از ۳")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" }),
   ).toBeVisible();
-  await expect(page.getByLabel("نام فروشگاه")).toHaveValue("پیش‌نویس خانه ماه");
+  await expect(page.getByLabel("نام فروشگاه")).toHaveValue(storeName);
   await page.getByLabel("نام فروشگاه").clear();
+  await page.getByLabel("شناسه لینک").clear();
+  await page.getByLabel("معرفی کوتاه").clear();
   await storeNameInput.focus();
   await expect(storeNameInput).toBeFocused();
   await expect(storeNameInput).toHaveCSS("outline-style", "solid");
@@ -139,9 +244,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByLabel("معرفی کوتاه").fill(storeBio);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("قدم ۲ از ۳")).toBeVisible();
-  await page
-    .getByLabel("سیاست مرجوعی")
-    .fill("تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.");
+  await page.getByLabel("سیاست مرجوعی").fill(publishedReturnPolicy);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("قدم ۳ از ۳")).toBeVisible();
   for (const validationMessage of [

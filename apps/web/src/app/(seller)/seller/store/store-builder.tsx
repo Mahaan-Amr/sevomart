@@ -544,10 +544,19 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                   onChange={(e) =>
                     setForm((current) => {
                       const code = e.target.value as typeof form.shippingCode;
+                      const selected =
+                        current.shippingMethods.find(
+                          (method) => method.code === code,
+                        ) ?? defaultShippingMethod(code);
                       return {
                         ...current,
                         shippingCode: code,
-                        shippingMethods: [defaultShippingMethod(code)],
+                        shippingMethods: [
+                          selected,
+                          ...current.shippingMethods
+                            .slice(1)
+                            .filter((method) => method.code !== code),
+                        ],
                       };
                     })
                   }
@@ -603,7 +612,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                   ) : (
                     <span
                       className={styles.liveLogo}
-                      style={{ backgroundColor: form.themeColor }}
+                      style={{
+                        backgroundColor: form.themeColor,
+                        color: readableStoreForeground(form.themeColor),
+                      }}
                     >
                       {form.name.trim().slice(0, 1) || "س"}
                     </span>
@@ -823,7 +835,16 @@ function StoreSettingsPage({
                     </label>
                     {method.enabled ? (
                       <div className={styles.shippingTerms}>
-                        <Field label="عنوانی که خریدار می‌بیند">
+                        <Field
+                          label="عنوانی که خریدار می‌بیند"
+                          error={
+                            errors.shipping &&
+                            (method.label.trim().length < 2 ||
+                              method.label.trim().length > 60)
+                              ? "عنوان باید بین ۲ تا ۶۰ نویسه باشد."
+                              : undefined
+                          }
+                        >
                           <input
                             value={method.label}
                             onChange={(event) =>
@@ -834,6 +855,11 @@ function StoreSettingsPage({
                         <Field
                           label="هزینه ارسال (تومان)"
                           hint="برای ارسال رایگان صفر بنویسید."
+                          error={
+                            errors.shipping && !validShippingFee(method.feeToman)
+                              ? "هزینه را با عدد فارسی یا انگلیسی و بدون جداکننده بنویسید."
+                              : undefined
+                          }
                         >
                           <input
                             inputMode="numeric"
@@ -844,7 +870,16 @@ function StoreSettingsPage({
                             }
                           />
                         </Field>
-                        <Field label="زمان تقریبی تحویل">
+                        <Field
+                          label="زمان تقریبی تحویل"
+                          error={
+                            errors.shipping &&
+                            (method.estimatedDeliveryText.trim().length < 2 ||
+                              method.estimatedDeliveryText.trim().length > 120)
+                              ? "زمان تحویل باید بین ۲ تا ۱۲۰ نویسه باشد."
+                              : undefined
+                          }
+                        >
                           <input
                             value={method.estimatedDeliveryText}
                             onChange={(event) =>
@@ -913,7 +948,10 @@ function StoreSettingsPage({
                   ) : (
                     <span
                       className={styles.liveLogo}
-                      style={{ backgroundColor: form.themeColor }}
+                      style={{
+                        backgroundColor: form.themeColor,
+                        color: readableStoreForeground(form.themeColor),
+                      }}
                     >
                       {form.name.trim().slice(0, 1) || "س"}
                     </span>
@@ -984,8 +1022,10 @@ function validateSection(section: StoreSection, form: StoreForm): FieldErrors {
     const invalid = enabled.some(
       (method) =>
         method.label.trim().length < 2 ||
-        !/^\d+$/.test(latinDigits(method.feeToman)) ||
-        method.estimatedDeliveryText.trim().length < 2,
+        method.label.trim().length > 60 ||
+        !validShippingFee(method.feeToman) ||
+        method.estimatedDeliveryText.trim().length < 2 ||
+        method.estimatedDeliveryText.trim().length > 120,
     );
     return enabled.length === 0
       ? { shipping: "دست‌کم یک روش ارسال را فعال کنید." }
@@ -1086,12 +1126,20 @@ function Field({
 
 function validateForm(form: typeof emptyForm): FieldErrors {
   const errors: FieldErrors = {};
-  if (form.name.trim().length < 2) errors.name = "نام فروشگاه را کامل‌تر بنویسید.";
+  const nameLength = form.name.trim().length;
+  if (nameLength < 2) errors.name = "نام فروشگاه را کامل‌تر بنویسید.";
+  else if (nameLength > 80) errors.name = "نام فروشگاه حداکثر ۸۰ نویسه است.";
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.slug) || form.slug.length < 3)
     errors.slug = "شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد.";
-  if (form.bio.trim().length < 2) errors.bio = "یک معرفی کوتاه برای فروشگاه بنویسید.";
-  if (form.returnPolicy.trim().length < 10)
+  else if (form.slug.length > 48) errors.slug = "شناسه لینک حداکثر ۴۸ نویسه است.";
+  const bioLength = form.bio.trim().length;
+  if (bioLength < 2) errors.bio = "یک معرفی کوتاه برای فروشگاه بنویسید.";
+  else if (bioLength > 240) errors.bio = "معرفی کوتاه حداکثر ۲۴۰ نویسه است.";
+  const returnPolicyLength = form.returnPolicy.trim().length;
+  if (returnPolicyLength < 10)
     errors.returnPolicy = "شرایط مرجوعی را کمی روشن‌تر بنویسید.";
+  else if (returnPolicyLength > 1_000)
+    errors.returnPolicy = "شرایط مرجوعی حداکثر ۱۰۰۰ نویسه است.";
   return errors;
 }
 
@@ -1136,6 +1184,13 @@ function latinDigits(value: string) {
   return value
     .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
     .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+}
+
+function validShippingFee(value: string) {
+  const normalized = latinDigits(value);
+  if (!/^\d+$/.test(normalized)) return false;
+  const toman = Number(normalized);
+  return Number.isSafeInteger(toman) && Number.isSafeInteger(toman * 10);
 }
 
 async function uploadMedia(
