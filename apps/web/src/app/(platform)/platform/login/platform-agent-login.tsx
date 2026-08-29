@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import styles from "../../../login/identity-login.module.css";
 
-type Step = "mobile" | "code" | "signed-in";
+type Step = "mobile" | "code";
 
 export function PlatformAgentLogin() {
   const [step, setStep] = useState<Step>("mobile");
@@ -44,7 +44,7 @@ export function PlatformAgentLogin() {
       }
       if (verification) {
         platformAgentSessionContract.parse(body);
-        setStep("signed-in");
+        window.location.replace("/platform");
       } else {
         const challenge = otpChallengeContract.parse(body);
         setChallengeId(challenge.challengeId);
@@ -55,21 +55,6 @@ export function PlatformAgentLogin() {
     } finally {
       setPending(false);
     }
-  }
-
-  if (step === "signed-in") {
-    return (
-      <main className={styles.page}>
-        <section className={styles.panel}>
-          <span className={styles.brand}>سوو · عامل پلتفرم</span>
-          <h1>ورود انجام شد</h1>
-          <p>اکنون مسئولیت‌های فعال شما دوباره بررسی می‌شوند.</p>
-          <a className={styles.continueLink} href="/platform">
-            رفتن به فضای کار
-          </a>
-        </section>
-      </main>
-    );
   }
 
   return (

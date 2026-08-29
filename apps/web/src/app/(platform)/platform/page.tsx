@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
   platformDestinationsFor,
   platformEntryPath,
-  readPlatformWorkspaceAccess,
 } from "../../../lib/platform-workspace-access";
-import { PlatformAccessStatus } from "./_components/platform-access-gate";
+import {
+  PlatformAccessStatus,
+  readPlatformWorkspaceRequest,
+} from "./_components/platform-access-gate";
 import { PlatformShell } from "./_components/platform-shell";
 import styles from "./platform-home.module.css";
 
@@ -17,11 +18,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PlatformHomePage() {
-  const cookieStore = await cookies();
-  const access = await readPlatformWorkspaceAccess(cookieStore.toString());
-  if (access.kind === "SIGNED_OUT") {
-    redirect("/platform/login?returnTo=%2Fplatform");
-  }
+  const access = await readPlatformWorkspaceRequest("/platform");
   if (access.kind === "UNAVAILABLE") {
     return <PlatformAccessStatus kind="UNAVAILABLE" returnTo="/platform" />;
   }

@@ -16,11 +16,7 @@ export async function PlatformPermissionGate({
   permission: PlatformPermission;
   returnTo: string;
 }) {
-  const cookieStore = await cookies();
-  const access = await readPlatformWorkspaceAccess(cookieStore.toString());
-  if (access.kind === "SIGNED_OUT") {
-    redirect(`/platform/login?returnTo=${encodeURIComponent(returnTo)}`);
-  }
+  const access = await readPlatformWorkspaceRequest(returnTo);
   if (access.kind === "UNAVAILABLE") {
     return <PlatformAccessStatus kind="UNAVAILABLE" returnTo={returnTo} />;
   }
@@ -37,6 +33,15 @@ export async function PlatformPermissionGate({
       )}
     </PlatformShell>
   );
+}
+
+export async function readPlatformWorkspaceRequest(returnTo: string) {
+  const cookieStore = await cookies();
+  const access = await readPlatformWorkspaceAccess(cookieStore.toString());
+  if (access.kind === "SIGNED_OUT") {
+    redirect(`/platform/login?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+  return access;
 }
 
 export function PlatformAccessStatus({
@@ -71,7 +76,9 @@ export function PlatformAccessStatus({
             className={styles.primaryAction}
             href={unavailable ? returnTo : "/platform"}
           >
-            {unavailable ? "بررسی دوباره" : "دیدن مسئولیت‌های فعال"}
+            {unavailable || kind === "NO_ACCESS"
+              ? "بررسی دوباره"
+              : "دیدن مسئولیت‌های فعال"}
           </Link>
           <form action="/api/platform/auth/logout" method="post">
             <button className={styles.secondaryAction} type="submit">

@@ -67,10 +67,9 @@ export class PlatformAgentAuthController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     await this.sessions.revokeSession(readPlatformSessionToken(request) ?? "");
-    const secure = this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
     void reply.header(
       "Set-Cookie",
-      `sevo_platform_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`,
+      platformSessionCookie("", 0, this.environment.SEVO_RUNTIME_ENV === "production"),
     );
   }
 
@@ -109,11 +108,13 @@ export class PlatformAgentAuthController {
       const maxAge = Math.floor(
         (Date.parse(verified.session.expiresAt) - Date.now()) / 1_000,
       );
-      const secure =
-        this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
       void reply.header(
         "Set-Cookie",
-        `sevo_platform_session=${verified.token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`,
+        platformSessionCookie(
+          verified.token,
+          maxAge,
+          this.environment.SEVO_RUNTIME_ENV === "production",
+        ),
       );
       return verified.session;
     } catch (error) {
@@ -126,6 +127,10 @@ export class PlatformAgentAuthController {
       throw error;
     }
   }
+}
+
+function platformSessionCookie(value: string, maxAge: number, secure: boolean) {
+  return `sevo_platform_session=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
 }
 
 function platformAuthError(code: string, correlationId: string, status: number) {

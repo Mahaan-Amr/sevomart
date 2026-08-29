@@ -1,8 +1,12 @@
 import { expect, test } from "@playwright/test";
 
+import { establishPlatformAgentSession } from "../helpers/platform-agent-session";
+
 test("platform agent establishes the separate session through the Web journey", async ({
+  context,
   page,
 }) => {
+  await establishPlatformAgentSession(context, ["SELLER_APPLICATION_REVIEW"]);
   await page.route("**/api/platform/auth/otp/requests", (route) =>
     route.fulfill({
       status: 202,
@@ -31,5 +35,5 @@ test("platform agent establishes the separate session through the Web journey", 
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByRole("link", { name: "رفتن به فضای کار" })).toBeVisible();
+  await expect(page).toHaveURL(/\/platform\/seller-applications$/);
 });
