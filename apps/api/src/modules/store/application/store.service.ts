@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { storeAuthoritativeSnapshotV1Contract } from "@sevo/contracts/store/v1";
+import {
+  shippingMethodContract,
+  storeAuthoritativeSnapshotV1Contract,
+  storeDraftInputContract,
+} from "@sevo/contracts/store/v1";
 import type {
   PublicStore,
   StoreDraft,
@@ -366,14 +370,33 @@ export class StoreService implements StoreAuthoritativeRead {
 
 function publicationReadiness(row: StoreRow): MissingStoreField[] {
   const missing: MissingStoreField[] = [];
-  if (!row.name?.trim()) missing.push("NAME");
+  if (!meetsCurrentDraftMinimum("name", row.name)) missing.push("NAME");
   if (!row.slug) missing.push("SLUG");
-  if (!row.bio?.trim()) missing.push("BIO");
-  if (!row.shippingMethods?.some((method) => method.enabled))
+  if (!meetsCurrentDraftMinimum("bio", row.bio)) missing.push("BIO");
+  if (
+    !row.shippingMethods?.some(
+      (method) =>
+        method.enabled &&
+        shippingMethodContract.safeParse({
+          code: method.code,
+          label: method.label,
+        }).success,
+    )
+  )
     missing.push("SHIPPING_METHOD");
-  if (!row.returnPolicy?.trim()) missing.push("RETURN_POLICY");
+  if (!meetsCurrentDraftMinimum("returnPolicy", row.returnPolicy))
+    missing.push("RETURN_POLICY");
   if (!row.settlementDestination) missing.push("SETTLEMENT_DESTINATION");
   return missing;
+}
+
+function meetsCurrentDraftMinimum(
+  field: "name" | "bio" | "returnPolicy",
+  value: string | undefined,
+) {
+  return (
+    value !== undefined && storeDraftInputContract.safeParse({ [field]: value }).success
+  );
 }
 
 function toDraft(row: StoreRow): StoreDraft {

@@ -47,7 +47,10 @@ const shippingMethodsInputContract = z
   .superRefine(requireUniqueShippingMethodCodes);
 
 const legacyShippingMethodsInputContract = z
-  .array(readableShippingMethodContract.strict())
+  // The historical z.object parser stripped unknown keys before hashing.
+  // Keep that exact behavior for receipt replay; current writes use the
+  // extended contract above and retain their shipping terms.
+  .array(readableShippingMethodContract)
   .min(1)
   .max(5)
   .superRefine(requireUniqueShippingMethodCodes);
