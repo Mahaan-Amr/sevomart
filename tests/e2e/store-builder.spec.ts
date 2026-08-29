@@ -307,6 +307,19 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     "background-color",
     "rgb(118, 11, 41)",
   );
+  await page.getByLabel("لوگو").setInputFiles({
+    name: "broken.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("not-an-image"),
+  });
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(
+    page
+      .getByText("لوگو", { exact: true })
+      .locator("..")
+      .getByText("فایل تصویر خراب است یا کامل خوانده نمی‌شود."),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/seller\/store\/setup$/);
   const logo = await sharp({
     create: { width: 256, height: 256, channels: 4, background: "#760B29" },
   })
@@ -322,6 +335,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     mimeType: "image/png",
     buffer: logo,
   });
+  await expect(page.getByText("فایل تصویر خراب است یا کامل خوانده نمی‌شود.")).toHaveCount(
+    0,
+  );
   await page.getByLabel("تصویر روی جلد").setInputFiles({
     name: "cover.png",
     mimeType: "image/png",
