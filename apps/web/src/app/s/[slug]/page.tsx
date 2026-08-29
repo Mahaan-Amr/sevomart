@@ -58,12 +58,16 @@ async function readPublishedStore(
     const products = publicProductListContract.safeParse(productsBody);
     const simpleProducts = publicSimpleProductListContract.safeParse(productsBody);
     if (!products.success && !simpleProducts.success) return { state: "error" };
+    const publishedProducts = products.success
+      ? products.data.products
+      : simpleProducts.data!.products;
     return {
       state: "ready",
-      store: parsed.data,
-      products: products.success
-        ? products.data.products
-        : simpleProducts.data!.products,
+      store: {
+        ...parsed.data,
+        activeProductCount: publishedProducts.length,
+      },
+      products: publishedProducts,
     };
   } catch {
     return { state: "error" };

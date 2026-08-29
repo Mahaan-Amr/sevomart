@@ -362,9 +362,12 @@
 }
 
 .shippingList li {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 4px 8px;
+}
+
+.shippingList li strong {
+  font-size: 13px;
 }
 
 .shippingList li span {

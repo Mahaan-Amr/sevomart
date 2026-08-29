@@ -100,10 +100,10 @@ function TrustDetails({ store }: { store: PublicStore }) {
       </div>
       <div className={styles.trustItem}>
         <span>روش ارسال</span>
-        <strong>{enabledShippingMethods.map(({ label }) => label).join("، ")}</strong>
         <ul className={styles.shippingList}>
           {enabledShippingMethods.map((method) => (
             <li key={method.id}>
+              <strong>{method.label}</strong>
               <span>{formatIrrAsToman(method.fixedFee.amount)}</span>
               <span>{method.estimatedDeliveryText}</span>
             </li>
@@ -171,7 +171,8 @@ export function ReadyStorefront({
         {store.followerCount ? (
           <div className={styles.publicSummary}>
             <p className={styles.productCount}>
-              {new Intl.NumberFormat("fa-IR").format(products.length)} کالای فعال
+              {new Intl.NumberFormat("fa-IR").format(store.activeProductCount)} کالای
+              فعال
             </p>
             <StoreFollowControl
               storeId={store.id}

@@ -22,6 +22,7 @@ type ProjectStores = {
   draftSlug: string;
   defaultMobile: string;
 };
+type StorePreset = "default" | "custom";
 
 let stores: ProjectStores;
 
@@ -62,8 +63,8 @@ test.beforeAll(async ({ browserName }, testInfo) => {
   `;
   await sql.end();
 
-  await createStore(mobiles[0]!, stores.defaultSlug, false);
-  await createStore(mobiles[1]!, stores.customSlug, true);
+  await createStore(mobiles[0]!, stores.defaultSlug, "default");
+  await createStore(mobiles[1]!, stores.customSlug, "custom");
 });
 
 test("a guest reads a published empty storefront from the real API", async ({
@@ -83,7 +84,12 @@ test("a guest reads a published empty storefront from the real API", async ({
   await expect(page.getByText("هنوز کالایی منتشر نشده")).toBeVisible();
   await expect(page.getByText("۰ کالای فعال")).toBeVisible();
   await expect(page.getByText("۰ دنبال‌کننده")).toBeVisible();
-  await expect(page.getByText("پست پیشتاز، دریافت حضوری")).toBeVisible();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "پست پیشتاز" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "دریافت حضوری" }),
+  ).toBeVisible();
   await expect(page.getByText("تسویه مستقیم")).toBeVisible();
   await expect(page.getByText(/تأیید آزمایشی/)).toBeVisible();
   await expect(page.getByText("ساخته‌شده با سوو")).toBeVisible();
@@ -109,7 +115,7 @@ test("stopping publication gives guests a human 404", async ({ page }) => {
       "idempotency-key": crypto.randomUUID(),
       "if-match": `"${currentDraft.revision}"`,
     },
-    data: storeDraftInput(stores.defaultSlug, false),
+    data: storeDraftInput(stores.defaultSlug, "default"),
   });
   expect(stopped.ok()).toBe(true);
   const stoppedDraft = (await stopped.json()) as { revision: number };
@@ -150,6 +156,9 @@ test("custom media, theme and long Persian content render with API media", async
   ).toBeVisible();
   await expect(page.getByText("۷۵٬۰۰۰ تومان")).toBeVisible();
   await expect(page.getByText("۲ تا ۴ روز کاری")).toBeVisible();
+  const courier = page.getByRole("listitem").filter({ hasText: "پیک شهری" });
+  await expect(courier).toContainText("۱۲۰٬۰۰۰ تومان");
+  await expect(courier).toContainText("همان روز در تهران");
   await expect(page.getByText("دریافت حضوری غیرفعال")).toHaveCount(0);
   await expect(page.getByText("ساخته‌شده با سوو")).toBeVisible();
   await expect(page.locator("header")).toHaveCSS("--store-accent", "#760B29");
@@ -209,6 +218,14 @@ test("the storefront reflows without clipping at an effective 200% zoom", async 
 });
 
 test("essential text and actions meet minimum contrast", async ({ page }) => {
+  await page.goto(`/s/${stores.customSlug}`);
+  await assertMinimumContrast(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "پست پیشتاز" })
+      .locator("strong, span"),
+  );
+
   await page.goto("/s/test-error");
   await assertMinimumContrast(
     page
@@ -250,20 +267,22 @@ for (const state of ["default", "custom", "loading", "error"] as const) {
   });
 }
 
-async function createStore(mobile: string, slug: string, customized: boolean) {
+async function createStore(mobile: string, slug: string, preset: StorePreset) {
   const context = await authenticatedSellerContext(mobile);
-  const logoMediaId = customized
-    ? (await uploadImage(context, "logo.png", "STORE_LOGO")).id
-    : null;
-  const coverMediaId = customized
-    ? (await uploadImage(context, "cover.png", "STORE_COVER")).id
-    : null;
+  const logoMediaId =
+    preset === "custom"
+      ? (await uploadImage(context, "logo.png", "STORE_LOGO")).id
+      : null;
+  const coverMediaId =
+    preset === "custom"
+      ? (await uploadImage(context, "cover.png", "STORE_COVER")).id
+      : null;
   const draft = await context.put("/v1/seller/store/draft", {
     headers: {
       "idempotency-key": crypto.randomUUID(),
       "if-match": '"0"',
     },
-    data: storeDraftInput(slug, customized, { logoMediaId, coverMediaId }),
+    data: storeDraftInput(slug, preset, { logoMediaId, coverMediaId }),
   });
   expect(draft.ok()).toBe(true);
   const saved = (await draft.json()) as { revision: number };
@@ -294,39 +313,58 @@ async function authenticatedSellerContext(mobile: string) {
 
 function storeDraftInput(
   slug: string,
-  customized: boolean,
+  preset: StorePreset,
   media: { logoMediaId: string | null; coverMediaId: string | null } = {
     logoMediaId: null,
     coverMediaId: null,
   },
 ) {
-  return {
-    name: customized
-      ? "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران"
-      : "خانه سرو",
-    slug,
-    bio: customized
-      ? "اینجا هر دست‌سازه با حوصله و در شمار محدود آماده می‌شود؛ توضیح روشن کمک می‌کند پیش از سفارش بدانید چه چیزی به دستتان می‌رسد."
-      : "چیزهای کوچک و کاربردی برای خانه.",
-    shippingMethods: [
-      customized
-        ? {
+  const storeCopy =
+    preset === "custom"
+      ? {
+          name: "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران",
+          bio: "اینجا هر دست‌سازه با حوصله و در شمار محدود آماده می‌شود؛ توضیح روشن کمک می‌کند پیش از سفارش بدانید چه چیزی به دستتان می‌رسد.",
+          themeColor: "#760B29",
+        }
+      : {
+          name: "خانه سرو",
+          bio: "چیزهای کوچک و کاربردی برای خانه.",
+          themeColor: "#A41439",
+        };
+  const shippingMethods =
+    preset === "custom"
+      ? [
+          {
             code: "NATIONAL_POST",
             label: "پست پیشتاز",
             fixedFee: { amount: 750_000, currency: "IRR" },
             estimatedDeliveryText: "۲ تا ۴ روز کاری",
             enabled: true,
-          }
-        : { code: "NATIONAL_POST", label: "پست پیشتاز" },
-      customized
-        ? { code: "PICKUP", label: "دریافت حضوری غیرفعال", enabled: false }
-        : { code: "PICKUP", label: "دریافت حضوری" },
-    ],
+          },
+          {
+            code: "COURIER",
+            label: "پیک شهری",
+            fixedFee: { amount: 1_200_000, currency: "IRR" },
+            estimatedDeliveryText: "همان روز در تهران",
+            enabled: true,
+          },
+          { code: "PICKUP", label: "دریافت حضوری غیرفعال", enabled: false },
+        ]
+      : [
+          { code: "NATIONAL_POST", label: "پست پیشتاز" },
+          { code: "PICKUP", label: "دریافت حضوری" },
+        ];
+
+  return {
+    name: storeCopy.name,
+    slug,
+    bio: storeCopy.bio,
+    shippingMethods,
     returnPolicy: "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
     settlementDestination: { kind: "TEST" },
     logoMediaId: media.logoMediaId,
     coverMediaId: media.coverMediaId,
-    themeColor: customized ? "#760B29" : "#A41439",
+    themeColor: storeCopy.themeColor,
   };
 }
 
