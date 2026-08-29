@@ -96,3 +96,12 @@ The platform outbox envelope-version migration is a forward compatibility fix fo
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op
 for fresh databases that already contain the required column.
+
+Issue 139 adds content-owned sales-content, product-link, purchase-experience,
+idempotency and audit tables after
+`20260827120000__conversations__send-claims`. References to store, product, media,
+identity and order-item identifiers remain scalar; the only foreign key stays within
+the content aggregate. The migration is additive, needs no compatibility window and
+uses a forward fix if deployment must be corrected. Both supported runtime paths use
+the same `prisma migrate deploy` history; verification evidence is recorded on the
+Issue handoff.
