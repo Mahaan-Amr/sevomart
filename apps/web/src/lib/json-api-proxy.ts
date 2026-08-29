@@ -16,6 +16,7 @@ export async function proxyJsonApiRequest(
   const suffix = segments.length
     ? `/${segments.map(encodeURIComponent).join("/")}`
     : "";
+  const search = new URL(request.url).search;
   try {
     const headers = new Headers({
       cookie: request.headers.get("cookie") ?? "",
@@ -27,12 +28,15 @@ export async function proxyJsonApiRequest(
       if (value) headers.set(name, value);
     }
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
-    const upstream = await fetch(`${API_BASE_URL}${options.basePath}${suffix}`, {
-      method: request.method,
-      headers,
-      body: hasBody ? await request.arrayBuffer() : undefined,
-      cache: "no-store",
-    });
+    const upstream = await fetch(
+      `${API_BASE_URL}${options.basePath}${suffix}${search}`,
+      {
+        method: request.method,
+        headers,
+        body: hasBody ? await request.arrayBuffer() : undefined,
+        cache: "no-store",
+      },
+    );
     const responseHeaders = new Headers();
     if (options.noStore) responseHeaders.set("cache-control", "no-store");
     for (const name of options.responseHeaders) {

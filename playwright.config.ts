@@ -5,6 +5,9 @@ import {
   differentStoreCartConflictTestMobiles,
   sellerApplicationDraftTestMobiles,
   sellerWorkspaceTestMobiles,
+  sellerConversationTestMobiles,
+  buyerConversationTestMobiles,
+  otherSellerConversationTestMobiles,
   productTracerTestMobiles,
   guestCartTestMobiles,
   sameStoreCartConflictTestMobiles,
@@ -16,6 +19,12 @@ import {
   releaseSellerTestMobiles,
   visualViewports,
 } from "./tests/helpers/visual-projects";
+
+const e2eApiPort = process.env.SEVO_E2E_API_PORT ?? "3109";
+const e2eWebPort = process.env.SEVO_E2E_WEB_PORT ?? "3110";
+const e2eWorkerPort = process.env.SEVO_E2E_WORKER_PORT ?? "3108";
+const e2eApiUrl = `http://127.0.0.1:${e2eApiPort}`;
+const e2eWebUrl = `http://127.0.0.1:${e2eWebPort}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -32,7 +41,7 @@ export default defineConfig({
   snapshotPathTemplate:
     "{testDir}/__screenshots__/{testFilePath}/{projectName}/{arg}{ext}",
   use: {
-    baseURL: "http://127.0.0.1:3110",
+    baseURL: e2eWebUrl,
     browserName: "chromium",
     channel: "chrome",
     locale: "fa-IR",
@@ -52,9 +61,9 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm e2e:api",
-      url: "http://127.0.0.1:3109/v1/health",
+      url: `${e2eApiUrl}/v1/health`,
       env: {
-        API_PORT: "3109",
+        API_PORT: e2eApiPort,
         DEV_OTP_TEST_MOBILES: [
           "09123456789",
           "09111111111",
@@ -62,6 +71,9 @@ export default defineConfig({
           ...acceptanceTestMobiles,
           ...sellerApplicationDraftTestMobiles,
           ...sellerWorkspaceTestMobiles,
+          ...sellerConversationTestMobiles,
+          ...buyerConversationTestMobiles,
+          ...otherSellerConversationTestMobiles,
           ...productTracerTestMobiles,
           ...guestCartTestMobiles,
           ...sameStoreCartConflictTestMobiles,
@@ -78,9 +90,10 @@ export default defineConfig({
     },
     {
       command: "pnpm e2e:web",
-      url: "http://127.0.0.1:3110",
+      url: e2eWebUrl,
       env: {
-        API_BASE_URL: "http://127.0.0.1:3109",
+        API_BASE_URL: e2eApiUrl,
+        WEB_PORT: e2eWebPort,
         SEVO_RUNTIME_ENV: "test",
       },
       reuseExistingServer: process.env.SEVO_E2E_ISOLATED !== "1" && !process.env.CI,
@@ -88,11 +101,11 @@ export default defineConfig({
     },
     {
       command: "pnpm e2e:worker",
-      url: "http://127.0.0.1:3108/health/ready",
+      url: `http://127.0.0.1:${e2eWorkerPort}/health/ready`,
       env: {
-        WORKER_PORT: "3108",
-        API_READINESS_URL: "http://127.0.0.1:3109/health/ready",
-        INTERNAL_API_URL: "http://127.0.0.1:3109",
+        WORKER_PORT: e2eWorkerPort,
+        API_READINESS_URL: `${e2eApiUrl}/health/ready`,
+        INTERNAL_API_URL: e2eApiUrl,
       },
       reuseExistingServer: process.env.SEVO_E2E_ISOLATED !== "1" && !process.env.CI,
       timeout: 120_000,
