@@ -1,4 +1,5 @@
 import { storeDraftContract, storePublicationContract } from "@sevo/contracts/store/v1";
+import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -103,6 +104,268 @@ describe("seller store HTTP API with PostgreSQL", () => {
     expect(publication.json()).toMatchObject({
       publicUrl: "/s/integration-khane-mah",
       store: { activeProductCount: 0, status: "PUBLISHED" },
+    });
+  });
+
+  it("replays a pre-normalization receipt for the identical payload and rejects a real change", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const key = randomUUID();
+    const currentPayload = { name: "فروشگاه بذر" };
+    const legacyPayload = { name: "  " };
+    const headers = {
+      cookie,
+      "idempotency-key": key,
+      "if-match": '"0"',
+    };
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload: currentPayload,
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const legacyHash = createHash("sha256")
+      .update(JSON.stringify(legacyPayload))
+      .digest("hex");
+    await sql`
+      update store_idempotency_records
+      set request_hash = ${legacyHash},
+          response_json = jsonb_set(response_json, '{name}', to_jsonb('  '::text))
+      where operation = 'SAVE_STORE_DRAFT' and idempotency_key = ${key}
+    `;
+    const beforeReplay = await readReplayEffects(sql, key);
+    await sql.end();
+
+    const replay = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload: legacyPayload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual({ ...saved.json(), name: "  " });
+
+    const verifySql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const afterReplay = await readReplayEffects(verifySql, key);
+    await verifySql.end();
+    expect(afterReplay).toEqual(beforeReplay);
+
+    const conflict = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload: { name: " x" },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+  });
+
+  it("replays a historical shipping payload after the old parser stripped unknown terms", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const key = randomUUID();
+    const payload = {
+      name: "فروشگاه ارسال قدیمی",
+      shippingMethods: [
+        {
+          code: "PICKUP",
+          label: "تحویل حضوری",
+          fixedFee: { amount: 800_000, currency: "IRR" },
+          enabled: false,
+        },
+      ],
+    };
+    const headers = {
+      cookie,
+      "idempotency-key": key,
+      "if-match": '"0"',
+    };
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload,
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const historicalParsedPayload = {
+      name: payload.name,
+      shippingMethods: [{ code: "PICKUP", label: "تحویل حضوری" }],
+    };
+    const historicalHash = createHash("sha256")
+      .update(JSON.stringify(historicalParsedPayload))
+      .digest("hex");
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update store_idempotency_records
+      set request_hash = ${historicalHash}
+      where operation = 'SAVE_STORE_DRAFT' and idempotency_key = ${key}
+    `;
+    await sql.end();
+
+    const replay = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers,
+      payload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(saved.json());
+  });
+
+  it("reads legacy store text and saves a corrected draft through the existing API", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const initial = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: storeWriteHeaders(cookie, 0),
+      payload: {
+        name: "فروشگاه قدیمی",
+        slug: "legacy-readable-store",
+        bio: "معرفی معتبر پیش از ارتقا",
+        shippingMethods: [{ code: "PICKUP", label: "تحویل حضوری" }],
+        returnPolicy: "قانون مرجوعی معتبر پیش از ارتقا",
+        settlementDestination: { kind: "TEST" },
+      },
+    });
+    expect(initial.statusCode).toBe(200);
+
+    const publication = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: storeWriteHeaders(cookie, 1),
+    });
+    expect(publication.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update store_stores
+      set name = '  ', bio = ' x', return_policy = '          '
+      where slug = 'legacy-readable-store'
+    `;
+    await sql`
+      update store_shipping_methods
+      set label = '  '
+      where store_id = (select id from store_stores where slug = 'legacy-readable-store')
+    `;
+    await sql.end();
+
+    const draft = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+    });
+    expect(draft.statusCode).toBe(200);
+    expect(draft.headers.etag).toBe('"2"');
+    expect(storeDraftContract.safeParse(draft.json()).success).toBe(true);
+
+    const publicRead = await server.inject({
+      method: "GET",
+      url: "/v1/stores/legacy-readable-store",
+    });
+    expect(publicRead.statusCode).toBe(200);
+    expect(publicRead.json()).toMatchObject({ name: "  ", bio: " x" });
+
+    const corrected = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: storeWriteHeaders(cookie, 2),
+      payload: {
+        name: "فروشگاه اصلاح‌شده",
+        bio: "معرفی اصلاح‌شده فروشگاه",
+        returnPolicy: "قانون اصلاح‌شده مرجوعی فروشگاه",
+        shippingMethods: [{ code: "PICKUP", label: "تحویل حضوری" }],
+      },
+    });
+    expect(corrected.statusCode).toBe(200);
+    expect(corrected.json()).toMatchObject({
+      revision: 3,
+      name: "فروشگاه اصلاح‌شده",
+      status: "DRAFT",
+    });
+  });
+
+  it("keeps short legacy text readable but blocks publication until it meets current minimums", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: storeWriteHeaders(cookie, 0),
+      payload: {
+        name: "فروشگاه قدیمی",
+        slug: "legacy-short-readiness",
+        bio: "معرفی معتبر پیش از ارتقا",
+        shippingMethods: [{ code: "PICKUP", label: "تحویل حضوری" }],
+        returnPolicy: "قانون مرجوعی معتبر پیش از ارتقا",
+        settlementDestination: { kind: "TEST" },
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update store_stores
+      set name = ' x', bio = ' x', return_policy = ' 123456789'
+      where slug = 'legacy-short-readiness'
+    `;
+    await sql`
+      update store_shipping_methods
+      set label = ' x'
+      where store_id = (
+        select id from store_stores where slug = 'legacy-short-readiness'
+      )
+    `;
+    await sql.end();
+
+    const draft = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+    });
+    expect(draft.statusCode).toBe(200);
+    expect(draft.json()).toMatchObject({
+      name: " x",
+      bio: " x",
+      returnPolicy: " 123456789",
+      shippingMethods: [{ label: " x", enabled: true }],
+    });
+
+    const preview = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/preview",
+      headers: { cookie },
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().publicationReadiness).toEqual({
+      ready: false,
+      missingFields: ["NAME", "BIO", "SHIPPING_METHOD", "RETURN_POLICY"],
+    });
+
+    const publication = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: storeWriteHeaders(cookie, 1),
+    });
+    expect(publication.statusCode).toBe(422);
+    expect(publication.json()).toMatchObject({
+      code: "VALIDATION_ERROR",
+      details: {
+        issues: [
+          { field: "name", code: "REQUIRED" },
+          { field: "bio", code: "REQUIRED" },
+          { field: "shipping_method", code: "REQUIRED" },
+          { field: "return_policy", code: "REQUIRED" },
+        ],
+      },
     });
   });
 
@@ -345,6 +608,34 @@ function storeWriteHeaders(cookie: string, expectedRevision: number) {
     "idempotency-key": crypto.randomUUID(),
     "if-match": `"${expectedRevision}"`,
   };
+}
+
+async function readReplayEffects(
+  sql: ReturnType<typeof postgres>,
+  idempotencyKey: string,
+) {
+  const [effects] = await sql<
+    Array<{
+      revision: number;
+      shippingRows: number;
+      outboxEvents: number;
+      receipts: number;
+    }>
+  >`
+    select
+      s.revision,
+      (select count(*)::int from store_shipping_methods sm where sm.store_id = s.id) as "shippingRows",
+      (select count(*)::int from platform_outbox_events e where e.aggregate_id = s.id) as "outboxEvents",
+      (select count(*)::int from store_idempotency_records r
+        where r.operation = 'SAVE_STORE_DRAFT' and r.idempotency_key = ${idempotencyKey}) as receipts
+    from store_stores s
+    join store_memberships m on m.store_id = s.id
+    where m.seller_id = (
+      select actor_identity_id from store_idempotency_records
+      where operation = 'SAVE_STORE_DRAFT' and idempotency_key = ${idempotencyKey}
+    )
+  `;
+  return effects;
 }
 
 function multipartBody(

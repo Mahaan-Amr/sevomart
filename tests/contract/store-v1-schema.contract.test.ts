@@ -15,6 +15,30 @@ describe("Store v1 executable schema surface", () => {
     ).toBe(false);
   });
 
+  it("keeps pre-normalization store records readable without weakening new writes", () => {
+    const legacyDraft = {
+      ...store.storeV1Examples.StoreDraft,
+      name: "  ",
+      bio: " x",
+      returnPolicy: "          ",
+      shippingMethods: store.storeV1Examples.StoreDraft.shippingMethods?.map(
+        (method, index) => (index === 0 ? { ...method, label: "  " } : method),
+      ),
+    };
+    expect(store.storeDraftContract.safeParse(legacyDraft).success).toBe(true);
+    expect(
+      store.storeDraftInputContract.safeParse({
+        name: legacyDraft.name,
+        bio: legacyDraft.bio,
+        returnPolicy: legacyDraft.returnPolicy,
+        shippingMethods: legacyDraft.shippingMethods?.map(({ code, label }) => ({
+          code,
+          label,
+        })),
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts explicit shipping terms while retaining legacy inputs", () => {
     const method = {
       code: "NATIONAL_POST",

@@ -140,6 +140,95 @@ test("an approved applicant enters the unpublished seller workspace", async ({
   await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toHaveCount(0);
 });
 
+test("a legacy store draft loads in the existing form and saves with its revision", async ({
+  page,
+}, testInfo) => {
+  const mobile =
+    sellerApplicationDraftTestMobiles[visualProjectIndex(testInfo.project.name)]!;
+  await page.route("**/api/seller-applications/mine", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [approvedApplication()], nextCursor: null }),
+    }),
+  );
+
+  let savedRequest: { headers: Record<string, string>; body: unknown } | undefined;
+  let savedDraft = legacyStoreDraft();
+  await page.route("**/api/store/seller/store/draft", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(legacyStoreDraft()),
+      });
+      return;
+    }
+    savedRequest = {
+      headers: route.request().headers(),
+      body: route.request().postDataJSON(),
+    };
+    const submitted = savedRequest.body as {
+      name: string;
+      bio: string;
+      returnPolicy: string;
+      themeColor: string;
+    };
+    savedDraft = {
+      ...legacyStoreDraft(),
+      name: submitted.name,
+      bio: submitted.bio,
+      returnPolicy: submitted.returnPolicy,
+      themeColor: submitted.themeColor,
+      shippingMethods: [
+        {
+          ...legacyStoreDraft().shippingMethods[0],
+          revision: 2,
+          label: "دریافت حضوری",
+        },
+      ],
+      revision: 8,
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(savedDraft),
+    });
+  });
+  await page.route("**/api/store/seller/store/preview", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        store: savedDraft,
+        publicationReadiness: { ready: true, missingFields: [] },
+      }),
+    }),
+  );
+
+  await page.goto("/seller/login?returnTo=%2Fseller%2Fstore");
+  await page.getByLabel("شماره موبایل").fill(mobile);
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByRole("button", { name: "ورود" }).click();
+  await page.getByRole("link", { name: "ادامه کار" }).click();
+
+  await expect(page.getByLabel("نام فروشگاه")).toHaveValue("  ");
+  await expect(page.getByLabel("معرفی کوتاه")).toHaveValue(" x");
+  await page.getByLabel("نام فروشگاه").fill("فروشگاه اصلاح‌شده");
+  await page.getByLabel("معرفی کوتاه").fill("معرفی اصلاح‌شده فروشگاه");
+  await page.getByLabel("سیاست مرجوعی").fill("قانون اصلاح‌شده مرجوعی فروشگاه");
+  await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
+
+  await expect(page.getByRole("heading", { name: "پیش‌نمایش فروشگاه" })).toBeVisible();
+  expect(savedRequest?.headers["if-match"]).toBe('"7"');
+  expect(savedRequest?.body).toMatchObject({
+    name: "فروشگاه اصلاح‌شده",
+    bio: "معرفی اصلاح‌شده فروشگاه",
+    returnPolicy: "قانون اصلاح‌شده مرجوعی فروشگاه",
+  });
+});
+
 function informationRequestApplication() {
   const submittedAt = "2026-08-24T08:00:00.000Z";
   return {
@@ -214,4 +303,37 @@ function approvedApplication() {
       },
     ],
   } as const;
+}
+
+function legacyStoreDraft() {
+  return {
+    id: "5e652775-b807-4fb6-956e-62418495e424",
+    sellerId: "39d6f0e1-35c5-4192-8147-1b45570e6a1d",
+    name: "  ",
+    slug: "legacy-readable-store",
+    bio: " x",
+    shippingMethods: [
+      {
+        id: "1dbaf795-cb08-49bd-b9d5-c71c3c708ed9",
+        revision: 1,
+        code: "PICKUP",
+        label: "  ",
+        fixedFee: { amount: 0, currency: "IRR" },
+        estimatedDeliveryText: "زمان دقیق تحویل هنگام ثبت سفارش مشخص می‌شود.",
+        enabled: true,
+        requiresDeliveryAddress: false,
+        requiresPostalCode: false,
+      },
+    ],
+    returnPolicy: "          ",
+    returnPolicyRevision: 1,
+    settlementDestination: { kind: "TEST", status: "TEST_VERIFIED" },
+    logoMediaId: null,
+    coverMediaId: null,
+    themeColor: "#A41439",
+    status: "DRAFT",
+    publicationVersion: 0,
+    revision: 7,
+    updatedAt: "2026-08-28T10:00:00.000Z",
+  };
 }

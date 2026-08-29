@@ -19,6 +19,7 @@ import {
   type IdentitySessionReader,
 } from "../identity-access/public";
 import {
+  legacyStoreDraftReplayInputContract,
   storeDraftInputContract,
   storeIdempotencyKeyContract,
   storeRevisionTagContract,
@@ -73,6 +74,20 @@ export class StoreController {
     const identityId = await requireIdentity(request, this.sessions);
     const parsed = storeDraftInputContract.safeParse(body);
     if (!parsed.success) {
+      const legacyReplay = legacyStoreDraftReplayInputContract.safeParse(body);
+      if (legacyReplay.success) {
+        const write = requireStoreWriteHeaders(request.id, idempotencyKey, ifMatch);
+        const replay = await this.handle(request, () =>
+          this.service.replayLegacyDraft(identityId, legacyReplay.data, {
+            correlationId: request.id,
+            ...write,
+          }),
+        );
+        if (replay) {
+          response.header("etag", `"${replay.revision}"`);
+          return replay;
+        }
+      }
       throw validationError(
         request.id,
         "اطلاعات فروشگاه را بررسی کنید.",
@@ -84,10 +99,15 @@ export class StoreController {
     }
     const write = requireStoreWriteHeaders(request.id, idempotencyKey, ifMatch);
     const draft = await this.handle(request, () =>
-      this.service.saveDraft(identityId, parsed.data, {
-        correlationId: request.id,
-        ...write,
-      }),
+      this.service.saveDraft(
+        identityId,
+        parsed.data,
+        {
+          correlationId: request.id,
+          ...write,
+        },
+        body,
+      ),
     );
     response.header("etag", `"${draft.revision}"`);
     return draft;
