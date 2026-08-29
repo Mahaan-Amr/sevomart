@@ -68,6 +68,20 @@ export function StoreStatus() {
       <Link className={styles.primary} href="/seller/store/setup">
         {published ? "ویرایش فروشگاه" : "ادامه راه‌اندازی"}
       </Link>
+      <nav className={styles.settingsLinks} aria-label="تنظیمات فروشگاه">
+        <Link className={styles.secondary} href="/seller/store/profile">
+          معرفی
+        </Link>
+        <Link className={styles.secondary} href="/seller/store/shipping">
+          ارسال
+        </Link>
+        <Link className={styles.secondary} href="/seller/store/returns">
+          مرجوعی
+        </Link>
+        <Link className={styles.secondary} href="/seller/store/appearance">
+          ظاهر
+        </Link>
+      </nav>
       {published && state.store.slug ? (
         <Link className={styles.secondary} href={`/s/${state.store.slug}`}>
           دیدن فروشگاه
