@@ -51,6 +51,32 @@ describe("simple product tracer HTTP API", () => {
   it("creates, previews and atomically publishes one sellable physical product", async () => {
     const { server, cookie } = await startSellerProductTest();
 
+    const unauthorizedInventory = await server.inject({
+      method: "GET",
+      url: "/v1/seller/inventory",
+    });
+    expect(unauthorizedInventory.statusCode).toBe(401);
+    expect(unauthorizedInventory.json()).toEqual({
+      version: 1,
+      code: "UNAUTHORIZED",
+      message: "برای ادامه دوباره وارد شوید.",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
+
+    const unauthorizedAdjustment = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      payload: {},
+    });
+    expect(unauthorizedAdjustment.statusCode).toBe(401);
+    expect(unauthorizedAdjustment.json()).toMatchObject({
+      version: 1,
+      code: "UNAUTHORIZED",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
+
     const createKey = crypto.randomUUID();
     const created = await server.inject({
       method: "POST",
@@ -418,6 +444,29 @@ describe("simple product tracer HTTP API", () => {
         })
       ).statusCode,
     ).toBe(404);
+
+    const emptiedWhileUnpublished = await adjust(
+      crypto.randomUUID(),
+      "CORRECTION",
+      0,
+      4,
+    );
+    expect(emptiedWhileUnpublished.statusCode).toBe(200);
+
+    const unpublishedEventSql = postgres(apiTestEnvironment.DATABASE_URL, {
+      max: 1,
+    });
+    const unpublishedAvailabilityEvents = await unpublishedEventSql<
+      Array<{ count: number }>
+    >`
+      select count(*)::int as count
+      from platform_outbox_events
+      where event_type = 'VariantAvailabilityChanged.v1'
+        and aggregate_id = ${publicProduct.variantId}::uuid
+    `;
+    await unpublishedEventSql.end();
+    expect(unpublishedAvailabilityEvents).toEqual([{ count: 0 }]);
+
     const republished = await server.inject({
       method: "POST",
       url: `/v1/seller/products/${emptyDraft.productId}/publications`,
@@ -427,8 +476,13 @@ describe("simple product tracer HTTP API", () => {
     expect(republished.statusCode).toBe(200);
     expect(republished.json()).toMatchObject({ publicationVersion: 2 });
 
-    const emptiedAfterRepublish = await adjust(crypto.randomUUID(), "CORRECTION", 0, 4);
-    expect(emptiedAfterRepublish.statusCode).toBe(200);
+    const replenishedAfterRepublish = await adjust(
+      crypto.randomUUID(),
+      "CORRECTION",
+      1,
+      5,
+    );
+    expect(replenishedAfterRepublish.statusCode).toBe(200);
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
@@ -452,7 +506,7 @@ describe("simple product tracer HTTP API", () => {
         limit 1
       `;
       expect(availabilityEvents).toEqual([
-        { publicationVersion: 2, availability: "OUT_OF_STOCK" },
+        { publicationVersion: 2, availability: "AVAILABLE" },
       ]);
       const unpublicationEvents = await sql<
         Array<{ count: number; hasCausation: boolean }>
@@ -920,6 +974,88 @@ describe("simple product tracer HTTP API", () => {
     ]);
     expect(JSON.stringify(publicProduct)).not.toMatch(/sku|onHand/i);
 
+    const conflictInventory = new PostgresInventoryAuthoring(
+      apiTestEnvironment.DATABASE_URL,
+    );
+    const conflictSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      const reservedRow = saved.inventory[1]!;
+      const [inventoryOwner] = await conflictSql<Array<{ storeId: string }>>`
+        select store_id as "storeId"
+        from inventory_levels
+        where variant_id = ${reservedRow.variantId}::uuid
+      `;
+      const conflictReservationId = crypto.randomUUID();
+      await conflictSql.begin((transaction) =>
+        conflictInventory.reserveForOrder(transaction as never, {
+          reservationId: conflictReservationId,
+          orderId: crypto.randomUUID(),
+          storeId: inventoryOwner!.storeId as never,
+          expiresAt: new Date(Date.now() + 60_000),
+          items: [{ variantId: reservedRow.variantId, quantity: 1 }],
+        }),
+      );
+      const beforeRejectedBatch = await inventorySideEffects(
+        conflictSql,
+        saved.inventory.map((row) => row.variantId),
+      );
+
+      const sellerBatchConflict = await server.inject({
+        method: "PUT",
+        url: "/v1/seller/inventory",
+        headers: { cookie, "idempotency-key": crypto.randomUUID() },
+        payload: {
+          reasonCode: "MANUAL_COUNT",
+          rows: [
+            {
+              variantId: saved.inventory[0]!.variantId,
+              onHand: 99,
+              expectedRevision: saved.inventory[0]!.revision,
+            },
+            {
+              variantId: reservedRow.variantId,
+              onHand: 0,
+              expectedRevision: reservedRow.revision + 1,
+            },
+          ],
+        },
+      });
+      expect(sellerBatchConflict.statusCode).toBe(409);
+      expect(sellerBatchConflict.json()).toMatchObject({
+        version: 1,
+        code: "REVISION_CONFLICT",
+        details: {
+          issues: [
+            {
+              path: "rows.0.expectedRevision",
+              code: "REVISION_CONFLICT",
+              variantId: saved.inventory[0]!.variantId,
+            },
+            {
+              path: "rows.1.onHand",
+              code: "RESERVED_STOCK_CONFLICT",
+              variantId: reservedRow.variantId,
+            },
+          ],
+        },
+      });
+      expect(
+        await inventorySideEffects(
+          conflictSql,
+          saved.inventory.map((row) => row.variantId),
+        ),
+      ).toEqual(beforeRejectedBatch);
+      await conflictSql.begin((transaction) =>
+        conflictInventory.releaseExpiredReservation(transaction as never, {
+          reservationId: conflictReservationId,
+          expiredAt: new Date(Date.now() + 120_000),
+        }),
+      );
+    } finally {
+      await conflictSql.end();
+      await conflictInventory.onModuleDestroy();
+    }
+
     const concurrentEdits = await Promise.all(
       ["پیراهن نسخه کاری الف", "پیراهن نسخه کاری ب"].map((name) =>
         server.inject({
@@ -1247,6 +1383,37 @@ async function simpleVariantState(productId: string) {
   } finally {
     await sql.end();
   }
+}
+
+async function inventorySideEffects(
+  sql: ReturnType<typeof postgres>,
+  variantIds: readonly string[],
+) {
+  const levels = await sql<
+    Array<{ variantId: string; onHand: number; revision: number }>
+  >`
+    select variant_id as "variantId", on_hand as "onHand", revision
+    from inventory_levels
+    where variant_id = any(${variantIds}::uuid[])
+    order by variant_id
+  `;
+  const [counts] = await sql<
+    Array<{ adjustmentCount: number; availabilityEventCount: number }>
+  >`
+    select
+      (
+        select count(*)::int
+        from inventory_adjustments
+        where variant_id = any(${variantIds}::uuid[])
+      ) as "adjustmentCount",
+      (
+        select count(*)::int
+        from platform_outbox_events
+        where event_type = 'VariantAvailabilityChanged.v1'
+          and aggregate_id = any(${variantIds}::uuid[])
+      ) as "availabilityEventCount"
+  `;
+  return { levels, counts };
 }
 
 async function publishStore(server: TestServer, cookie: string) {
