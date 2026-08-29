@@ -63,9 +63,9 @@ export function PlatformAgentLogin() {
         <section className={styles.panel}>
           <span className={styles.brand}>سوو · عامل پلتفرم</span>
           <h1>ورود انجام شد</h1>
-          <p>اکنون می‌توانید صف درخواست‌های فروشندگی را بررسی کنید.</p>
-          <a className={styles.continueLink} href="/platform/seller-applications">
-            رفتن به صف بررسی
+          <p>اکنون مسئولیت‌های فعال شما دوباره بررسی می‌شوند.</p>
+          <a className={styles.continueLink} href="/platform">
+            رفتن به فضای کار
           </a>
         </section>
       </main>

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpException,
   HttpStatus,
@@ -24,20 +25,56 @@ import {
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
 import {
   PLATFORM_AGENT_OTP_SERVICE,
+  PLATFORM_AGENT_SESSION_AUTHORIZER,
   RUNTIME_ENVIRONMENT,
 } from "./identity-access.tokens";
-import { PlatformPermissionRequiredError } from "./public";
+import {
+  PlatformAgentSessionUnauthorizedError,
+  PlatformPermissionRequiredError,
+  type PlatformAgentSessionAuthorizer,
+} from "./public";
+import { readPlatformSessionToken } from "../../http/identity-session";
 
 @ApiExcludeController()
-@Controller("v1/platform/auth/otp")
+@Controller("v1/platform/auth")
 export class PlatformAgentAuthController {
   constructor(
     @Inject(PLATFORM_AGENT_OTP_SERVICE)
     private readonly service: PlatformAgentOtpService,
+    @Inject(PLATFORM_AGENT_SESSION_AUTHORIZER)
+    private readonly sessions: PlatformAgentSessionAuthorizer,
     @Inject(RUNTIME_ENVIRONMENT) private readonly environment: RuntimeEnvironment,
   ) {}
 
-  @Post("requests")
+  @Get("session")
+  async readSession(@Req() request: FastifyRequest) {
+    try {
+      return await this.sessions.readWorkspaceSession(
+        readPlatformSessionToken(request) ?? "",
+      );
+    } catch (error) {
+      if (error instanceof PlatformAgentSessionUnauthorizedError) {
+        throw platformAuthError("UNAUTHORIZED", request.id, 401);
+      }
+      throw error;
+    }
+  }
+
+  @Post("logout")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async logout(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    await this.sessions.revokeSession(readPlatformSessionToken(request) ?? "");
+    const secure = this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
+    void reply.header(
+      "Set-Cookie",
+      `sevo_platform_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`,
+    );
+  }
+
+  @Post("otp/requests")
   @HttpCode(HttpStatus.ACCEPTED)
   async requestOtp(@Body() body: unknown, @Req() request: FastifyRequest) {
     const parsed = otpRequestContract.safeParse(body);
@@ -55,7 +92,7 @@ export class PlatformAgentAuthController {
     }
   }
 
-  @Post("verifications")
+  @Post("otp/verifications")
   @HttpCode(HttpStatus.OK)
   async verifyOtp(
     @Body() body: unknown,

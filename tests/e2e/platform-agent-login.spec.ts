@@ -31,5 +31,5 @@ test("platform agent establishes the separate session through the Web journey", 
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page.getByRole("link", { name: "رفتن به صف بررسی" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "رفتن به فضای کار" })).toBeVisible();
 });

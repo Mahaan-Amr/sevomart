@@ -61,6 +61,11 @@ export const platformAgentAuthV1Paths = {
   verifyOtp: "/v1/platform/auth/otp/verifications",
 } as const;
 
+export const platformAgentWorkspaceV1Paths = {
+  readSession: "/v1/platform/auth/session",
+  logout: "/v1/platform/auth/logout",
+} as const;
+
 const trimmedText = (minimum: number, maximum: number) =>
   z.string().trim().min(minimum).max(maximum);
 
@@ -350,6 +355,20 @@ export const platformAgentSessionContract = z.object({
   expiresAt: z.string().datetime({ offset: true }),
 });
 
+export const platformAgentWorkspaceSessionContract = z.object({
+  actor: z.object({
+    identityId: z.string().uuid(),
+    audience: z.literal("PLATFORM_AGENT"),
+  }),
+  permissions: z
+    .array(platformPermissionContract)
+    .max(platformPermissionContract.options.length)
+    .refine((permissions) => new Set(permissions).size === permissions.length, {
+      message: "permissions must be unique",
+    }),
+  expiresAt: z.string().datetime({ offset: true }),
+});
+
 export const unauthorizedErrorContract = z.object({
   code: z.literal("UNAUTHORIZED"),
   message: z.string().min(1),
@@ -369,6 +388,7 @@ export const identityAccessV1Schemas = {
   ActorContext: actorContextContract,
   IdentitySession: identitySessionContract,
   PlatformAgentSession: platformAgentSessionContract,
+  PlatformAgentWorkspaceSession: platformAgentWorkspaceSessionContract,
   UnauthorizedError: unauthorizedErrorContract,
   RateLimitError: rateLimitErrorContract,
   SellerApplicationId: sellerApplicationIdContract,
@@ -426,6 +446,14 @@ export const identityAccessV1Examples = {
       audience: "PLATFORM_AGENT",
     },
     permission: "SELLER_APPLICATION_REVIEW",
+    expiresAt: "2026-08-24T17:00:00.000Z",
+  },
+  PlatformAgentWorkspaceSession: {
+    actor: {
+      identityId: "9921f18f-187f-40dd-a389-1626156366f8",
+      audience: "PLATFORM_AGENT",
+    },
+    permissions: ["PAYMENT_REVIEW", "SELLER_APPLICATION_REVIEW"],
     expiresAt: "2026-08-24T17:00:00.000Z",
   },
   UnauthorizedError: {
@@ -562,6 +590,9 @@ export type OtpVerification = z.infer<typeof otpVerificationContract>;
 export type ActorContext = z.infer<typeof actorContextContract>;
 export type IdentitySession = z.infer<typeof identitySessionContract>;
 export type PlatformAgentSession = z.infer<typeof platformAgentSessionContract>;
+export type PlatformAgentWorkspaceSession = z.infer<
+  typeof platformAgentWorkspaceSessionContract
+>;
 export type IdentityStatus = z.infer<typeof identityStatusContract>;
 export type IdentityStatusChangedV1 = z.infer<typeof identityStatusChangedV1Contract>;
 export type SellerApplicationInput = z.infer<typeof sellerApplicationInputContract>;
