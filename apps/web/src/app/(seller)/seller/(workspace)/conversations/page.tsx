@@ -5,6 +5,8 @@ import { readSellerConversations } from "../../../../../lib/seller-conversation-
 import { conversationContextLabel } from "../../conversations/conversation-copy";
 import styles from "../../conversations/conversations.module.css";
 
+export const dynamic = "force-dynamic";
+
 export default async function SellerConversationsPage({
   searchParams,
 }: {

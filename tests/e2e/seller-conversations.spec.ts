@@ -76,10 +76,29 @@ test("seller answers one private thread without duplicate effects and gets a saf
       `;
       await transaction`
         insert into store_stores
-          (id, name, status, revision, publication_version, published_at)
+          (id, name, slug, bio, return_policy, return_policy_revision,
+           settlement_kind, settlement_status, settlement_verified_at,
+           theme_color, status, revision, publication_version, published_at)
         values
-          (${storeId}, 'فروشگاه گفت‌وگوی فروشنده', 'PUBLISHED', 1, 1, now()),
-          (${otherStoreId}, 'فروشگاه نامرتبط', 'PUBLISHED', 1, 1, now())
+          (${storeId}, 'فروشگاه گفت‌وگوی فروشنده', ${`c-${storeId}`},
+           'فروشگاه آزمون گفت‌وگوی فروشنده',
+           'تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.', 1,
+           'TEST', 'TEST_VERIFIED', now(), '#A41439', 'PUBLISHED', 1, 1, now()),
+          (${otherStoreId}, 'فروشگاه نامرتبط', ${`c-${otherStoreId}`},
+           'فروشگاه آزمون نامرتبط',
+           'تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.', 1,
+           'TEST', 'TEST_VERIFIED', now(), '#A41439', 'PUBLISHED', 1, 1, now())
+      `;
+      await transaction`
+        insert into store_shipping_methods
+          (id, store_id, position, revision, code, label, fixed_fee_amount,
+           currency, estimated_delivery_text, enabled,
+           requires_delivery_address, requires_postal_code)
+        values
+          (${crypto.randomUUID()}, ${storeId}, 0, 1, 'NATIONAL_POST',
+           'پست پیشتاز', 0, 'IRR', 'دو تا چهار روز کاری', true, true, true),
+          (${crypto.randomUUID()}, ${otherStoreId}, 0, 1, 'NATIONAL_POST',
+           'پست پیشتاز', 0, 'IRR', 'دو تا چهار روز کاری', true, true, true)
       `;
       await transaction`
         insert into store_memberships (id, store_id, seller_id, role)
@@ -124,15 +143,15 @@ test("seller answers one private thread without duplicate effects and gets a saf
     await assertMinimumContrast(page.getByRole("button"));
 
     const idempotencyKeys: string[] = [];
-    let loseFirstResponse = true;
+    let loseNextResponse = true;
     await page.route("**/api/conversations/*/messages", async (route) => {
       if (route.request().method() !== "POST") {
         await route.continue();
         return;
       }
       idempotencyKeys.push(route.request().headers()["idempotency-key"] ?? "");
-      if (loseFirstResponse) {
-        loseFirstResponse = false;
+      if (loseNextResponse) {
+        loseNextResponse = false;
         const processed = await route.fetch();
         expect(processed.status()).toBe(201);
         await route.fulfill({
@@ -170,6 +189,24 @@ test("seller answers one private thread without duplicate effects and gets a saf
     await expect(page.getByText(sellerReply, { exact: true })).toHaveCount(1);
     await expect(page.getByText("در حال فرستادن…")).toHaveCount(0);
 
+    loseNextResponse = true;
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "valid.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+    await page.getByLabel("توضیح کوتاه تصویر (اختیاری)").fill("تصویر معتبر");
+    await page.getByRole("button", { name: "فرستادن پاسخ" }).click();
+    const mediaRetry = page.getByRole("button", { name: "تلاش دوباره" });
+    await expect(mediaRetry).toBeVisible();
+    await mediaRetry.click();
+    await expect(page.getByRole("img", { name: "تصویر معتبر" })).toHaveCount(1);
+    expect(idempotencyKeys).toHaveLength(4);
+    expect(idempotencyKeys[3]).toBe(idempotencyKeys[2]);
+
     await page.goto(`/seller/conversations/${foreignConversation.conversationId}`);
     await expect(
       page.getByRole("heading", { name: "این گفت‌وگو در دسترس نیست" }),
@@ -184,7 +221,11 @@ test("seller answers one private thread without duplicate effects and gets a saf
       page.getByRole("link", { name: /فروشگاه.*بازکردن رشته/ }),
     ).toBeVisible();
 
-    await page.goto(`/seller/conversations/${crypto.randomUUID()}`);
+    await sql`
+      delete from conversation_threads
+      where id = ${conversation.conversationId}
+    `;
+    await page.goto(`/seller/conversations/${conversation.conversationId}`);
     await expect(
       page.getByRole("heading", { name: "این گفت‌وگو در دسترس نیست" }),
     ).toBeVisible();

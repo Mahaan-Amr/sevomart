@@ -70,32 +70,31 @@ export async function readNearestSellerConversation(
   | { kind: "NONE" }
   | { kind: "UNAVAILABLE" }
 > {
-  const conversations = await readSellerConversations(cookieHeader, undefined, 50);
-  if (conversations.kind !== "OK") return { kind: "UNAVAILABLE" };
-  if (conversations.data.items.length === 0) return { kind: "NONE" };
-
-  const messagePages = await Promise.all(
-    conversations.data.items.map((conversation) =>
-      readSellerConversationMessages(
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const conversations = await readSellerConversations(cookieHeader, cursor, 50);
+    if (conversations.kind !== "OK") return { kind: "UNAVAILABLE" };
+    // The producer orders threads newest-first but does not expose the latest sender.
+    // Probe in that order and stop at the first buyer message to avoid a 50-request burst.
+    for (const conversation of conversations.data.items) {
+      const page = await readSellerConversationMessages(
         cookieHeader,
         conversation.conversationId,
         undefined,
         1,
-      ),
-    ),
-  );
-  const actionableIndex = messagePages.findIndex(
-    (page) => page.kind === "OK" && page.data.items[0]?.senderRole === "BUYER",
-  );
-  if (actionableIndex >= 0) {
-    return {
-      kind: "ACTIONABLE",
-      conversation: conversations.data.items[actionableIndex]!,
-    };
-  }
-  return messagePages.some((page) => page.kind === "UNAVAILABLE")
-    ? { kind: "UNAVAILABLE" }
-    : { kind: "NONE" };
+      );
+      if (page.kind === "OK" && page.data.items[0]?.senderRole === "BUYER") {
+        return { kind: "ACTIONABLE", conversation };
+      }
+      if (page.kind === "UNAVAILABLE") return { kind: "UNAVAILABLE" };
+    }
+    cursor = conversations.data.nextCursor;
+    if (cursor && seenCursors.has(cursor)) return { kind: "UNAVAILABLE" };
+    if (cursor) seenCursors.add(cursor);
+  } while (cursor);
+
+  return { kind: "NONE" };
 }
 
 async function readJson<T>(
