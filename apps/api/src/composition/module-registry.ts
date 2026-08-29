@@ -223,7 +223,22 @@ export const canonicalApiModuleRegistry: readonly {
     artifact: ProblemFollowUpModule,
     compose: () => ProblemFollowUpModule,
   },
-  { owner: "content", artifact: ContentModule, compose: () => ContentModule },
+  {
+    owner: "content",
+    artifact: ContentModule,
+    compose: ({ environment, productRepository }) =>
+      ContentModule.register(environment, {
+        products: productRepository,
+        // Orders owns the eventual confirmed-and-delivered purchase eligibility
+        // adapter. Until its fulfillment-backed contract is composed, this
+        // incomplete journey remains hidden and the endpoint fails closed.
+        purchases: {
+          async readEligibility() {
+            return { eligible: false, reason: "NOT_ELIGIBLE" };
+          },
+        },
+      }),
+  },
   {
     owner: "discovery",
     artifact: DiscoveryModule,

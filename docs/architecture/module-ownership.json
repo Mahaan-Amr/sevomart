@@ -87,7 +87,13 @@
     "conversation_audits": "conversations",
     "conversation_messages": "conversations",
     "conversation_snapshots": "conversations",
-    "conversation_snapshot_entries": "conversations"
+    "conversation_snapshot_entries": "conversations",
+    "content_sales_contents": "content",
+    "content_sales_content_products": "content",
+    "content_product_states": "content",
+    "content_purchase_experiences": "content",
+    "content_idempotency_records": "content",
+    "content_audits": "content"
   },
   "contracts": {
     "@sevo/contracts/platform/v1": "platform",
