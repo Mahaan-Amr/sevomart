@@ -52,6 +52,7 @@ async function readPublishedStore(
         headers: { "x-correlation-id": crypto.randomUUID() },
       },
     );
+    if (productsResponse.status === 404) return { state: "not-found" };
     if (!productsResponse.ok) return { state: "error" };
     const productsBody: unknown = await productsResponse.json();
     const products = publicProductListContract.safeParse(productsBody);

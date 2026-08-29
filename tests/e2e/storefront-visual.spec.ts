@@ -20,6 +20,7 @@ type ProjectStores = {
   defaultSlug: string;
   customSlug: string;
   draftSlug: string;
+  defaultMobile: string;
 };
 
 let stores: ProjectStores;
@@ -36,6 +37,7 @@ test.beforeAll(async ({ browserName }, testInfo) => {
     defaultSlug: `e2e-${index}-default`,
     customSlug: `e2e-${index}-custom`,
     draftSlug: `e2e-${index}-draft`,
+    defaultMobile: storefrontTestMobiles[index * 2]!,
   };
   const mobiles = [
     storefrontTestMobiles[index * 2],
@@ -79,6 +81,8 @@ test("a guest reads a published empty storefront from the real API", async ({
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: "خانه سرو" })).toBeVisible();
   await expect(page.getByText("هنوز کالایی منتشر نشده")).toBeVisible();
+  await expect(page.getByText("۰ کالای فعال")).toBeVisible();
+  await expect(page.getByText("۰ دنبال‌کننده")).toBeVisible();
   await expect(page.getByText("پست پیشتاز، دریافت حضوری")).toBeVisible();
   await expect(page.getByText("تسویه مستقیم")).toBeVisible();
   await expect(page.getByText(/تأیید آزمایشی/)).toBeVisible();
@@ -92,6 +96,38 @@ test("draft and unknown slugs expose no private store data", async ({ page }) =>
     expect(response?.status()).toBe(404);
     await expect(page.getByRole("heading", { name: "فروشگاه پیدا نشد" })).toBeVisible();
     await expect(page.getByText("پیش‌نویس خصوصی")).toHaveCount(0);
+  }
+});
+
+test("stopping publication gives guests a human 404", async ({ page }) => {
+  const context = await authenticatedSellerContext(stores.defaultMobile);
+  const current = await context.get("/v1/seller/store/draft");
+  expect(current.ok()).toBe(true);
+  const currentDraft = (await current.json()) as { revision: number };
+  const stopped = await context.put("/v1/seller/store/draft", {
+    headers: {
+      "idempotency-key": crypto.randomUUID(),
+      "if-match": `"${currentDraft.revision}"`,
+    },
+    data: storeDraftInput(stores.defaultSlug, false),
+  });
+  expect(stopped.ok()).toBe(true);
+  const stoppedDraft = (await stopped.json()) as { revision: number };
+
+  try {
+    const response = await page.goto(`/s/${stores.defaultSlug}`);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { name: "فروشگاه پیدا نشد" })).toBeVisible();
+    await expect(page.getByText("خانه سرو")).toHaveCount(0);
+  } finally {
+    const restored = await context.post("/v1/seller/store/publication", {
+      headers: {
+        "idempotency-key": crypto.randomUUID(),
+        "if-match": `"${stoppedDraft.revision}"`,
+      },
+    });
+    expect(restored.ok()).toBe(true);
+    await context.dispose();
   }
 });
 
@@ -112,6 +148,9 @@ test("custom media, theme and long Persian content render with API media", async
   await expect(
     page.getByText("تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد."),
   ).toBeVisible();
+  await expect(page.getByText("۷۵٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("۲ تا ۴ روز کاری")).toBeVisible();
+  await expect(page.getByText("دریافت حضوری غیرفعال")).toHaveCount(0);
   await expect(page.getByText("ساخته‌شده با سوو")).toBeVisible();
   await expect(page.locator("header")).toHaveCSS("--store-accent", "#760B29");
   await assertNoHorizontalOverflow(page);
@@ -212,47 +251,19 @@ for (const state of ["default", "custom", "loading", "error"] as const) {
 }
 
 async function createStore(mobile: string, slug: string, customized: boolean) {
-  const context = await createRequest.newContext({ baseURL: apiBaseUrl });
-  const challengeResponse = await context.post("/v1/auth/otp/requests", {
-    data: { mobile },
-  });
-  expect(challengeResponse.status()).toBe(202);
-  const challenge = (await challengeResponse.json()) as { challengeId: string };
-  const verification = await context.post("/v1/auth/otp/verifications", {
-    data: { challengeId: challenge.challengeId, code: "111111" },
-  });
-  expect(verification.ok()).toBe(true);
-
-  let logoMediaId: string | null = null;
-  let coverMediaId: string | null = null;
-  if (customized) {
-    logoMediaId = (await uploadImage(context, "logo.png", "STORE_LOGO")).id;
-    coverMediaId = (await uploadImage(context, "cover.png", "STORE_COVER")).id;
-  }
-
+  const context = await authenticatedSellerContext(mobile);
+  const logoMediaId = customized
+    ? (await uploadImage(context, "logo.png", "STORE_LOGO")).id
+    : null;
+  const coverMediaId = customized
+    ? (await uploadImage(context, "cover.png", "STORE_COVER")).id
+    : null;
   const draft = await context.put("/v1/seller/store/draft", {
     headers: {
       "idempotency-key": crypto.randomUUID(),
       "if-match": '"0"',
     },
-    data: {
-      name: customized
-        ? "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران"
-        : "خانه سرو",
-      slug,
-      bio: customized
-        ? "اینجا هر دست‌سازه با حوصله و در شمار محدود آماده می‌شود؛ توضیح روشن کمک می‌کند پیش از سفارش بدانید چه چیزی به دستتان می‌رسد."
-        : "چیزهای کوچک و کاربردی برای خانه.",
-      shippingMethods: [
-        { code: "NATIONAL_POST", label: "پست پیشتاز" },
-        { code: "PICKUP", label: "دریافت حضوری" },
-      ],
-      returnPolicy: "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
-      settlementDestination: { kind: "TEST" },
-      logoMediaId,
-      coverMediaId,
-      themeColor: customized ? "#760B29" : "#A41439",
-    },
+    data: storeDraftInput(slug, customized, { logoMediaId, coverMediaId }),
   });
   expect(draft.ok()).toBe(true);
   const saved = (await draft.json()) as { revision: number };
@@ -264,6 +275,59 @@ async function createStore(mobile: string, slug: string, customized: boolean) {
   });
   expect(publication.ok()).toBe(true);
   await context.dispose();
+}
+
+async function authenticatedSellerContext(mobile: string) {
+  const context = await createRequest.newContext({ baseURL: apiBaseUrl });
+  const challengeResponse = await context.post("/v1/auth/otp/requests", {
+    data: { mobile },
+  });
+  expect(challengeResponse.status()).toBe(202);
+  const challenge = (await challengeResponse.json()) as { challengeId: string };
+  const verification = await context.post("/v1/auth/otp/verifications", {
+    data: { challengeId: challenge.challengeId, code: "111111" },
+  });
+  expect(verification.ok()).toBe(true);
+
+  return context;
+}
+
+function storeDraftInput(
+  slug: string,
+  customized: boolean,
+  media: { logoMediaId: string | null; coverMediaId: string | null } = {
+    logoMediaId: null,
+    coverMediaId: null,
+  },
+) {
+  return {
+    name: customized
+      ? "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران"
+      : "خانه سرو",
+    slug,
+    bio: customized
+      ? "اینجا هر دست‌سازه با حوصله و در شمار محدود آماده می‌شود؛ توضیح روشن کمک می‌کند پیش از سفارش بدانید چه چیزی به دستتان می‌رسد."
+      : "چیزهای کوچک و کاربردی برای خانه.",
+    shippingMethods: [
+      customized
+        ? {
+            code: "NATIONAL_POST",
+            label: "پست پیشتاز",
+            fixedFee: { amount: 750_000, currency: "IRR" },
+            estimatedDeliveryText: "۲ تا ۴ روز کاری",
+            enabled: true,
+          }
+        : { code: "NATIONAL_POST", label: "پست پیشتاز" },
+      customized
+        ? { code: "PICKUP", label: "دریافت حضوری غیرفعال", enabled: false }
+        : { code: "PICKUP", label: "دریافت حضوری" },
+    ],
+    returnPolicy: "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
+    settlementDestination: { kind: "TEST" },
+    logoMediaId: media.logoMediaId,
+    coverMediaId: media.coverMediaId,
+    themeColor: customized ? "#760B29" : "#A41439",
+  };
 }
 
 async function uploadImage(
