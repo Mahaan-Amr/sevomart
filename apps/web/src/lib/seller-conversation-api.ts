@@ -1,5 +1,6 @@
 import {
   conversationMessagePageV1Contract,
+  conversationNeedsReplyV1Contract,
   conversationThreadPageV1Contract,
   conversationThreadV1Contract,
   type ConversationMessageV1,
@@ -70,31 +71,15 @@ export async function readNearestSellerConversation(
   | { kind: "NONE" }
   | { kind: "UNAVAILABLE" }
 > {
-  let cursor: string | undefined;
-  const seenCursors = new Set<string>();
-  do {
-    const conversations = await readSellerConversations(cookieHeader, cursor, 50);
-    if (conversations.kind !== "OK") return { kind: "UNAVAILABLE" };
-    // The producer orders threads newest-first but does not expose the latest sender.
-    // Probe in that order and stop at the first buyer message to avoid a 50-request burst.
-    for (const conversation of conversations.data.items) {
-      const page = await readSellerConversationMessages(
-        cookieHeader,
-        conversation.conversationId,
-        undefined,
-        1,
-      );
-      if (page.kind === "OK" && page.data.items[0]?.senderRole === "BUYER") {
-        return { kind: "ACTIONABLE", conversation };
-      }
-      if (page.kind === "UNAVAILABLE") return { kind: "UNAVAILABLE" };
-    }
-    cursor = conversations.data.nextCursor;
-    if (cursor && seenCursors.has(cursor)) return { kind: "UNAVAILABLE" };
-    if (cursor) seenCursors.add(cursor);
-  } while (cursor);
-
-  return { kind: "NONE" };
+  const summary = await readJson(
+    "/v1/conversations/needs-reply",
+    cookieHeader,
+    conversationNeedsReplyV1Contract,
+  );
+  if (summary.kind !== "OK") return { kind: "UNAVAILABLE" };
+  return summary.data.status === "ACTIONABLE"
+    ? { kind: "ACTIONABLE", conversation: summary.data.conversation }
+    : { kind: "NONE" };
 }
 
 async function readJson<T>(

@@ -58,6 +58,7 @@ producer گفت‌وگو aggregate فروشگاه، کالا یا سفارش ر�
 | operation                     | مسیر                                               | نتیجه                                    |
 | ----------------------------- | -------------------------------------------------- | ---------------------------------------- |
 | `ListConversations.v1`        | `GET /v1/conversations`                            | صفحه رشته‌های همان participant           |
+| `ReadConversationNeedsReply.v1` | `GET /v1/conversations/needs-reply`              | نزدیک‌ترین رشته نیازمند پاسخ فروشنده یا `NONE` |
 | `OpenConversation.v1`         | `POST /v1/conversations` با `Idempotency-Key`      | رشته موجود یا تازه برای زمینه واجد شرایط |
 | `ReadConversation.v1`         | `GET /v1/conversations/{conversationId}`           | زمینه و نقش viewer بدون داده تماس        |
 | `ListConversationMessages.v1` | `GET /v1/conversations/{conversationId}/messages`  | صفحه پیام‌های مجاز همان رشته             |
@@ -172,6 +173,10 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
   operation، outcome، correlation، زمان و شناسه داخلی لازم را نگه می‌دارد؛ بدون
   متن، caption، شناسه رسانه، token یا داده تماس. log و trace از پالایش عمومی
   privacy-safe استفاده می‌کنند.
+- خلاصه `ReadConversationNeedsReply.v1` در مالکیت producer گفت‌وگو است. repository
+  با یک query، رشته‌های participant فروشنده را بر اساس آخرین پیام فیلتر و با ترتیب
+  `updatedAt DESC, conversationId DESC` فقط نزدیک‌ترین مورد را برمی‌گرداند. consumer
+  اجازه بازسازی این تصمیم با پیمایش فهرست رشته‌ها و پیام‌های جداگانه را ندارد.
 - آزمون یکپارچه `tests/integration/conversations-api.test.ts` مسیر HTTP واقعی با
   نشست و PostgreSQL را برای eligibility، دسترسی، retry، snapshot، رسانه، rollback
   و payload خصوصی outbox بررسی می‌کند. آزمون‌های media همان قرارداد storage را

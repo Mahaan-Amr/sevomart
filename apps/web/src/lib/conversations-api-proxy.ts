@@ -36,6 +36,7 @@ export function proxyConversationMediaRequest(
 
 function isConversationPath(segments: readonly string[]) {
   if (segments.length === 0) return true;
+  if (segments.length === 1 && segments[0] === "needs-reply") return true;
   if (!conversationIdContract.safeParse(segments[0]).success) return false;
   return (
     segments.length === 1 ||

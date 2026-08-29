@@ -25,6 +25,11 @@ export const conversationsV1Operations = {
     method: "get",
     path: "/v1/conversations",
   },
+  readConversationNeedsReply: {
+    operationId: "readConversationNeedsReply",
+    method: "get",
+    path: "/v1/conversations/needs-reply",
+  },
   openConversation: {
     operationId: "openConversation",
     method: "post",
@@ -104,6 +109,17 @@ export const conversationThreadPageV1Contract = z
     nextCursor: conversationCursorContract.optional(),
   })
   .strict();
+
+export const conversationNeedsReplyV1Contract = z.discriminatedUnion("status", [
+  z
+    .object({
+      version: z.literal(1),
+      status: z.literal("ACTIONABLE"),
+      conversation: conversationThreadV1Contract,
+    })
+    .strict(),
+  z.object({ version: z.literal(1), status: z.literal("NONE") }).strict(),
+]);
 
 export const conversationMessageContentV1Contract = z.discriminatedUnion("type", [
   z
@@ -219,6 +235,7 @@ export const conversationsV1Schemas = {
   OpenConversationInputV1: openConversationInputV1Contract,
   ConversationThreadV1: conversationThreadV1Contract,
   ConversationThreadPageV1: conversationThreadPageV1Contract,
+  ConversationNeedsReplyV1: conversationNeedsReplyV1Contract,
   ConversationMessageContentV1: conversationMessageContentV1Contract,
   SendConversationMessageInputV1: sendConversationMessageInputV1Contract,
   ConversationMessageV1: conversationMessageV1Contract,
@@ -275,6 +292,22 @@ export const conversationsV1Examples = {
   ConversationThreadPageV1: {
     version: 1,
     items: [],
+  },
+  ConversationNeedsReplyV1: {
+    version: 1,
+    status: "ACTIONABLE",
+    conversation: {
+      version: 1,
+      conversationId: "7a30197b-85fb-4209-83e8-743ab3bea71c",
+      context: {
+        kind: "PRODUCT",
+        storeId: "15f16eaf-1e01-4e40-b0e6-b8ce19268893",
+        productId: "0d113616-5ad8-45d2-a126-b5b3412b3dd7",
+      },
+      viewerRole: "SELLER",
+      createdAt: "2026-08-27T09:00:00.000Z",
+      updatedAt: "2026-08-27T09:00:00.000Z",
+    },
   },
   ConversationMessageContentV1: {
     type: "TEXT",
@@ -337,6 +370,7 @@ export type ConversationContextEligibilityV1 = z.infer<
 >;
 export type OpenConversationInputV1 = z.infer<typeof openConversationInputV1Contract>;
 export type ConversationThreadV1 = z.infer<typeof conversationThreadV1Contract>;
+export type ConversationNeedsReplyV1 = z.infer<typeof conversationNeedsReplyV1Contract>;
 export type ConversationMessageContentV1 = z.infer<
   typeof conversationMessageContentV1Contract
 >;

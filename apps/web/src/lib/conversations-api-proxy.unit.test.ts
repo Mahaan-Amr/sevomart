@@ -39,9 +39,7 @@ describe("conversations API proxy", () => {
     expect(new Headers(init.headers).get("cookie")).toBe(
       "sevo_identity_session=session",
     );
-    expect(new Headers(init.headers).get("idempotency-key")).toBe(
-      "send-message-01",
-    );
+    expect(new Headers(init.headers).get("idempotency-key")).toBe("send-message-01");
     expect(response.headers.get("retry-after")).toBe("2");
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
@@ -55,6 +53,15 @@ describe("conversations API proxy", () => {
     );
     vi.stubGlobal("fetch", upstream);
     const conversationId = "7a30197b-85fb-4209-83e8-743ab3bea71c";
+
+    expect(
+      (
+        await proxyConversationsRequest(
+          new Request("http://sevo.test/api/conversations/needs-reply"),
+          ["needs-reply"],
+        )
+      ).status,
+    ).toBe(200);
 
     for (const segments of [
       [conversationId],
@@ -73,7 +80,7 @@ describe("conversations API proxy", () => {
       [conversationId, "unexpected"],
     );
     expect(rejected.status).toBe(404);
-    expect(upstream).toHaveBeenCalledTimes(3);
+    expect(upstream).toHaveBeenCalledTimes(4);
   });
 
   it("streams a private attachment through its authenticated media route", async () => {
