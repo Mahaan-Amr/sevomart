@@ -19,6 +19,7 @@ import {
   SELLER_APPROVAL_RECOVERY,
   PLATFORM_AGENT_SESSION_AUTHORIZER,
   PLATFORM_AGENT_OTP_SERVICE,
+  PLATFORM_ACCESS_CORE,
 } from "./identity-access.tokens";
 import { PostgresIdentityAccessRepository } from "./infrastructure/postgres-identity-access.repository";
 import { PostgresPlatformAgentSessionAuthorizer } from "./infrastructure/postgres-platform-agent-session-authorizer";
@@ -35,6 +36,8 @@ import { PlatformSellerApplicationController } from "./platform-seller-applicati
 import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
 import { SellerApprovalRecoveryController } from "./seller-approval-recovery.controller";
+import { PlatformAccessController } from "./platform-access.controller";
+import { PostgresPlatformAccessRepository } from "./infrastructure/postgres-platform-access.repository";
 import type {
   ApprovedSellerStoreProvisioner,
   OpaqueStoreTransactionContext,
@@ -68,6 +71,7 @@ export class IdentityAccessModule {
         PlatformSellerApplicationController,
         PlatformAgentAuthController,
         SellerApprovalRecoveryController,
+        PlatformAccessController,
       ],
       providers: [
         { provide: RUNTIME_ENVIRONMENT, useValue: environment },
@@ -131,6 +135,10 @@ export class IdentityAccessModule {
           useValue:
             options.platformAgentSessionAuthorizer ??
             new PostgresPlatformAgentSessionAuthorizer(environment.DATABASE_URL),
+        },
+        {
+          provide: PLATFORM_ACCESS_CORE,
+          useValue: new PostgresPlatformAccessRepository(environment.DATABASE_URL),
         },
       ],
       exports: [IDENTITY_SESSION_READER, SELLER_ACCESS_READ],

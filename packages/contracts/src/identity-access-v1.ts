@@ -108,8 +108,16 @@ export const sellerApplicationReasonCodeContract = z.enum([
 ]);
 
 export const platformPermissionContract = z.enum([
+  "ACCESS_ADMINISTRATION",
+  "ACCESS_AUDIT_REVIEW",
   "SELLER_APPLICATION_REVIEW",
   "PAYMENT_REVIEW",
+  "PAYMENT_OUTCOME_CHANGE",
+  "DISPUTE_REVIEW",
+  "VIOLATION_REVIEW",
+  "RELATED_BUYER_CONTEXT_REVEAL",
+  "SENSITIVE_IDENTITY_BANKING_BROAD_VIEW",
+  "HIGH_RISK_BULK_EXPORT",
 ]);
 
 const platformSellerApplicationDecisionBaseContract = z.object({

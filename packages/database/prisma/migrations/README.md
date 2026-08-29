@@ -114,3 +114,11 @@ the content aggregate. The migration is additive, needs no compatibility window 
 uses a forward fix if deployment must be corrected. Both supported runtime paths use
 the same `prisma migrate deploy` history; verification evidence is recorded on the
 Issue handoff.
+
+Issue 127 additively introduces identity-access-owned responsibility and
+case-scoped sensitive-access aggregates, command idempotency and immutable audit.
+The existing platform-permission table remains the live compatibility projection
+used by current authorizers and is updated atomically with each responsibility
+activation or revocation. The migration needs no compatibility window and uses a
+forward migration for corrections. Sensitive values are never copied into audit or
+outbox payloads; every reveal is re-authorized inside the caller's transaction.
