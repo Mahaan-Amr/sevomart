@@ -9,6 +9,8 @@ import { conversationContextLabel } from "../../../conversations/conversation-co
 import { SellerConversationThread } from "../../../conversations/seller-conversation-thread";
 import styles from "../../../conversations/conversations.module.css";
 
+export const dynamic = "force-dynamic";
+
 export default async function SellerConversationPage({
   params,
 }: {
@@ -47,7 +49,6 @@ export default async function SellerConversationPage({
       </main>
     );
   }
-
   return (
     <main className={styles.threadPage}>
       <section className={styles.threadWorkspace} aria-labelledby="conversation-title">

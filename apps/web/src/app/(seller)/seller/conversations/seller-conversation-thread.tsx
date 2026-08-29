@@ -45,6 +45,16 @@ export function SellerConversationThread({
   const [notice, setNotice] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
 
+  function markOutgoingFailed(clientId: string, message: string) {
+    setMessages((current) =>
+      current.map((item) =>
+        "clientId" in item && item.clientId === clientId
+          ? failOutgoingMessage(item, message)
+          : item,
+      ),
+    );
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (uploading) return;
@@ -105,14 +115,7 @@ export function SellerConversationThread({
         },
       );
       if (!response.ok) {
-        const message = await responseMessage(response);
-        setMessages((current) =>
-          current.map((item) =>
-            "clientId" in item && item.clientId === outgoing.clientId
-              ? failOutgoingMessage(item, message)
-              : item,
-          ),
-        );
+        markOutgoingFailed(outgoing.clientId, await responseMessage(response));
         return;
       }
       const parsed = conversationMessageV1Contract.safeParse(await response.json());
@@ -121,15 +124,9 @@ export function SellerConversationThread({
         settleOutgoingMessage(current, outgoing.clientId, parsed.data),
       );
     } catch {
-      setMessages((current) =>
-        current.map((item) =>
-          "clientId" in item && item.clientId === outgoing.clientId
-            ? failOutgoingMessage(
-                item,
-                "پیام فرستاده نشد. اتصال را بررسی و با همان پیام دوباره تلاش کنید.",
-              )
-            : item,
-        ),
+      markOutgoingFailed(
+        outgoing.clientId,
+        "پیام فرستاده نشد. اتصال را بررسی و با همان پیام دوباره تلاش کنید.",
       );
     }
   }

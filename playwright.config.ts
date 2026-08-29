@@ -101,7 +101,10 @@ export default defineConfig({
     },
     {
       command: "pnpm e2e:worker",
-      url: `http://127.0.0.1:${e2eWorkerPort}/health/ready`,
+      url: "http://127.0.0.1:3108/health/ready",
+      ...(process.env.SEVO_E2E_WORKER_PORT
+        ? { url: `http://127.0.0.1:${e2eWorkerPort}/health/ready` }
+        : {}),
       env: {
         WORKER_PORT: e2eWorkerPort,
         API_READINESS_URL: `${e2eApiUrl}/health/ready`,

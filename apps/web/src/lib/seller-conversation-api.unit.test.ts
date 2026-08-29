@@ -41,6 +41,54 @@ describe("seller conversation API reader", () => {
       kind: "UNAVAILABLE",
     });
   });
+
+  it("does not label an older reply nearest when a newer thread cannot be read", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/conversations?limit=50")) {
+        return Response.json({
+          version: 1,
+          items: [thread(firstId), thread(secondId)],
+        });
+      }
+      if (url.includes(firstId)) {
+        return Response.json({ items: "broken" });
+      }
+      return Response.json({ version: 1, items: [message(secondId, "BUYER")] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(readNearestSellerConversation("session=one")).resolves.toEqual({
+      kind: "UNAVAILABLE",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues the frozen thread listing until it finds the nearest buyer reply", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/conversations?limit=50")) {
+        return Response.json({
+          version: 1,
+          items: [thread(firstId)],
+          nextCursor: "older-page",
+        });
+      }
+      if (url.endsWith("/v1/conversations?limit=50&cursor=older-page")) {
+        return Response.json({ version: 1, items: [thread(secondId)] });
+      }
+      if (url.includes(firstId)) {
+        return Response.json({ version: 1, items: [message(firstId, "SELLER")] });
+      }
+      return Response.json({ version: 1, items: [message(secondId, "BUYER")] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(readNearestSellerConversation("session=one")).resolves.toEqual({
+      kind: "ACTIONABLE",
+      conversation: thread(secondId),
+    });
+  });
 });
 
 function thread(conversationId: string) {
