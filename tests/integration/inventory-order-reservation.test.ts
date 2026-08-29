@@ -9,6 +9,7 @@ import {
 
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
 import {
+  InventoryReservedStockConflictError,
   InventoryReservationUnavailableError,
   type InventoryAuthoring,
   type InventoryTransactionContext,
@@ -147,6 +148,7 @@ describe("inventory reservation transaction seam", () => {
         reasonCode: "MANUAL_COUNT" as const,
         actorId: "9370e311-bf7a-4f91-a00b-3b9b5a141f51" as never,
         correlationId,
+        causationId: correlationId,
       };
       await sql.begin((transaction) =>
         inventory.replaceBatchForProduct(
@@ -165,6 +167,7 @@ describe("inventory reservation transaction seam", () => {
       expect(variantAvailabilityChangedV1Contract.parse(events[0])).toMatchObject({
         aggregateId: variantId,
         aggregateVersion: 2,
+        causationId: correlationId,
         payload: {
           productId,
           variantId,
@@ -189,7 +192,10 @@ describe("inventory reservation transaction seam", () => {
           ),
         );
       await adjust(3, 2); // Available stays positive: no public event.
-      await adjust(0, 3); // Availability crosses zero even with a reservation.
+      await expect(adjust(0, 3)).rejects.toBeInstanceOf(
+        InventoryReservedStockConflictError,
+      );
+      await adjust(1, 3); // Availability crosses zero without invalidating the hold.
       await expect(adjust(1, 3)).rejects.toMatchObject({ code: "REVISION_CONFLICT" });
       await expect(
         sql.begin(async (transaction) => {
@@ -232,7 +238,7 @@ describe("inventory reservation transaction seam", () => {
           availability: "OUT_OF_STOCK",
         },
       ]);
-      const finalSnapshot = { onHand: 0, reserved: 1, available: -1, revision: 4 };
+      const finalSnapshot = { onHand: 1, reserved: 1, available: 0, revision: 4 };
       expect(await inventory.read(variantId as never)).toEqual(finalSnapshot);
       expect(await inventory.readMany([variantId as never])).toEqual([
         { variantId, ...finalSnapshot },

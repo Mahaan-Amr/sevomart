@@ -5,6 +5,10 @@ import type {
   VariantId,
 } from "@sevo/contracts/platform/v1";
 import type { InventoryAvailabilityReadV1 } from "@sevo/contracts/inventory/v1";
+import type {
+  ReplaceSellerInventoryBatch,
+  SellerInventoryBatchResult,
+} from "@sevo/contracts/inventory/v1";
 
 declare const inventoryTransactionContext: unique symbol;
 
@@ -50,6 +54,8 @@ export interface InventoryAuthoring {
         | "CORRECTION";
       actorId: IdentityId;
       correlationId: string;
+      causationId?: string;
+      note?: string;
     }>,
   ): Promise<ReadonlyArray<InventorySnapshot & { variantId: VariantId }>>;
   readMany(
@@ -103,6 +109,41 @@ export interface InventoryAuthoring {
   ): Promise<"ACTIVE" | "RELEASED">;
 }
 
+export type SellerInventoryRow = InventorySnapshot & Readonly<{ variantId: VariantId }>;
+
+export interface SellerInventoryRepository {
+  listForStore(
+    command: Readonly<{
+      storeId: StoreId;
+      cursor?: VariantId;
+      limit: number;
+      availability?: "AVAILABLE" | "OUT_OF_STOCK";
+    }>,
+  ): Promise<ReadonlyArray<SellerInventoryRow>>;
+  replaceSellerBatch(
+    command: Readonly<{
+      storeId: StoreId;
+      actorId: IdentityId;
+      correlationId: string;
+      causationId: string;
+      idempotencyKey: string;
+      requestHash: string;
+      input: ReplaceSellerInventoryBatch;
+      readPublication: (
+        transaction: InventoryTransactionContext,
+        variantId: VariantId,
+      ) => Promise<
+        | Readonly<{
+            storeId: StoreId;
+            productId: ProductId;
+            publicationVersion: number;
+          }>
+        | undefined
+      >;
+    }>,
+  ): Promise<SellerInventoryBatchResult>;
+}
+
 export class InventoryReservationUnavailableError extends Error {
   readonly code = "OUT_OF_STOCK" as const;
   constructor(readonly variantId: VariantId) {
@@ -123,3 +164,19 @@ export class InventoryRevisionConflictError extends Error {
     super("Inventory revision does not match the expected revision");
   }
 }
+
+export class InventoryReservedStockConflictError extends Error {
+  readonly code = "RESERVED_STOCK_CONFLICT" as const;
+  constructor(
+    readonly requestedOnHand: number,
+    readonly reserved: number,
+  ) {
+    super("Inventory cannot be reduced below active reserved stock");
+  }
+}
+
+export class InventoryNotFoundError extends Error {}
+export class InventoryIdempotencyConflictError extends Error {
+  readonly code = "IDEMPOTENCY_CONFLICT" as const;
+}
+export class InventorySellerAccessInactiveError extends Error {}

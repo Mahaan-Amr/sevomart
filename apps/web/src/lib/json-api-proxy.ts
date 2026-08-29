@@ -8,6 +8,7 @@ export async function proxyJsonApiRequest(
     isAllowed: (segments: readonly string[]) => boolean;
     responseHeaders: readonly string[];
     noStore?: boolean;
+    forwardSearch?: boolean;
   },
 ): Promise<Response> {
   if (!options.isAllowed(segments)) {
@@ -16,7 +17,6 @@ export async function proxyJsonApiRequest(
   const suffix = segments.length
     ? `/${segments.map(encodeURIComponent).join("/")}`
     : "";
-  const search = new URL(request.url).search;
   try {
     const headers = new Headers({
       cookie: request.headers.get("cookie") ?? "",
@@ -28,6 +28,7 @@ export async function proxyJsonApiRequest(
       if (value) headers.set(name, value);
     }
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
+    const search = options.forwardSearch ? new URL(request.url).search : "";
     const upstream = await fetch(
       `${API_BASE_URL}${options.basePath}${suffix}${search}`,
       {

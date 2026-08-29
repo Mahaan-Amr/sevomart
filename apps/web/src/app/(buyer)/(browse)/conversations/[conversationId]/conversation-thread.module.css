@@ -1,0 +1,208 @@
+.page {
+  display: grid;
+  width: min(100%, 640px);
+  min-height: calc(100dvh - 130px);
+  margin-inline: auto;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 12px;
+}
+
+.heading {
+  display: grid;
+  gap: 4px;
+  padding-block-end: 12px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.heading a,
+.state a {
+  width: fit-content;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.heading h1,
+.heading p,
+.messages p,
+.empty,
+.state h1,
+.state p {
+  margin: 0;
+}
+
+.heading h1,
+.state h1 {
+  color: var(--color-text);
+  font-size: 20px;
+  line-height: 1.65;
+}
+
+.heading p,
+.empty,
+.state p {
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+
+.messages {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: end;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 0;
+  list-style: none;
+}
+
+.messages li {
+  display: grid;
+  width: fit-content;
+  max-width: min(86%, 480px);
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.own {
+  align-self: end;
+  background: var(--color-cover-start);
+  border-end-end-radius: 4px !important;
+}
+
+.theirs {
+  align-self: start;
+  background: var(--color-surface);
+  border-end-start-radius: 4px !important;
+}
+
+.messages time,
+.messages span,
+.composer small {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.messages div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.messages button,
+.older {
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.older {
+  justify-self: center;
+}
+
+.composer {
+  position: sticky;
+  inset-block-end: 76px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  padding: 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 16px;
+  background: var(--color-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.composer label,
+.composer textarea {
+  grid-column: 1 / -1;
+}
+
+.composer label {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.composer textarea {
+  resize: vertical;
+  min-height: 84px;
+  max-height: 220px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.8;
+}
+
+.composer button,
+.state button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 16px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.state {
+  display: grid;
+  width: min(100%, 560px);
+  margin-inline: auto;
+  justify-items: start;
+  gap: 8px;
+}
+
+.heading a:focus-visible,
+.messages button:focus-visible,
+.older:focus-visible,
+.composer textarea:focus-visible,
+.composer button:focus-visible,
+.state button:focus-visible,
+.state a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+@media (min-width: 768px) {
+  .composer {
+    inset-block-end: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .messages button,
+  .older,
+  .composer button,
+  .state button {
+    transition:
+      transform 180ms cubic-bezier(0.22, 0.8, 0.28, 1),
+      box-shadow 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
+  }
+
+  .messages button:hover,
+  .older:hover,
+  .composer button:hover:not(:disabled),
+  .state button:hover {
+    transform: translateY(-2px);
+  }
+}

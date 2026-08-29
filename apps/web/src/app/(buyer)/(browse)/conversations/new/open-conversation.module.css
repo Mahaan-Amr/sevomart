@@ -1,0 +1,51 @@
+.state {
+  display: grid;
+  width: min(100%, 520px);
+  margin: 8dvh auto 0;
+  justify-items: start;
+  gap: 8px;
+  padding: 24px;
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow: inset 4px 4px 10px var(--shadow-neutral-soft);
+}
+
+.state h1,
+.state p {
+  margin: 0;
+}
+
+.state h1 {
+  color: var(--color-text);
+  font-size: 20px;
+}
+
+.state p {
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+
+.state button,
+.state a {
+  min-height: 40px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  padding: 8px 16px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.state a {
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.state button:focus-visible,
+.state a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}

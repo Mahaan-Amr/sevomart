@@ -138,6 +138,9 @@ test("guest adds a product, signs in and continues the same cart", async ({
 
   await page.goto(`/s/${slug}/products/${ids.product}`);
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "پرسیدن درباره این کالا" }),
+  ).toHaveAttribute("href", /\/conversations\/new\?kind=PRODUCT/);
   await page.getByLabel("تعداد").selectOption("2");
   await page.getByRole("button", { name: "افزودن به سبد" }).click();
   await expect(page.getByText("به سبد اضافه شد.")).toBeVisible();
@@ -264,6 +267,9 @@ test("guest adds a product, signs in and continues the same cart", async ({
   }
   await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
   await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
+  ).toHaveAttribute("href", /\/conversations\/new\?kind=ORDER.*returnTo=%2Fcheckout/);
   await assertNoHorizontalOverflow(page);
 
   const historySql = postgres(databaseUrl, { max: 1 });

@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
+import { newConversationHref } from "../../../lib/conversation-navigation";
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { loginHref } from "../../../lib/navigation";
 import styles from "./checkout.module.css";
@@ -224,6 +225,19 @@ export function CheckoutView() {
           </p>
           <strong>{formatIrrAsToman(order.review.total.amount)}</strong>
           <p className={styles.note}>شناسه سفارش: {order.orderId}</p>
+          <Link
+            className={styles.conversationAction}
+            href={newConversationHref(
+              {
+                kind: "ORDER",
+                storeId: order.review.store.storeId,
+                orderId: order.orderId,
+              },
+              "/checkout",
+            )}
+          >
+            گفت‌وگو درباره سفارش
+          </Link>
           <button className={styles.primary} disabled={pending} onClick={startPayment}>
             {pending
               ? "در حال رفتن به پرداخت…"

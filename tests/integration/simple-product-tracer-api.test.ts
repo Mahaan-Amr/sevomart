@@ -190,6 +190,195 @@ describe("simple product tracer HTTP API", () => {
       { clientKey: "simple", everPublished: true },
     ]);
 
+    const sellerInventory = await server.inject({
+      method: "GET",
+      url: "/v1/seller/inventory?limit=20&availability=AVAILABLE",
+      headers: { cookie },
+    });
+    expect(sellerInventory.statusCode).toBe(200);
+    expect(sellerInventory.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          productId: emptyDraft.productId,
+          variantId: publicProduct.variantId,
+          productName: "فنجان سرامیکی",
+          onHand: 8,
+          available: 8,
+          revision: 1,
+        }),
+      ],
+    });
+
+    const adjust = async (
+      key: string,
+      reasonCode: "MANUAL_COUNT" | "DAMAGED" | "CORRECTION",
+      onHand: number,
+      expectedRevision: number,
+    ) =>
+      server.inject({
+        method: "PUT",
+        url: "/v1/seller/inventory",
+        headers: { cookie, "idempotency-key": key },
+        payload: {
+          reasonCode,
+          note: "شمارش ممیزی‌شده انبار",
+          rows: [{ variantId: publicProduct.variantId, onHand, expectedRevision }],
+        },
+      });
+    const increaseKey = crypto.randomUUID();
+    const invalid = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        reasonCode: "MANUAL_COUNT",
+        rows: [
+          {
+            variantId: publicProduct.variantId,
+            onHand: -1,
+            expectedRevision: 1,
+          },
+        ],
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json()).toEqual({
+      version: 1,
+      code: "VALIDATION_ERROR",
+      message: "اطلاعات موجودی را بررسی کنید.",
+      correlationId: expect.any(String),
+      details: {
+        issues: [
+          {
+            path: "rows.0.onHand",
+            code: "INVALID_FORMAT",
+            variantId: publicProduct.variantId,
+          },
+        ],
+      },
+    });
+    const duplicateRows = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        reasonCode: "MANUAL_COUNT",
+        rows: [
+          { variantId: publicProduct.variantId, onHand: 8, expectedRevision: 1 },
+          { variantId: publicProduct.variantId, onHand: 8, expectedRevision: 1 },
+        ],
+      },
+    });
+    expect(duplicateRows.statusCode).toBe(422);
+    expect(duplicateRows.json().details.issues).toEqual([
+      {
+        path: "rows.0.variantId",
+        code: "DUPLICATE",
+        variantId: publicProduct.variantId,
+      },
+      {
+        path: "rows.1.variantId",
+        code: "DUPLICATE",
+        variantId: publicProduct.variantId,
+      },
+    ]);
+    const increased = await adjust(increaseKey, "MANUAL_COUNT", 9, 1);
+    expect(increased.statusCode).toBe(200);
+    expect(increased.json()).toMatchObject({
+      rows: [{ onHand: 9, revision: 2, availability: "AVAILABLE" }],
+    });
+    const replayedIncrease = await adjust(increaseKey, "MANUAL_COUNT", 9, 1);
+    expect(replayedIncrease.json()).toEqual(increased.json());
+    expect((await adjust(increaseKey, "MANUAL_COUNT", 10, 2)).statusCode).toBe(409);
+    expect((await adjust(crypto.randomUUID(), "DAMAGED", 7, 2)).statusCode).toBe(200);
+    expect((await adjust(crypto.randomUUID(), "CORRECTION", 8, 3)).statusCode).toBe(
+      200,
+    );
+
+    const auditSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const adjustments = await auditSql<
+      Array<{
+        previousOnHand: number;
+        nextOnHand: number;
+        reasonCode: string;
+        operation: string;
+        previousRevision: number;
+        nextRevision: number;
+        actorIdentityId: string;
+        note: string | null;
+        occurredAt: Date;
+      }>
+    >`
+      select previous_on_hand as "previousOnHand", next_on_hand as "nextOnHand",
+        reason_code as "reasonCode", operation,
+        previous_revision as "previousRevision", next_revision as "nextRevision",
+        actor_identity_id as "actorIdentityId", note,
+        occurred_at as "occurredAt"
+      from inventory_adjustments
+      where variant_id = ${publicProduct.variantId}::uuid
+      order by revision
+    `;
+    await auditSql.end();
+    expect(adjustments.slice(-3)).toEqual([
+      expect.objectContaining({
+        previousOnHand: 8,
+        nextOnHand: 9,
+        reasonCode: "MANUAL_COUNT",
+        operation: "REPLACE_ON_HAND",
+        previousRevision: 1,
+        nextRevision: 2,
+        note: "شمارش ممیزی‌شده انبار",
+        occurredAt: expect.any(Date),
+      }),
+      expect.objectContaining({
+        previousOnHand: 9,
+        nextOnHand: 7,
+        reasonCode: "DAMAGED",
+      }),
+      expect.objectContaining({
+        previousOnHand: 7,
+        nextOnHand: 8,
+        reasonCode: "CORRECTION",
+      }),
+    ]);
+
+    const reservationInventory = new PostgresInventoryAuthoring(
+      apiTestEnvironment.DATABASE_URL,
+    );
+    const reservationSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const reservationId = crypto.randomUUID();
+    const [inventoryOwner] = await reservationSql<Array<{ storeId: string }>>`
+      select store_id as "storeId" from inventory_levels
+      where variant_id = ${publicProduct.variantId}::uuid
+    `;
+    await reservationSql.begin((transaction) =>
+      reservationInventory.reserveForOrder(transaction as never, {
+        reservationId,
+        orderId: crypto.randomUUID(),
+        storeId: inventoryOwner!.storeId as never,
+        expiresAt: new Date(Date.now() + 60_000),
+        items: [{ variantId: publicProduct.variantId, quantity: 8 }],
+      }),
+    );
+    const reservedPublicRead = await server.inject({
+      method: "GET",
+      url: `/v1/stores/product-tracer-store/products/${emptyDraft.productId}`,
+    });
+    expect(reservedPublicRead.json()).toMatchObject({
+      availability: "OUT_OF_STOCK",
+    });
+    expect(JSON.stringify(reservedPublicRead.json())).not.toMatch(
+      /onHand|reserved|sku/i,
+    );
+    await reservationSql.begin((transaction) =>
+      reservationInventory.releaseExpiredReservation(transaction as never, {
+        reservationId,
+        expiredAt: new Date(Date.now() + 120_000),
+      }),
+    );
+    await reservationSql.end();
+    await reservationInventory.onModuleDestroy();
+
     const replayed = await server.inject(publicationRequest);
     expect(replayed.statusCode).toBe(200);
     expect(replayed.json()).toEqual(published.json());
@@ -238,6 +427,9 @@ describe("simple product tracer HTTP API", () => {
     expect(republished.statusCode).toBe(200);
     expect(republished.json()).toMatchObject({ publicationVersion: 2 });
 
+    const emptiedAfterRepublish = await adjust(crypto.randomUUID(), "CORRECTION", 0, 4);
+    expect(emptiedAfterRepublish.statusCode).toBe(200);
+
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
       const events = await sql<Array<{ count: number; hasCausation: boolean }>>`
@@ -248,6 +440,20 @@ describe("simple product tracer HTTP API", () => {
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
       expect(events).toEqual([{ count: 2, hasCausation: true }]);
+      const availabilityEvents = await sql<
+        Array<{ publicationVersion: number; availability: string }>
+      >`
+        select (payload->>'publicationVersion')::int as "publicationVersion",
+          payload->>'availability' as availability
+        from platform_outbox_events
+        where event_type = 'VariantAvailabilityChanged.v1'
+          and aggregate_id = ${publicProduct.variantId}::uuid
+        order by aggregate_version desc
+        limit 1
+      `;
+      expect(availabilityEvents).toEqual([
+        { publicationVersion: 2, availability: "OUT_OF_STOCK" },
+      ]);
       const unpublicationEvents = await sql<
         Array<{ count: number; hasCausation: boolean }>
       >`
@@ -266,9 +472,11 @@ describe("simple product tracer HTTP API", () => {
         from inventory_adjustments
         where variant_id = ${saved.json().workingCopy.variant.variantId}::uuid
       `;
-      expect(adjustments).toEqual([
-        { reasonCode: "INITIAL_STOCK", previousOnHand: 0, nextOnHand: 8 },
-      ]);
+      expect(adjustments).toContainEqual({
+        reasonCode: "INITIAL_STOCK",
+        previousOnHand: 0,
+        nextOnHand: 8,
+      });
     } finally {
       await sql.end();
     }

@@ -20,11 +20,27 @@ model InventoryAdjustment {
   previousOnHand  Int      @map("previous_on_hand")
   nextOnHand      Int      @map("next_on_hand")
   revision        Int
+  operation       String   @db.VarChar(32)
+  previousRevision Int     @map("previous_revision")
+  nextRevision    Int      @map("next_revision")
   correlationId   String   @map("correlation_id") @db.Uuid
+  note            String?  @db.VarChar(500)
   occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   @@index([variantId, occurredAt])
   @@map("inventory_adjustments")
+}
+
+model InventoryIdempotencyRecord {
+  operation       String   @db.VarChar(64)
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  idempotencyKey  String   @map("idempotency_key") @db.VarChar(200)
+  requestHash     String   @map("request_hash") @db.Char(64)
+  responseJson    Json     @map("response_json")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, actorIdentityId, idempotencyKey])
+  @@map("inventory_idempotency_records")
 }
 
 model InventoryReservation {

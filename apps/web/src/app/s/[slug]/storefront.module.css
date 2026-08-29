@@ -173,7 +173,8 @@
 
 .followButton,
 .followingButton,
-.followError button {
+.followError button,
+.conversation {
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--color-primary);
@@ -182,6 +183,17 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
+}
+
+.conversation {
+  display: inline-flex;
+  width: fit-content;
+  margin: 4px 8px 0;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-primary-dark);
+  text-decoration: none;
 }
 
 .followButton {
@@ -505,7 +517,8 @@
 
 .followButton:focus-visible,
 .followingButton:focus-visible,
-.followError button:focus-visible {
+.followError button:focus-visible,
+.conversation:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 3px;
 }
@@ -529,6 +542,10 @@
 
   .identity .productCount {
     padding-inline: 24px;
+  }
+
+  .conversation {
+    margin-inline: 24px;
   }
 
   .trust {
