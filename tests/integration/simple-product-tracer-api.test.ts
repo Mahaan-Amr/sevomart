@@ -226,6 +226,62 @@ describe("simple product tracer HTTP API", () => {
         },
       });
     const increaseKey = crypto.randomUUID();
+    const invalid = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        reasonCode: "MANUAL_COUNT",
+        rows: [
+          {
+            variantId: publicProduct.variantId,
+            onHand: -1,
+            expectedRevision: 1,
+          },
+        ],
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json()).toEqual({
+      version: 1,
+      code: "VALIDATION_ERROR",
+      message: "اطلاعات موجودی را بررسی کنید.",
+      correlationId: expect.any(String),
+      details: {
+        issues: [
+          {
+            path: "rows.0.onHand",
+            code: "INVALID_FORMAT",
+            variantId: publicProduct.variantId,
+          },
+        ],
+      },
+    });
+    const duplicateRows = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        reasonCode: "MANUAL_COUNT",
+        rows: [
+          { variantId: publicProduct.variantId, onHand: 8, expectedRevision: 1 },
+          { variantId: publicProduct.variantId, onHand: 8, expectedRevision: 1 },
+        ],
+      },
+    });
+    expect(duplicateRows.statusCode).toBe(422);
+    expect(duplicateRows.json().details.issues).toEqual([
+      {
+        path: "rows.0.variantId",
+        code: "DUPLICATE",
+        variantId: publicProduct.variantId,
+      },
+      {
+        path: "rows.1.variantId",
+        code: "DUPLICATE",
+        variantId: publicProduct.variantId,
+      },
+    ]);
     const increased = await adjust(increaseKey, "MANUAL_COUNT", 9, 1);
     expect(increased.statusCode).toBe(200);
     expect(increased.json()).toMatchObject({
@@ -245,13 +301,18 @@ describe("simple product tracer HTTP API", () => {
         previousOnHand: number;
         nextOnHand: number;
         reasonCode: string;
+        operation: string;
+        previousRevision: number;
+        nextRevision: number;
         actorIdentityId: string;
         note: string | null;
         occurredAt: Date;
       }>
     >`
       select previous_on_hand as "previousOnHand", next_on_hand as "nextOnHand",
-        reason_code as "reasonCode", actor_identity_id as "actorIdentityId", note,
+        reason_code as "reasonCode", operation,
+        previous_revision as "previousRevision", next_revision as "nextRevision",
+        actor_identity_id as "actorIdentityId", note,
         occurred_at as "occurredAt"
       from inventory_adjustments
       where variant_id = ${publicProduct.variantId}::uuid
@@ -263,6 +324,9 @@ describe("simple product tracer HTTP API", () => {
         previousOnHand: 8,
         nextOnHand: 9,
         reasonCode: "MANUAL_COUNT",
+        operation: "REPLACE_ON_HAND",
+        previousRevision: 1,
+        nextRevision: 2,
         note: "شمارش ممیزی‌شده انبار",
         occurredAt: expect.any(Date),
       }),
@@ -363,6 +427,9 @@ describe("simple product tracer HTTP API", () => {
     expect(republished.statusCode).toBe(200);
     expect(republished.json()).toMatchObject({ publicationVersion: 2 });
 
+    const emptiedAfterRepublish = await adjust(crypto.randomUUID(), "CORRECTION", 0, 4);
+    expect(emptiedAfterRepublish.statusCode).toBe(200);
+
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
       const events = await sql<Array<{ count: number; hasCausation: boolean }>>`
@@ -373,6 +440,20 @@ describe("simple product tracer HTTP API", () => {
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
       expect(events).toEqual([{ count: 2, hasCausation: true }]);
+      const availabilityEvents = await sql<
+        Array<{ publicationVersion: number; availability: string }>
+      >`
+        select (payload->>'publicationVersion')::int as "publicationVersion",
+          payload->>'availability' as availability
+        from platform_outbox_events
+        where event_type = 'VariantAvailabilityChanged.v1'
+          and aggregate_id = ${publicProduct.variantId}::uuid
+        order by aggregate_version desc
+        limit 1
+      `;
+      expect(availabilityEvents).toEqual([
+        { publicationVersion: 2, availability: "OUT_OF_STOCK" },
+      ]);
       const unpublicationEvents = await sql<
         Array<{ count: number; hasCausation: boolean }>
       >`

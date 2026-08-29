@@ -15,9 +15,9 @@
   می‌شود.
 - همهٔ ردیف‌های batch در یک transaction اعمال می‌شوند. تعارض revision یا تلاش
   برای کاهش `onHand` به کمتر از رزرو فعال، کل batch را بدون اثر جزئی رد می‌کند.
-- audit append-only مقدار پیشین/جدید، reason code، actor، correlation، زمان و
-  یادداشت اختیاری خصوصی را نگه می‌دارد. یادداشت وارد رخداد، log یا پاسخ عمومی
-  نمی‌شود.
+- audit append-only نوع عملیات، مقدار پیشین/جدید، revision پیش/پس، reason code،
+  actor، correlation، زمان و یادداشت اختیاری خصوصی را نگه می‌دارد. یادداشت وارد
+  رخداد، log یا پاسخ عمومی نمی‌شود.
 - `VariantAvailabilityChanged.v1` فقط در inventory و هنگام عبور `available` از
   مرز صفر، همراه همان mutation و با `correlationId/causationId` ثبت می‌شود.
 - خواندن عمومی کالا فقط `AVAILABLE/OUT_OF_STOCK` authoritative را از
@@ -26,10 +26,12 @@
 ## migration و سازگاری
 
 Migration مالک inventory با نام
-`20260829130000__inventory__audited-authoring` ستون اختیاری `note` و جدول
-`inventory_idempotency_records` را به‌صورت additive اضافه می‌کند. دادهٔ موجود
-بازنویسی یا حذف نمی‌شود، پنجرهٔ سازگاری لازم نیست و اصلاح احتمالی فقط با migration
-forward انجام می‌شود.
+`20260829130000__inventory__audited-authoring` ستون اختیاری `note`، ستون‌های
+صریح `operation/previous_revision/next_revision` و جدول
+`inventory_idempotency_records` را به‌صورت additive اضافه می‌کند. auditهای موجود
+از روی `revision` فعلی backfill می‌شوند و مقدار، actor، reason و زمان آن‌ها تغییر
+نمی‌کند. پنجرهٔ سازگاری لازم نیست و اصلاح احتمالی فقط با migration forward انجام
+می‌شود.
 
 ## مرز رابط
 
@@ -42,12 +44,21 @@ RTL، موبایل/دسکتاپ، keyboard focus، کنتراست، متن بل�
 
 ## شواهد آزمون
 
-- unit: ۱۱۶ آزمون موفق؛
-- contract: ۱۴۱ آزمون موفق، شامل schemaهای خصوصی inventory، OpenAPI و hash کامل؛
+- unit: ۱۱۱ آزمون موفق؛
+- contract: ۱۴۲ آزمون موفق، شامل schemaهای خصوصی inventory، OpenAPI و hash کامل؛
 - integration: ۱۵۷ آزمون موفق روی PostgreSQL تازه با ۴۵ migration؛
 - integration هدفمند public read: رزرو همهٔ موجودی پاسخ عمومی را
   `OUT_OF_STOCK` می‌کند و `onHand/reserved/SKU` در JSON ظاهر نمی‌شوند؛
 - lint و مرزهای معماری سبز؛ typecheck همهٔ workspaceها و Prisma schema سبز.
-
-شواهد Compose رسمی، مسیر native، E2E کامل و مرور دو محوره پس از اجرای نهایی به
-همین سند و comment تحویل Issue افزوده می‌شوند.
+- `docker compose up --build --wait` با ۴۵ migration و سلامت API، worker و web
+  سبز شد؛ پورت‌های host فقط برای هم‌زیستی با stackهای محلی جابه‌جا شدند.
+- مسیر native با `pnpm dev` همان ۴۵ migration را بدون pending migration بالا آورد؛
+  `GET /health/ready` پاسخ `200/status=ok` و health وب پاسخ `200` داد.
+- مرور مستقل Standards و Spec پس از اصلاح error details، قفل نسخهٔ انتشار، audit
+  کامل و metricهای conflict/reject هیچ finding باقی‌مانده‌ای نداشت.
+- اجرای کامل E2E: تعداد ۱۷۶ سناریو سبز بود، از جمله tracer واقعی کالا در هر چهار
+  viewport. چهار failure همگی همان سناریوی legacy فروشگاه در
+  `seller-application.spec.ts:136` هستند؛ این فایل و مسیر وب در diff این Issue
+  تغییری ندارند و failure پیش‌موجود خارج از محدوده inventory است.
+- اجرای یک‌جای `pnpm test` واحد، قرارداد و هر ۱۵۷ integration را سبز کرد و فقط به
+  دلیل همان چهار failure پیش‌موجود E2E با exit code غیرصفر تمام شد.

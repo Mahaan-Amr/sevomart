@@ -11,13 +11,14 @@ import {
   Req,
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
+import { getMeter } from "@sevo/observability";
 import {
   inventoryAvailabilityContract,
   inventoryIdempotencyKeyContract,
   inventoryPageLimitContract,
   replaceSellerInventoryBatchContract,
 } from "@sevo/contracts/inventory/v1";
-import { variantIdContract } from "@sevo/contracts/platform/v1";
+import { variantIdContract, type VariantId } from "@sevo/contracts/platform/v1";
 import type { FastifyRequest } from "fastify";
 
 import { requireIdentity } from "../../http/identity-session";
@@ -34,6 +35,16 @@ import {
   InventorySellerAccessInactiveError,
 } from "./public";
 import { INVENTORY_SELLER_SERVICE } from "./inventory.tokens";
+
+const inventoryMeter = getMeter("sevo.inventory.authoring");
+const inventoryConflictMetric = inventoryMeter.createCounter(
+  "sevo.inventory.authoring.conflicts",
+  { description: "Inventory authoring conflicts by conflict kind" },
+);
+const inventoryBatchRejectedMetric = inventoryMeter.createCounter(
+  "sevo.inventory.authoring.batch_rejected",
+  { description: "Rejected seller inventory batches by rejection kind" },
+);
 
 @ApiExcludeController()
 @Controller("v1/seller/inventory")
@@ -58,9 +69,14 @@ export class InventoryController {
     const availability = rawAvailability
       ? inventoryAvailabilityContract.safeParse(rawAvailability)
       : undefined;
-    if (cursor && !cursor.success) throw validationError(request.id);
-    if (!limit.success || (availability && !availability.success)) {
-      throw validationError(request.id);
+    if (cursor && !cursor.success) {
+      throw validationError(request.id, cursor.error.issues, "cursor");
+    }
+    if (!limit.success) {
+      throw validationError(request.id, limit.error.issues, "limit");
+    }
+    if (availability && !availability.success) {
+      throw validationError(request.id, availability.error.issues, "availability");
     }
     return this.#handle(request, () =>
       this.inventory.list(identityId, {
@@ -79,9 +95,15 @@ export class InventoryController {
   ) {
     const identityId = await requireIdentity(request, this.sessions);
     const input = replaceSellerInventoryBatchContract.safeParse(body);
-    if (!input.success) throw validationError(request.id);
+    if (!input.success) {
+      inventoryBatchRejectedMetric.add(1, { kind: "validation" });
+      throw validationError(request.id, input.error.issues, undefined, body);
+    }
     const idempotencyKey = inventoryIdempotencyKeyContract.safeParse(rawIdempotencyKey);
-    if (!idempotencyKey.success) throw preconditionError(request.id);
+    if (!idempotencyKey.success) {
+      inventoryBatchRejectedMetric.add(1, { kind: "precondition" });
+      throw preconditionError(request.id);
+    }
     return this.#handle(request, () =>
       this.inventory.replaceBatch(identityId, input.data, {
         idempotencyKey: idempotencyKey.data,
@@ -95,6 +117,7 @@ export class InventoryController {
       return await operation();
     } catch (error) {
       if (error instanceof InventoryNotFoundError) {
+        inventoryBatchRejectedMetric.add(1, { kind: "not_found" });
         throw inventoryError(
           request.id,
           HttpStatus.NOT_FOUND,
@@ -103,6 +126,7 @@ export class InventoryController {
         );
       }
       if (error instanceof InventorySellerAccessInactiveError) {
+        inventoryBatchRejectedMetric.add(1, { kind: "seller_access" });
         throw inventoryError(
           request.id,
           HttpStatus.FORBIDDEN,
@@ -111,6 +135,8 @@ export class InventoryController {
         );
       }
       if (error instanceof InventoryRevisionConflictError) {
+        inventoryConflictMetric.add(1, { kind: "revision" });
+        inventoryBatchRejectedMetric.add(1, { kind: "revision_conflict" });
         throw inventoryError(
           request.id,
           HttpStatus.CONFLICT,
@@ -119,6 +145,8 @@ export class InventoryController {
         );
       }
       if (error instanceof InventoryIdempotencyConflictError) {
+        inventoryConflictMetric.add(1, { kind: "idempotency" });
+        inventoryBatchRejectedMetric.add(1, { kind: "idempotency_conflict" });
         throw inventoryError(
           request.id,
           HttpStatus.CONFLICT,
@@ -127,6 +155,7 @@ export class InventoryController {
         );
       }
       if (error instanceof InventoryReservedStockConflictError) {
+        inventoryBatchRejectedMetric.add(1, { kind: "reserved_stock" });
         throw inventoryError(
           request.id,
           HttpStatus.CONFLICT,
@@ -145,15 +174,71 @@ function inventoryError(
   code: string,
   message: string,
 ) {
-  return new HttpException({ code, message, correlationId }, status);
+  return new HttpException(
+    { version: 1, code, message, correlationId, details: { issues: [] } },
+    status,
+  );
 }
 
-function validationError(correlationId: string) {
-  return inventoryError(
-    correlationId,
+function validationError(
+  correlationId: string,
+  issues: readonly { path: PropertyKey[]; code: string }[],
+  pathPrefix?: string,
+  body?: unknown,
+) {
+  const rows = isRecord(body) && Array.isArray(body.rows) ? body.rows : [];
+  type InventoryValidationIssue = {
+    path: string;
+    code: "INVALID_FORMAT" | "DUPLICATE";
+    variantId?: VariantId;
+  };
+  return new HttpException(
+    {
+      version: 1,
+      code: "VALIDATION_ERROR",
+      message: "اطلاعات موجودی را بررسی کنید.",
+      correlationId,
+      details: {
+        issues: issues.flatMap<InventoryValidationIssue>((issue) => {
+          if (issue.code === "custom" && issue.path.at(-1) === "rows") {
+            const variantIds = rows.map((row) =>
+              isRecord(row) ? variantIdContract.safeParse(row.variantId) : undefined,
+            );
+            const frequencies = new Map<string, number>();
+            for (const parsed of variantIds) {
+              if (parsed?.success) {
+                frequencies.set(parsed.data, (frequencies.get(parsed.data) ?? 0) + 1);
+              }
+            }
+            return variantIds.flatMap((parsed, index) =>
+              parsed?.success && (frequencies.get(parsed.data) ?? 0) > 1
+                ? [
+                    {
+                      path: `rows.${index}.variantId`,
+                      code: "DUPLICATE" as const,
+                      variantId: parsed.data,
+                    },
+                  ]
+                : [],
+            );
+          }
+          const path = pathPrefix
+            ? [pathPrefix, ...issue.path.map(String)].join(".")
+            : issue.path.map(String).join(".") || "inventory";
+          const rowIndex = issue.path[0] === "rows" ? issue.path[1] : undefined;
+          const row = typeof rowIndex === "number" ? rows[rowIndex] : undefined;
+          const parsedVariantId = isRecord(row)
+            ? variantIdContract.safeParse(row.variantId)
+            : undefined;
+          return {
+            path,
+            code: "INVALID_FORMAT" as const,
+            ...(parsedVariantId?.success ? { variantId: parsedVariantId.data } : {}),
+          };
+        }),
+      },
+    },
     HttpStatus.UNPROCESSABLE_ENTITY,
-    "VALIDATION_ERROR",
-    "اطلاعات موجودی را بررسی کنید.",
   );
 }
 
@@ -164,4 +249,8 @@ function preconditionError(correlationId: string) {
     "PRECONDITION_REQUIRED",
     "شناسه یکتای درخواست لازم است.",
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

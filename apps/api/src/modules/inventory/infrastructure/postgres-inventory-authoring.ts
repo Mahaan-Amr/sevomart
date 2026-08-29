@@ -10,6 +10,7 @@ import {
 import { enqueueOutboxEvent } from "@sevo/outbox";
 
 import {
+  InventoryNotFoundError,
   InventoryRevisionConflictError,
   InventoryReservationUnavailableError,
   InventoryReservationNotConsumableError,
@@ -32,74 +33,26 @@ export class PostgresInventoryAuthoring
 
   async replaceForProduct(
     transaction: InventoryTransactionContext,
-    command: {
-      storeId: string;
-      variantId: string;
-      onHand: number;
-      expectedRevision: number;
-      reasonCode: "INITIAL_STOCK";
-      actorId: string;
-      correlationId: string;
-    },
+    command: Parameters<InventoryAuthoring["replaceForProduct"]>[1],
   ): Promise<InventorySnapshot> {
-    const sql = transaction as unknown as Sql;
-    const rows = await sql<Array<{ onHand: number; revision: number }>>`
-      select on_hand as "onHand", revision from inventory_levels
-      where variant_id = ${command.variantId}::uuid for update
-    `;
-    const reservations = await sql<Array<{ reserved: number }>>`
-      select coalesce(sum(line.quantity), 0)::int as reserved
-      from inventory_reservation_lines line
-      join inventory_reservations reservation on reservation.id = line.reservation_id
-      where line.variant_id = ${command.variantId}
-        and (
-          reservation.status = 'HELD_FOR_REVIEW'
-          or (
-            reservation.status = 'ACTIVE'
-            and greatest(
-              reservation.expires_at,
-              coalesce(reservation.hold_lease_until, reservation.expires_at)
-            ) > now()
-          )
-        )
-    `;
-    const current = {
-      ...(rows[0] ?? { onHand: 0, revision: 0 }),
-      reserved: reservations[0]?.reserved ?? 0,
-    };
-    if (current.revision !== command.expectedRevision) {
-      throw new InventoryRevisionConflictError(
-        command.expectedRevision,
-        current.revision,
-      );
-    }
-    if (command.onHand < current.reserved) {
-      throw new InventoryReservedStockConflictError(command.onHand, current.reserved);
-    }
-    const revision = current.revision + 1;
-    const updated = await sql<Array<{ onHand: number; revision: number }>>`
-      insert into inventory_levels
-        (variant_id, store_id, on_hand, revision, updated_at)
-      values
-        (${command.variantId}, ${command.storeId}, ${command.onHand}, ${revision}, now())
-      on conflict (variant_id) do update set
-        on_hand = excluded.on_hand, revision = excluded.revision,
-        updated_at = excluded.updated_at
-      returning on_hand as "onHand", revision
-    `;
-    await sql`
-      insert into inventory_adjustments
-        (id, variant_id, store_id, actor_identity_id, reason_code,
-         previous_on_hand, next_on_hand, revision, correlation_id, note)
-      values
-        (${randomUUID()}, ${command.variantId}, ${command.storeId}, ${command.actorId},
-         ${command.reasonCode}, ${current.onHand}, ${command.onHand}, ${revision},
-         ${command.correlationId}, null)
-    `;
+    const [result] = await this.replaceBatchForProduct(transaction, {
+      storeId: command.storeId,
+      rows: [
+        {
+          variantId: command.variantId,
+          onHand: command.onHand,
+          expectedRevision: command.expectedRevision,
+        },
+      ],
+      reasonCode: command.reasonCode,
+      actorId: command.actorId,
+      correlationId: command.correlationId,
+    });
     return {
-      ...updated[0]!,
-      reserved: current.reserved,
-      available: updated[0]!.onHand - current.reserved,
+      onHand: result!.onHand,
+      reserved: result!.reserved,
+      available: result!.available,
+      revision: result!.revision,
     };
   }
 
@@ -141,16 +94,7 @@ export class PostgresInventoryAuthoring
           join inventory_reservations reservation
             on reservation.id = line.reservation_id
           where line.variant_id in ${sql(ordered.map((row) => row.variantId))}
-            and (
-              reservation.status = 'HELD_FOR_REVIEW'
-              or (
-                reservation.status = 'ACTIVE'
-                and greatest(
-                  reservation.expires_at,
-                  coalesce(reservation.hold_lease_until, reservation.expires_at)
-                ) > now()
-              )
-            )
+            and ${activeReservationPredicate(sql)}
           group by line.variant_id
         `
       : [];
@@ -187,10 +131,12 @@ export class PostgresInventoryAuthoring
       await sql`
         insert into inventory_adjustments
           (id, variant_id, store_id, actor_identity_id, reason_code,
-           previous_on_hand, next_on_hand, revision, correlation_id, note)
+           previous_on_hand, next_on_hand, revision, operation,
+           previous_revision, next_revision, correlation_id, note)
         values
           (${randomUUID()}, ${row.variantId}, ${command.storeId}, ${command.actorId},
            ${command.reasonCode}, ${current.onHand}, ${row.onHand}, ${revision},
+           'REPLACE_ON_HAND', ${current.revision}, ${revision},
            ${command.correlationId}, ${command.note ?? null})
       `;
       const reserved = reservedById.get(row.variantId) ?? 0;
@@ -211,7 +157,8 @@ export class PostgresInventoryAuthoring
             actor: { type: "IDENTITY", id: command.actorId },
             payload: {
               storeId: command.storeId,
-              ...command.publication,
+              productId: command.publication.productId,
+              publicationVersion: command.publication.publicationVersion,
               variantId: row.variantId,
               availabilityVersion: revision,
               availability: isAvailable ? "AVAILABLE" : "OUT_OF_STOCK",
@@ -242,26 +189,8 @@ export class PostgresInventoryAuthoring
       }>
     >`
       select level.variant_id as "variantId", level.on_hand as "onHand",
-        coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0)::int as reserved,
-        (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0))::int as available,
+        ${reservedQuantity(this.#sql)}::int as reserved,
+        (level.on_hand - ${reservedQuantity(this.#sql)})::int as available,
         level.revision
       from inventory_levels level
       left join inventory_reservation_lines line on line.variant_id = level.variant_id
@@ -272,19 +201,11 @@ export class PostgresInventoryAuthoring
       having ${
         command.availability === "AVAILABLE"
           ? this.#sql`level.on_hand - coalesce(sum(line.quantity) filter (
-              where reservation.status = 'HELD_FOR_REVIEW'
-                or (reservation.status = 'ACTIVE' and greatest(
-                  reservation.expires_at,
-                  coalesce(reservation.hold_lease_until, reservation.expires_at)
-                ) > now())
+              where ${activeReservationPredicate(this.#sql)}
             ), 0) > 0`
           : command.availability === "OUT_OF_STOCK"
             ? this.#sql`level.on_hand - coalesce(sum(line.quantity) filter (
-                where reservation.status = 'HELD_FOR_REVIEW'
-                  or (reservation.status = 'ACTIVE' and greatest(
-                    reservation.expires_at,
-                    coalesce(reservation.hold_lease_until, reservation.expires_at)
-                  ) > now())
+                where ${activeReservationPredicate(this.#sql)}
               ), 0) = 0`
             : this.#sql`true`
       }
@@ -330,7 +251,13 @@ export class PostgresInventoryAuthoring
       for (const row of [...command.input.rows].sort((left, right) =>
         left.variantId.localeCompare(right.variantId),
       )) {
-        const publication = command.publications.get(row.variantId)!;
+        const publication = await command.readPublication(
+          sql as unknown as InventoryTransactionContext,
+          row.variantId,
+        );
+        if (!publication || publication.storeId !== command.storeId) {
+          throw new InventoryNotFoundError();
+        }
         const [result] = await this.replaceBatchForProduct(
           sql as unknown as InventoryTransactionContext,
           {
@@ -373,26 +300,8 @@ export class PostgresInventoryAuthoring
       }>
     >`
       select level.variant_id as "variantId", level.on_hand as "onHand",
-        coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0)::int as reserved,
-        (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0))::int as available,
+        ${reservedQuantity(this.#sql)}::int as reserved,
+        (level.on_hand - ${reservedQuantity(this.#sql)})::int as available,
         level.revision
       from inventory_levels level
       left join inventory_reservation_lines line on line.variant_id = level.variant_id
@@ -413,26 +322,8 @@ export class PostgresInventoryAuthoring
       Array<{ onHand: number; reserved: number; available: number; revision: number }>
     >`
       select level.on_hand as "onHand", level.revision,
-        coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0)::int as reserved,
-        (level.on_hand - coalesce(sum(line.quantity) filter (
-          where reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-        ), 0))::int as available
+        ${reservedQuantity(sql)}::int as reserved,
+        (level.on_hand - ${reservedQuantity(sql)})::int as available
       from inventory_levels level
       left join inventory_reservation_lines line on line.variant_id = level.variant_id
       left join inventory_reservations reservation on reservation.id = line.reservation_id
@@ -460,16 +351,7 @@ export class PostgresInventoryAuthoring
         from inventory_reservation_lines line
         join inventory_reservations reservation on reservation.id = line.reservation_id
         where line.variant_id = ${item.variantId}
-          and (
-            reservation.status = 'HELD_FOR_REVIEW'
-            or (
-              reservation.status = 'ACTIVE'
-              and greatest(
-                reservation.expires_at,
-                coalesce(reservation.hold_lease_until, reservation.expires_at)
-              ) > now()
-            )
-          )
+          and ${activeReservationPredicate(sql)}
       `;
       const current = levels[0];
       if (
@@ -624,4 +506,27 @@ export class PostgresInventoryAuthoring
   async onModuleDestroy() {
     await this.#sql.end();
   }
+}
+
+function activeReservationPredicate(sql: Sql) {
+  return sql`
+    (
+      reservation.status = 'HELD_FOR_REVIEW'
+      or (
+        reservation.status = 'ACTIVE'
+        and greatest(
+          reservation.expires_at,
+          coalesce(reservation.hold_lease_until, reservation.expires_at)
+        ) > now()
+      )
+    )
+  `;
+}
+
+function reservedQuantity(sql: Sql) {
+  return sql`
+    coalesce(sum(line.quantity) filter (
+      where ${activeReservationPredicate(sql)}
+    ), 0)
+  `;
 }

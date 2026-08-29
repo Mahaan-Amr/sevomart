@@ -6,20 +6,22 @@ import {
 } from "@sevo/contracts/inventory/v1";
 import {
   identityIdContract,
-  variantIdContract,
   type IdentityId,
-  type ProductId,
   type VariantId,
 } from "@sevo/contracts/platform/v1";
 
 import type { SellerAccessRead } from "../../identity-access/public";
-import type { ProductAuthoritativeRead } from "../../product/public";
+import type {
+  OpaqueProductTransactionContext,
+  ProductAuthoritativeRead,
+} from "../../product/public";
 import type { StoreAuthoritativeRead } from "../../store/public";
 import {
   InventoryNotFoundError,
   InventorySellerAccessInactiveError,
   type SellerInventoryRepository,
 } from "../public";
+import type { InventoryTransactionContext } from "../public";
 
 export class SellerInventoryService {
   constructor(
@@ -27,6 +29,9 @@ export class SellerInventoryService {
     private readonly products: ProductAuthoritativeRead,
     private readonly stores: StoreAuthoritativeRead,
     private readonly sellerAccess: SellerAccessRead,
+    private readonly createProductTransactionContext: (
+      transaction: InventoryTransactionContext,
+    ) => OpaqueProductTransactionContext,
   ) {}
 
   async list(
@@ -71,19 +76,6 @@ export class SellerInventoryService {
     }>,
   ) {
     const { identityId, storeId } = await this.#requireOwnedStore(rawIdentityId);
-    const publications = new Map<
-      VariantId,
-      { productId: ProductId; publicationVersion: number }
-    >();
-    for (const row of input.rows) {
-      const variantId = variantIdContract.parse(row.variantId);
-      const product = await this.products.readAuthoritativeVariant(variantId);
-      if (!product || product.storeId !== storeId) throw new InventoryNotFoundError();
-      publications.set(variantId, {
-        productId: product.productId,
-        publicationVersion: product.publicationVersion,
-      });
-    }
     return this.inventory.replaceSellerBatch({
       storeId,
       actorId: identityId,
@@ -92,7 +84,19 @@ export class SellerInventoryService {
       idempotencyKey: write.idempotencyKey,
       requestHash: createHash("sha256").update(JSON.stringify(input)).digest("hex"),
       input,
-      publications,
+      readPublication: async (transaction, variantId) => {
+        const readInTransaction = this.products.readAuthoritativeVariantInTransaction;
+        if (!readInTransaction) {
+          throw new Error(
+            "Product authoritative reads must support the inventory transaction",
+          );
+        }
+        return readInTransaction.call(
+          this.products,
+          this.createProductTransactionContext(transaction),
+          variantId,
+        );
+      },
     });
   }
 

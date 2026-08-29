@@ -163,6 +163,8 @@ export const canonicalApiModuleRegistry: readonly {
       InventoryModule.register(environment, {
         repository: inventoryAuthoring,
         products: productRepository,
+        createProductTransactionContext: (transaction) =>
+          createOpaqueProductTransactionContext(transaction as never),
       }),
   },
   {

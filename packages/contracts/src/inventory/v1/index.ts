@@ -90,7 +90,7 @@ export const sellerInventoryBatchResultContract = z
   })
   .strict();
 
-export const inventoryErrorContract = errorEnvelopeV1Contract.extend({
+export const inventoryErrorContract = errorEnvelopeV1Contract.safeExtend({
   code: z.enum([
     "INVENTORY_NOT_FOUND",
     "REVISION_CONFLICT",
@@ -100,6 +100,19 @@ export const inventoryErrorContract = errorEnvelopeV1Contract.extend({
     "VALIDATION_ERROR",
     "PRECONDITION_REQUIRED",
   ]),
+  details: z
+    .object({
+      issues: z.array(
+        z
+          .object({
+            path: z.string().min(1),
+            code: z.enum(["INVALID_FORMAT", "TOO_SHORT", "DUPLICATE"]),
+            variantId: variantIdContract.optional(),
+          })
+          .strict(),
+      ),
+    })
+    .strict(),
 });
 
 export const variantAvailabilityChangedV1Contract = eventEnvelopeV1Contract.extend({
@@ -196,9 +209,11 @@ export const inventoryV1Examples = {
     ],
   },
   InventoryError: {
+    version: 1,
     code: "REVISION_CONFLICT",
     message: "اطلاعات موجودی تغییر کرده است.",
     correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+    details: { issues: [] },
   },
   VariantAvailabilityChangedV1: {
     version: 1,

@@ -2,7 +2,10 @@ import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
 import { SELLER_ACCESS_READ, type SellerAccessRead } from "../identity-access/public";
-import type { ProductAuthoritativeRead } from "../product/public";
+import type {
+  OpaqueProductTransactionContext,
+  ProductAuthoritativeRead,
+} from "../product/public";
 import { STORE_AUTHORITATIVE_READ, type StoreAuthoritativeRead } from "../store/public";
 import { SellerInventoryService } from "./application/seller-inventory.service";
 import { InventoryController } from "./inventory.controller";
@@ -10,11 +13,14 @@ import {
   INVENTORY_SELLER_REPOSITORY,
   INVENTORY_SELLER_SERVICE,
 } from "./inventory.tokens";
-import type { SellerInventoryRepository } from "./public";
+import type { InventoryTransactionContext, SellerInventoryRepository } from "./public";
 
 export type InventoryModuleOptions = {
   repository?: SellerInventoryRepository;
   products?: ProductAuthoritativeRead;
+  createProductTransactionContext?: (
+    transaction: InventoryTransactionContext,
+  ) => OpaqueProductTransactionContext;
 };
 
 @Module({})
@@ -23,7 +29,11 @@ export class InventoryModule {
     _environment: RuntimeEnvironment,
     options: InventoryModuleOptions = {},
   ): DynamicModule {
-    if (!options.repository || !options.products) {
+    if (
+      !options.repository ||
+      !options.products ||
+      !options.createProductTransactionContext
+    ) {
       throw new Error("Inventory authoring requires repository and product reads");
     }
     return {
@@ -48,6 +58,7 @@ export class InventoryModule {
               options.products!,
               stores,
               sellerAccess,
+              options.createProductTransactionContext!,
             ),
         },
       ],

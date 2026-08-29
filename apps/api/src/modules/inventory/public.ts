@@ -129,9 +129,16 @@ export interface SellerInventoryRepository {
       idempotencyKey: string;
       requestHash: string;
       input: ReplaceSellerInventoryBatch;
-      publications: ReadonlyMap<
-        VariantId,
-        Readonly<{ productId: ProductId; publicationVersion: number }>
+      readPublication: (
+        transaction: InventoryTransactionContext,
+        variantId: VariantId,
+      ) => Promise<
+        | Readonly<{
+            storeId: StoreId;
+            productId: ProductId;
+            publicationVersion: number;
+          }>
+        | undefined
       >;
     }>,
   ): Promise<SellerInventoryBatchResult>;

@@ -1,5 +1,22 @@
 ALTER TABLE "inventory_adjustments"
-  ADD COLUMN "note" VARCHAR(500);
+  ADD COLUMN "note" VARCHAR(500),
+  ADD COLUMN "operation" VARCHAR(32) NOT NULL DEFAULT 'REPLACE_ON_HAND',
+  ADD COLUMN "previous_revision" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "next_revision" INTEGER;
+
+UPDATE "inventory_adjustments"
+SET "previous_revision" = "revision" - 1,
+    "next_revision" = "revision";
+
+ALTER TABLE "inventory_adjustments"
+  ALTER COLUMN "operation" DROP DEFAULT,
+  ALTER COLUMN "previous_revision" DROP DEFAULT,
+  ALTER COLUMN "next_revision" SET NOT NULL,
+  ADD CONSTRAINT "inventory_adjustments_operation_check"
+    CHECK ("operation" = 'REPLACE_ON_HAND'),
+  ADD CONSTRAINT "inventory_adjustments_revision_transition_check"
+    CHECK ("previous_revision" >= 0 AND "next_revision" = "previous_revision" + 1
+      AND "revision" = "next_revision");
 
 CREATE TABLE "inventory_idempotency_records" (
   "operation" VARCHAR(64) NOT NULL,

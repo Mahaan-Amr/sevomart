@@ -1,5 +1,6 @@
 import {
   inventoryAvailabilityReadV1Contract,
+  inventoryErrorContract,
   replaceSellerInventoryBatchContract,
   sellerInventoryListContract,
 } from "@sevo/contracts/inventory/v1";
@@ -29,6 +30,26 @@ describe("inventory authoritative availability read v1", () => {
 });
 
 describe("inventory seller authoring v1", () => {
+  it("keeps versioned validation details and row identity in the error envelope", () => {
+    expect(
+      inventoryErrorContract.parse({
+        version: 1,
+        code: "VALIDATION_ERROR",
+        message: "اطلاعات موجودی را بررسی کنید.",
+        correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+        details: {
+          issues: [
+            {
+              path: "rows.0.onHand",
+              code: "INVALID_FORMAT",
+              variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ version: 1, details: { issues: [{ path: "rows.0.onHand" }] } });
+  });
+
   it("keeps exact counts private in a seller-only list and validates destination batches", () => {
     const variantId = "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7";
     expect(
