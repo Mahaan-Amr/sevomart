@@ -34,6 +34,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
       join identity_login_methods method on method.identity_id = membership.seller_id
       where method.mobile = ${mobile}
     )
+    or slug = ${slug}
   `;
   await page.goto("/seller/login?returnTo=%2Fseller%2Fstore%2Fsetup");
   await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
@@ -75,6 +76,29 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(page).toHaveURL(/\/seller\/store$/);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
+  for (const [path, heading] of [
+    ["profile", "معرفی فروشگاه"],
+    ["shipping", "روش‌های ارسال"],
+    ["returns", "شرایط مرجوعی"],
+    ["appearance", "ظاهر فروشگاه"],
+  ] as const) {
+    await page.goto(`/seller/store/${path}`);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expect(page.getByRole("button", { name: "ذخیره و خروج" })).toBeVisible();
+  }
+  await page.goto("/seller/store/shipping");
+  const nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
+  await expect(nationalPost.getByLabel("هزینه ارسال (تومان)")).toHaveValue("0");
+  await expect(nationalPost.getByLabel("زمان تقریبی تحویل")).not.toBeEmpty();
+  await page.goto("/seller/store/profile");
+  await expect(page.getByLabel("نام فروشگاه")).toHaveValue("پیش‌نویس خانه ماه");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(
+    page.getByText("شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد."),
+  ).toBeVisible();
+  await expect(page.getByText("یک معرفی کوتاه برای فروشگاه بنویسید.")).toBeVisible();
+  await expect(page).toHaveURL(/\/seller\/store\/profile$/);
+  await page.goto("/seller/store");
   await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
   await expect(page.getByText("قدم ۱ از ۳")).toBeVisible();
   await expect(
@@ -226,10 +250,36 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.keyboard.press("Enter");
   const backButton = page.getByRole("button", { name: "برگشت و ویرایش" });
   await expect(backButton).toBeVisible({ timeout: 15_000 });
+  await page.route("**/api/store/seller/store/publication", async (route) => {
+    await route.fulfill({
+      status: 422,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: "VALIDATION_ERROR",
+        message: "برای انتشار، اطلاعات ضروری فروشگاه را کامل کنید.",
+        correlationId: "store-builder-e2e",
+        details: {
+          issues: [
+            { field: "shipping_method", code: "REQUIRED" },
+            { field: "return_policy", code: "REQUIRED" },
+            { field: "slug", code: "REQUIRED" },
+            { field: "settlement_destination", code: "REQUIRED" },
+          ],
+        },
+      }),
+    });
+  });
   await backButton.focus();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "انتشار فروشگاه" })).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(
+    page.getByText(
+      "برای انتشار این بخش‌ها را کامل کنید: روش ارسال فعال، سیاست مرجوعی، شناسه لینک، مقصد تسویه.",
+    ),
+  ).toBeVisible();
+  await page.unroute("**/api/store/seller/store/publication");
+  await page.getByRole("button", { name: "انتشار فروشگاه" }).click();
 
   await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
   await expect(page.getByText(`/s/${slug}`, { exact: true })).toBeVisible();
