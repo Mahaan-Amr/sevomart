@@ -26,6 +26,30 @@ export class PostgresConversationRepository implements ConversationRepository {
   async read(conversationId: string) {
     return this.readThread(this.#sql, conversationId);
   }
+  async findNearestNeedingReply(identityId: string) {
+    const [thread] = await this.#sql<StoredConversation[]>`
+      select
+        conversation.id as "conversationId",
+        conversation.buyer_identity_id as "buyerIdentityId",
+        conversation.seller_identity_id as "sellerIdentityId",
+        conversation.context,
+        conversation.created_at as "createdAt",
+        conversation.updated_at as "updatedAt",
+        conversation.version
+      from conversation_threads conversation
+      join lateral (
+        select message.sender_role
+        from conversation_messages message
+        where message.conversation_id = conversation.id
+        order by message.created_at desc, message.id desc
+        limit 1
+      ) latest_message on latest_message.sender_role = 'BUYER'
+      where conversation.seller_identity_id = ${identityId}
+      order by conversation.updated_at desc, conversation.id desc
+      limit 1
+    `;
+    return thread;
+  }
   private async readThread(sql: Sql, conversationId: string) {
     const rows = await sql<StoredConversation[]>`
       select id as "conversationId", buyer_identity_id as "buyerIdentityId", seller_identity_id as "sellerIdentityId", context, created_at as "createdAt", updated_at as "updatedAt", version

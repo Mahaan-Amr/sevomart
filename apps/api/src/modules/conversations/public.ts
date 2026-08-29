@@ -36,6 +36,7 @@ export type ConversationSnapshot = {
 };
 export type ConversationSnapshotEntry = { itemId: string; sortAt: Date };
 export interface ConversationRepository {
+  findNearestNeedingReply(identityId: string): Promise<StoredConversation | undefined>;
   hasAttachment(conversationId: string, mediaId: string): Promise<boolean>;
   snapshot(
     identityId: string,

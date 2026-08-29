@@ -58,6 +58,13 @@ export class ConversationController {
     );
   }
   @Header("Cache-Control", "private, no-store")
+  @Get("needs-reply")
+  needsReply(@Req() request: FastifyRequest) {
+    return this.respond(request, () =>
+      this.service.readNeedsReply(this.context(request)),
+    );
+  }
+  @Header("Cache-Control", "private, no-store")
   @Get(":conversationId/messages")
   messages(@Req() request: FastifyRequest, @Param("conversationId") id: string) {
     return this.respond(request, () =>

@@ -7,6 +7,7 @@ import {
   conversationIdempotencyKeyContract,
   conversationMessagePageV1Contract,
   conversationMessageV1Contract,
+  conversationNeedsReplyV1Contract,
   conversationOutgoingMessageV1Contract,
   conversationThreadPageV1Contract,
   conversationThreadV1Contract,
@@ -85,6 +86,19 @@ describe("conversations v1 public contract", () => {
         nextCursor: "opaque.next-page",
       }),
     ).toMatchObject({ items: [{ viewerRole: "BUYER" }, { viewerRole: "SELLER" }] });
+    expect(
+      conversationNeedsReplyV1Contract.parse({
+        version: 1,
+        status: "ACTIONABLE",
+        conversation: sellerThread,
+      }),
+    ).toMatchObject({
+      status: "ACTIONABLE",
+      conversation: { conversationId, viewerRole: "SELLER" },
+    });
+    expect(
+      conversationNeedsReplyV1Contract.parse({ version: 1, status: "NONE" }),
+    ).toEqual({ version: 1, status: "NONE" });
   });
 
   it("keeps authenticated message views and public events free of account PII", () => {
@@ -168,6 +182,7 @@ describe("conversations v1 public contract", () => {
     });
     expect(createConversationsV1JsonSchemas()).toMatchObject({
       ConversationThreadV1: expect.any(Object),
+      ConversationNeedsReplyV1: expect.any(Object),
       ConversationMessageV1: expect.any(Object),
       ConversationOutgoingMessageV1: expect.any(Object),
       ConversationErrorV1: expect.any(Object),

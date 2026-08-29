@@ -44,6 +44,7 @@ describe("content v1 contract", () => {
       { ...input, productIds: [] },
       { ...input, productIds: [ids.product, ids.product] },
       { ...input, source: "VERIFIED_PURCHASE" },
+      { ...input, media: { ...input.media, kind: "VIDEO" } },
     ]) {
       expect(publishSalesContentInputContract.safeParse(invalid).success).toBe(false);
     }
@@ -86,7 +87,6 @@ describe("content v1 contract", () => {
       storeId: ids.store,
       productId: ids.product,
       purchaseStatus: "CONFIRMED",
-      fulfillmentStatus: "DELIVERED",
     } as const;
     expect(purchaseExperienceEligibilityDecisionContract.parse(eligible)).toEqual(
       eligible,
@@ -103,13 +103,6 @@ describe("content v1 contract", () => {
         purchaseStatus: "PENDING",
       }).success,
     ).toBe(false);
-    expect(
-      purchaseExperienceEligibilityDecisionContract.safeParse({
-        ...eligible,
-        fulfillmentStatus: "SHIPPED",
-      }).success,
-    ).toBe(false);
-
     const input = {
       buyerId: ids.buyer,
       orderItemId: ids.orderItem,

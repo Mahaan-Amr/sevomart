@@ -4,6 +4,7 @@ import {
   publishPurchaseExperienceInputContract,
   publishSalesContentInputContract,
 } from "@sevo/contracts/content/v1";
+import { orderItemIdContract } from "@sevo/contracts/orders/v1";
 import {
   identityIdContract,
   productIdContract,
@@ -17,7 +18,15 @@ import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
-import { PostgresContentRepository } from "../../apps/api/src/modules/content/composition";
+import {
+  createContentMediaRead,
+  PostgresContentRepository,
+} from "../../apps/api/src/modules/content/composition";
+import {
+  MEDIA_STORAGE,
+  type MediaStorage,
+} from "../../apps/api/src/modules/media/public";
+import { createPaidOrderItemFixture } from "../../apps/api/src/modules/orders/testing/paid-order-item.fixture";
 import { projectContentProductState } from "../../apps/worker/src/modules/content/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
@@ -42,6 +51,105 @@ afterAll(async () => {
 });
 
 describe("content producer persistence", () => {
+  it("serves media referenced by active published content to an anonymous reader", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    const server = app.getHttpAdapter().getInstance();
+    const storage = app.get<MediaStorage>(MEDIA_STORAGE);
+    const mediaId = "40000000-0000-4000-8000-000000000091";
+    const attachmentId = "40000000-0000-4000-8000-000000000092";
+    try {
+      await storage.put({
+        key: mediaId,
+        purpose: "PRODUCT_IMAGE",
+        contentType: "image/png",
+        bytes: Uint8Array.from([1]),
+        checksum: "a".repeat(64),
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: `media/${mediaId}/variants/product-detail.webp`,
+            name: "product-detail",
+            contentType: "image/webp",
+            bytes: Uint8Array.from([2]),
+            width: 1,
+            height: 1,
+          },
+        ],
+        ownerSellerId: actorId,
+        visibility: "PRIVATE",
+      });
+      await storage.put({
+        key: attachmentId,
+        purpose: "CONVERSATION_ATTACHMENT",
+        contentType: "image/png",
+        bytes: Uint8Array.from([1]),
+        checksum: "b".repeat(64),
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: `media/${attachmentId}/variants/attachment-preview.webp`,
+            name: "attachment-preview",
+            contentType: "image/webp",
+            bytes: Uint8Array.from([2]),
+            width: 1,
+            height: 1,
+          },
+        ],
+        ownerSellerId: actorId,
+        ownerReferenceId: randomUUID(),
+        visibility: "PRIVATE",
+      });
+      await expect(
+        createContentMediaRead(storage).readOwnedKind(attachmentId, actorId),
+      ).resolves.toBeUndefined();
+      const input = publishSalesContentInputContract.parse({
+        storeId,
+        media: { mediaId, kind: "IMAGE" },
+        productIds: [productId],
+      });
+      await repository.publishSalesContent({
+        actorId,
+        correlationId: randomUUID(),
+        idempotencyKey: "public-media-91",
+        requestHash: digest(input),
+        input,
+        products: [{ productId, publicationVersion: 1 }],
+      });
+
+      const read = await server.inject({ method: "GET", url: `/v1/media/${mediaId}` });
+      expect(read.statusCode).toBe(200);
+      expect(read.headers["cache-control"]).toBeUndefined();
+
+      const correlationId = randomUUID();
+      await sql.begin((transaction) =>
+        projectContentProductState(
+          productUnpublishedV1Contract.parse({
+            version: 1,
+            eventId: randomUUID(),
+            eventType: "ProductUnpublished.v1",
+            aggregateId: productId,
+            aggregateVersion: 2,
+            occurredAt: new Date().toISOString(),
+            correlationId,
+            causationId: correlationId,
+            actor: { type: "IDENTITY", id: actorId },
+            payload: { storeId, productId, publicationVersion: 1 },
+          }),
+          transaction,
+        ),
+      );
+      const stoppedRead = await server.inject({
+        method: "GET",
+        url: `/v1/media/${mediaId}`,
+      });
+      expect(stoppedRead.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("composes both HTTP operations and fails closed at authentication and preconditions", async () => {
     const app = await createApiApp(apiTestEnvironment);
     const server = app.getHttpAdapter().getInstance();
@@ -84,6 +192,79 @@ describe("content producer persistence", () => {
       expect(missingPrecondition.statusCode).toBe(428);
       expect(missingPrecondition.json().code).toBe("PRECONDITION_REQUIRED");
     } finally {
+      await app.close();
+    }
+  });
+
+  it("publishes one purchase experience through HTTP for the buyer's paid order item", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    const server = app.getHttpAdapter().getInstance();
+    const orderItemId = orderItemIdContract.parse(
+      "94000000-0000-4000-8000-000000000091",
+    );
+    let buyerId = "";
+    let experienceId = "";
+    let paidOrder: Awaited<ReturnType<typeof createPaidOrderItemFixture>> | undefined;
+    try {
+      const requested = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+      expect(requested.statusCode).toBe(202);
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: requested.json().challengeId, code: "111111" },
+      });
+      expect(verified.statusCode).toBe(200);
+      const cookie = verified.headers["set-cookie"]!;
+      const session = await server.inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie },
+      });
+      buyerId = session.json().actor.identityId;
+      paidOrder = await createPaidOrderItemFixture(apiTestEnvironment.DATABASE_URL, {
+        buyerId: identityIdContract.parse(buyerId),
+        storeId,
+        productId,
+        orderItemId,
+      });
+      const payload = {
+        buyerId,
+        orderItemId,
+        rating: 5,
+        text: "کالا سالم و مطابق تصویر رسید.",
+        mediaIds: [],
+      };
+      const published = await server.inject({
+        method: "POST",
+        url: "/v1/purchase-experiences",
+        headers: { cookie, "idempotency-key": "experience-http-91" },
+        payload,
+      });
+      expect(published.statusCode).toBe(201);
+      experienceId = published.json().experienceId;
+
+      const duplicate = await server.inject({
+        method: "POST",
+        url: "/v1/purchase-experiences",
+        headers: { cookie, "idempotency-key": "experience-http-91-duplicate" },
+        payload,
+      });
+      expect(duplicate.statusCode).toBe(409);
+      expect(duplicate.json().code).toBe("ALREADY_SUBMITTED");
+    } finally {
+      if (experienceId) {
+        await sql`delete from platform_outbox_events where aggregate_id = ${experienceId}`;
+        await sql`delete from content_audits where aggregate_id = ${experienceId}`;
+      }
+      if (buyerId) {
+        await sql`delete from content_idempotency_records where actor_id = ${buyerId}`;
+        await sql`delete from content_purchase_experiences where buyer_identity_id = ${buyerId}`;
+      }
+      await paidOrder?.cleanup();
       await app.close();
     }
   });

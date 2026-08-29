@@ -106,8 +106,8 @@ databases that applied the original outbox migration before `envelope_version` w
 added. It preserves existing events, backfills envelope version `1`, and is a no-op
 for fresh databases that already contain the required column.
 
-Issue 139 adds content-owned sales-content, product-link, purchase-experience,
-idempotency and audit tables after
+Issue 139 adds six content-owned tables: sales content, product links, the latest
+product-state projection, purchase experience, idempotency and audit, after
 `20260827120000__conversations__send-claims`. References to store, product, media,
 identity and order-item identifiers remain scalar; the only foreign key stays within
 the content aggregate. The migration is additive, needs no compatibility window and
@@ -122,3 +122,10 @@ used by current authorizers and is updated atomically with each responsibility
 activation or revocation. The migration needs no compatibility window and uses a
 forward migration for corrections. Sensitive values are never copied into audit or
 outbox payloads; every reveal is re-authorized inside the caller's transaction.
+
+Issue 186 additively gives every orders-owned `order_items` row a stable unique UUID
+and publishes the authoritative confirmed-purchase eligibility read for content.
+Existing rows are backfilled, new rows use a database default, and no cross-module
+foreign key or private order snapshot is exposed. No compatibility window is needed;
+deployment corrections use a forward-fix migration. Docker and native both apply the
+same `prisma migrate deploy` history.

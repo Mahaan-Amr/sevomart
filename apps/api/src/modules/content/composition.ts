@@ -16,8 +16,23 @@ import {
   CONTENT_SERVICE,
   type ContentProductRead,
   type ContentRepository,
+  type ContentMediaRead,
   type PurchaseEligibilityRead,
 } from "./public";
+
+export function createContentMediaRead(media: MediaStorage): ContentMediaRead {
+  return {
+    async readOwnedKind(mediaId, identityId) {
+      const metadata = await media.inspect(mediaId);
+      if (
+        metadata?.ownerSellerId !== identityId ||
+        metadata.purpose === "CONVERSATION_ATTACHMENT"
+      )
+        return undefined;
+      return metadata.contentType.startsWith("image/") ? "IMAGE" : undefined;
+    },
+  };
+}
 
 @Module({})
 export class ContentModule {
@@ -61,15 +76,7 @@ export class ContentModule {
               sellerAccess,
               stores,
               options.products,
-              {
-                async readOwnedKind(mediaId, identityId) {
-                  const metadata = await media.inspect(mediaId);
-                  if (metadata?.ownerSellerId !== identityId) return undefined;
-                  return metadata.contentType.startsWith("image/")
-                    ? "IMAGE"
-                    : undefined;
-                },
-              },
+              createContentMediaRead(media),
               options.purchases,
             ),
         },
@@ -80,3 +87,4 @@ export class ContentModule {
 }
 
 export { PostgresContentRepository } from "./infrastructure/postgres-content.repository";
+export { createOrderPurchaseEligibilityRead } from "./order-purchase-eligibility.adapter";
