@@ -1,0 +1,345 @@
+.page,
+.threadPage {
+  min-height: 100dvh;
+  place-items: start center;
+  padding: 24px 16px;
+}
+
+.workspace,
+.threadWorkspace {
+  display: grid;
+  width: min(100%, 760px);
+  gap: 24px;
+}
+
+.headingRow,
+.threadHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.headingRow > div,
+.threadHeader > div {
+  display: grid;
+  gap: 6px;
+}
+
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace h1,
+.workspace h2,
+.workspace p,
+.threadWorkspace h1,
+.threadWorkspace p {
+  margin: 0;
+}
+
+.backLink,
+.secondaryAction,
+.loadOlder,
+.fileAction,
+.removeFile {
+  display: inline-grid;
+  width: fit-content;
+  min-height: 40px;
+  place-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.emptyState {
+  display: grid;
+  gap: 8px;
+  padding-block: 24px;
+  border-block: 1px solid var(--color-divider);
+}
+
+.emptyState h2 {
+  font-size: 18px;
+}
+
+.conversationList,
+.messageList {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversationList li {
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.conversationList li:first-child {
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.conversationLink {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  min-height: 72px;
+  align-content: center;
+  padding: 12px 4px;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.conversationTitle {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.conversationMeta,
+.openHint {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.openHint {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--color-primary-dark);
+}
+
+.threadPage {
+  padding-block-end: 0;
+}
+
+.threadWorkspace {
+  grid-template-rows: auto minmax(280px, 1fr) auto;
+  min-height: calc(100dvh - 100px);
+}
+
+.messageRegion {
+  display: grid;
+  align-content: end;
+  gap: 16px;
+  min-height: 280px;
+  padding-block: 16px;
+  border-block: 1px solid var(--color-divider);
+}
+
+.loadOlder {
+  justify-self: center;
+}
+
+.messageList {
+  gap: 12px;
+}
+
+.ownMessage,
+.buyerMessage {
+  display: grid;
+  width: min(88%, 520px);
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+}
+
+.ownMessage {
+  justify-self: start;
+  background: var(--color-cover-start);
+  box-shadow: var(--elevation-pressed);
+}
+
+.buyerMessage {
+  justify-self: end;
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface);
+}
+
+.ownMessage p,
+.buyerMessage p {
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+
+.sender,
+.ownMessage time,
+.buyerMessage time,
+.deliveryState {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.sender {
+  font-weight: 600;
+}
+
+.deliveryState {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.deliveryState button {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  font-weight: 600;
+}
+
+.attachment {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.attachment img {
+  display: block;
+  width: min(100%, 360px);
+  max-height: 360px;
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+.attachment figcaption {
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.noMessages {
+  justify-self: center;
+}
+
+.composer {
+  position: sticky;
+  inset-block-end: 76px;
+  display: grid;
+  gap: 8px;
+  padding-block: 12px 16px;
+  background: var(--color-background);
+}
+
+.composer > label:first-child {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--elevation-pressed);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.composerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fileAction {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.fileAction input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.sendButton {
+  min-height: 44px;
+  margin-inline-start: auto;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-primary);
+  box-shadow: var(--elevation-action);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sendButton:disabled,
+.loadOlder:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.fileName,
+.notice {
+  font-size: 12px;
+}
+
+.notice {
+  color: var(--color-primary-dark);
+}
+
+.conversationLink:focus-visible,
+.backLink:focus-visible,
+.secondaryAction:focus-visible,
+.loadOlder:focus-visible,
+.fileAction:focus-within,
+.removeFile:focus-visible,
+.sendButton:focus-visible,
+.deliveryState button:focus-visible,
+.composer textarea:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .page,
+  .threadPage {
+    padding: 48px 32px;
+  }
+
+  .composer {
+    inset-block-end: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .headingRow,
+  .threadHeader {
+    display: grid;
+  }
+
+  .conversationLink {
+    grid-template-columns: 1fr;
+  }
+
+  .openHint {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .ownMessage,
+  .buyerMessage {
+    width: 94%;
+  }
+}

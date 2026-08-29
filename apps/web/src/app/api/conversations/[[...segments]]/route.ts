@@ -7,5 +7,6 @@ async function proxy(request: Request, context: Context) {
   return proxyConversationsRequest(request, segments);
 }
 
+export const dynamic = "force-dynamic";
 export const GET = proxy;
 export const POST = proxy;

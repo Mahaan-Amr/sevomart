@@ -34,6 +34,12 @@
   font-size: 18px;
 }
 
+.relatedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .primary,
 .secondary {
   display: inline-grid;

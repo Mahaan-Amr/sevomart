@@ -2,13 +2,22 @@ import { sellerActionableOrderListContract } from "@sevo/contracts/orders/v1";
 import { cookies } from "next/headers";
 import Link from "next/link";
 
+import { readNearestSellerConversation } from "../../../../lib/seller-conversation-api";
 import styles from "./workspace-page.module.css";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
 
 export default async function SellerHomePage() {
   const cookieStore = await cookies();
-  const actionableOrders = await readActionableOrders(cookieStore.toString());
+  const cookieHeader = cookieStore.toString();
+  const [actionableOrders, actionableConversation] = await Promise.all([
+    readActionableOrders(cookieHeader),
+    readNearestSellerConversation(cookieHeader),
+  ]);
+  const conversationHref =
+    actionableConversation.kind === "ACTIONABLE"
+      ? `/seller/conversations/${actionableConversation.conversation.conversationId}`
+      : undefined;
   return (
     <main className={styles.page}>
       <section className={styles.workspace} aria-labelledby="seller-home-title">
@@ -16,17 +25,27 @@ export default async function SellerHomePage() {
         <h1 id="seller-home-title">کارهای نزدیک</h1>
         <p>سفارش، موجودی یا گفت‌وگویی که نیاز به رسیدگی داشته باشد اینجا می‌آید.</p>
         <div className={styles.nextAction}>
-          {actionableOrders === undefined ? (
+          {actionableOrders === undefined && !conversationHref ? (
             <>
               <h2>کارهای نزدیک دریافت نشد</h2>
               <p>کمی بعد صفحه را دوباره بررسی کنید.</p>
             </>
-          ) : actionableOrders > 0 ? (
+          ) : (actionableOrders ?? 0) > 0 ? (
             <>
-              <h2>{actionableOrders.toLocaleString("fa-IR")} سفارش آماده رسیدگی است</h2>
+              <h2>
+                {(actionableOrders ?? 0).toLocaleString("fa-IR")} سفارش آماده رسیدگی است
+              </h2>
               <p>پرداخت این سفارش‌ها ثبت شده و منتظر اقدام شما هستند.</p>
               <Link className={styles.primary} href="/seller/orders">
                 رسیدگی به سفارش‌ها
+              </Link>
+            </>
+          ) : conversationHref ? (
+            <>
+              <h2>یک گفت‌وگو منتظر پاسخ شماست</h2>
+              <p>تازه‌ترین پیام خریدار را در زمینه همان فروشگاه بررسی کنید.</p>
+              <Link className={styles.primary} href={conversationHref}>
+                پاسخ به گفت‌وگو
               </Link>
             </>
           ) : (
@@ -36,6 +55,16 @@ export default async function SellerHomePage() {
             </>
           )}
         </div>
+        <nav className={styles.relatedActions} aria-label="کارهای مرتبط">
+          {(actionableOrders ?? 0) > 0 && conversationHref ? (
+            <Link className={styles.secondary} href={conversationHref}>
+              پاسخ به نزدیک‌ترین گفت‌وگو
+            </Link>
+          ) : null}
+          <Link className={styles.secondary} href="/seller/conversations">
+            دیدن همه گفت‌وگوها
+          </Link>
+        </nav>
       </section>
     </main>
   );
