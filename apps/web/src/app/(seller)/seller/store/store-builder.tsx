@@ -16,7 +16,8 @@ import {
   type StoreDraftInput,
   type StorePreview,
 } from "@sevo/contracts/store/v1";
-import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import styles from "./store-builder.module.css";
 import { readableStoreForeground } from "./store-color";
@@ -44,9 +45,12 @@ const emptyForm: {
 export function StoreBuilder() {
   const [form, setForm] = useState(emptyForm);
   const [stage, setStage] = useState<Stage>("edit");
+  const [editStep, setEditStep] = useState(0);
   const [preview, setPreview] = useState<StorePreview>();
   const [logo, setLogo] = useState<File>();
   const [cover, setCover] = useState<File>();
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState("");
   const [storedMedia, setStoredMedia] = useState<{
     logoMediaId: MediaId | null;
     coverMediaId: MediaId | null;
@@ -61,6 +65,26 @@ export function StoreBuilder() {
   useEffect(() => {
     void loadDraft();
   }, []);
+
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreviewUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(logo);
+    setLogoPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logo]);
+
+  useEffect(() => {
+    if (!cover) {
+      setCoverPreviewUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(cover);
+    setCoverPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [cover]);
 
   async function loadDraft() {
     try {
@@ -116,52 +140,20 @@ export function StoreBuilder() {
     });
   }
 
-  async function saveAndPreview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveAndPreview() {
     const localErrors = validateForm(form);
     setErrors(localErrors);
-    if (Object.keys(localErrors).length > 0) return;
+    if (Object.keys(localErrors).length > 0) {
+      setEditStep(localErrors.returnPolicy && !hasIdentityErrors(localErrors) ? 1 : 0);
+      return;
+    }
     setPending(true);
     setMessage("");
     try {
-      const logoMediaId = logo
-        ? (await uploadMedia(logo, "STORE_LOGO")).id
-        : storedMedia.logoMediaId;
-      const coverMediaId = cover
-        ? (await uploadMedia(cover, "STORE_COVER")).id
-        : storedMedia.coverMediaId;
-      const input: StoreDraftInput = {
-        name: form.name.trim(),
-        slug: form.slug.trim() as StoreDraftInput["slug"],
-        bio: form.bio.trim(),
-        shippingMethods: [shippingMethod(form.shippingCode)],
-        returnPolicy: form.returnPolicy.trim(),
-        settlementDestination: { kind: "TEST" },
-        logoMediaId,
-        coverMediaId,
-        themeColor: form.themeColor,
-      };
-      const savedResponse = await fetch("/api/store/seller/store/draft", {
-        method: "PUT",
-        headers: {
-          "content-type": "application/json",
-          "idempotency-key": crypto.randomUUID(),
-          "if-match": `"${revision}"`,
-        },
-        body: JSON.stringify(input),
-      });
-      const savedBody: unknown = await savedResponse.json();
-      if (!savedResponse.ok) {
-        setMessage(humanError(savedBody));
-        setErrors(apiFieldErrors(savedBody));
-        return;
-      }
-      const parsedSaved = storeDraftContract.safeParse(savedBody);
-      if (!parsedSaved.success) {
-        throw new Error("invalid draft response");
-      }
-      setRevision(parsedSaved.data.revision);
-      setStoredMedia({ logoMediaId, coverMediaId });
+      const media = await resolveDraftMedia();
+      const input = buildDraftInput(form, media, true);
+      const { logoMediaId, coverMediaId } = media;
+      await persistDraft(input, logoMediaId, coverMediaId);
       const previewResponse = await fetch("/api/store/seller/store/preview", {
         cache: "no-store",
       });
@@ -175,6 +167,26 @@ export function StoreBuilder() {
       setMessage("پیش‌نویس ذخیره شد. حالا پیش‌نمایش را بررسی کنید.");
     } catch (error) {
       setMessage(
+        error instanceof MediaUploadError || error instanceof StoreDraftSaveError
+          ? error.message
+          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function saveAndExit() {
+    setPending(true);
+    setMessage("");
+    try {
+      const media = await resolveDraftMedia();
+      const input = buildDraftInput(form, media, false);
+      const { logoMediaId, coverMediaId } = media;
+      await persistDraft(input, logoMediaId, coverMediaId);
+      window.location.assign("/seller/store");
+    } catch (error) {
+      setMessage(
         error instanceof MediaUploadError
           ? error.message
           : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
@@ -182,6 +194,60 @@ export function StoreBuilder() {
     } finally {
       setPending(false);
     }
+  }
+
+  async function resolveDraftMedia(): Promise<DraftMedia> {
+    return {
+      logoMediaId: logo
+        ? (await uploadMedia(logo, "STORE_LOGO")).id
+        : storedMedia.logoMediaId,
+      coverMediaId: cover
+        ? (await uploadMedia(cover, "STORE_COVER")).id
+        : storedMedia.coverMediaId,
+    };
+  }
+
+  function continueSetup() {
+    const allErrors = validateForm(form);
+    const stepErrors: FieldErrors =
+      editStep === 0
+        ? {
+            ...(allErrors.name ? { name: allErrors.name } : {}),
+            ...(allErrors.slug ? { slug: allErrors.slug } : {}),
+            ...(allErrors.bio ? { bio: allErrors.bio } : {}),
+          }
+        : allErrors.returnPolicy
+          ? { returnPolicy: allErrors.returnPolicy }
+          : {};
+    setErrors(stepErrors);
+    if (Object.keys(stepErrors).length === 0) setEditStep((current) => current + 1);
+  }
+
+  async function persistDraft(
+    input: StoreDraftInput,
+    logoMediaId: MediaId | null,
+    coverMediaId: MediaId | null,
+  ) {
+    const response = await fetch("/api/store/seller/store/draft", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+        "if-match": `"${revision}"`,
+      },
+      body: JSON.stringify(input),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok) {
+      setMessage(humanError(body));
+      setErrors(apiFieldErrors(body));
+      throw new StoreDraftSaveError(humanError(body));
+    }
+    const parsed = storeDraftContract.safeParse(body);
+    if (!parsed.success) throw new Error("invalid draft response");
+    setRevision(parsed.data.revision);
+    setStoredMedia({ logoMediaId, coverMediaId });
+    return parsed.data;
   }
 
   async function publish() {
@@ -313,89 +379,215 @@ export function StoreBuilder() {
   return (
     <main className={styles.page}>
       <section className={styles.workspace} aria-labelledby="store-title">
+        <div className={styles.focusHeader}>
+          <Link className={styles.backLink} href="/seller/store">
+            بازگشت به وضعیت فروشگاه
+          </Link>
+          <span className={styles.progress}>
+            قدم {(editStep + 1).toLocaleString("fa-IR")} از ۳
+          </span>
+        </div>
         <span className={styles.brand}>سوو</span>
         <span className={styles.status}>پیش‌نویس</span>
         <h1 id="store-title">ساخت فروشگاه</h1>
         <p>اطلاعاتی را وارد کنید که خریدار پیش از تصمیم‌گیری باید بداند.</p>
-        <form className={styles.form} onSubmit={saveAndPreview} noValidate>
-          <Field label="نام فروشگاه" error={errors.name}>
-            <input
-              value={form.name}
-              onChange={(e) => updateFormField("name", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="شناسه لینک"
-            hint="فقط حروف انگلیسی کوچک، عدد و خط تیره"
-            error={errors.slug}
-          >
-            <div className={styles.slugInput}>
-              <span dir="ltr">/s/</span>
-              <input
-                dir="ltr"
-                value={form.slug}
-                onChange={(e) => updateFormField("slug", e.target.value)}
-              />
-            </div>
-          </Field>
-          <Field label="معرفی کوتاه" error={errors.bio}>
-            <textarea
-              value={form.bio}
-              onChange={(e) => updateFormField("bio", e.target.value)}
-            />
-          </Field>
-          <Field label="روش ارسال">
-            <select
-              value={form.shippingCode}
-              onChange={(e) =>
-                updateFormField(
-                  "shippingCode",
-                  e.target.value as typeof form.shippingCode,
-                )
-              }
-            >
-              <option value="NATIONAL_POST">پست پیشتاز</option>
-              <option value="COURIER">پیک</option>
-              <option value="PICKUP">دریافت حضوری</option>
-            </select>
-          </Field>
-          <Field label="سیاست مرجوعی" error={errors.returnPolicy}>
-            <textarea
-              value={form.returnPolicy}
-              onChange={(e) => updateFormField("returnPolicy", e.target.value)}
-            />
-          </Field>
-          <div className={styles.settlement}>
-            <b>مقصد تسویه</b>
-            <span>تأیید آزمایشی</span>
-            <p>اطلاعات بانکی واقعی دریافت نمی‌شود و این وضعیت تضمین مالی نیست.</p>
-          </div>
-          <details className={styles.optional}>
-            <summary>ظاهر فروشگاه (اختیاری)</summary>
-            <Field label="رنگ فروشگاه">
-              <input
-                type="color"
-                value={form.themeColor}
-                onChange={(e) => updateFormField("themeColor", e.target.value)}
-              />
-            </Field>
-            <Field label="لوگو">
-              <FilePicker label="لوگو" file={logo} onChange={setLogo} />
-            </Field>
-            <Field label="تصویر روی جلد">
-              <FilePicker label="تصویر روی جلد" file={cover} onChange={setCover} />
-            </Field>
-          </details>
+        <form
+          className={styles.form}
+          onSubmit={(event) => event.preventDefault()}
+          noValidate
+        >
+          {editStep === 0 ? (
+            <>
+              <h2>معرفی فروشگاه</h2>
+              <Field label="نام فروشگاه" error={errors.name}>
+                <input
+                  value={form.name}
+                  onChange={(e) => updateFormField("name", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="شناسه لینک"
+                hint="فقط حروف انگلیسی کوچک، عدد و خط تیره"
+                error={errors.slug}
+              >
+                <div className={styles.slugInput}>
+                  <span dir="ltr">/s/</span>
+                  <input
+                    dir="ltr"
+                    value={form.slug}
+                    onChange={(e) => updateFormField("slug", e.target.value)}
+                  />
+                </div>
+              </Field>
+              <Field label="معرفی کوتاه" error={errors.bio}>
+                <textarea
+                  value={form.bio}
+                  onChange={(e) => updateFormField("bio", e.target.value)}
+                />
+              </Field>
+            </>
+          ) : null}
+          {editStep === 1 ? (
+            <>
+              <h2>ارسال و مرجوعی</h2>
+              <Field label="روش ارسال">
+                <select
+                  value={form.shippingCode}
+                  onChange={(e) =>
+                    updateFormField(
+                      "shippingCode",
+                      e.target.value as typeof form.shippingCode,
+                    )
+                  }
+                >
+                  <option value="NATIONAL_POST">پست پیشتاز</option>
+                  <option value="COURIER">پیک</option>
+                  <option value="PICKUP">دریافت حضوری</option>
+                </select>
+              </Field>
+              <Field label="سیاست مرجوعی" error={errors.returnPolicy}>
+                <textarea
+                  value={form.returnPolicy}
+                  onChange={(e) => updateFormField("returnPolicy", e.target.value)}
+                />
+              </Field>
+              <div className={styles.settlement}>
+                <b>مقصد تسویه</b>
+                <span>تأیید آزمایشی</span>
+                <p>اطلاعات بانکی واقعی دریافت نمی‌شود و این وضعیت تضمین مالی نیست.</p>
+              </div>
+            </>
+          ) : null}
+          {editStep === 2 ? (
+            <>
+              <h2>ظاهر فروشگاه</h2>
+              <p>این بخش اختیاری است و بعداً هم می‌توانید آن را تغییر دهید.</p>
+              <article
+                className={styles.livePreview}
+                aria-label="پیش‌نمایش زنده فروشگاه"
+              >
+                <div
+                  className={styles.liveCover}
+                  style={{ backgroundColor: form.themeColor }}
+                >
+                  {coverPreviewUrl || storedMedia.coverMediaId ? (
+                    <img
+                      src={
+                        coverPreviewUrl ||
+                        `/api/store/media/${storedMedia.coverMediaId}`
+                      }
+                      alt="پیش‌نمایش تصویر روی جلد"
+                    />
+                  ) : null}
+                </div>
+                <div className={styles.liveIdentity}>
+                  {logoPreviewUrl || storedMedia.logoMediaId ? (
+                    <img
+                      src={
+                        logoPreviewUrl || `/api/store/media/${storedMedia.logoMediaId}`
+                      }
+                      alt="پیش‌نمایش لوگو"
+                    />
+                  ) : (
+                    <span
+                      className={styles.liveLogo}
+                      style={{ backgroundColor: form.themeColor }}
+                    >
+                      {form.name.trim().slice(0, 1) || "س"}
+                    </span>
+                  )}
+                  <div>
+                    <strong>{form.name.trim() || "نام فروشگاه"}</strong>
+                    <p>{form.bio.trim() || "معرفی کوتاه فروشگاه"}</p>
+                  </div>
+                </div>
+              </article>
+              <Field label="رنگ فروشگاه">
+                <input
+                  type="color"
+                  value={form.themeColor}
+                  onChange={(e) => updateFormField("themeColor", e.target.value)}
+                />
+              </Field>
+              <Field label="لوگو">
+                <FilePicker label="لوگو" file={logo} onChange={setLogo} />
+              </Field>
+              <Field label="تصویر روی جلد">
+                <FilePicker label="تصویر روی جلد" file={cover} onChange={setCover} />
+              </Field>
+            </>
+          ) : null}
           <p className={styles.message} role="alert" aria-live="polite">
             {message}
           </p>
-          <button className={styles.primaryButton} type="submit" disabled={pending}>
-            {pending ? "در حال ذخیره…" : "ذخیره و دیدن پیش‌نمایش"}
+          {editStep < 2 ? (
+            <button
+              className={styles.primaryButton}
+              type="button"
+              disabled={pending}
+              onClick={continueSetup}
+            >
+              ادامه
+            </button>
+          ) : (
+            <button
+              className={styles.primaryButton}
+              type="button"
+              disabled={pending}
+              onClick={() => void saveAndPreview()}
+            >
+              {pending ? "در حال ذخیره…" : "ذخیره و دیدن پیش‌نمایش"}
+            </button>
+          )}
+          {editStep > 0 ? (
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              disabled={pending}
+              onClick={() => setEditStep((current) => current - 1)}
+            >
+              بازگشت
+            </button>
+          ) : null}
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            disabled={pending}
+            onClick={saveAndExit}
+          >
+            ذخیره و خروج
           </button>
         </form>
       </section>
     </main>
   );
+}
+
+type DraftMedia = {
+  logoMediaId: MediaId | null;
+  coverMediaId: MediaId | null;
+};
+
+function buildDraftInput(
+  form: typeof emptyForm,
+  media: DraftMedia,
+  complete: boolean,
+): StoreDraftInput {
+  return {
+    ...(complete || form.name.trim().length >= 2 ? { name: form.name.trim() } : {}),
+    ...(complete ||
+    (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.slug) && form.slug.length >= 3)
+      ? { slug: form.slug.trim() as StoreDraftInput["slug"] }
+      : {}),
+    ...(complete || form.bio.trim().length >= 2 ? { bio: form.bio.trim() } : {}),
+    shippingMethods: [shippingMethod(form.shippingCode)],
+    ...(complete || form.returnPolicy.trim().length >= 10
+      ? { returnPolicy: form.returnPolicy.trim() }
+      : {}),
+    settlementDestination: { kind: "TEST" },
+    ...media,
+    themeColor: form.themeColor,
+  };
 }
 
 function FilePicker({
@@ -456,6 +648,10 @@ function validateForm(form: typeof emptyForm): FieldErrors {
   return errors;
 }
 
+function hasIdentityErrors(errors: FieldErrors) {
+  return Boolean(errors.name || errors.slug || errors.bio);
+}
+
 function shippingMethod(code: typeof emptyForm.shippingCode) {
   return {
     code,
@@ -500,6 +696,7 @@ async function uploadMedia(
 }
 
 class MediaUploadError extends Error {}
+class StoreDraftSaveError extends Error {}
 
 function humanError(body: unknown) {
   return typeof body === "object" &&

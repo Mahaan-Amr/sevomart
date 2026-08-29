@@ -1,0 +1,65 @@
+.page {
+  display: grid;
+  min-height: 100dvh;
+  padding: 24px;
+  place-items: center;
+}
+
+.panel {
+  display: grid;
+  width: min(100%, 520px);
+  gap: 12px;
+  padding: 24px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 22px;
+  background: var(--color-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.brand,
+.label {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.panel h1,
+.panel p {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block-start: 8px;
+}
+
+.primary,
+.secondary {
+  display: inline-grid;
+  min-height: 44px;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.primary {
+  background: var(--color-primary);
+  box-shadow: var(--elevation-action);
+  color: var(--color-on-primary);
+}
+
+.secondary {
+  border: 1px solid var(--color-border-primary);
+  color: var(--color-primary-dark);
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}

@@ -77,10 +77,23 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("link", { name: "ادامه کار" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
+  const backToProducts = page.getByRole("link", { name: "بازگشت به کالاها" });
+  await expect(backToProducts).toHaveAttribute("href", "/seller/products");
+  await backToProducts.click();
+  await expect(page).toHaveURL(/\/seller\/products$/);
+  await page.getByRole("link", { name: "ساخت کالای تازه" }).click();
+  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
   await page.getByLabel("نام کالا").fill("فنجان سرامیکی");
   await page
     .getByLabel("توضیح کالا")
     .fill("فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/products$/);
+  await page.getByRole("link", { name: "ساخت کالای تازه" }).click();
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await expect(page.getByLabel("توضیح کالا")).toHaveValue(
+    "فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه",
+  );
   const image = await sharp({
     create: { width: 900, height: 900, channels: 4, background: "#A41439" },
   })
@@ -140,6 +153,14 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
 
   const publicLink = page.getByRole("link", { name: "دیدن کالا در فروشگاه" });
   await expect(publicLink).toBeVisible();
+
+  await page.goto("/seller/inventory");
+  await expect(
+    page.getByRole("heading", { name: "مدیریت موجودی هنوز فعال نیست" }),
+  ).toBeVisible();
+  await expect(page.getByRole("spinbutton")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "ذخیره موجودی" })).toHaveCount(0);
+
   await page.goto(`/s/${slug}`);
   const storefrontProduct = page.getByRole("link", { name: /فنجان سرامیکی/ });
   await expect(storefrontProduct).toBeVisible();

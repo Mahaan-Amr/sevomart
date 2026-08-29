@@ -1,0 +1,119 @@
+.shell {
+  min-height: 100dvh;
+}
+
+.sidebar {
+  position: fixed;
+  z-index: 2;
+  inset-block: 0;
+  inset-inline-start: 0;
+  display: none;
+  width: 184px;
+  padding: 24px 16px;
+  border-inline-end: 1px solid var(--color-divider);
+  background: var(--color-background);
+}
+
+.brand {
+  width: fit-content;
+  color: var(--color-primary);
+  font-size: 18px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.navigation {
+  display: grid;
+  gap: 4px;
+  margin-block-start: 32px;
+}
+
+.link,
+.activeLink,
+.buyerLink {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: var(--color-text);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.activeLink {
+  background: var(--color-cover-start);
+  box-shadow: var(--elevation-pressed);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.buyerLink {
+  margin-block-start: auto;
+  color: var(--color-muted);
+}
+
+.content {
+  min-width: 0;
+  padding-block-end: 76px;
+}
+
+.mobileNavigation {
+  position: fixed;
+  z-index: 3;
+  inset-inline: 8px;
+  inset-block-end: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 6px;
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+  background: var(--color-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.mobileLink,
+.activeMobileLink {
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  gap: 2px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--color-muted);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.activeMobileLink {
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.link:focus-visible,
+.activeLink:focus-visible,
+.buyerLink:focus-visible,
+.mobileLink:focus-visible,
+.activeMobileLink:focus-visible,
+.brand:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .content {
+    margin-inline-start: 184px;
+    padding-block-end: 0;
+  }
+
+  .mobileNavigation {
+    display: none;
+  }
+}

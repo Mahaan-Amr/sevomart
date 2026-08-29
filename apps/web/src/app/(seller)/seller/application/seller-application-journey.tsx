@@ -410,7 +410,7 @@ function ApplicationStatus({
           </button>
         ) : null}
         {application.status === "APPROVED" ? (
-          <a className={styles.primaryAction} href="/seller/store">
+          <a className={styles.primaryAction} href="/seller">
             رفتن به فضای فروشنده
           </a>
         ) : null}

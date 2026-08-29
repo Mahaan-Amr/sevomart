@@ -23,6 +23,10 @@ export const sellerApplicationDraftTestMobiles = Array.from({ length: 4 }, (_, i
   testMobile(40 + index),
 );
 
+export const sellerWorkspaceTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(44 + index),
+);
+
 export const productTracerTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(50 + index),
 );
