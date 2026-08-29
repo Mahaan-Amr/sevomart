@@ -1,4 +1,6 @@
 import {
+  orderPurchaseExperienceEligibilityDecisionContract,
+  orderPurchaseExperienceEligibilityInputContract,
   orderConversationEligibilityInputContract,
   orderConversationEligibilityResultContract,
   checkoutPreparationContract,
@@ -75,6 +77,40 @@ const preparation = {
 } as const;
 
 describe("checkout and CreateOrder.v1 contracts", () => {
+  it("defines the authoritative confirmed-purchase decision for one order item", () => {
+    const input = {
+      buyerId: "10000000-0000-4000-8000-000000000001",
+      orderItemId: "50000000-0000-4000-8000-000000000001",
+    };
+    expect(orderPurchaseExperienceEligibilityInputContract.parse(input)).toEqual(input);
+    expect(
+      orderPurchaseExperienceEligibilityDecisionContract.parse({
+        eligible: true,
+        buyerId: input.buyerId,
+        orderItemId: input.orderItemId,
+        storeId: ids.store,
+        productId: ids.product,
+        purchaseStatus: "CONFIRMED",
+      }),
+    ).toMatchObject({ eligible: true, purchaseStatus: "CONFIRMED" });
+    expect(
+      orderPurchaseExperienceEligibilityDecisionContract.parse({
+        eligible: false,
+        reason: "NOT_ELIGIBLE",
+      }),
+    ).toEqual({ eligible: false, reason: "NOT_ELIGIBLE" });
+    expect(
+      orderPurchaseExperienceEligibilityDecisionContract.safeParse({
+        eligible: true,
+        buyerId: input.buyerId,
+        orderItemId: input.orderItemId,
+        storeId: ids.store,
+        productId: ids.product,
+        purchaseStatus: "PENDING_PAYMENT",
+      }).success,
+    ).toBe(false);
+  });
+
   it("limits conversation eligibility to an actor/order/store tuple and a boolean", () => {
     const input = {
       identityId: "10000000-0000-4000-8000-000000000001",

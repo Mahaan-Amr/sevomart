@@ -25,6 +25,41 @@ export type OrderConversationEligibilityInput = z.infer<
   typeof orderConversationEligibilityInputContract
 >;
 
+export const orderItemIdContract = z.uuid().brand("OrderItemId");
+export const orderPurchaseExperienceEligibilityInputContract = z
+  .object({
+    buyerId: identityIdContract,
+    orderItemId: orderItemIdContract,
+  })
+  .strict();
+export const orderPurchaseExperienceEligibilityDecisionContract = z.discriminatedUnion(
+  "eligible",
+  [
+    z
+      .object({
+        eligible: z.literal(true),
+        buyerId: identityIdContract,
+        orderItemId: orderItemIdContract,
+        storeId: storeIdContract,
+        productId: productIdContract,
+        purchaseStatus: z.literal("CONFIRMED"),
+      })
+      .strict(),
+    z
+      .object({
+        eligible: z.literal(false),
+        reason: z.literal("NOT_ELIGIBLE"),
+      })
+      .strict(),
+  ],
+);
+export type OrderPurchaseExperienceEligibilityInput = z.infer<
+  typeof orderPurchaseExperienceEligibilityInputContract
+>;
+export type OrderPurchaseExperienceEligibilityDecision = z.infer<
+  typeof orderPurchaseExperienceEligibilityDecisionContract
+>;
+
 export const ordersV1Operations = {
   listSellerActionableOrders: {
     operationId: "listSellerActionableOrders",
@@ -615,6 +650,11 @@ export const savedAddressErrorContract = z
   .strict();
 
 export const ordersV1Schemas = {
+  OrderItemId: orderItemIdContract,
+  OrderPurchaseExperienceEligibilityInput:
+    orderPurchaseExperienceEligibilityInputContract,
+  OrderPurchaseExperienceEligibilityDecision:
+    orderPurchaseExperienceEligibilityDecisionContract,
   CartId: cartIdContract,
   CartVariantId: variantIdContract,
   CartIdempotencyKey: cartIdempotencyKeyContract,
@@ -665,6 +705,19 @@ export function createOrdersV1JsonSchemas() {
 }
 
 export const ordersV1Examples = {
+  OrderItemId: "50000000-0000-4000-8000-000000000001",
+  OrderPurchaseExperienceEligibilityInput: {
+    buyerId: "10000000-0000-4000-8000-000000000001",
+    orderItemId: "50000000-0000-4000-8000-000000000001",
+  },
+  OrderPurchaseExperienceEligibilityDecision: {
+    eligible: true,
+    buyerId: "10000000-0000-4000-8000-000000000001",
+    orderItemId: "50000000-0000-4000-8000-000000000001",
+    storeId: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+    productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+    purchaseStatus: "CONFIRMED",
+  },
   SellerActionableOrderList: {
     orders: [
       {

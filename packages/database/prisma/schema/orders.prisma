@@ -157,6 +157,7 @@ model OrderOrder {
 }
 
 model OrderItemSnapshot {
+  id                 String @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId            String @map("order_id") @db.Uuid
   variantId          String @map("variant_id") @db.Uuid
   productId          String @map("product_id") @db.Uuid

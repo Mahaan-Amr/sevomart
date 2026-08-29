@@ -114,3 +114,10 @@ the content aggregate. The migration is additive, needs no compatibility window 
 uses a forward fix if deployment must be corrected. Both supported runtime paths use
 the same `prisma migrate deploy` history; verification evidence is recorded on the
 Issue handoff.
+
+Issue 186 additively gives every orders-owned `order_items` row a stable unique UUID
+and publishes the authoritative confirmed-purchase eligibility read for content.
+Existing rows are backfilled, new rows use a database default, and no cross-module
+foreign key or private order snapshot is exposed. No compatibility window is needed;
+deployment corrections use a forward-fix migration. Docker and native both apply the
+same `prisma migrate deploy` history.
