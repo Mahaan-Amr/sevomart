@@ -52,17 +52,22 @@ async function readPublishedStore(
         headers: { "x-correlation-id": crypto.randomUUID() },
       },
     );
+    if (productsResponse.status === 404) return { state: "not-found" };
     if (!productsResponse.ok) return { state: "error" };
     const productsBody: unknown = await productsResponse.json();
     const products = publicProductListContract.safeParse(productsBody);
     const simpleProducts = publicSimpleProductListContract.safeParse(productsBody);
     if (!products.success && !simpleProducts.success) return { state: "error" };
+    const publishedProducts = products.success
+      ? products.data.products
+      : simpleProducts.data!.products;
     return {
       state: "ready",
-      store: parsed.data,
-      products: products.success
-        ? products.data.products
-        : simpleProducts.data!.products,
+      store: {
+        ...parsed.data,
+        activeProductCount: publishedProducts.length,
+      },
+      products: publishedProducts,
     };
   } catch {
     return { state: "error" };

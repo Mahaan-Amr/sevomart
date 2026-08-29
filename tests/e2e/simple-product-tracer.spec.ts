@@ -162,6 +162,8 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByRole("button", { name: "ذخیره موجودی" })).toHaveCount(0);
 
   await page.goto(`/s/${slug}`);
+  await expect(page.getByText("۱ کالای فعال")).toBeVisible();
+  const storefrontHtml = await page.content();
   const storefrontProduct = page.getByRole("link", { name: /فنجان سرامیکی/ });
   await expect(storefrontProduct).toBeVisible();
   await storefrontProduct.click();
@@ -171,6 +173,33 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
   await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
+  const publicStoreResponse = await page.request.get(
+    `http://127.0.0.1:3109/v1/stores/${slug}`,
+  );
+  const publicProductsResponse = await page.request.get(
+    `http://127.0.0.1:3109/v1/stores/${slug}/products`,
+  );
+  expect(publicStoreResponse.ok()).toBe(true);
+  expect(publicProductsResponse.ok()).toBe(true);
+  const publicSurface = `${storefrontHtml}\n${await page.content()}\n${JSON.stringify([
+    await publicStoreResponse.json(),
+    await publicProductsResponse.json(),
+  ])}`;
+  for (const privateField of [
+    "sellerId",
+    "identityId",
+    "mobile",
+    "bank",
+    "sku",
+    "onHand",
+    "workingCopy",
+    "inventory",
+    "viewCount",
+    "likeCount",
+    "conversionRate",
+  ]) {
+    expect(publicSurface).not.toContain(`"${privateField}"`);
+  }
   await expect(page.locator("img")).toHaveJSProperty("complete", true);
   await assertNoHorizontalOverflow(page);
 });
