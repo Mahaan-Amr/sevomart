@@ -77,7 +77,7 @@ export class PostgresStoreRepository
     `;
     const record = records[0];
     if (!record) return undefined;
-    if (record.requestHash !== context.requestHash) {
+    if (!matchesRequestHash(record.requestHash, context)) {
       throw new StoreIdempotencyConflictError(context.idempotencyKey);
     }
     return deserializeRow(record.responseJson);
@@ -419,7 +419,7 @@ export class PostgresStoreRepository
         for update
       `;
       const record = records[0];
-      if (!record || record.requestHash !== context.requestHash) {
+      if (!record || !matchesRequestHash(record.requestHash, context)) {
         throw new StoreIdempotencyConflictError(context.idempotencyKey);
       }
       return deserializeRow(record.responseJson);
@@ -439,6 +439,13 @@ export class PostgresStoreRepository
   async onModuleDestroy() {
     await this.#sql.end();
   }
+}
+
+function matchesRequestHash(storedHash: string, context: StoreWriteContext) {
+  return (
+    storedHash === context.requestHash ||
+    context.compatibleRequestHashes?.includes(storedHash) === true
+  );
 }
 
 function fromDatabase(row: StoreDatabaseRow): StoreRow {
