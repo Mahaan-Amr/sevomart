@@ -112,7 +112,8 @@ describe("seller store HTTP API with PostgreSQL", () => {
     const cookie = await signIn(app);
     const server = app.getHttpAdapter().getInstance();
     const key = randomUUID();
-    const payload = { name: " خانه " };
+    const currentPayload = { name: "فروشگاه بذر" };
+    const legacyPayload = { name: "  " };
     const headers = {
       cookie,
       "idempotency-key": key,
@@ -122,18 +123,40 @@ describe("seller store HTTP API with PostgreSQL", () => {
       method: "PUT",
       url: "/v1/seller/store/draft",
       headers,
-      payload,
+      payload: currentPayload,
     });
     expect(saved.statusCode).toBe(200);
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const legacyHash = createHash("sha256")
-      .update(JSON.stringify(payload))
+      .update(JSON.stringify(legacyPayload))
       .digest("hex");
     await sql`
       update store_idempotency_records
-      set request_hash = ${legacyHash}
+      set request_hash = ${legacyHash},
+          response_json = jsonb_set(response_json, '{name}', to_jsonb('  '::text))
       where operation = 'SAVE_STORE_DRAFT' and idempotency_key = ${key}
+    `;
+    const [beforeReplay] = await sql<
+      Array<{
+        revision: number;
+        shippingRows: number;
+        outboxEvents: number;
+        receipts: number;
+      }>
+    >`
+      select
+        s.revision,
+        (select count(*)::int from store_shipping_methods sm where sm.store_id = s.id) as "shippingRows",
+        (select count(*)::int from platform_outbox_events e where e.aggregate_id = s.id) as "outboxEvents",
+        (select count(*)::int from store_idempotency_records r
+          where r.operation = 'SAVE_STORE_DRAFT' and r.idempotency_key = ${key}) as receipts
+      from store_stores s
+      join store_memberships m on m.store_id = s.id
+      where m.seller_id = (
+        select actor_identity_id from store_idempotency_records
+        where operation = 'SAVE_STORE_DRAFT' and idempotency_key = ${key}
+      )
     `;
     await sql.end();
 
@@ -141,16 +164,41 @@ describe("seller store HTTP API with PostgreSQL", () => {
       method: "PUT",
       url: "/v1/seller/store/draft",
       headers,
-      payload,
+      payload: legacyPayload,
     });
     expect(replay.statusCode).toBe(200);
-    expect(replay.json()).toEqual(saved.json());
+    expect(replay.json()).toEqual({ ...saved.json(), name: "  " });
+
+    const verifySql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const [afterReplay] = await verifySql<
+      Array<{
+        revision: number;
+        shippingRows: number;
+        outboxEvents: number;
+        receipts: number;
+      }>
+    >`
+      select
+        s.revision,
+        (select count(*)::int from store_shipping_methods sm where sm.store_id = s.id) as "shippingRows",
+        (select count(*)::int from platform_outbox_events e where e.aggregate_id = s.id) as "outboxEvents",
+        (select count(*)::int from store_idempotency_records r
+          where r.operation = 'SAVE_STORE_DRAFT' and r.idempotency_key = ${key}) as receipts
+      from store_stores s
+      join store_memberships m on m.store_id = s.id
+      where m.seller_id = (
+        select actor_identity_id from store_idempotency_records
+        where operation = 'SAVE_STORE_DRAFT' and idempotency_key = ${key}
+      )
+    `;
+    await verifySql.end();
+    expect(afterReplay).toEqual(beforeReplay);
 
     const conflict = await server.inject({
       method: "PUT",
       url: "/v1/seller/store/draft",
       headers,
-      payload: { name: "خانه متفاوت" },
+      payload: { name: " x" },
     });
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json()).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });

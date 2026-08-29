@@ -83,6 +83,21 @@ export class StoreService implements StoreAuthoritativeRead {
     return toDraft(row);
   }
 
+  async replayLegacyDraft(
+    sellerId: string,
+    input: unknown,
+    context: StoreWriteRequest,
+  ): Promise<StoreDraft | undefined> {
+    const parsed = legacyStoreDraftReplayInputContract.parse(input);
+    const replay = await this.repository.readWriteResult({
+      ...context,
+      operation: "SAVE_STORE_DRAFT",
+      actorId: sellerId,
+      requestHash: hashParsedInput(parsed),
+    });
+    return replay ? toDraft(replay) : undefined;
+  }
+
   async saveDraft(
     sellerId: string,
     input: StoreDraftInput,
