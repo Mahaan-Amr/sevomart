@@ -18,7 +18,7 @@ import {
   type StorePreview,
 } from "@sevo/contracts/store/v1";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import styles from "./store-builder.module.css";
 import { readableStoreForeground } from "./store-color";
@@ -26,7 +26,10 @@ import { readableStoreForeground } from "./store-color";
 type Stage = "edit" | "preview" | "published";
 export type StoreSection = "setup" | "profile" | "shipping" | "returns" | "appearance";
 type FieldErrors = Partial<
-  Record<"name" | "slug" | "bio" | "shipping" | "returnPolicy", string>
+  Record<
+    "name" | "slug" | "bio" | "shipping" | "returnPolicy" | "logo" | "cover",
+    string
+  >
 >;
 type ShippingCode = "NATIONAL_POST" | "COURIER" | "PICKUP";
 type ShippingForm = {
@@ -76,6 +79,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   const [revision, setRevision] = useState(0);
   const [slugStatus, setSlugStatus] = useState("");
   const [slugUnavailable, setSlugUnavailable] = useState(false);
+  const slugCheckSequence = useRef(0);
 
   useEffect(() => {
     void loadDraft();
@@ -155,6 +159,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   ) {
     setForm((current) => ({ ...current, [field]: value }));
     if (field === "slug") {
+      slugCheckSequence.current += 1;
       setSlugUnavailable(false);
       setSlugStatus("");
     }
@@ -193,8 +198,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       setStage("preview");
       setMessage("پیش‌نویس ذخیره شد. حالا پیش‌نمایش را بررسی کنید.");
     } catch (error) {
+      if (error instanceof MediaUploadError) {
+        setErrors((current) => ({ ...current, [error.field]: error.message }));
+        setMessage("");
+        return;
+      }
       setMessage(
-        error instanceof MediaUploadError || error instanceof StoreDraftSaveError
+        error instanceof StoreDraftSaveError
           ? error.message
           : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
       );
@@ -242,8 +252,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       );
       window.location.assign("/seller/store");
     } catch (error) {
+      if (error instanceof MediaUploadError) {
+        setErrors((current) => ({ ...current, [error.field]: error.message }));
+        setMessage("");
+        return;
+      }
       setMessage(
-        error instanceof MediaUploadError || error instanceof StoreDraftSaveError
+        error instanceof StoreDraftSaveError
           ? error.message
           : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
       );
@@ -266,6 +281,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   async function checkSlug() {
     const slug = form.slug.trim();
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 3) return;
+    const sequence = ++slugCheckSequence.current;
     setSlugStatus("در حال بررسی شناسه لینک…");
     try {
       const response = await fetch(
@@ -274,6 +290,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       );
       const parsed = slugAvailabilityContract.safeParse(await response.json());
       if (!response.ok || !parsed.success) throw new Error("slug unavailable");
+      if (sequence !== slugCheckSequence.current) return;
       setSlugUnavailable(!parsed.data.available);
       setSlugStatus(
         parsed.data.available
@@ -287,6 +304,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
           : "این شناسه لینک قبلاً استفاده شده است.",
       }));
     } catch {
+      if (sequence !== slugCheckSequence.current) return;
       setSlugStatus("بررسی شناسه لینک انجام نشد؛ هنگام ذخیره دوباره بررسی می‌شود.");
     }
   }
@@ -385,8 +403,14 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
         coverPreviewUrl={coverPreviewUrl}
         storedMedia={storedMedia}
         updateFormField={updateFormField}
-        setLogo={setLogo}
-        setCover={setCover}
+        setLogo={(file) => {
+          setLogo(file);
+          setErrors((current) => ({ ...current, logo: undefined }));
+        }}
+        setCover={(file) => {
+          setCover(file);
+          setErrors((current) => ({ ...current, cover: undefined }));
+        }}
         saveAndExit={() => void saveSectionAndExit()}
         onSlugBlur={() => void checkSlug()}
         slugStatus={slugStatus}
@@ -633,10 +657,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                   onChange={(e) => updateFormField("themeColor", e.target.value)}
                 />
               </Field>
-              <Field label="لوگو">
+              <Field label="لوگو" error={errors.logo}>
                 <FilePicker label="لوگو" file={logo} onChange={setLogo} />
               </Field>
-              <Field label="تصویر روی جلد">
+              <Field label="تصویر روی جلد" error={errors.cover}>
                 <FilePicker label="تصویر روی جلد" file={cover} onChange={setCover} />
               </Field>
             </>
@@ -971,10 +995,10 @@ function StoreSettingsPage({
                   }
                 />
               </Field>
-              <Field label="لوگو">
+              <Field label="لوگو" error={errors.logo}>
                 <FilePicker label="لوگو" file={logo} onChange={setLogo} />
               </Field>
-              <Field label="تصویر روی جلد">
+              <Field label="تصویر روی جلد" error={errors.cover}>
                 <FilePicker label="تصویر روی جلد" file={cover} onChange={setCover} />
               </Field>
             </>
@@ -1198,18 +1222,30 @@ async function uploadMedia(
   purpose: "STORE_LOGO" | "STORE_COVER",
 ): Promise<MediaReference> {
   if (file.size > MEDIA_UPLOAD_MAX_BYTES) {
-    throw new MediaUploadError("حجم تصویر باید حداکثر ۱۰ مگابایت باشد.");
+    throw new MediaUploadError(
+      "حجم تصویر باید حداکثر ۱۰ مگابایت باشد.",
+      mediaField(purpose),
+    );
   }
   if (!(MEDIA_UPLOAD_ACCEPTED_TYPES as readonly string[]).includes(file.type)) {
-    throw new MediaUploadError("فقط تصویر JPEG، PNG یا WebP پذیرفته می‌شود.");
+    throw new MediaUploadError(
+      "فقط تصویر JPEG، PNG یا WebP پذیرفته می‌شود.",
+      mediaField(purpose),
+    );
   }
   const bitmap = await createImageBitmap(file).catch(() => undefined);
   if (!bitmap)
-    throw new MediaUploadError("فایل تصویر خراب است یا کامل خوانده نمی‌شود.");
+    throw new MediaUploadError(
+      "فایل تصویر خراب است یا کامل خوانده نمی‌شود.",
+      mediaField(purpose),
+    );
   const pixels = bitmap.width * bitmap.height;
   bitmap.close();
   if (pixels > MEDIA_UPLOAD_MAX_PIXELS) {
-    throw new MediaUploadError("ابعاد تصویر باید حداکثر ۲۴ مگاپیکسل باشد.");
+    throw new MediaUploadError(
+      "ابعاد تصویر باید حداکثر ۲۴ مگاپیکسل باشد.",
+      mediaField(purpose),
+    );
   }
   const form = new FormData();
   form.set("purpose", purpose);
@@ -1220,11 +1256,23 @@ async function uploadMedia(
   });
   const body: unknown = await response.json();
   const parsed = mediaReferenceContract.safeParse(body);
-  if (!response.ok || !parsed.success) throw new MediaUploadError(humanError(body));
+  if (!response.ok || !parsed.success)
+    throw new MediaUploadError(humanError(body), mediaField(purpose));
   return parsed.data;
 }
 
-class MediaUploadError extends Error {}
+function mediaField(purpose: "STORE_LOGO" | "STORE_COVER") {
+  return purpose === "STORE_LOGO" ? ("logo" as const) : ("cover" as const);
+}
+
+class MediaUploadError extends Error {
+  constructor(
+    message: string,
+    readonly field: "logo" | "cover",
+  ) {
+    super(message);
+  }
+}
 class StoreDraftSaveError extends Error {}
 
 function humanError(body: unknown) {

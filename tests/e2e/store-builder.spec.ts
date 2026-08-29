@@ -130,10 +130,41 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.getByText("یک معرفی کوتاه برای فروشگاه بنویسید.")).toBeVisible();
   await expect(page).toHaveURL(/\/seller\/store\/profile$/);
   await page.getByLabel("نام فروشگاه").fill(storeName);
+  let acknowledgeStaleRequest!: () => void;
+  const staleRequestStarted = new Promise<void>((resolve) => {
+    acknowledgeStaleRequest = resolve;
+  });
+  let releaseStaleRequest!: () => void;
+  const staleRequestGate = new Promise<void>((resolve) => {
+    releaseStaleRequest = resolve;
+  });
+  let acknowledgeStaleResponse!: () => void;
+  const staleResponseSent = new Promise<void>((resolve) => {
+    acknowledgeStaleResponse = resolve;
+  });
+  await page.route("**/api/store/store-slugs/**/availability", async (route) => {
+    const checkedSlug = route.request().url().split("/").at(-2);
+    if (checkedSlug === "stale-slug") {
+      acknowledgeStaleRequest();
+      await staleRequestGate;
+      await route.fulfill({ json: { slug: "stale-slug", available: false } });
+      acknowledgeStaleResponse();
+      return;
+    }
+    await route.fulfill({ json: { slug: checkedSlug, available: true } });
+  });
+  await page.getByLabel("شناسه لینک").fill("stale-slug");
+  await page.getByLabel("شناسه لینک").blur();
+  await staleRequestStarted;
   await page.getByLabel("شناسه لینک").fill(slug);
   await page.getByLabel("معرفی کوتاه").fill(storeBio);
   await page.getByLabel("شناسه لینک").blur();
   await expect(page.getByText("این شناسه لینک در دسترس است.")).toBeVisible();
+  releaseStaleRequest();
+  await staleResponseSent;
+  await expect(page.getByText("این شناسه لینک در دسترس است.")).toBeVisible();
+  await expect(page.getByText("این شناسه لینک قبلاً استفاده شده است.")).toHaveCount(0);
+  await page.unroute("**/api/store/store-slugs/**/availability");
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(page).toHaveURL(/\/seller\/store$/);
   await page.goto("/seller/store/profile");
@@ -181,6 +212,19 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page).toHaveURL(/\/seller\/store$/);
 
   await page.goto("/seller/store/appearance");
+  await page.getByLabel("لوگو").setInputFiles({
+    name: "broken.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("not-an-image"),
+  });
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(
+    page
+      .getByText("لوگو", { exact: true })
+      .locator("..")
+      .getByText("فایل تصویر خراب است یا کامل خوانده نمی‌شود."),
+  ).toBeVisible();
+  await page.getByLabel("لوگو").setInputFiles([]);
   await page.getByLabel("رنگ فروشگاه").fill("#760B29");
   await expect(
     page
@@ -407,4 +451,27 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     "guest-storefront-after-refresh.png",
     deterministicScreenshotOptions,
   );
+
+  await page.goto("/seller/store/shipping");
+  const courier = page.getByRole("group", { name: "پیک" });
+  await courier.getByRole("checkbox").check();
+  await courier.getByLabel("عنوانی که خریدار می‌بیند").fill("پیک درون‌شهری");
+  await courier.getByLabel("هزینه ارسال (تومان)").fill("۱۲۰۰۰۰");
+  await courier.getByLabel("زمان تقریبی تحویل").fill("همان روز کاری");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await page.goto("/seller/store/shipping");
+  const savedCourier = page.getByRole("group", { name: "پیک" });
+  await expect(savedCourier.getByRole("checkbox")).toBeChecked();
+  await expect(savedCourier.getByLabel("هزینه ارسال (تومان)")).toHaveValue("120000");
+  await savedCourier.getByRole("checkbox").uncheck();
+  await savedCourier.getByRole("checkbox").check();
+  await expect(savedCourier.getByLabel("زمان تقریبی تحویل")).toHaveValue(
+    "همان روز کاری",
+  );
+  await page.getByRole("group", { name: "پست پیشتاز" }).getByRole("checkbox").uncheck();
+  await savedCourier.getByRole("checkbox").uncheck();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
+  await expect(page).toHaveURL(/\/seller\/store\/shipping$/);
 });
