@@ -106,8 +106,8 @@ databases that applied the original outbox migration before `envelope_version` w
 added. It preserves existing events, backfills envelope version `1`, and is a no-op
 for fresh databases that already contain the required column.
 
-Issue 139 adds content-owned sales-content, product-link, purchase-experience,
-idempotency and audit tables after
+Issue 139 adds six content-owned tables: sales content, product links, the latest
+product-state projection, purchase experience, idempotency and audit, after
 `20260827120000__conversations__send-claims`. References to store, product, media,
 identity and order-item identifiers remain scalar; the only foreign key stays within
 the content aggregate. The migration is additive, needs no compatibility window and

@@ -24,6 +24,24 @@ export class PostgresContentRepository implements ContentRepository {
     await this.#sql.end();
   }
 
+  async isMediaPublished(mediaId: string) {
+    const [row] = await this.#sql<Array<{ published: boolean }>>`
+      select exists (
+        select 1
+        from content_sales_contents
+        where media_id = ${mediaId}::uuid
+          and moderation_state = 'PUBLISHED'
+          and active
+        union all
+        select 1
+        from content_purchase_experiences
+        where ${mediaId}::uuid = any(media_ids)
+          and moderation_state = 'PUBLISHED'
+      ) as published
+    `;
+    return row?.published ?? false;
+  }
+
   async replaySalesContent(command: ContentMutation) {
     return this.#sql.begin(async (transaction) => {
       const replay = await this.replay(

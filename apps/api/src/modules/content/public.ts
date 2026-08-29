@@ -39,10 +39,7 @@ export interface ContentProductRead {
   ): Promise<{ publicationVersion: number } | undefined>;
 }
 export interface ContentMediaRead {
-  readOwnedKind(
-    mediaId: MediaId,
-    identityId: IdentityId,
-  ): Promise<"IMAGE" | "VIDEO" | undefined>;
+  readOwnedKind(mediaId: MediaId, identityId: IdentityId): Promise<"IMAGE" | undefined>;
 }
 export interface PurchaseEligibilityRead {
   readEligibility(input: {
@@ -81,4 +78,8 @@ export interface ContentRepository {
   publishPurchaseExperience(
     command: PublishPurchaseExperienceCommand,
   ): Promise<PurchaseExperience>;
+}
+
+export interface ContentPublishedMediaRead {
+  isMediaPublished(mediaId: MediaId): Promise<boolean>;
 }

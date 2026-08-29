@@ -202,6 +202,12 @@ describe("successful direct payment transaction seam", () => {
     await expect(disconnected.checkConversationOrder(input)).rejects.toMatchObject({
       code: "CONNECTION_ENDED",
     });
+    await expect(
+      disconnected.readPurchaseExperienceEligibility({
+        buyerId: ids.buyer,
+        orderItemId: ids.item,
+      }),
+    ).rejects.toMatchObject({ code: "CONNECTION_ENDED" });
   });
 
   it("stores the order reference without a cross-module foreign key", async () => {

@@ -120,7 +120,6 @@ function fixture(
             storeId: ids.store,
             productId: ids.product,
             purchaseStatus: "CONFIRMED",
-            fulfillmentStatus: "DELIVERED",
           };
     },
   };
@@ -215,7 +214,7 @@ describe("ContentService", () => {
         },
         "sales-content-kind",
       ),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ).rejects.toMatchObject({ code: "NOT_ELIGIBLE" });
   });
 
   it("does not disguise an unexpected store dependency failure as forbidden", async () => {

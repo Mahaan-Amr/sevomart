@@ -18,6 +18,10 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { PostgresContentRepository } from "../../apps/api/src/modules/content/composition";
+import {
+  MEDIA_STORAGE,
+  type MediaStorage,
+} from "../../apps/api/src/modules/media/public";
 import { projectContentProductState } from "../../apps/worker/src/modules/content/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
@@ -42,6 +46,79 @@ afterAll(async () => {
 });
 
 describe("content producer persistence", () => {
+  it("serves media referenced by active published content to an anonymous reader", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    const server = app.getHttpAdapter().getInstance();
+    const storage = app.get<MediaStorage>(MEDIA_STORAGE);
+    const mediaId = "40000000-0000-4000-8000-000000000091";
+    try {
+      await storage.put({
+        key: mediaId,
+        purpose: "PRODUCT_IMAGE",
+        contentType: "image/png",
+        bytes: Uint8Array.from([1]),
+        checksum: "a".repeat(64),
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: `media/${mediaId}/variants/product-detail.webp`,
+            name: "product-detail",
+            contentType: "image/webp",
+            bytes: Uint8Array.from([2]),
+            width: 1,
+            height: 1,
+          },
+        ],
+        ownerSellerId: actorId,
+        visibility: "PRIVATE",
+      });
+      const input = publishSalesContentInputContract.parse({
+        storeId,
+        media: { mediaId, kind: "IMAGE" },
+        productIds: [productId],
+      });
+      await repository.publishSalesContent({
+        actorId,
+        correlationId: randomUUID(),
+        idempotencyKey: "public-media-91",
+        requestHash: digest(input),
+        input,
+        products: [{ productId, publicationVersion: 1 }],
+      });
+
+      const read = await server.inject({ method: "GET", url: `/v1/media/${mediaId}` });
+      expect(read.statusCode).toBe(200);
+      expect(read.headers["cache-control"]).toBeUndefined();
+
+      const correlationId = randomUUID();
+      await sql.begin((transaction) =>
+        projectContentProductState(
+          productUnpublishedV1Contract.parse({
+            version: 1,
+            eventId: randomUUID(),
+            eventType: "ProductUnpublished.v1",
+            aggregateId: productId,
+            aggregateVersion: 2,
+            occurredAt: new Date().toISOString(),
+            correlationId,
+            causationId: correlationId,
+            actor: { type: "IDENTITY", id: actorId },
+            payload: { storeId, productId, publicationVersion: 1 },
+          }),
+          transaction,
+        ),
+      );
+      const stoppedRead = await server.inject({
+        method: "GET",
+        url: `/v1/media/${mediaId}`,
+      });
+      expect(stoppedRead.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("composes both HTTP operations and fails closed at authentication and preconditions", async () => {
     const app = await createApiApp(apiTestEnvironment);
     const server = app.getHttpAdapter().getInstance();
@@ -84,6 +161,106 @@ describe("content producer persistence", () => {
       expect(missingPrecondition.statusCode).toBe(428);
       expect(missingPrecondition.json().code).toBe("PRECONDITION_REQUIRED");
     } finally {
+      await app.close();
+    }
+  });
+
+  it("publishes one purchase experience through HTTP for the buyer's paid order item", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    const server = app.getHttpAdapter().getInstance();
+    const cartId = "91000000-0000-4000-8000-000000000091";
+    const checkoutId = "92000000-0000-4000-8000-000000000091";
+    const orderId = "93000000-0000-4000-8000-000000000091";
+    const orderItemId = "94000000-0000-4000-8000-000000000091";
+    const variantId = "95000000-0000-4000-8000-000000000091";
+    let buyerId = "";
+    let experienceId = "";
+    try {
+      const requested = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+      expect(requested.statusCode).toBe(202);
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: requested.json().challengeId, code: "111111" },
+      });
+      expect(verified.statusCode).toBe(200);
+      const cookie = verified.headers["set-cookie"]!;
+      const session = await server.inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie },
+      });
+      buyerId = session.json().actor.identityId;
+      await sql`
+        insert into order_carts
+          (id, store_id, identity_id, status, revision, expires_at)
+        values (${cartId}, ${storeId}, ${buyerId}, 'CONVERTED', 1,
+          now() + interval '1 day')
+      `;
+      await sql`
+        insert into order_checkout_preparations
+          (checkout_revision, identity_id, cart_id, cart_revision,
+           shipping_method_id, shipping_revision, policy_revision, snapshot, expires_at)
+        values (${checkoutId}, ${buyerId}, ${cartId}, 1,
+          '96000000-0000-4000-8000-000000000091', 1, 1, ${sql.json({})},
+          now() + interval '1 day')
+      `;
+      await sql`
+        insert into order_orders
+          (id, identity_id, store_id, checkout_revision, reservation_id, status,
+           total_amount, currency, reservation_expires_at, review_snapshot, paid_at)
+        values (${orderId}, ${buyerId}, ${storeId}, ${checkoutId},
+          '97000000-0000-4000-8000-000000000091', 'PAID', 1000, 'IRR',
+          now() + interval '1 day', ${sql.json({})}, now())
+      `;
+      await sql`
+        insert into order_items
+          (id, order_id, variant_id, product_id, name, quantity,
+           unit_price_amount, publication_version)
+        values (${orderItemId}, ${orderId}, ${variantId}, ${productId},
+          'کالای تأییدشده', 1, 1000, 1)
+      `;
+      const payload = {
+        buyerId,
+        orderItemId,
+        rating: 5,
+        text: "کالا سالم و مطابق تصویر رسید.",
+        mediaIds: [],
+      };
+      const published = await server.inject({
+        method: "POST",
+        url: "/v1/purchase-experiences",
+        headers: { cookie, "idempotency-key": "experience-http-91" },
+        payload,
+      });
+      expect(published.statusCode).toBe(201);
+      experienceId = published.json().experienceId;
+
+      const duplicate = await server.inject({
+        method: "POST",
+        url: "/v1/purchase-experiences",
+        headers: { cookie, "idempotency-key": "experience-http-91-duplicate" },
+        payload,
+      });
+      expect(duplicate.statusCode).toBe(409);
+      expect(duplicate.json().code).toBe("ALREADY_SUBMITTED");
+    } finally {
+      if (experienceId) {
+        await sql`delete from platform_outbox_events where aggregate_id = ${experienceId}`;
+        await sql`delete from content_audits where aggregate_id = ${experienceId}`;
+      }
+      if (buyerId) {
+        await sql`delete from content_idempotency_records where actor_id = ${buyerId}`;
+        await sql`delete from content_purchase_experiences where buyer_identity_id = ${buyerId}`;
+      }
+      await sql`delete from order_items where order_id = ${orderId}`;
+      await sql`delete from order_orders where id = ${orderId}`;
+      await sql`delete from order_checkout_preparations where checkout_revision = ${checkoutId}`;
+      await sql`delete from order_carts where id = ${cartId}`;
       await app.close();
     }
   });
