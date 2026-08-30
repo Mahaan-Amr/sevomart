@@ -312,6 +312,139 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     }
   });
 
+  it("audits a share-first denial without blocking queued single-manager revocation", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const agent = await seedAgent([]);
+
+    const responsibility = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/responsibility-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: agent.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        reason: "واگذاری مسئولیت بررسی پرداخت برای آزمون رقابت رد و لغو",
+      },
+    });
+    expect(responsibility.statusCode).toBe(202);
+
+    const resourceId = randomUUID();
+    const assigned = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/sensitive-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: agent.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "RESOLVE_ASSIGNED_CASE",
+        reason: "تخصیص پرونده برای آزمون رقابت رد و لغو",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          allowedActions: ["REVEAL_MINIMUM"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    expect(assigned.statusCode).toBe(202);
+    expect(assigned.json()).toMatchObject({
+      status: "ACTIVE",
+      singleManagerException: true,
+    });
+    const grantId = assigned.json<{ grantId: string }>().grantId;
+
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const lockAcquired = deferred();
+    const releaseLock = deferred();
+    const blockingTransaction = blocker.begin(async (transaction) => {
+      await transaction`lock table identity_platform_access_audit in access exclusive mode`;
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+    let completed = false;
+
+    try {
+      await lockAcquired.promise;
+
+      const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+      const correlationId = randomUUID();
+      let mutationRan = false;
+      const deniedUse = actionSql.begin(async (transaction) => {
+        await access.authorizeSensitiveAction(
+          createOpaquePlatformAccessTransactionContext(transaction),
+          {
+            grantId,
+            actorIdentityId: agent.identityId,
+            responsibility: "PAYMENT_REVIEW",
+            resourceType: "PAYMENT_REVIEW",
+            resourceId: randomUUID(),
+            action: "REVEAL_MINIMUM",
+            reason: "رد درخواست خارج از محدوده پیش از لغو هم‌زمان",
+            correlationId,
+          },
+        );
+        mutationRan = true;
+      });
+      await waitForAuditTableWaiters(observer, 1);
+
+      const revocation = server.inject({
+        method: "POST",
+        url: `/v1/platform/access/sensitive-grants/${grantId}/revocation`,
+        headers: accessHeaders(manager.token),
+        payload: {
+          expectedRevision: 1,
+          reason: "لغو فوری پس از آغاز درخواست ردشده",
+        },
+      });
+      await waitForAuditTableWaiters(observer, 2);
+      releaseLock.resolve();
+      await blockingTransaction;
+
+      const settled = await Promise.allSettled([deniedUse, revocation]);
+      completed = true;
+
+      const [denialResult, revocationResult] = settled;
+      expect(denialResult).toMatchObject({
+        status: "rejected",
+        reason: expect.objectContaining({ code: "SENSITIVE_SCOPE_REQUIRED" }),
+      });
+      expect(revocationResult.status).toBe("fulfilled");
+      if (revocationResult.status !== "fulfilled") return;
+      expect(revocationResult.value.statusCode).toBe(200);
+      expect(revocationResult.value.json()).toMatchObject({
+        status: "REVOKED",
+        revision: 2,
+      });
+      expect(mutationRan).toBe(false);
+
+      const denied = await observer<Array<{ outcome: string }>>`
+        select outcome from identity_platform_access_audit
+        where grant_id = ${grantId} and correlation_id = ${correlationId}
+      `;
+      expect(denied).toEqual([{ outcome: "DENIED" }]);
+    } finally {
+      releaseLock.resolve();
+      if (!completed) {
+        await observer`
+          select pg_terminate_backend(pid)
+          from pg_stat_activity
+          where datname = current_database() and pid <> pg_backend_pid()
+        `;
+      }
+      await Promise.allSettled([blockingTransaction]);
+      await Promise.allSettled([
+        blocker.end({ timeout: 0 }),
+        observer.end({ timeout: 0 }),
+        actionSql.end({ timeout: 0 }),
+      ]);
+    }
+  });
+
   it("bounds sensitive access to one case and transactionally rechecks every reveal after revocation", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -585,4 +718,21 @@ async function waitForPlatformGrantLockWaiter(sql: Sql) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("revocation did not queue on the platform grant lock");
+}
+
+async function waitForAuditTableWaiters(sql: Sql, expected: number) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await sql<Array<{ waiting: number }>>`
+      select count(*)::int as waiting
+      from pg_stat_activity
+      where datname = current_database()
+        and wait_event_type = 'Lock'
+        and query like '%insert into identity_platform_access_audit%'
+    `;
+    if ((rows[0]?.waiting ?? 0) >= expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(
+    `expected ${expected} audit transaction(s) to reach the table barrier`,
+  );
 }

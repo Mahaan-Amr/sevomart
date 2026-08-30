@@ -800,30 +800,10 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   ): Promise<void> {
     await this.#expireSensitiveGrantIfDue(input.grantId);
     const sql = readOpaquePlatformAccessTransaction(transaction);
-    const grant = await readSensitiveGrant(sql, input.grantId, "share");
-    if (
-      !grant ||
-      grant.status !== "ACTIVE" ||
-      grant.expiresAt <= new Date() ||
-      grant.subjectIdentityId !== input.actorIdentityId ||
-      grant.responsibility !== input.responsibility ||
-      grant.scope.resourceType !== input.resourceType ||
-      grant.scope.resourceId !== input.resourceId ||
-      !grant.scope.allowedActions.includes(input.action)
-    ) {
-      if (grant) await this.#auditDeniedSensitiveAction(grant, input);
-      throw new PlatformAccessError("SENSITIVE_SCOPE_REQUIRED");
-    }
-    try {
-      await requireResponsibility(sql, input.actorIdentityId, input.responsibility);
-    } catch (error) {
-      if (
-        error instanceof PlatformAccessError &&
-        error.code === "RESPONSIBILITY_REQUIRED"
-      ) {
-        await this.#auditDeniedSensitiveAction(grant, input);
-      }
-      throw error;
+    const grant = await readAuthorizedSensitiveGrant(sql, input);
+    if (!grant) {
+      const denialCode = await this.#auditDeniedSensitiveAction(input);
+      throw new PlatformAccessError(denialCode);
     }
     await insertAudit(sql, {
       grantId: grant.grantId,
@@ -840,12 +820,17 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   }
 
   async #auditDeniedSensitiveAction(
-    grant: SensitiveGrantRow,
     input: PlatformSensitiveAction,
-  ): Promise<void> {
-    const stoppedAfterRevocation = grant.status === "REVOKED";
-    await this.#sql.begin((sql) =>
-      insertAudit(sql, {
+  ): Promise<"RESPONSIBILITY_REQUIRED" | "SENSITIVE_SCOPE_REQUIRED"> {
+    return this.#sql.begin(async (sql) => {
+      const grant = await readSensitiveGrant(sql, input.grantId, "none");
+      if (!grant) return "SENSITIVE_SCOPE_REQUIRED";
+      const scopeMatches = sensitiveGrantMatchesAction(grant, input);
+      const responsibilityGranted = scopeMatches
+        ? await hasResponsibility(sql, input.actorIdentityId, input.responsibility)
+        : false;
+      const stoppedAfterRevocation = grant.status === "REVOKED";
+      await insertAudit(sql, {
         grantId: grant.grantId,
         action: sensitiveAuditAction(input.action),
         actorIdentityId: input.actorIdentityId,
@@ -863,8 +848,11 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         singleManagerException: grant.singleManagerException,
         correlationId: input.correlationId,
         occurredAt: new Date(),
-      }),
-    );
+      });
+      return scopeMatches && !responsibilityGranted
+        ? "RESPONSIBILITY_REQUIRED"
+        : "SENSITIVE_SCOPE_REQUIRED";
+    });
   }
 
   async #expireSensitiveGrantIfDue(grantId: string): Promise<void> {
@@ -934,9 +922,10 @@ async function readResponsibilityGrant(
 async function readSensitiveGrant(
   sql: Sql,
   grantId: string,
-  lock: "update" | "share",
+  lock: "update" | "share" | "none",
 ): Promise<SensitiveGrantRow | undefined> {
-  const lockSql = lock === "update" ? sql`for update` : sql`for share`;
+  const lockSql =
+    lock === "update" ? sql`for update` : lock === "share" ? sql`for share` : sql``;
   const rows = await sql<SensitiveGrantRow[]>`
     select id as "grantId", subject_identity_id as "subjectIdentityId",
       requested_by_identity_id as "requestedByIdentityId",
@@ -950,6 +939,52 @@ async function readSensitiveGrant(
     ${lockSql}
   `;
   return rows[0];
+}
+
+async function readAuthorizedSensitiveGrant(
+  sql: Sql,
+  input: PlatformSensitiveAction,
+): Promise<SensitiveGrantRow | undefined> {
+  const rows = await sql<SensitiveGrantRow[]>`
+    select g.id as "grantId", g.subject_identity_id as "subjectIdentityId",
+      g.requested_by_identity_id as "requestedByIdentityId",
+      g.approved_by_identity_id as "approvedByIdentityId", g.responsibility,
+      g.purpose_code as "purposeCode", g.scope, g.status, g.revision,
+      g.single_manager_exception as "singleManagerException",
+      g.created_at as "createdAt", g.activated_at as "activatedAt",
+      g.revoked_at as "revokedAt", g.expires_at as "expiresAt"
+    from identity_platform_access_grants g
+    join identity_platform_permission_grants p
+      on p.identity_id = ${input.actorIdentityId}
+      and p.permission = ${input.responsibility}
+      and p.revoked_at is null
+    join identity_identities i
+      on i.id = p.identity_id and i.status = 'ACTIVE'
+    where g.id = ${input.grantId} and g.grant_kind = 'SENSITIVE_ACCESS'
+      and g.status = 'ACTIVE' and g.expires_at > now()
+      and g.subject_identity_id = ${input.actorIdentityId}
+      and g.responsibility = ${input.responsibility}
+      and g.scope ->> 'resourceType' = ${input.resourceType}
+      and g.scope ->> 'resourceId' = ${input.resourceId}
+      and g.scope -> 'allowedActions' @> ${sql.json([input.action])}::jsonb
+    for share of g, p
+  `;
+  return rows[0];
+}
+
+function sensitiveGrantMatchesAction(
+  grant: SensitiveGrantRow,
+  input: PlatformSensitiveAction,
+): boolean {
+  return (
+    grant.status === "ACTIVE" &&
+    grant.expiresAt > new Date() &&
+    grant.subjectIdentityId === input.actorIdentityId &&
+    grant.responsibility === input.responsibility &&
+    grant.scope.resourceType === input.resourceType &&
+    grant.scope.resourceId === input.resourceId &&
+    grant.scope.allowedActions.includes(input.action)
+  );
 }
 
 function responsibilityView(grant: ResponsibilityGrantRow): PlatformAccessGrant {
@@ -1102,6 +1137,22 @@ async function requireResponsibility(
     for share of p
   `;
   if (!rows[0]) throw new PlatformAccessError("RESPONSIBILITY_REQUIRED");
+}
+
+async function hasResponsibility(
+  sql: Sql,
+  identityId: string,
+  responsibility: Responsibility,
+): Promise<boolean> {
+  const rows = await sql<Array<{ exists: boolean }>>`
+    select exists(
+      select 1 from identity_platform_permission_grants p
+      join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
+      where p.identity_id = ${identityId} and p.permission = ${responsibility}
+        and p.revoked_at is null
+    ) as exists
+  `;
+  return rows[0]?.exists ?? false;
 }
 
 async function countActiveAccessManagers(sql: Sql): Promise<number> {
