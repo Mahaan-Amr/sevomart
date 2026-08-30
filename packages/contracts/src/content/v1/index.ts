@@ -35,7 +35,7 @@ export const contentModerationStateContract = z.enum(["PUBLISHED", "HIDDEN"]);
 export const salesContentMediaContract = z
   .object({
     mediaId: mediaIdContract,
-    kind: z.literal("IMAGE"),
+    kind: z.enum(["IMAGE", "VIDEO"]),
   })
   .strict();
 
@@ -122,6 +122,7 @@ export const purchaseExperienceEligibilityDecisionContract = z.discriminatedUnio
         storeId: storeIdContract,
         productId: productIdContract,
         purchaseStatus: z.literal("CONFIRMED"),
+        fulfillmentStatus: z.literal("DELIVERED"),
       })
       .strict(),
     z

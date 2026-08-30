@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 
 import {
   contentIdempotencyKeyContract,
-  publishPurchaseExperienceInputContract,
-  publishSalesContentInputContract,
-} from "@sevo/contracts/content/v1";
+  publishPurchaseExperienceInputV2Contract,
+  publishSalesContentInputV2Contract,
+} from "@sevo/contracts/content/v2";
 import { identityIdContract } from "@sevo/contracts/platform/v1";
 
 import { StoreNotSellableError, StoreOwnershipRequiredError } from "../../store/public";
@@ -34,7 +34,7 @@ export class ContentService {
 
   async publishSalesContent(request: ContentRequest, body: unknown, key: unknown) {
     const actorId = await this.requireIdentity(request);
-    const parsedInput = publishSalesContentInputContract.safeParse(body);
+    const parsedInput = publishSalesContentInputV2Contract.safeParse(body);
     if (!parsedInput.success) throw new ContentFault("NOT_ELIGIBLE");
     const input = parsedInput.data;
     const idempotencyKey = this.requireKey(key);
@@ -89,7 +89,7 @@ export class ContentService {
     key: unknown,
   ) {
     const actorId = await this.requireIdentity(request);
-    const parsedInput = publishPurchaseExperienceInputContract.safeParse(body);
+    const parsedInput = publishPurchaseExperienceInputV2Contract.safeParse(body);
     if (!parsedInput.success) throw new ContentFault("NOT_ELIGIBLE");
     const input = parsedInput.data;
     if (input.buyerId !== actorId) throw new ContentFault("FORBIDDEN");

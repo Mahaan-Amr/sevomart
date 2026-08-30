@@ -1,5 +1,6 @@
 import * as apiErrorsV1 from "@sevo/contracts/api-errors/v1";
 import * as contentV1 from "@sevo/contracts/content/v1";
+import * as contentV2 from "@sevo/contracts/content/v2";
 import * as conversationsV1 from "@sevo/contracts/conversations/v1";
 import * as discoveryV1 from "@sevo/contracts/discovery/v1";
 import * as fulfillmentV1 from "@sevo/contracts/fulfillment/v1";
@@ -52,6 +53,7 @@ const canonicalDomainEntrypoints: Record<string, Record<string, unknown>> = {
   "@sevo/contracts/conversations/v1": conversationsV1,
   "@sevo/contracts/problem-follow-up/v1": problemFollowUpV1,
   "@sevo/contracts/content/v1": contentV1,
+  "@sevo/contracts/content/v2": contentV2,
   "@sevo/contracts/discovery/v1": discoveryV1,
   "@sevo/contracts/media/v1": mediaV1,
   "@sevo/contracts/notifications/v1": notificationsV1,
@@ -102,12 +104,12 @@ function expectOperations(value: unknown, label: string) {
     expect(operation, label).toMatchObject({
       operationId: expect.any(String),
       method: expect.stringMatching(/^(delete|get|post|put)$/),
-      path: expect.stringMatching(/^\/(?:internal\/)?v1\//),
+      path: expect.stringMatching(/^\/(?:internal\/)?v[12]\//),
     });
   }
 }
 
-describe("canonical v1 contract entrypoints", () => {
+describe("canonical versioned contract entrypoints", () => {
   it("backs every executable lifecycle entry with real contract artifacts", () => {
     expect(Object.keys(lifecycle.contracts).sort()).toEqual(
       Object.keys(canonicalDomainEntrypoints).sort(),

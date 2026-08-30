@@ -1,12 +1,14 @@
 import type {
   ContentError,
   OrderItemId,
-  PublishPurchaseExperienceInput,
-  PublishSalesContentInput,
   PurchaseExperience,
-  PurchaseExperienceEligibilityDecision,
   SalesContent,
 } from "@sevo/contracts/content/v1";
+import type {
+  PublishPurchaseExperienceInputV2,
+  PublishSalesContentInputV2,
+  PurchaseExperienceEligibilityDecisionV2,
+} from "@sevo/contracts/content/v2";
 import type { MediaId } from "@sevo/contracts/media/v1";
 import type { IdentityId, ProductId, StoreId } from "@sevo/contracts/platform/v1";
 
@@ -45,7 +47,7 @@ export interface PurchaseEligibilityRead {
   readEligibility(input: {
     buyerId: IdentityId;
     orderItemId: OrderItemId;
-  }): Promise<PurchaseExperienceEligibilityDecision>;
+  }): Promise<PurchaseExperienceEligibilityDecisionV2>;
 }
 
 export type ContentMutation = Readonly<{
@@ -56,7 +58,7 @@ export type ContentMutation = Readonly<{
 }>;
 export type PublishSalesContentCommand = ContentMutation &
   Readonly<{
-    input: PublishSalesContentInput;
+    input: PublishSalesContentInputV2;
     products: ReadonlyArray<{
       productId: ProductId;
       publicationVersion: number;
@@ -64,7 +66,7 @@ export type PublishSalesContentCommand = ContentMutation &
   }>;
 export type PublishPurchaseExperienceCommand = ContentMutation &
   Readonly<{
-    input: PublishPurchaseExperienceInput;
+    input: PublishPurchaseExperienceInputV2;
     storeId: StoreId;
     productId: ProductId;
   }>;

@@ -57,6 +57,10 @@
       "types": "./dist/content/v1/index.d.ts",
       "default": "./dist/content/v1/index.js"
     },
+    "./content/v2": {
+      "types": "./dist/content/v2/index.d.ts",
+      "default": "./dist/content/v2/index.js"
+    },
     "./discovery/v1": {
       "types": "./dist/discovery/v1/index.d.ts",
       "default": "./dist/discovery/v1/index.js"
