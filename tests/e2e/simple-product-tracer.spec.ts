@@ -344,6 +344,24 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   );
   expect(unpublishedResponse.status()).toBe(404);
 
+  await page.goto("/seller/inventory");
+  await expect(
+    page.getByRole("heading", { name: "اصلاح موجودی گونه‌ها" }),
+  ).toBeVisible();
+  await page.getByLabel("جست‌وجوی نام کالا یا ویژگی گونه").fill("قرمز بزرگ");
+  const zeroStockVariant = page
+    .getByRole("listitem")
+    .filter({ hasText: "رنگ: قرمز، اندازه: بزرگ" });
+  await expect(zeroStockVariant.getByText("ناموجود", { exact: true })).toBeVisible();
+  await expect(
+    zeroStockVariant
+      .locator("dl div")
+      .filter({ has: page.getByText("موجودی", { exact: true }) })
+      .getByText("۰", { exact: true }),
+  ).toBeVisible();
+  await zeroStockVariant.getByRole("button", { name: /افزایش موجودی/ }).click();
+  await expect(page.getByLabel("مقدار افزایش")).toBeVisible();
+
   await page.goto(`/s/${slug}`);
   await expect(page.getByText("۰ کالای فعال")).toBeVisible();
   const storefrontHtml = await page.content();
