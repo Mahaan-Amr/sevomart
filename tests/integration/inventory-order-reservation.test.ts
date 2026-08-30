@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import postgres from "postgres";
 import { replayOutboxEventHistory, type StoredOutboxEvent } from "@sevo/outbox";
 import { variantAvailabilityChangedV1Contract } from "@sevo/contracts/inventory/v1";
@@ -612,6 +614,28 @@ describe("inventory reservation transaction seam", () => {
       reservationId: "60e0454f-d3b3-4233-b303-0c03f3cbfdd2",
     });
     expect(replay.orderId).toBe(winner.value.orderId);
+    const createdItems = await sql<Array<{ id: string }>>`
+      select id from order_items where order_id = ${winner.value.orderId}
+    `;
+    expect(createdItems).toHaveLength(1);
+    expect(createdItems[0]?.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    await expect(
+      sql`
+        insert into order_items
+          (id, order_id, variant_id, product_id, name, quantity,
+           unit_price_amount, publication_version)
+        values
+          (${createdItems[0]!.id}, ${winner.value.orderId}, ${randomUUID()}, ${productId},
+           'قلم تکراری', 1, 4500000, 3)
+      `,
+    ).rejects.toMatchObject({ code: "23505" });
+    expect(
+      await sql<Array<{ id: string }>>`
+        select id from order_items where order_id = ${winner.value.orderId}
+      `,
+    ).toEqual(createdItems);
     expect(
       await sql`select id from order_orders where checkout_revision = ${checkoutRevision}`,
     ).toHaveLength(1);
