@@ -97,17 +97,19 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     "فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه",
   );
   await page.getByRole("button", { name: "ادامه" }).click();
-  await expect(page.getByRole("heading", { name: "تصویر کالا" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "تصویرهای کالا" })).toBeVisible();
   const image = await sharp({
     create: { width: 900, height: 900, channels: 4, background: "#A41439" },
   })
     .png()
     .toBuffer();
-  await page.getByLabel("انتخاب تصویر کالا").setInputFiles({
-    name: "cup.png",
-    mimeType: "image/png",
-    buffer: image,
-  });
+  await page.getByLabel("انتخاب تصویر کالا").setInputFiles([
+    { name: "cup.png", mimeType: "image/png", buffer: image },
+    { name: "cup-side.png", mimeType: "image/png", buffer: image },
+  ]);
+  await expect(page.getByText("۲ تصویر انتخاب شده است")).toBeVisible();
+  await page.getByRole("button", { name: "انتقال تصویر 2 به ابتدا" }).focus();
+  await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "ادامه" }).click();
 
   await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
@@ -115,8 +117,8 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
   await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
   await page.getByRole("button", { name: "ادامه" }).click();
-  await expect(page.getByRole("heading", { name: "تصویر کالا" })).toBeVisible();
-  await expect(page.getByText("تصویر ذخیره شده است")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "تصویرهای کالا" })).toBeVisible();
+  await expect(page.getByText("۲ تصویر انتخاب شده است")).toBeVisible();
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
   await page.getByRole("radio", { name: "چندگونه" }).click();
@@ -191,7 +193,19 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
-  await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  let offersSaved = 0;
+  let inventorySaved = 0;
+  await page.route("**/api/store/seller/products/*/offers", async (route) => {
+    offersSaved += 1;
+    await route.continue();
+  });
+  await page.route("**/api/store/seller/products/*/inventory", async (route) => {
+    inventorySaved += 1;
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "اعمال فروش و دیدن پیش‌نمایش" }).click();
+  expect(offersSaved).toBe(1);
+  expect(inventorySaved).toBe(1);
   await expect(page.getByRole("button", { name: "توقف انتشار" })).toBeVisible();
   const unpublicationKeys: string[] = [];
   let interruptedUnpublication = false;

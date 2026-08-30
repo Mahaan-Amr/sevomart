@@ -34,6 +34,7 @@ type SaleRow = {
   onHand: string;
   inventoryRevision: number;
 };
+type ImageDraft = { key: string; mediaId?: MediaId; file?: File };
 type IdempotentRequest = { payload: string; key: string };
 type RequestRef = { current: IdempotentRequest | undefined };
 
@@ -54,8 +55,7 @@ export function SimpleProductBuilder({
   const [storeSlug, setStoreSlug] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [mediaId, setMediaId] = useState<MediaId>();
-  const [image, setImage] = useState<File>();
+  const [images, setImages] = useState<ImageDraft[]>([]);
   const [kind, setKind] = useState<"simple" | "multi">("simple");
   const [axes, setAxes] = useState<Axis[]>([]);
   const [saleRows, setSaleRows] = useState<Record<string, SaleRow>>({});
@@ -68,6 +68,8 @@ export function SimpleProductBuilder({
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const saveRequest = useRef<IdempotentRequest | undefined>(undefined);
+  const offersRequest = useRef<IdempotentRequest | undefined>(undefined);
+  const inventoryRequest = useRef<IdempotentRequest | undefined>(undefined);
   const publishRequest = useRef<IdempotentRequest | undefined>(undefined);
   const unpublishRequest = useRef<IdempotentRequest | undefined>(undefined);
   const variants = useMemo(
@@ -101,7 +103,7 @@ export function SimpleProductBuilder({
       const slugResponse = await fetch("/api/store/seller/store/draft", {
         cache: "no-store",
       });
-      if (redirectIfUnauthorized(slugResponse)) return;
+      if (redirectIfUnauthorized(slugResponse, requestedProductId)) return;
       const slugBody: unknown = await slugResponse.json();
       const storeDraft = storeDraftContract.safeParse(slugBody);
       if (slugResponse.ok && storeDraft.success && storeDraft.data.slug) {
@@ -113,7 +115,7 @@ export function SimpleProductBuilder({
         const response = await fetch(`/api/store/seller/products/${savedProductId}`, {
           cache: "no-store",
         });
-        if (redirectIfUnauthorized(response)) return;
+        if (redirectIfUnauthorized(response, requestedProductId)) return;
         if (response.ok) {
           const parsed = productViewContract.safeParse(await response.json());
           if (parsed.success) {
@@ -136,7 +138,7 @@ export function SimpleProductBuilder({
         },
         body: "{}",
       });
-      if (redirectIfUnauthorized(response)) return;
+      if (redirectIfUnauthorized(response, requestedProductId)) return;
       const body: unknown = await response.json();
       if (
         !response.ok ||
@@ -163,7 +165,12 @@ export function SimpleProductBuilder({
     if (!product.workingCopy) return;
     setName(product.workingCopy.name ?? "");
     setDescription(product.workingCopy.description);
-    setMediaId(product.workingCopy.orderedMediaIds[0]);
+    setImages(
+      product.workingCopy.orderedMediaIds.map((mediaId) => ({
+        key: mediaId,
+        mediaId,
+      })),
+    );
     setAxes(product.workingCopy.axes);
     setKind(product.workingCopy.axes.length === 0 ? "simple" : "multi");
     const inventory = new Map(
@@ -189,10 +196,20 @@ export function SimpleProductBuilder({
   }
 
   async function saveWorkingCopy(options: { uploadImage?: boolean } = {}) {
-    let effectiveMediaId = mediaId;
-    if (options.uploadImage && image) {
-      effectiveMediaId = await uploadProductImage(productId, image);
-      setMediaId(effectiveMediaId);
+    const desiredRows = saleRows;
+    let effectiveImages = images;
+    if (options.uploadImage && images.some((entry) => entry.file)) {
+      effectiveImages = await Promise.all(
+        images.map(async (entry) =>
+          entry.file
+            ? {
+                key: entry.key,
+                mediaId: await uploadProductImage(productId, entry.file),
+              }
+            : entry,
+        ),
+      );
+      setImages(effectiveImages);
     }
     const currentVariants = buildVariants(kind === "simple" ? [] : axes);
     const payload = {
@@ -200,7 +217,9 @@ export function SimpleProductBuilder({
       workingCopy: {
         name: name.trim().length >= 2 ? name : null,
         description,
-        orderedMediaIds: effectiveMediaId ? [effectiveMediaId] : [],
+        orderedMediaIds: effectiveImages.flatMap((entry) =>
+          entry.mediaId ? [entry.mediaId] : [],
+        ),
         axes: kind === "simple" ? [] : axes,
         variants: currentVariants.map((variant) => {
           const sale = saleRows[variant.clientKey];
@@ -211,16 +230,19 @@ export function SimpleProductBuilder({
           };
         }),
       },
-      inventory: {
-        rows: currentVariants.map((variant) => {
-          const sale = saleRows[variant.clientKey];
-          return {
-            variantClientKey: variant.clientKey,
-            onHand: parseStock(sale?.onHand ?? "0"),
-            expectedRevision: sale?.inventoryRevision ?? 0,
-          };
-        }),
-      },
+      inventory:
+        productState === "DRAFT"
+          ? {
+              rows: currentVariants.map((variant) => {
+                const sale = saleRows[variant.clientKey];
+                return {
+                  variantClientKey: variant.clientKey,
+                  onHand: parseStock(sale?.onHand ?? "0"),
+                  expectedRevision: sale?.inventoryRevision ?? 0,
+                };
+              }),
+            }
+          : null,
     };
     const response = await fetchWriteWithRetry(
       `/api/store/seller/products/${productId}/working-copy`,
@@ -234,6 +256,80 @@ export function SimpleProductBuilder({
     const parsed = productViewContract.safeParse(body);
     if (!response.ok || !parsed.success) {
       throw new Error(humanError(body, "ذخیره پیش‌نویس انجام نشد."));
+    }
+    if (productState === "DRAFT") {
+      hydrate(parsed.data);
+      return parsed.data;
+    }
+    return saveLiveSaleBatches(parsed.data, desiredRows);
+  }
+
+  async function saveLiveSaleBatches(
+    product: ProductView,
+    desiredRows: Record<string, SaleRow>,
+  ) {
+    const workingCopy = product.workingCopy;
+    if (!workingCopy) return product;
+    const offerPayload = {
+      expectedRevision: product.revision,
+      rows: workingCopy.variants.map((variant) => ({
+        variantId: variant.variantId,
+        price: tomanToMoney(desiredRows[variant.clientKey]!.priceToman)!,
+        sku: desiredRows[variant.clientKey]!.sku.trim() || null,
+        expectedRevision: variant.offerRevision,
+      })),
+    };
+    const offerResponse = await fetchWriteWithRetry(
+      `/api/store/seller/products/${productId}/offers`,
+      {
+        method: "PUT",
+        headers: writeHeaders(
+          product.revision,
+          requestKey(offersRequest, offerPayload),
+        ),
+        body: JSON.stringify(offerPayload),
+      },
+    );
+    const offerBody: unknown = await offerResponse.json();
+    if (!offerResponse.ok || !isBatchResult(offerBody)) {
+      throw new Error(humanError(offerBody, "ذخیره قیمت و شناسه‌ها انجام نشد."));
+    }
+    const inventoryByVariant = new Map(
+      product.inventory.map((row) => [row.variantId, row] as const),
+    );
+    const inventoryPayload = {
+      expectedRevision: offerBody.productRevision,
+      reasonCode: "MANUAL_COUNT",
+      rows: workingCopy.variants.map((variant) => ({
+        variantId: variant.variantId,
+        onHand: parseStock(desiredRows[variant.clientKey]!.onHand),
+        expectedRevision: inventoryByVariant.get(variant.variantId)?.revision ?? 0,
+      })),
+    };
+    const inventoryResponse = await fetchWriteWithRetry(
+      `/api/store/seller/products/${productId}/inventory`,
+      {
+        method: "PUT",
+        headers: writeHeaders(
+          offerBody.productRevision,
+          requestKey(inventoryRequest, inventoryPayload),
+        ),
+        body: JSON.stringify(inventoryPayload),
+      },
+    );
+    const inventoryBody: unknown = await inventoryResponse.json();
+    if (!inventoryResponse.ok || !isBatchResult(inventoryBody)) {
+      throw new Error(humanError(inventoryBody, "ذخیره موجودی انجام نشد."));
+    }
+    const refreshed = await fetch(`/api/store/seller/products/${productId}`, {
+      cache: "no-store",
+    });
+    const refreshedBody: unknown = await refreshed.json();
+    const parsed = productViewContract.safeParse(refreshedBody);
+    if (!refreshed.ok || !parsed.success) {
+      throw new Error(
+        humanError(refreshedBody, "خواندن تغییرهای ذخیره‌شده انجام نشد."),
+      );
     }
     hydrate(parsed.data);
     return parsed.data;
@@ -250,7 +346,7 @@ export function SimpleProductBuilder({
 
   async function continueFromImages() {
     setShowImageError(true);
-    if (!mediaId && !image) return setMessage("");
+    if (images.length === 0 || images.length > 6) return setMessage("");
     await runPending(async () => {
       await saveWorkingCopy({ uploadImage: true });
       setStep("sale");
@@ -349,7 +445,7 @@ export function SimpleProductBuilder({
 
   async function saveAndExit() {
     await runPending(async () => {
-      await saveWorkingCopy({ uploadImage: Boolean(image) });
+      await saveWorkingCopy({ uploadImage: images.some((entry) => entry.file) });
       window.location.assign("/seller/products");
     });
   }
@@ -460,17 +556,17 @@ export function SimpleProductBuilder({
         ) : null}
         {step === "images" ? (
           <ImageStep
-            image={image}
-            hasSavedImage={Boolean(mediaId)}
+            images={images}
             pending={pending}
             showError={showImageError}
-            onImage={setImage}
+            onImages={setImages}
             onBack={() => backTo("details")}
             onContinue={continueFromImages}
           />
         ) : null}
         {step === "sale" ? (
           <SaleStep
+            productState={productState}
             kind={kind}
             axes={axes}
             variantCount={variants.length}
@@ -603,38 +699,91 @@ function DetailsStep(props: {
 }
 
 function ImageStep(props: {
-  image?: File;
-  hasSavedImage: boolean;
+  images: ImageDraft[];
   pending: boolean;
   showError: boolean;
-  onImage: (value?: File) => void;
+  onImages: (value: ImageDraft[]) => void;
   onBack: () => void;
   onContinue: () => void;
 }) {
-  const missing = props.showError && !props.image && !props.hasSavedImage;
+  const missing = props.showError && props.images.length === 0;
+  const tooMany = props.images.length > 6;
+  const move = (from: number, to: number) => {
+    const next = [...props.images];
+    const [entry] = next.splice(from, 1);
+    next.splice(to, 0, entry!);
+    props.onImages(next);
+  };
   return (
     <>
-      <h1>تصویر کالا</h1>
-      <p>یک تصویر روشن انتخاب کنید؛ اصل فایل خصوصی می‌ماند.</p>
+      <h1>تصویرهای کالا</h1>
+      <p>یک تا شش تصویر انتخاب کنید؛ تصویر نخست، تصویر اصلی فروشگاه است.</p>
       <label className={styles.filePicker}>
         <span>انتخاب تصویر کالا</span>
         <input
           type="file"
+          multiple
           accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
-          aria-invalid={missing}
-          aria-describedby={missing ? "product-image-error" : undefined}
-          onChange={(event) => props.onImage(event.target.files?.[0])}
+          aria-invalid={missing || tooMany}
+          aria-describedby={missing || tooMany ? "product-image-error" : undefined}
+          onChange={(event) => {
+            const selected = Array.from(event.target.files ?? []).map((file) => ({
+              key: crypto.randomUUID(),
+              file,
+            }));
+            props.onImages([...props.images, ...selected]);
+            event.target.value = "";
+          }}
         />
         <small>
-          {props.image?.name ??
-            (props.hasSavedImage ? "تصویر ذخیره شده است" : "تصویری انتخاب نشده است")}
+          {props.images.length > 0
+            ? `${props.images.length.toLocaleString("fa-IR")} تصویر انتخاب شده است`
+            : "تصویری انتخاب نشده است"}
         </small>
-        {missing ? (
+        {missing || tooMany ? (
           <small className={styles.fieldError} id="product-image-error">
-            یک تصویر برای کالا انتخاب کنید.
+            {tooMany
+              ? "حداکثر شش تصویر می‌توانید انتخاب کنید."
+              : "دست‌کم یک تصویر برای کالا انتخاب کنید."}
           </small>
         ) : null}
       </label>
+      {props.images.length > 0 ? (
+        <ol className={styles.imageList} aria-label="ترتیب تصویرهای کالا">
+          {props.images.map((entry, index) => (
+            <li key={entry.key}>
+              <span>
+                {index === 0 ? "تصویر اصلی" : `تصویر ${index + 1}`}
+                {entry.file ? ` — ${entry.file.name}` : " — ذخیره شده"}
+              </span>
+              <div className={styles.imageActions}>
+                {index > 0 ? (
+                  <button
+                    type="button"
+                    className={styles.textButton}
+                    aria-label={`انتقال تصویر ${index + 1} به ابتدا`}
+                    onClick={() => move(index, 0)}
+                  >
+                    اصلی شود
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.textButton}
+                  aria-label={`حذف تصویر ${index + 1}`}
+                  onClick={() =>
+                    props.onImages(
+                      props.images.filter((candidate) => candidate.key !== entry.key),
+                    )
+                  }
+                >
+                  حذف
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : null}
       <div className={styles.actions}>
         <button
           className={styles.secondaryButton}
@@ -670,24 +819,26 @@ function VariantFields(props: {
         اگر خریدار باید رنگ، اندازه یا انتخاب دیگری داشته باشد، چندگونه را انتخاب کنید.
       </p>
       <div className={styles.choiceGroup} role="radiogroup" aria-label="ساختار گونه‌ها">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={props.kind === "simple"}
+        <label
           className={props.kind === "simple" ? styles.choiceActive : styles.choice}
-          onClick={() => props.onKind("simple")}
         >
+          <input
+            type="radio"
+            name="variant-kind"
+            checked={props.kind === "simple"}
+            onChange={() => props.onKind("simple")}
+          />
           یک گونه
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={props.kind === "multi"}
-          className={props.kind === "multi" ? styles.choiceActive : styles.choice}
-          onClick={() => props.onKind("multi")}
-        >
+        </label>
+        <label className={props.kind === "multi" ? styles.choiceActive : styles.choice}>
+          <input
+            type="radio"
+            name="variant-kind"
+            checked={props.kind === "multi"}
+            onChange={() => props.onKind("multi")}
+          />
           چندگونه
-        </button>
+        </label>
       </div>
       {props.kind === "multi" ? (
         <div className={styles.axisList}>
@@ -811,6 +962,7 @@ function VariantFields(props: {
 }
 
 function SaleStep(props: {
+  productState: ProductView["state"];
   kind: "simple" | "multi";
   axes: Axis[];
   variantCount: number;
@@ -828,6 +980,12 @@ function SaleStep(props: {
     <>
       <h1>فروش کالا</h1>
       <p>ساختار انتخاب، قیمت و موجودی هر گونه را یک‌جا ثبت کنید.</p>
+      {props.productState === "PUBLISHED" ? (
+        <p className={styles.liveChangeNotice}>
+          با ادامه، قیمت و موجودی تازه همان لحظه برای خریدار اعمال می‌شود؛ انتشار
+          تغییرهای متن و تصویر جداگانه تأیید خواهد شد.
+        </p>
+      ) : null}
       <VariantFields
         kind={props.kind}
         axes={props.axes}
@@ -904,7 +1062,11 @@ function SaleStep(props: {
           disabled={props.pending}
           onClick={props.onContinue}
         >
-          {props.pending ? "در حال ذخیره…" : "دیدن پیش‌نمایش"}
+          {props.pending
+            ? "در حال ذخیره…"
+            : props.productState === "PUBLISHED"
+              ? "اعمال فروش و دیدن پیش‌نمایش"
+              : "دیدن پیش‌نمایش"}
         </button>
       </div>
     </>
@@ -1080,10 +1242,25 @@ function readinessGuidance(path: string): {
   };
 }
 
-function redirectIfUnauthorized(response: Response) {
+function redirectIfUnauthorized(response: Response, productId?: string) {
   if (response.status !== 401) return false;
-  window.location.assign("/seller/login?returnTo=%2Fseller%2Fproducts%2Fnew");
+  const returnTo = productId
+    ? `/seller/products/${productId}/edit`
+    : "/seller/products/new";
+  window.location.assign(`/seller/login?returnTo=${encodeURIComponent(returnTo)}`);
   return true;
+}
+function isBatchResult(
+  value: unknown,
+): value is { productRevision: number; rows: Array<{ revision: number }> } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "productRevision" in value &&
+    typeof value.productRevision === "number" &&
+    "rows" in value &&
+    Array.isArray(value.rows)
+  );
 }
 function tomanToMoney(value: string) {
   if (!/^\d+$/u.test(value)) return null;
