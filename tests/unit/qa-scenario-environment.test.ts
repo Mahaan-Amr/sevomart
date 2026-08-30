@@ -8,6 +8,12 @@ import {
 } from "../../scripts/qa/scenario-environment.mjs";
 
 describe("QA scenario process environment", () => {
+  it("preserves the native Windows Path spelling needed to launch pnpm", () => {
+    const environment = createQaScenarioProcessEnvironment({ Path: "C:\\tools" });
+
+    expect(environment.Path).toBe("C:\\tools");
+  });
+
   it("removes inherited database targets and forces internal providers", () => {
     const environment = createQaScenarioProcessEnvironment({
       DATABASE_URL: "postgresql://human-data.example/sevo",

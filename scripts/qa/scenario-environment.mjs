@@ -1,33 +1,35 @@
-const neutralProcessEnvironmentKeys = new Set([
-  "APPDATA",
-  "CI",
-  "ComSpec",
-  "COREPACK_HOME",
-  "DOCKER_CONFIG",
-  "DOCKER_CONTEXT",
-  "DOCKER_HOST",
-  "FORCE_COLOR",
-  "GITHUB_ACTIONS",
-  "HOME",
-  "LOCALAPPDATA",
-  "NO_COLOR",
-  "PATH",
-  "PATHEXT",
-  "PNPM_HOME",
-  "SystemRoot",
-  "TEMP",
-  "TERM",
-  "TMP",
-  "TMPDIR",
-  "USERPROFILE",
-  "WINDIR",
-  "XDG_RUNTIME_DIR",
-]);
+const neutralProcessEnvironmentKeys = new Set(
+  [
+    "APPDATA",
+    "CI",
+    "ComSpec",
+    "COREPACK_HOME",
+    "DOCKER_CONFIG",
+    "DOCKER_CONTEXT",
+    "DOCKER_HOST",
+    "FORCE_COLOR",
+    "GITHUB_ACTIONS",
+    "HOME",
+    "LOCALAPPDATA",
+    "NO_COLOR",
+    "PATH",
+    "PATHEXT",
+    "PNPM_HOME",
+    "SystemRoot",
+    "TEMP",
+    "TERM",
+    "TMP",
+    "TMPDIR",
+    "USERPROFILE",
+    "WINDIR",
+    "XDG_RUNTIME_DIR",
+  ].map((key) => key.toLowerCase()),
+);
 
 export function createQaScenarioProcessEnvironment(environment = process.env) {
   const qaEnvironment = {};
   for (const [key, value] of Object.entries(environment)) {
-    if (neutralProcessEnvironmentKeys.has(key) && value !== undefined) {
+    if (neutralProcessEnvironmentKeys.has(key.toLowerCase()) && value !== undefined) {
       qaEnvironment[key] = value;
     }
   }
