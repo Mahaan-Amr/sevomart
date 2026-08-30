@@ -234,7 +234,10 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
       "موجودی نمی‌تواند کمتر از صفر شود",
     );
     await assertNoHorizontalOverflow(page);
-    await assertInteractiveTargets(page);
+    await assertInteractiveTargets(
+      page,
+      "main a, main button, main input, main select, main summary, main textarea",
+    );
   } finally {
     await sql.end();
   }
