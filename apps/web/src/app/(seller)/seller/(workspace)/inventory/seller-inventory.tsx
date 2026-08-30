@@ -65,6 +65,7 @@ export function SellerInventory() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [recovery, setRecovery] = useState<InventoryRecovery>();
+  const [writeOutcomeUnknown, setWriteOutcomeUnknown] = useState(false);
   const pendingWrite = useRef<PendingInventoryWrite | undefined>(undefined);
 
   useEffect(() => {
@@ -91,6 +92,7 @@ export function SellerInventory() {
   const visibleItems = items.filter((item) => matchesInventorySearch(item, query));
 
   function beginEdit(item: InventoryItem, action: InventoryAdjustmentAction) {
+    if (writeOutcomeUnknown) return;
     setEditor({
       variantId: item.variantId,
       action,
@@ -101,6 +103,7 @@ export function SellerInventory() {
     setError("");
     setMessage("");
     setRecovery(undefined);
+    setWriteOutcomeUnknown(false);
   }
 
   async function submitAdjustment(item: InventoryItem) {
@@ -148,12 +151,16 @@ export function SellerInventory() {
       });
       const body: unknown = await response.json();
       if (!response.ok) {
-        if (showInventoryError(body)) pendingWrite.current = undefined;
+        if (showInventoryError(body)) {
+          pendingWrite.current = undefined;
+          setWriteOutcomeUnknown(false);
+        }
         return;
       }
       const parsed = sellerInventoryBatchResultContract.safeParse(body);
       if (!parsed.success || !parsed.data.rows[0]) throw new Error("invalid response");
       pendingWrite.current = undefined;
+      setWriteOutcomeUnknown(false);
       const updated = parsed.data.rows[0];
       setItems((current) =>
         current.map((currentItem) =>
@@ -165,7 +172,11 @@ export function SellerInventory() {
       setEditor(undefined);
       setMessage(`موجودی «${item.productName}» ثبت شد.`);
     } catch {
-      setError("تغییر موجودی ثبت نشد. اتصال را بررسی و دوباره تلاش کنید.");
+      setWriteOutcomeUnknown(true);
+      setError(
+        "نتیجه ثبت هنوز روشن نیست. برای پیگیری همان درخواست دوباره تلاش کنید یا اطلاعات تازه را بگیرید.",
+      );
+      setRecovery("REFRESH");
     } finally {
       setPending(false);
     }
@@ -177,7 +188,8 @@ export function SellerInventory() {
       setError(
         "نتیجه درخواست روشن نشد. بدون تغییر اطلاعات، دوباره تلاش کنید تا همان درخواست پیگیری شود.",
       );
-      setRecovery(undefined);
+      setWriteOutcomeUnknown(true);
+      setRecovery("REFRESH");
       return false;
     }
     const guidance = inventoryErrorGuidance(parsed.data.code);
@@ -192,6 +204,9 @@ export function SellerInventory() {
     setRecovery(undefined);
     const result = await readAllInventory();
     if (result.kind === "OK") {
+      pendingWrite.current = undefined;
+      setWriteOutcomeUnknown(false);
+      setEditor(undefined);
       setItems(result.items);
       setLabelsIncomplete(!result.labelsComplete);
       setMessage("موجودی تازه شد؛ حالا می‌توانید دوباره ثبت کنید.");
@@ -326,6 +341,7 @@ export function SellerInventory() {
                         aria-label={`${actionCopy[action].label} موجودی ${item.productName}، ${item.variantLabel || "گونه اصلی"}`}
                         aria-pressed={editing && editor.action === action}
                         onClick={() => beginEdit(item, action)}
+                        disabled={pending || writeOutcomeUnknown}
                       >
                         {actionCopy[action].label}
                       </button>
@@ -344,6 +360,7 @@ export function SellerInventory() {
                         }
                         aria-describedby={error ? "inventory-editor-error" : undefined}
                         autoFocus
+                        disabled={writeOutcomeUnknown}
                       />
                     </label>
                     <label>
@@ -356,6 +373,7 @@ export function SellerInventory() {
                             reasonCode: event.target.value as ReasonCode,
                           })
                         }
+                        disabled={writeOutcomeUnknown}
                       >
                         <option value="">دلیل را انتخاب کنید</option>
                         {reasons.map((reason) => (
@@ -374,6 +392,7 @@ export function SellerInventory() {
                           setEditor({ ...editor, note: event.target.value })
                         }
                         placeholder="مثلاً نتیجه شمارش پایان روز"
+                        disabled={writeOutcomeUnknown}
                       />
                     </label>
                     <div className={styles.editorActions}>
@@ -383,13 +402,17 @@ export function SellerInventory() {
                         onClick={() => void submitAdjustment(item)}
                         disabled={pending}
                       >
-                        {pending ? "در حال ثبت…" : "ذخیره موجودی"}
+                        {pending
+                          ? "در حال ثبت…"
+                          : writeOutcomeUnknown
+                            ? "پیگیری همان درخواست"
+                            : "ذخیره موجودی"}
                       </button>
                       <button
                         type="button"
                         className={styles.cancel}
                         onClick={() => setEditor(undefined)}
-                        disabled={pending}
+                        disabled={pending || writeOutcomeUnknown}
                       >
                         انصراف
                       </button>

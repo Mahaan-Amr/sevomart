@@ -301,12 +301,41 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     await expect(blueRow).toBeVisible();
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await assertMinimumContrast(blueRow.getByText(longProductName));
+    const writeKeys: string[] = [];
+    page.on("request", (request) => {
+      if (
+        request.method() === "PUT" &&
+        request.url().includes("/api/seller/inventory")
+      ) {
+        writeKeys.push(request.headers()["idempotency-key"] ?? "");
+      }
+    });
+    let concealFirstWriteResponse = true;
+    await page.route("**/api/seller/inventory", async (route) => {
+      if (route.request().method() !== "PUT" || !concealFirstWriteResponse) {
+        await route.continue();
+        return;
+      }
+      concealFirstWriteResponse = false;
+      await route.fetch();
+      await route.abort("failed");
+    });
     await blueRow.getByRole("button", { name: /افزایش موجودی/ }).focus();
     await page.keyboard.press("Enter");
     await page.getByLabel("مقدار افزایش").fill("۲");
     await page.getByLabel("دلیل تغییر").selectOption("RETURNED_TO_STOCK");
     await page.getByRole("button", { name: "ذخیره موجودی" }).click();
+    await expect(page.locator("#inventory-editor-error")).toContainText(
+      "نتیجه ثبت هنوز روشن نیست",
+    );
+    await expect(page.getByLabel("مقدار افزایش")).toBeDisabled();
+    await expect(page.getByLabel("دلیل تغییر")).toBeDisabled();
+    await expect(page.getByRole("button", { name: "انصراف" })).toBeDisabled();
+    await page.unroute("**/api/seller/inventory");
+    await page.getByRole("button", { name: "پیگیری همان درخواست" }).click();
     await expect(page.getByRole("status")).toContainText("ثبت شد");
+    expect(writeKeys).toHaveLength(2);
+    expect(writeKeys[1]).toBe(writeKeys[0]);
     await expect(
       blueRow
         .locator("dl div")
