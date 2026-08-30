@@ -38,6 +38,9 @@ describe("QA scenario lifecycle adapter", () => {
     const lifecycle = createQaScenarioLifecycle({
       environment: {
         DATABASE_URL: "postgresql://human-data.example/sevo",
+        MINIO_ENDPOINT: "objects.example.com",
+        MINIO_SECRET_KEY: "human-secret",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "https://telemetry.example.com",
         OTP_PROVIDER: "external",
         SEVO_RUNTIME_ENV: "production",
       },
@@ -79,6 +82,9 @@ describe("QA scenario lifecycle adapter", () => {
         SEVO_RUNTIME_ENV: "test",
       });
       expect(call[2]?.env).not.toHaveProperty("DATABASE_URL");
+      expect(call[2]?.env).not.toHaveProperty("MINIO_ENDPOINT");
+      expect(call[2]?.env).not.toHaveProperty("MINIO_SECRET_KEY");
+      expect(call[2]?.env?.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("");
       expect(call[2]?.shell).toBe(false);
     }
   });

@@ -46,7 +46,8 @@ Playwright نیز قابل عبورند؛ برای نمونه
 namespace، ساعت ثابت، PostgreSQL و MinIO تازه می‌سازد و فقط با fingerprint همان اجرا حذف
 می‌کند. چنین سناریویی نباید `DATABASE_URL` محلی/CI، provider بیرونی یا demo manifest را
 مصرف کند؛ runner مستقل `pnpm test:qa-scenario` env والد را پیش از callbackها پاک‌سازی و
-بررسی می‌کند و داده کمینه در callback `build` همان تست ساخته می‌شود. فرمان
+بررسی می‌کند و `scenario.environment` مقصد کامل PostgreSQL و MinIO disposable را برای
+composition واقعی هر دو callback می‌دهد؛ داده کمینه در callback `build` همان تست ساخته می‌شود. فرمان
 `pnpm test:integration` پس از suite مشترک، همین runner مستقل را نیز اجرا می‌کند؛ فایل‌های
 سناریوی ایزوله زیر runner عمومی دارای `DATABASE_URL` اجرا نمی‌شوند.
 

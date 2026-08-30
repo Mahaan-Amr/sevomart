@@ -39,6 +39,17 @@ describe("isolated QA scenario factory", () => {
         projectName = `sevomart-qa-${scenario.runId}`;
         const sql = postgres(scenario.database.url, { max: 1 });
         try {
+          expect(scenario.environment).toMatchObject({
+            DATABASE_URL: scenario.database.url,
+            MINIO_ENDPOINT: "127.0.0.1",
+            MINIO_PORT: new URL(scenario.objectStorage.endpoint).port,
+            MINIO_SECRET_KEY: "sevo_local_password",
+            OTEL_EXPORTER_OTLP_ENDPOINT: "",
+          });
+          const minioHealth = await fetch(
+            `${scenario.objectStorage.endpoint}/minio/health/live`,
+          );
+          expect(minioHealth.ok).toBe(true);
           const identities = await sql<Array<{ createdAt: Date; id: string }>>`
             select id::text, created_at as "createdAt"
             from identity_identities

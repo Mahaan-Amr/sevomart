@@ -12,8 +12,8 @@ interface عمومی `withQaScenario` در `scripts/qa/scenario.v1.mjs` است �
 1. از نام سناریو و entropy محلی، `runId` یکتای حداکثر ۳۱ نویسه و namespace با پیشوند
    `sevo.qa.` می‌سازد؛
 2. PostgreSQL و MinIO تازه را با profile صریح `qa` و migration ledger مشترک بالا می‌آورد؛
-3. context نسخه‌دار شامل ساعت UTC ثابت، شناسه‌ساز UUID v5 وابسته به namespace و endpointهای
-   همان اجرای disposable را به `build` می‌دهد؛
+3. context نسخه‌دار شامل ساعت UTC ثابت، شناسه‌ساز UUID v5 وابسته به namespace، endpointها و
+   `scenario.environment` کامل همان اجرای disposable را به `build` می‌دهد؛
 4. فقط داده‌ای را می‌سازد که callback همان سناریو درخواست کرده است؛
 5. `exercise` را اجرا و در موفقیت یا شکست، teardown را فقط با جفت `runId + fingerprint`
    همان محیط انجام می‌دهد.
@@ -47,9 +47,10 @@ await withQaScenario(
   فقط از پورت گزارش‌شده lifecycle همان اجرا می‌سازد.
 - runner مستقل `pnpm test:qa-scenario` پیش از ساخت process آزمون، `DATABASE_URL` را حذف و
   `SEVO_RUNTIME_ENV=test` و OTP داخلی `dev` را قطعی می‌کند. خود `withQaScenario` همین env را
-  پیش از callbackهای `build` و `exercise` دوباره بررسی می‌کند؛ بنابراین composition واقعی
-  برنامه نیز نمی‌تواند ناخواسته مقصد انسانی یا provider بیرونی process والد را مصرف کند.
-  MinIO فقط از Compose همان پروژه disposable می‌آید.
+  پیش از callbackهای `build` و `exercise` دوباره بررسی می‌کند. هر callback برای composition
+  واقعی برنامه باید `scenario.environment` را مصرف کند؛ این مقدار database و MinIO همان
+  اجرای disposable، credential محلی ثابت، OTP داخلی و telemetry خاموش را حمل می‌کند و هیچ
+  مقصد انسانی یا provider بیرونی process والد را عبور نمی‌دهد.
 - lifecycle پیش از write، profile و نام allowlist‌شده پایگاه را از خود مقصد و fingerprint آن
   را بررسی می‌کند. گزارش ناهماهنگ اجرا را متوقف می‌کند و با proof معتبر، teardown
   owner-scoped را پیش از بازگرداندن خطا تلاش می‌کند.

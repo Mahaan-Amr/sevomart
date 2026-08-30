@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
 
 import { createPostgresDemoSeedDatabase } from "../demo/postgres.mjs";
 import { createQaCommandRunner } from "./command-runner.mjs";
 import {
   assertQaProjectIsAbsent,
   createQaLifecycleRequest,
+  publishQaTargetReport,
   QA_PROJECT_CLEANUP_EVENT,
 } from "./runtime.mjs";
 import { runOwnedQaStartup } from "./startup-ownership.mjs";
@@ -146,7 +146,7 @@ async function bringUp() {
         },
       );
       const target = await inspectQaTarget(databaseUrl);
-      publishTargetReport({
+      publishQaTargetReport({
         profile: request.profile,
         runId: request.runId,
         projectName: request.projectName,
@@ -188,14 +188,3 @@ async function tearDown() {
 }
 
 await (request.action === "up" ? bringUp() : tearDown());
-
-function publishTargetReport(report) {
-  const serializedReport = `${JSON.stringify(report)}\n`;
-  if (process.env.SEVO_QA_REPORT_FD !== undefined) {
-    if (process.env.SEVO_QA_REPORT_FD !== "3") {
-      throw new Error("QA lifecycle report descriptor must be 3");
-    }
-    writeFileSync(3, serializedReport);
-  }
-  process.stdout.write(serializedReport);
-}

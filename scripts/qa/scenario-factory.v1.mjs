@@ -1,17 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { createQaTargetNames } from "./runtime.mjs";
+import {
+  assertQaScenarioCallbackEnvironment,
+  createQaScenarioCallbackEnvironment,
+} from "./scenario-environment.mjs";
+import { createQaTargetNames, isQaFingerprint } from "./runtime.mjs";
 
 const scenarioNamePattern = /^[a-z0-9][a-z0-9-]{2,17}$/;
 const randomIdPattern = /^[a-z0-9]{12}$/;
 const fixedTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const fingerprintPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const urlNamespace = Buffer.from("6ba7b8119dad11d180b400c04fd430c8", "hex");
 
 export const QA_SCENARIO_CONTRACT_VERSION = 1;
 
 export function createQaScenarioFactory({
+  environment = process.env,
   lifecycle,
   randomId = () => randomUUID().replaceAll("-", "").slice(0, 12),
 }) {
@@ -35,12 +38,14 @@ export function createQaScenarioFactory({
       let target;
       try {
         const reportedTarget = await lifecycle.up(request.runId);
-        if (fingerprintPattern.test(reportedTarget?.fingerprint ?? "")) {
+        if (isQaFingerprint(reportedTarget?.fingerprint)) {
           target = reportedTarget;
         }
         target = assertTarget(reportedTarget, request);
-        const baseContext = createBaseContext(request, target);
+        const baseContext = createBaseContext(request, target, environment);
+        assertQaScenarioCallbackEnvironment(baseContext.environment, target);
         const data = await definition.build(baseContext);
+        assertQaScenarioCallbackEnvironment(baseContext.environment, target);
         result = await exercise(Object.freeze({ ...baseContext, data }));
       } catch (error) {
         failure = error;
@@ -101,7 +106,7 @@ function assertTarget(target, request) {
     target.runId !== request.runId ||
     target.projectName !== expectedTarget.projectName ||
     target.databaseName !== expectedTarget.databaseName ||
-    !fingerprintPattern.test(target.fingerprint ?? "") ||
+    !isQaFingerprint(target.fingerprint) ||
     !validPort(target.databasePort) ||
     !validPort(target.minioPort)
   ) {
@@ -110,19 +115,22 @@ function assertTarget(target, request) {
   return Object.freeze({ ...target });
 }
 
-function createBaseContext(request, target) {
+function createBaseContext(request, target, environment) {
   const fixedTime = request.fixedTime;
+  const callbackEnvironment = createQaScenarioCallbackEnvironment(target, environment);
   return Object.freeze({
     contractVersion: QA_SCENARIO_CONTRACT_VERSION,
     runId: request.runId,
     namespace: request.namespace,
     clock: Object.freeze({ now: () => new Date(fixedTime) }),
     id: (name) => namespacedUuid(request.namespace, name),
+    environment: callbackEnvironment,
     database: Object.freeze({
       name: target.databaseName,
       url: `postgresql://sevo:sevo_local@127.0.0.1:${target.databasePort}/${target.databaseName}`,
     }),
     objectStorage: Object.freeze({
+      bucket: callbackEnvironment.MINIO_BUCKET,
       endpoint: `http://127.0.0.1:${target.minioPort}`,
     }),
   });

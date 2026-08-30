@@ -19,6 +19,12 @@ describe("QA scenario factory v1", () => {
       down: vi.fn(async () => {}),
     };
     const factory = createQaScenarioFactory({
+      environment: {
+        DATABASE_URL: "postgresql://human-data.example/sevo",
+        MINIO_ENDPOINT: "objects.example.com",
+        MINIO_SECRET_KEY: "human-secret",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "https://telemetry.example.com",
+      },
       lifecycle,
       randomId: () => "a1b2c3d4e5f6",
     });
@@ -32,11 +38,15 @@ describe("QA scenario factory v1", () => {
       },
       async (scenario) => ({
         databaseName: scenario.database.name,
+        databaseUrl: scenario.environment.DATABASE_URL,
         firstNow: scenario.clock.now().toISOString(),
         identityId: scenario.id("buyer"),
+        minioEndpoint: scenario.environment.MINIO_ENDPOINT,
+        minioSecret: scenario.environment.MINIO_SECRET_KEY,
         namespace: scenario.namespace,
         secondNow: scenario.clock.now().toISOString(),
         seedReport: scenario.data,
+        telemetryEndpoint: scenario.environment.OTEL_EXPORTER_OTLP_ENDPOINT,
       }),
     );
 
@@ -44,11 +54,15 @@ describe("QA scenario factory v1", () => {
     expect(build).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       databaseName: target.databaseName,
+      databaseUrl: `postgresql://sevo:sevo_local@127.0.0.1:${target.databasePort}/${target.databaseName}`,
       firstNow: "2026-08-30T08:30:00.000Z",
       identityId: "8538d4ab-057c-5324-af22-f1a02ea64f4c",
+      minioEndpoint: "127.0.0.1",
+      minioSecret: "sevo_local_password",
       namespace: `sevo.qa.${target.runId}`,
       secondNow: "2026-08-30T08:30:00.000Z",
       seedReport: { identities: 1 },
+      telemetryEndpoint: "",
     });
     expect(lifecycle.down).toHaveBeenCalledExactlyOnceWith({
       fingerprint: target.fingerprint,
