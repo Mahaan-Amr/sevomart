@@ -18,6 +18,7 @@ import {
   sensitiveAccessRequestInputContract,
   sensitiveAccessGrantedV1Contract,
   sensitiveAccessGrantViewContract,
+  sensitiveAccessAuthorizationReceiptContract,
   sensitiveAccessRejectedV1Contract,
   unresolvedSensitiveAccessAuditEntryContract,
 } from "@sevo/contracts/identity-access/v1";
@@ -201,6 +202,55 @@ describe("platform access v1 contract", () => {
         strongAuthenticationAt: authenticatedAt,
       }).success,
     ).toBe(true);
+  });
+
+  it("publishes only the live grant facts a sensitive-action consumer may retain", () => {
+    const receipt = sensitiveAccessAuthorizationReceiptContract.parse({
+      grantId,
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+      accessedAt: "2026-08-26T10:02:00.000Z",
+      expiresAt: "2026-08-26T10:30:00.000Z",
+    });
+
+    expect(receipt).toEqual({
+      grantId,
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+      accessedAt: "2026-08-26T10:02:00.000Z",
+      expiresAt: "2026-08-26T10:30:00.000Z",
+    });
+    expect(
+      sensitiveAccessAuthorizationReceiptContract.safeParse({
+        ...receipt,
+        reason: "دلیل داخلی نباید از مرز ماژول خارج شود",
+      }).success,
+    ).toBe(false);
+    expect(
+      sensitiveAccessAuthorizationReceiptContract.safeParse({
+        ...receipt,
+        responsibility: "PAYMENT_REVIEW",
+      }).success,
+    ).toBe(false);
+    expect(
+      sensitiveAccessAuthorizationReceiptContract.safeParse({
+        ...receipt,
+        accessedAt: "2026-08-26T11:30:00.000+01:00",
+        expiresAt: "2026-08-26T10:45:00.000Z",
+      }).success,
+    ).toBe(true);
+    expect(
+      sensitiveAccessAuthorizationReceiptContract.safeParse({
+        ...receipt,
+        accessedAt: receipt.expiresAt,
+      }).success,
+    ).toBe(false);
   });
 
   it("allows the explicit single-manager emergency exception without faking approval", () => {

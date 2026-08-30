@@ -11,6 +11,7 @@ import {
   requestSensitiveAccessCommandContract,
   revokePlatformAccessCommandContract,
   sensitiveAccessGrantedV1Contract,
+  sensitiveAccessAuthorizationReceiptContract,
   sensitiveAccessGrantViewContract,
   sensitiveAccessRequestedV1Contract,
   sensitiveAccessRevokedV1Contract,
@@ -21,6 +22,7 @@ import {
   type PlatformAccessGrant,
   type PlatformAccessScope,
   type Responsibility,
+  type SensitiveAccessAuthorizationReceipt,
 } from "@sevo/contracts/identity-access/v1";
 import { identityIdContract } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
@@ -79,6 +81,10 @@ type SensitiveGrantRow = {
   activatedAt: Date | null;
   revokedAt: Date | null;
   expiresAt: Date;
+};
+
+type AuthorizedSensitiveGrantRow = SensitiveGrantRow & {
+  accessedAt: Date;
 };
 
 export class PostgresPlatformAccessRepository implements PlatformAccessCore {
@@ -798,7 +804,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   async authorizeSensitiveAction(
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformSensitiveAction,
-  ): Promise<void> {
+  ): Promise<SensitiveAccessAuthorizationReceipt> {
     await this.#expireSensitiveGrantIfDue(input.grantId);
     const sql = readOpaquePlatformAccessTransaction(transaction);
     const grant = await readAuthorizedSensitiveGrant(sql, input);
@@ -816,7 +822,17 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       reason: input.reason,
       singleManagerException: grant.singleManagerException,
       correlationId: input.correlationId,
-      occurredAt: new Date(),
+      occurredAt: grant.accessedAt,
+    });
+    return sensitiveAccessAuthorizationReceiptContract.parse({
+      grantId: grant.grantId,
+      scope: {
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        allowedActions: [input.action],
+      },
+      accessedAt: grant.accessedAt.toISOString(),
+      expiresAt: grant.expiresAt.toISOString(),
     });
   }
 
@@ -948,16 +964,21 @@ async function readSensitiveGrant(
 async function readAuthorizedSensitiveGrant(
   sql: Sql,
   input: PlatformSensitiveAction,
-): Promise<SensitiveGrantRow | undefined> {
-  const rows = await sql<SensitiveGrantRow[]>`
+): Promise<AuthorizedSensitiveGrantRow | undefined> {
+  const rows = await sql<AuthorizedSensitiveGrantRow[]>`
+    with access_time as materialized (
+      select clock_timestamp() as accessed_at
+    )
     select g.id as "grantId", g.subject_identity_id as "subjectIdentityId",
       g.requested_by_identity_id as "requestedByIdentityId",
       g.approved_by_identity_id as "approvedByIdentityId", g.responsibility,
       g.purpose_code as "purposeCode", g.scope, g.status, g.revision,
       g.single_manager_exception as "singleManagerException",
       g.created_at as "createdAt", g.activated_at as "activatedAt",
-      g.revoked_at as "revokedAt", g.expires_at as "expiresAt"
+      g.revoked_at as "revokedAt", g.expires_at as "expiresAt",
+      access_time.accessed_at as "accessedAt"
     from identity_platform_access_grants g
+    cross join access_time
     join identity_platform_permission_grants p
       on p.identity_id = ${input.actorIdentityId}
       and p.permission = ${input.responsibility}
@@ -965,7 +986,7 @@ async function readAuthorizedSensitiveGrant(
     join identity_identities i
       on i.id = p.identity_id and i.status = 'ACTIVE'
     where g.id = ${input.grantId} and g.grant_kind = 'SENSITIVE_ACCESS'
-      and g.status = 'ACTIVE' and g.expires_at > now()
+      and g.status = 'ACTIVE' and g.expires_at > access_time.accessed_at
       and g.subject_identity_id = ${input.actorIdentityId}
       and g.responsibility = ${input.responsibility}
       and g.scope ->> 'resourceType' = ${input.resourceType}

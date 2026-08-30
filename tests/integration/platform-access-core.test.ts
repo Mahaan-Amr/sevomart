@@ -628,10 +628,12 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     });
     expect(approved.statusCode).toBe(200);
     expect(approved.json()).toMatchObject({ status: "ACTIVE", revision: 2 });
+    const approvedGrant = approved.json<{ expiresAt: string }>();
 
     const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql.begin((transaction) =>
+    const beforeAuthorization = Date.now();
+    const receipt = await sql.begin((transaction) =>
       access.authorizeSensitiveAction(
         createOpaquePlatformAccessTransactionContext(transaction),
         {
@@ -646,6 +648,25 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
         },
       ),
     );
+    expect(receipt).toMatchObject({
+      grantId,
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+      expiresAt: approvedGrant.expiresAt,
+    });
+    expect(Object.keys(receipt).sort()).toEqual([
+      "accessedAt",
+      "expiresAt",
+      "grantId",
+      "scope",
+    ]);
+    expect(new Date(receipt.accessedAt).getTime()).toBeGreaterThanOrEqual(
+      beforeAuthorization,
+    );
+    expect(new Date(receipt.accessedAt).getTime()).toBeLessThanOrEqual(Date.now());
 
     await sql`
       update identity_platform_access_grants

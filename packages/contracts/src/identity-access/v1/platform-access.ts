@@ -910,6 +910,19 @@ export const platformAccessAuditPageContract = z
   })
   .strict();
 
+export const sensitiveAccessAuthorizationReceiptContract = z
+  .object({
+    grantId: platformAccessGrantIdContract,
+    scope: platformAccessScopeContract,
+    accessedAt: timestampV1Contract,
+    expiresAt: timestampV1Contract,
+  })
+  .strict()
+  .refine((receipt) => Date.parse(receipt.accessedAt) < Date.parse(receipt.expiresAt), {
+    path: ["expiresAt"],
+    message: "the grant must remain live at the recorded access time",
+  });
+
 export const platformAccessV1Schemas = {
   PlatformAccessGrantId: platformAccessGrantIdContract,
   PlatformAccessCursor: platformAccessCursorContract,
@@ -931,6 +944,7 @@ export const platformAccessV1Schemas = {
   PlatformAccessRejection: platformAccessRejectionContract,
   PlatformAccessGrantPage: platformAccessGrantPageContract,
   PlatformAccessAuditPage: platformAccessAuditPageContract,
+  SensitiveAccessAuthorizationReceipt: sensitiveAccessAuthorizationReceiptContract,
   UnresolvedSensitiveAccessAuditEntry: unresolvedSensitiveAccessAuditEntryContract,
   PlatformAccessError: platformAccessErrorContract,
 } as const;
@@ -941,6 +955,16 @@ export const platformAccessV1Examples = {
   PlatformAccessPageLimit: 20,
   PlatformAccessSubjectIdentityId: "11111111-1111-4111-8111-111111111111",
   PlatformAccessStatus: "ACTIVE",
+  SensitiveAccessAuthorizationReceipt: {
+    grantId: "44444444-4444-4444-8444-444444444444",
+    scope: {
+      resourceType: "PAYMENT_REVIEW",
+      resourceId: "55555555-5555-4555-8555-555555555555",
+      allowedActions: ["REVEAL_MINIMUM"],
+    },
+    accessedAt: "2026-08-26T10:02:00.000Z",
+    expiresAt: "2026-08-26T10:30:00.000Z",
+  },
   ResponsibilityGrantRequestInput: {
     recipientIdentityId: "22222222-2222-4222-8222-222222222222",
     responsibility: "PAYMENT_REVIEW",
@@ -1041,6 +1065,9 @@ export const platformAccessV1Examples = {
 
 export type Responsibility = z.infer<typeof responsibilityContract>;
 export type PlatformAccessScope = z.infer<typeof platformAccessScopeContract>;
+export type SensitiveAccessAuthorizationReceipt = z.infer<
+  typeof sensitiveAccessAuthorizationReceiptContract
+>;
 export type PlatformAccessAuditEntry = z.infer<typeof platformAccessAuditEntryContract>;
 export type UnresolvedSensitiveAccessAuditEntry = z.infer<
   typeof unresolvedSensitiveAccessAuditEntryContract
