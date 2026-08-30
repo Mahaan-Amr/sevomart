@@ -12,6 +12,7 @@ import type {
   PublicSimpleProductSummary,
   ReplaceSimpleProductWorkingCopy,
   SimpleProductView,
+  SellerProductSummary,
 } from "@sevo/contracts/product/v1";
 import type {
   IdentityId,
@@ -60,6 +61,14 @@ export interface ProductAuthoritativeRead {
 }
 
 export interface ProductRepository extends ProductAuthoritativeRead {
+  listOwned(
+    storeId: StoreId,
+    query: Readonly<{
+      cursor?: { createdAt: string; productId: ProductId };
+      limit: number;
+      state?: "DRAFT" | "PUBLISHED" | "UNPUBLISHED";
+    }>,
+  ): Promise<Array<{ summary: SellerProductSummary; createdAt: string }>>;
   create(
     productId: ProductId,
     storeId: StoreId,

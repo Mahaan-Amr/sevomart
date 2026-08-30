@@ -36,6 +36,7 @@ describe("OpenAPI simple product tracer", () => {
       ["get", "/v1/seller/inventory", "listSellerInventory", true],
       ["put", "/v1/seller/inventory", "replaceInventoryBatch", true],
       ["post", "/v1/seller/products", "createSellerProduct", true],
+      ["get", "/v1/seller/products", "listSellerProducts", true],
       [
         "post",
         "/v1/seller/products/{productId}/images",
@@ -104,6 +105,17 @@ describe("OpenAPI simple product tracer", () => {
     );
     expect(document.paths["/v1/seller/products"].post.parameters).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "If-Match" })]),
+    );
+    expect(document.paths["/v1/seller/products"].get.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cursor", required: false }),
+        expect.objectContaining({ name: "limit", required: false }),
+        expect.objectContaining({ name: "state", required: false }),
+      ]),
+    );
+    expect(document.components.schemas).toHaveProperty("SellerProductList");
+    expect(Object.keys(document.paths["/v1/seller/products"].get.responses)).toEqual(
+      expect.arrayContaining(["200", "401", "403", "404", "422", "500"]),
     );
 
     for (const [method, path] of [

@@ -36,6 +36,42 @@ const operations = [
     ],
   },
   {
+    operationId: "listSellerProducts",
+    method: "get",
+    path: "/v1/seller/products",
+    tag: "product",
+    auth: "identity-session",
+    queryParameters: [
+      {
+        name: "cursor",
+        schema: "SellerProductCursor",
+        example:
+          "MjAyNi0wOC0zMFQxMDozMDowMC4wMDBafGE3OGZkY2MwLWNhYWQtNDMxNS1hN2NkLWIyODM0ZmU3NmQ0",
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "SellerProductPageLimit",
+        example: productV1Examples.SellerProductPageLimit,
+        required: false,
+      },
+      {
+        name: "state",
+        schema: "SellerProductState",
+        example: productV1Examples.SellerProductState,
+        required: false,
+      },
+    ],
+    responses: [
+      { status: 200, schema: "SellerProductList" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerProductAccessInactiveError" },
+      { status: 404, schema: "ProductNotFoundError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "getSellerProduct",
     method: "get",
     path: "/v1/seller/products/{productId}",
@@ -227,6 +263,7 @@ export const contribute_product_openApi: OpenApiContributor = (document) => {
         200: "Successful response",
         201: "Product draft created",
         401: "Identity session is missing or invalid",
+        403: "Seller access is not active",
         404: "Product was not found",
         409: "Product write conflicts with current state",
         422: "Product is not ready or input is invalid",

@@ -13,6 +13,15 @@ import {
 
 export const productIdempotencyKeyContract = z.string().min(1).max(200);
 export const productRevisionTagContract = z.string().regex(/^"\d+"$/);
+export const sellerProductPageLimitContract = z.coerce.number().int().min(1).max(50);
+export const sellerProductCursorContract = z.string().regex(/^[A-Za-z0-9_-]{20,500}$/);
+export const sellerProductCursorBoundaryContract = z
+  .object({
+    createdAt: z.iso.datetime({ offset: true }),
+    productId: productIdContract,
+  })
+  .strict();
+export const sellerProductStateContract = z.enum(["DRAFT", "PUBLISHED", "UNPUBLISHED"]);
 
 const productPriceContract = moneyV1Contract.refine(
   ({ amount }) => amount > 0 && amount % 10 === 0 && Number.isSafeInteger(amount),
@@ -347,6 +356,24 @@ export const productViewContract = z
   })
   .strict();
 
+export const sellerProductSummaryContract = z
+  .object({
+    productId: productIdContract,
+    name: z.string().min(2).max(120).nullable(),
+    primaryMediaId: mediaIdContract.nullable(),
+    state: sellerProductStateContract,
+    revision: z.int().nonnegative(),
+    publicationVersion: z.int().nonnegative(),
+  })
+  .strict();
+
+export const sellerProductListContract = z
+  .object({
+    items: z.array(sellerProductSummaryContract),
+    nextCursor: sellerProductCursorContract.nullable(),
+  })
+  .strict();
+
 export const productBatchResultContract = z
   .object({
     productRevision: z.int().nonnegative(),
@@ -612,6 +639,14 @@ export const productPreconditionRequiredErrorContract = z
   })
   .strict();
 
+export const sellerProductAccessInactiveErrorContract = z
+  .object({
+    code: z.literal("SELLER_ACCESS_INACTIVE"),
+    message: z.string().min(1),
+    correlationId: z.string().min(1),
+  })
+  .strict();
+
 export const productPublicationEventSnapshotContract = z
   .object({
     variantIds: z.array(variantIdContract).min(1).max(50),
@@ -687,6 +722,11 @@ export const productV1Schemas = {
   ProductId: productIdContract,
   ProductIdempotencyKey: productIdempotencyKeyContract,
   ProductRevisionTag: productRevisionTagContract,
+  SellerProductPageLimit: sellerProductPageLimitContract,
+  SellerProductCursor: sellerProductCursorContract,
+  SellerProductState: sellerProductStateContract,
+  SellerProductSummary: sellerProductSummaryContract,
+  SellerProductList: sellerProductListContract,
   CreateSimpleProductInput: createSimpleProductInputContract,
   ReplaceSimpleProductWorkingCopy: replaceSimpleProductWorkingCopyContract,
   SimpleProductView: simpleProductViewContract,
@@ -699,6 +739,7 @@ export const productV1Schemas = {
   ProductNotFoundError: productNotFoundErrorContract,
   ProductWriteConflictError: productWriteConflictErrorContract,
   ProductPreconditionRequiredError: productPreconditionRequiredErrorContract,
+  SellerProductAccessInactiveError: sellerProductAccessInactiveErrorContract,
   ReplaceProductWorkingCopy: replaceProductWorkingCopyContract,
   ReplaceProductOffersBatch: replaceProductOffersBatchContract,
   ReplaceProductInventoryBatch: replaceProductInventoryBatchContract,
@@ -719,6 +760,9 @@ export const productV1Examples = {
   ProductId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
   ProductIdempotencyKey: "product-create-01",
   ProductRevisionTag: '"0"',
+  SellerProductPageLimit: 20,
+  SellerProductState: "DRAFT",
+  SellerProductList: { items: [], nextCursor: null },
   CreateSimpleProductInput: {},
   ReplaceSimpleProductWorkingCopy: {
     expectedRevision: 0,
@@ -801,6 +845,11 @@ export const productV1Examples = {
     message: "نسخه کالا و شناسه یکتای درخواست لازم است.",
     correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
   },
+  SellerProductAccessInactiveError: {
+    code: "SELLER_ACCESS_INACTIVE",
+    message: "دسترسی فروشندگی شما فعال نیست.",
+    correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+  },
 } as const;
 
 export type ReplaceSimpleProductWorkingCopy = z.infer<
@@ -828,6 +877,8 @@ export type ReplaceProductInventoryBatch = z.infer<
 export type PublicProduct = z.infer<typeof publicProductContract>;
 export type PublicProductSummary = z.infer<typeof publicProductSummaryContract>;
 export type ProductView = z.infer<typeof productViewContract>;
+export type SellerProductSummary = z.infer<typeof sellerProductSummaryContract>;
+export type SellerProductList = z.infer<typeof sellerProductListContract>;
 export type ProductPreview = z.infer<typeof productPreviewContract>;
 export type ProductBatchResult = z.infer<typeof productBatchResultContract>;
 export type UnpublishProductInput = z.infer<typeof unpublishProductInputContract>;

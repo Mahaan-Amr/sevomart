@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { mediaIdContract } from "@sevo/contracts/media/v1";
 import {
   productBatchResultContract,
   productAuthoritativeVariantV1Contract,
@@ -86,6 +87,16 @@ type ProductBaseRow = {
   definition: JSONValue | null;
 };
 
+type SellerProductSummaryRow = {
+  productId: string;
+  name: string | null;
+  primaryMediaId: string | null;
+  state: "DRAFT" | "PUBLISHED" | "UNPUBLISHED";
+  revision: number;
+  publicationVersion: number;
+  createdAt: Date;
+};
+
 type VariantRow = {
   variantId: string;
   clientKey: string;
@@ -135,6 +146,49 @@ export class PostgresProductRepository implements ProductRepository {
         });
       }),
     );
+  }
+
+  async listOwned(
+    storeId: string,
+    query: Readonly<{
+      cursor?: { createdAt: string; productId: ProductId };
+      limit: number;
+      state?: "DRAFT" | "PUBLISHED" | "UNPUBLISHED";
+    }>,
+  ) {
+    const rows = await this.#sql<SellerProductSummaryRow[]>`
+      select product.id as "productId",
+        coalesce(working.definition->>'name', working.name) as name,
+        coalesce((working.definition->'orderedMediaIds'->>0)::uuid, working.media_id)
+          as "primaryMediaId",
+        product.state, product.revision,
+        product.publication_version as "publicationVersion",
+        product.created_at as "createdAt"
+      from product_products product
+      left join product_working_copies working on working.product_id = product.id
+      where product.store_id = ${storeId}::uuid
+        and (${query.state ?? null}::text is null or product.state = ${query.state ?? null})
+        and (
+          ${query.cursor?.productId ?? null}::uuid is null
+          or (product.created_at, product.id) <
+            (${query.cursor?.createdAt ?? null}::timestamptz, ${query.cursor?.productId ?? null}::uuid)
+        )
+      order by product.created_at desc, product.id desc
+      limit ${query.limit}
+    `;
+    return rows.map((row) => ({
+      createdAt: row.createdAt.toISOString(),
+      summary: {
+        productId: productIdContract.parse(row.productId),
+        name: row.name,
+        primaryMediaId: row.primaryMediaId
+          ? mediaIdContract.parse(row.primaryMediaId)
+          : null,
+        state: row.state,
+        revision: row.revision,
+        publicationVersion: row.publicationVersion,
+      },
+    }));
   }
 
   async replaceWorkingCopy(
