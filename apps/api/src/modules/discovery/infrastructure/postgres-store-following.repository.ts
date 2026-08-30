@@ -51,6 +51,11 @@ export class PostgresStoreFollowingRepository implements StoreFollowRepository {
   async write(command: StoreFollowWrite): Promise<StoredFollowWriteResult> {
     return this.#sql.begin(async (sql) => {
       await sql`
+        select pg_advisory_xact_lock_shared(
+          hashtextextended('discovery-follower-count:rebuild', 0)
+        )
+      `;
+      await sql`
         select pg_advisory_xact_lock(
           hashtextextended(${`${command.identityId}:${command.storeId}`}, 0)
         )
@@ -131,14 +136,6 @@ export class PostgresStoreFollowingRepository implements StoreFollowRepository {
             deactivated_at = excluded.deactivated_at,
             updated_at = excluded.updated_at
         `;
-        await this.#applyCountTransition(
-          sql,
-          command.storeId,
-          command.identityId,
-          current?.status,
-          desiredStatus,
-          occurredAt,
-        );
         await enqueueOutboxEvent(
           sql,
           (desiredStatus === "ACTIVE"
@@ -280,43 +277,6 @@ export class PostgresStoreFollowingRepository implements StoreFollowRepository {
       returning revision
     `;
     return rows[0]!.revision;
-  }
-
-  async #applyCountTransition(
-    sql: Sql,
-    storeId: StoreFollowWrite["storeId"],
-    identityId: StoreFollowWrite["identityId"],
-    previousStatus: StoreFollowStatusV1 | undefined,
-    nextStatus: StoreFollowStatusV1,
-    occurredAt: Date,
-  ) {
-    const identities = await sql<Array<{ status: "ACTIVE" | "INACTIVE" }>>`
-      select status from discovery_identity_status_projections
-      where identity_id = ${identityId}
-    `;
-    const identityIsActive = identities[0]?.status === "ACTIVE";
-    const previousContribution = previousStatus === "ACTIVE" && identityIsActive;
-    const nextContribution = nextStatus === "ACTIVE" && identityIsActive;
-    if (previousContribution === nextContribution) return;
-
-    if (nextContribution) {
-      await sql`
-        insert into discovery_public_follower_counts
-          (store_id, follower_count, updated_at)
-        values (${storeId}, 1, ${occurredAt})
-        on conflict (store_id) do update set
-          follower_count = discovery_public_follower_counts.follower_count + 1,
-          updated_at = excluded.updated_at
-      `;
-      return;
-    }
-    const updated = await sql<Array<{ count: number }>>`
-      update discovery_public_follower_counts
-      set follower_count = follower_count - 1, updated_at = ${occurredAt}
-      where store_id = ${storeId} and follower_count > 0
-      returning follower_count as count
-    `;
-    if (!updated[0]) throw new Error("Public follower count cannot become negative");
   }
 }
 

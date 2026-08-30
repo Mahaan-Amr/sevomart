@@ -40,6 +40,7 @@
     "discovery_store_follows": "discovery",
     "discovery_follow_sets": "discovery",
     "discovery_public_follower_counts": "discovery",
+    "discovery_follower_count_relation_projections": "discovery",
     "discovery_identity_status_projections": "discovery",
     "discovery_follow_idempotency_records": "discovery",
     "discovery_follow_audits": "discovery",
