@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 
+import { orderItemIdContract } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
@@ -29,9 +30,7 @@ describe("order item purchase-experience eligibility migration", () => {
       const [backfilled] = await sql<Array<{ id: string }>>`
         select id from order_items where order_id = ${existingOrderId}
       `;
-      expect(backfilled?.id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      );
+      expect(orderItemIdContract.safeParse(backfilled?.id).success).toBe(true);
       await sql`
         insert into order_items (order_id, variant_id)
         values (${crypto.randomUUID()}, ${crypto.randomUUID()})

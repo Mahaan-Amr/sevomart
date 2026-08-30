@@ -7,6 +7,7 @@ import {
   salesContentProductEligibilityDecisionContract,
   salesContentPublishedV1Contract,
 } from "@sevo/contracts/content/v1";
+import { orderItemIdContract as ordersOrderItemIdContract } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
 
 const ids = {
@@ -44,10 +45,15 @@ describe("content v1 contract", () => {
       { ...input, productIds: [] },
       { ...input, productIds: [ids.product, ids.product] },
       { ...input, source: "VERIFIED_PURCHASE" },
-      { ...input, media: { ...input.media, kind: "VIDEO" } },
     ]) {
       expect(publishSalesContentInputContract.safeParse(invalid).success).toBe(false);
     }
+    expect(
+      publishSalesContentInputContract.parse({
+        ...input,
+        media: { ...input.media, kind: "VIDEO" },
+      }).media.kind,
+    ).toBe("VIDEO");
 
     expect(
       salesContentProductEligibilityDecisionContract.parse({
@@ -87,10 +93,17 @@ describe("content v1 contract", () => {
       storeId: ids.store,
       productId: ids.product,
       purchaseStatus: "CONFIRMED",
+      fulfillmentStatus: "DELIVERED",
     } as const;
     expect(purchaseExperienceEligibilityDecisionContract.parse(eligible)).toEqual(
       eligible,
     );
+    const withoutFulfillment: Record<string, unknown> = { ...eligible };
+    delete withoutFulfillment.fulfillmentStatus;
+    expect(
+      purchaseExperienceEligibilityDecisionContract.safeParse(withoutFulfillment)
+        .success,
+    ).toBe(false);
     expect(
       purchaseExperienceEligibilityDecisionContract.parse({
         eligible: false,
@@ -114,6 +127,14 @@ describe("content v1 contract", () => {
     expect(
       publishPurchaseExperienceInputContract.safeParse({ ...input, rating: 6 }).success,
     ).toBe(false);
+  });
+
+  it("re-exports the Orders-owned order item identifier seam", async () => {
+    const { orderItemIdContract } = await import("@sevo/contracts/content/v1");
+
+    const ownerValue = ordersOrderItemIdContract.parse(ids.orderItem);
+    expect(orderItemIdContract.parse(ownerValue)).toBe(ownerValue);
+    expect(orderItemIdContract.safeParse("not-an-order-item").success).toBe(false);
   });
 
   it("keeps seller content and verified purchase experience distinct in events", () => {

@@ -114,6 +114,7 @@
     "@sevo/contracts/conversations/v1": "conversations",
     "@sevo/contracts/problem-follow-up/v1": "problem-follow-up",
     "@sevo/contracts/content/v1": "content",
+    "@sevo/contracts/content/v2": "content",
     "@sevo/contracts/discovery/v1": "discovery",
     "@sevo/contracts/media/v1": "media",
     "@sevo/contracts/notifications/v1": "notifications",
