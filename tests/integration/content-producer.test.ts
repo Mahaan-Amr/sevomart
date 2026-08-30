@@ -156,7 +156,7 @@ describe("content producer persistence", () => {
     try {
       const unauthenticated = await server.inject({
         method: "POST",
-        url: "/v1/seller/sales-content",
+        url: "/v2/seller/sales-content",
         payload: {},
       });
       expect(unauthenticated.statusCode).toBe(401);
@@ -179,7 +179,7 @@ describe("content producer persistence", () => {
       });
       const missingPrecondition = await server.inject({
         method: "POST",
-        url: "/v1/purchase-experiences",
+        url: "/v2/purchase-experiences",
         headers: { cookie },
         payload: {
           buyerId: session.json().actor.identityId,
@@ -238,9 +238,18 @@ describe("content producer persistence", () => {
         text: "کالا سالم و مطابق تصویر رسید.",
         mediaIds: [],
       };
-      const published = await server.inject({
+      const compatibilityResponse = await server.inject({
         method: "POST",
         url: "/v1/purchase-experiences",
+        headers: { cookie, "idempotency-key": "experience-http-v1-91" },
+        payload,
+      });
+      expect(compatibilityResponse.statusCode).toBe(422);
+      expect(compatibilityResponse.json().code).toBe("NOT_ELIGIBLE");
+
+      const published = await server.inject({
+        method: "POST",
+        url: "/v2/purchase-experiences",
         headers: { cookie, "idempotency-key": "experience-http-91" },
         payload,
       });
@@ -249,7 +258,7 @@ describe("content producer persistence", () => {
 
       const duplicate = await server.inject({
         method: "POST",
-        url: "/v1/purchase-experiences",
+        url: "/v2/purchase-experiences",
         headers: { cookie, "idempotency-key": "experience-http-91-duplicate" },
         payload,
       });

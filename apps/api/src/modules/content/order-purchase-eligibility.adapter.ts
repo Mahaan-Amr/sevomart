@@ -1,4 +1,4 @@
-import { purchaseExperienceEligibilityDecisionContract } from "@sevo/contracts/content/v1";
+import { purchaseExperienceEligibilityDecisionV2Contract } from "@sevo/contracts/content/v2";
 
 import type { OrderPurchaseExperienceEligibilityRead } from "../orders/public";
 import type { PurchaseEligibilityRead } from "./public";
@@ -8,7 +8,7 @@ export function createOrderPurchaseEligibilityRead(
 ): PurchaseEligibilityRead {
   return {
     async readEligibility(input) {
-      return purchaseExperienceEligibilityDecisionContract.parse(
+      return purchaseExperienceEligibilityDecisionV2Contract.parse(
         await orders.readPurchaseExperienceEligibility(input),
       );
     },
