@@ -135,14 +135,10 @@
     "@sevo/contracts/content/v1": {
       "owner": "content",
       "approved": true,
-      "executable": true,
+      "executable": false,
       "consumersMigrated": "complete",
       "removable": false,
-      "evidence": {
-        "schemas": ["salesContentProductEligibilityDecisionContract"],
-        "operations": ["contentV1Operations"],
-        "events": ["salesContentPublishedV1Contract"]
-      }
+      "evidence": { "schemas": [], "operations": [], "events": [] }
     },
     "@sevo/contracts/content/v2": {
       "owner": "content",

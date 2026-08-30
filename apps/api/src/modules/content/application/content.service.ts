@@ -2,10 +2,6 @@ import { createHash } from "node:crypto";
 
 import {
   contentIdempotencyKeyContract,
-  publishPurchaseExperienceInputContract,
-  publishSalesContentInputContract,
-} from "@sevo/contracts/content/v1";
-import {
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
 } from "@sevo/contracts/content/v2";
@@ -36,34 +32,9 @@ export class ContentService {
     private readonly purchases: PurchaseEligibilityRead,
   ) {}
 
-  publishSalesContentV1(request: ContentRequest, body: unknown, key: unknown) {
-    return this.publishSalesContentUsing(
-      request,
-      body,
-      key,
-      publishSalesContentInputContract,
-    );
-  }
-
   async publishSalesContent(request: ContentRequest, body: unknown, key: unknown) {
-    return this.publishSalesContentUsing(
-      request,
-      body,
-      key,
-      publishSalesContentInputV2Contract,
-    );
-  }
-
-  private async publishSalesContentUsing(
-    request: ContentRequest,
-    body: unknown,
-    key: unknown,
-    inputContract:
-      | typeof publishSalesContentInputContract
-      | typeof publishSalesContentInputV2Contract,
-  ) {
     const actorId = await this.requireIdentity(request);
-    const parsedInput = inputContract.safeParse(body);
+    const parsedInput = publishSalesContentInputV2Contract.safeParse(body);
     if (!parsedInput.success) throw new ContentFault("NOT_ELIGIBLE");
     const input = parsedInput.data;
     const idempotencyKey = this.requireKey(key);
@@ -147,23 +118,6 @@ export class ContentService {
       storeId: eligibility.storeId,
       productId: eligibility.productId,
     });
-  }
-
-  async publishPurchaseExperienceV1(
-    request: ContentRequest,
-    body: unknown,
-    key: unknown,
-  ) {
-    const actorId = await this.requireIdentity(request);
-    const parsedInput = publishPurchaseExperienceInputContract.safeParse(body);
-    if (!parsedInput.success) {
-      throw new ContentFault("NOT_ELIGIBLE");
-    }
-    if (parsedInput.data.buyerId !== actorId) throw new ContentFault("FORBIDDEN");
-    this.requireKey(key);
-    // Content v1 requires authoritative DELIVERED fulfillment evidence. That owner
-    // seam does not exist yet, so the compatibility endpoint remains fail-closed.
-    throw new ContentFault("NOT_ELIGIBLE");
   }
 
   private async requireIdentity(request: ContentRequest) {

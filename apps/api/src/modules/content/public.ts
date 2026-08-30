@@ -1,12 +1,12 @@
 import type {
   ContentError,
   OrderItemId,
-  PublishSalesContentInput,
   PurchaseExperience,
   SalesContent,
 } from "@sevo/contracts/content/v1";
 import type {
   PublishPurchaseExperienceInputV2,
+  PublishSalesContentInputV2,
   PurchaseExperienceEligibilityDecisionV2,
 } from "@sevo/contracts/content/v2";
 import type { MediaId } from "@sevo/contracts/media/v1";
@@ -41,10 +41,7 @@ export interface ContentProductRead {
   ): Promise<{ publicationVersion: number } | undefined>;
 }
 export interface ContentMediaRead {
-  readOwnedKind(
-    mediaId: MediaId,
-    identityId: IdentityId,
-  ): Promise<"IMAGE" | "VIDEO" | undefined>;
+  readOwnedKind(mediaId: MediaId, identityId: IdentityId): Promise<"IMAGE" | undefined>;
 }
 export interface PurchaseEligibilityRead {
   readEligibility(input: {
@@ -61,7 +58,7 @@ export type ContentMutation = Readonly<{
 }>;
 export type PublishSalesContentCommand = ContentMutation &
   Readonly<{
-    input: PublishSalesContentInput;
+    input: PublishSalesContentInputV2;
     products: ReadonlyArray<{
       productId: ProductId;
       publicationVersion: number;

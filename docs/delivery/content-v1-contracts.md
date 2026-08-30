@@ -18,10 +18,14 @@ dependency، متغیر محیطی، پورت یا رفتار runtime تازه �
 - `@sevo/contracts/content/v2` به‌صورت افزایشی کنار v1 منتشر می‌شود و رفتار اجرایی
   موجود را صریح می‌کند: رسانه فروش فقط `IMAGE` است و eligibility تجربه خرید از
   خرید `CONFIRMED` متعلق به Orders می‌آید، بدون ادعای وضعیت انجام سفارش.
-- مصرف‌کننده runtime و آزمون‌های HTTP به pathهای v2 مهاجرت کرده‌اند. path و schemaهای
-  v1 در پنجره سازگاری باقی می‌مانند و حذف آن‌ها به تصمیم و migration جداگانه نیاز دارد.
-  endpoint تجربه خرید v1 تا وجود evidence مالک fulfillment برای `DELIVERED` عمداً
-  fail-closed است؛ endpoint v2 از تصمیم مالک Orders برای خرید `CONFIRMED` استفاده می‌کند.
+- طبق [تصمیم صریح مالک محصول برای سازگاری #139](https://github.com/Mahaan-Amr/sevomart/issues/139#issuecomment-5467642696)،
+  v1 در پنجره سازگاری فقط artifact منتشرشده و غیرقابل‌اجرا است. operation descriptor،
+  schema، example و aliasهای عمومی آن برای مصرف‌کننده package باقی می‌مانند، اما route
+  runtime و operation OpenAPI ندارند؛ lifecycle نیز صریحاً `executable: false` است.
+  بنابراین نه موفقیت ویدیوی فاقد producer واقعی و نه eligibility تحویل فاقد evidence
+  مالک تبلیغ نمی‌شود. حذف artifactهای v1 به migration و تصمیم جداگانه نیاز دارد.
+- مصرف‌کننده runtime، OpenAPI و آزمون‌های HTTP به pathهای v2 مهاجرت کرده‌اند. endpoint
+  v2 از تصمیم مالک Orders برای خرید `CONFIRMED` استفاده می‌کند.
 - `OrderItemId` فقط در قرارداد مالک Orders تعریف می‌شود؛ Content همان schema و type
   را re-export می‌کند و شناسه موازی نمی‌سازد.
 - محتوای فروش حداقل یک و حداکثر ده `productId` یکتا می‌پذیرد.
@@ -54,8 +58,8 @@ dependency، متغیر محیطی، پورت یا رفتار runtime تازه �
 
 ## OpenAPI و پنجره پیاده‌سازی
 
-fragment ماژول content schemaها و pathهای v1 و v2 را هم‌زمان در OpenAPI ثبت
-می‌کند. pathهای مصوب با operationId، نشست هویت،
+fragment ماژول content فقط schemaها و pathهای اجرایی v2 را در OpenAPI ثبت می‌کند.
+pathهای v2 با operationId، نشست هویت،
 `Idempotency-Key`، schema درخواست و نگاشت پاسخ‌های `201/401/403/409/422/428/500`
 مستقیماً از قرارداد نسخه‌دار ساخته می‌شوند. controller و رفتار runtime در
 [[ساخت] پیاده‌سازی producer محتوای فروش و تجربه خرید](https://github.com/Mahaan-Amr/sevomart/issues/139)
@@ -81,15 +85,16 @@ persistence enforce می‌شود. eligibility خرید تأییدشده از po
 contract testها حداقل یک کالای یکتا، هم‌فروشگاهی و منتشرشده، خرید تأییدشده،
 رد submission تکراری، validation امتیاز و رسانه، تمایز قطعی منبع رخداد، نبود
 شناسه خریدار و سفارش در payload عمومی و mapping کامل OpenAPI را
-می‌سنجند. آزمون سازگاری پذیرش `VIDEO` و الزام `DELIVERED` را در v1 و محدودیت
-تصویر/خرید تأییدشده را در v2 قفل می‌کند. آزمون unit سرویس authorization و eligibility را در مرز application
+می‌سنجند. آزمون سازگاری پذیرش `VIDEO`، الزام `DELIVERED` و alias عمومی `OrderItemId`
+را در artifact v1 قفل می‌کند و هم‌زمان نبود operationهای v1 در OpenAPI/runtime و
+محدودیت تصویر/خرید تأییدشده را در v2 می‌سنجد. آزمون unit سرویس authorization و eligibility را در مرز application
 می‌سنجد. آزمون integration روی PostgreSQL واقعی، migration، replay idempotent،
 یکتایی submission، audit/outbox بدون شناسه خصوصی، دسترسی عمومی media، deactivation
-رخدادمحور و HTTP happy-path/duplicate تجربه خرید را می‌سنجد. OpenAPI از
-artifactهای نسخه‌دار v1 و v2 ساخته می‌شود.
+رخدادمحور و HTTP happy-path/duplicate تجربه خرید را می‌سنجد. OpenAPI فقط از
+artifact اجرایی v2 ساخته می‌شود؛ v1 در entrypoint نسخه‌دار package باقی می‌ماند.
 
 نتیجه نهایی محلی اصلاح بازبینی در ۲۰۲۶-۰۸-۳۰: format، lint و architecture،
-typecheck و build سبزند؛ ۱۵۷ unit، ۱۵۵ contract و ۱۷۴ integration سبزند و
-integration همه ۴۹ migration موجود را از صفر اعمال کرد. شواهد runtime و Compose
+typecheck و build سبزند؛ ۱۵۸ unit، ۱۵۵ contract و ۱۷۹ integration سبزند و
+integration همه ۵۰ migration موجود را از صفر اعمال کرد. شواهد runtime و Compose
 اصلاح producer در اجرای پیشین سبز بوده‌اند؛ این اصلاح فقط قرارداد نسخه‌دار، route و
 adapter type را تغییر می‌دهد و migration، env، startup یا dependency runtime تازه ندارد.

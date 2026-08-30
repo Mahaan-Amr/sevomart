@@ -22,11 +22,14 @@ import {
   createContentMediaRead,
   PostgresContentRepository,
 } from "../../apps/api/src/modules/content/composition";
+import { createActiveSellerFixture } from "../../apps/api/src/modules/identity-access/testing/active-seller.fixture";
 import {
   MEDIA_STORAGE,
   type MediaStorage,
 } from "../../apps/api/src/modules/media/public";
 import { createPaidOrderItemFixture } from "../../apps/api/src/modules/orders/testing/paid-order-item.fixture";
+import { createPublishedProductFixture } from "../../apps/api/src/modules/product/testing/published-product.fixture";
+import { createOwnedSellableStoreFixture } from "../../apps/api/src/modules/store/testing/owned-sellable-store.fixture";
 import { projectContentProductState } from "../../apps/worker/src/modules/content/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
@@ -35,6 +38,13 @@ const repository = new PostgresContentRepository(apiTestEnvironment.DATABASE_URL
 const actorId = identityIdContract.parse("10000000-0000-4000-8000-000000000091");
 const storeId = storeIdContract.parse("20000000-0000-4000-8000-000000000091");
 const productId = productIdContract.parse("30000000-0000-4000-8000-000000000091");
+const contentSellerMobile = "09120000139";
+const contentSellerEnvironment = {
+  ...apiTestEnvironment,
+  DEV_OTP_TEST_MOBILES: [
+    contentSellerMobile,
+  ] as typeof apiTestEnvironment.DEV_OTP_TEST_MOBILES,
+};
 
 beforeEach(async () => {
   await sql`delete from content_product_states where product_id = ${productId}`;
@@ -154,6 +164,15 @@ describe("content producer persistence", () => {
     const app = await createApiApp(apiTestEnvironment);
     const server = app.getHttpAdapter().getInstance();
     try {
+      for (const url of ["/v1/seller/sales-content", "/v1/purchase-experiences"]) {
+        const compatibilityResponse = await server.inject({
+          method: "POST",
+          url,
+          payload: {},
+        });
+        expect(compatibilityResponse.statusCode).toBe(404);
+      }
+
       const unauthenticated = await server.inject({
         method: "POST",
         url: "/v2/seller/sales-content",
@@ -192,6 +211,113 @@ describe("content producer persistence", () => {
       expect(missingPrecondition.statusCode).toBe(428);
       expect(missingPrecondition.json().code).toBe("PRECONDITION_REQUIRED");
     } finally {
+      await app.close();
+    }
+  });
+
+  it("publishes sales content through the authenticated v2 HTTP surface", async () => {
+    const app = await createApiApp(contentSellerEnvironment);
+    const server = app.getHttpAdapter().getInstance();
+    const storage = app.get<MediaStorage>(MEDIA_STORAGE);
+    const fixtureStoreId = storeIdContract.parse(randomUUID());
+    const fixtureProductId = productIdContract.parse(randomUUID());
+    const fixtureVariantId = randomUUID();
+    const fixtureMediaId = randomUUID();
+    let sellerId = "";
+    let contentId = "";
+    let activeSeller: Awaited<ReturnType<typeof createActiveSellerFixture>> | undefined;
+    let ownedStore:
+      Awaited<ReturnType<typeof createOwnedSellableStoreFixture>> | undefined;
+    let publishedProduct:
+      Awaited<ReturnType<typeof createPublishedProductFixture>> | undefined;
+    try {
+      const requested = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: contentSellerMobile },
+      });
+      expect(requested.statusCode).toBe(202);
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: requested.json().challengeId, code: "111111" },
+      });
+      expect(verified.statusCode).toBe(200);
+      const cookie = verified.headers["set-cookie"]!;
+      const session = await server.inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie },
+      });
+      sellerId = session.json().actor.identityId;
+      const parsedSellerId = identityIdContract.parse(sellerId);
+      activeSeller = await createActiveSellerFixture(
+        apiTestEnvironment.DATABASE_URL,
+        parsedSellerId,
+      );
+      ownedStore = await createOwnedSellableStoreFixture(
+        apiTestEnvironment.DATABASE_URL,
+        { sellerId: parsedSellerId, storeId: fixtureStoreId },
+      );
+      publishedProduct = await createPublishedProductFixture(
+        apiTestEnvironment.DATABASE_URL,
+        {
+          productId: fixtureProductId,
+          storeId: fixtureStoreId,
+          mediaId: fixtureMediaId,
+          variantId: fixtureVariantId,
+        },
+      );
+      await storage.put({
+        key: fixtureMediaId,
+        purpose: "PRODUCT_IMAGE",
+        contentType: "image/png",
+        bytes: Uint8Array.from([1]),
+        checksum: "c".repeat(64),
+        width: 1,
+        height: 1,
+        variants: [],
+        ownerSellerId: parsedSellerId,
+        visibility: "PRIVATE",
+      });
+
+      const published = await server.inject({
+        method: "POST",
+        url: "/v2/seller/sales-content",
+        headers: { cookie, "idempotency-key": "sales-content-http-v2-139" },
+        payload: {
+          storeId: fixtureStoreId,
+          media: { mediaId: fixtureMediaId, kind: "IMAGE" },
+          productIds: [fixtureProductId],
+        },
+      });
+      expect(published.statusCode).toBe(201);
+      expect(published.json()).toMatchObject({
+        source: "SELLER",
+        moderationState: "PUBLISHED",
+      });
+      contentId = published.json().contentId;
+      expect(contentId).toEqual(expect.any(String));
+      expect(
+        await sql`
+          select product_id as "productId", publication_version as "publicationVersion"
+          from content_sales_content_products
+          where content_id = ${contentId}
+        `,
+      ).toEqual([{ productId: fixtureProductId, publicationVersion: 1 }]);
+    } finally {
+      if (contentId) {
+        await sql`delete from platform_outbox_events where aggregate_id = ${contentId}`;
+        await sql`delete from content_audits where aggregate_id = ${contentId}`;
+      }
+      if (sellerId) {
+        await sql`delete from content_idempotency_records where actor_id = ${sellerId}`;
+        await sql`delete from content_sales_content_products where content_id in (select id from content_sales_contents where actor_identity_id = ${sellerId})`;
+        await sql`delete from content_sales_contents where actor_identity_id = ${sellerId}`;
+      }
+      await publishedProduct?.cleanup();
+      await ownedStore?.cleanup();
+      await activeSeller?.cleanup();
       await app.close();
     }
   });
@@ -238,15 +364,6 @@ describe("content producer persistence", () => {
         text: "کالا سالم و مطابق تصویر رسید.",
         mediaIds: [],
       };
-      const compatibilityResponse = await server.inject({
-        method: "POST",
-        url: "/v1/purchase-experiences",
-        headers: { cookie, "idempotency-key": "experience-http-v1-91" },
-        payload,
-      });
-      expect(compatibilityResponse.statusCode).toBe(422);
-      expect(compatibilityResponse.json().code).toBe("NOT_ELIGIBLE");
-
       const published = await server.inject({
         method: "POST",
         url: "/v2/purchase-experiences",
