@@ -9,6 +9,7 @@ import {
   type OutboxEventHandler,
   type StoredOutboxEvent,
 } from "@sevo/outbox";
+import { getMeter } from "@sevo/observability";
 import postgres, { type Sql } from "postgres";
 
 const storeFollowEventTypes = [
@@ -27,6 +28,20 @@ type FollowProjectionRow = {
   status: "ACTIVE" | "INACTIVE";
   relationRevision: number;
 };
+
+type ProjectionLog = (record: Readonly<Record<string, unknown>>) => void;
+
+const followerCountMeter = getMeter("sevo.discovery.follower-count");
+const followerCountReplayMetric = followerCountMeter.createCounter(
+  "sevo.discovery.projection.replayed_events",
+);
+const followerCountRebuildMetric = followerCountMeter.createCounter(
+  "sevo.discovery.projection.rebuilds",
+);
+const followerCountRebuildDurationMetric = followerCountMeter.createHistogram(
+  "sevo.discovery.projection.rebuild_duration",
+  { unit: "ms" },
+);
 
 export const projectStoreFollowForFollowerCount: OutboxEventHandler = async (
   event,
@@ -102,10 +117,14 @@ export async function catchUpDiscoveryFollowerCountProjection(databaseUrl: strin
   });
 }
 
-export async function rebuildDiscoveryFollowerCountProjection(databaseUrl: string) {
+export async function rebuildDiscoveryFollowerCountProjection(
+  databaseUrl: string,
+  log: ProjectionLog = (record) => console.log(JSON.stringify(record)),
+) {
   const sql = postgres(databaseUrl, { max: 1 });
+  const startedAt = Date.now();
   try {
-    return await sql.begin(async (transaction) => {
+    const result = await sql.begin(async (transaction) => {
       await lockFollowerCountRebuild(transaction, "exclusive");
       await transaction`delete from discovery_public_follower_counts`;
       await transaction`delete from discovery_follower_count_relation_projections`;
@@ -126,6 +145,45 @@ export async function rebuildDiscoveryFollowerCountProjection(databaseUrl: strin
       });
       return { replayedEventCount };
     });
+    const durationMs = Date.now() - startedAt;
+    log({
+      level: "info",
+      message: "discovery_projection_rebuild_completed",
+      projection: "follower-count",
+      replayedEventCount: result.replayedEventCount,
+      durationMs,
+    });
+    followerCountRebuildMetric.add(1, {
+      projection: "follower-count",
+      outcome: "healthy",
+    });
+    followerCountRebuildDurationMetric.record(durationMs, {
+      projection: "follower-count",
+      outcome: "healthy",
+    });
+    followerCountReplayMetric.add(result.replayedEventCount, {
+      projection: "follower-count",
+      operation: "rebuild",
+    });
+    return result;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    log({
+      level: "error",
+      message: "discovery_projection_rebuild_failed",
+      projection: "follower-count",
+      durationMs,
+      errorKind: error instanceof Error ? error.name : "UnknownError",
+    });
+    followerCountRebuildMetric.add(1, {
+      projection: "follower-count",
+      outcome: "failed",
+    });
+    followerCountRebuildDurationMetric.record(durationMs, {
+      projection: "follower-count",
+      outcome: "failed",
+    });
+    throw error;
   } finally {
     await sql.end();
   }

@@ -394,10 +394,20 @@ describe("store following HTTP API with PostgreSQL", () => {
     await damaged`delete from discovery_follower_count_relation_projections`;
     await damaged.end();
 
+    const rebuildLogs: Array<Readonly<Record<string, unknown>>> = [];
     const rebuilt = await rebuildDiscoveryFollowerCountProjection(
       apiTestEnvironment.DATABASE_URL,
+      (record) => rebuildLogs.push(record),
     );
     expect(rebuilt.replayedEventCount).toBe(3);
+    expect(rebuildLogs).toContainEqual(
+      expect.objectContaining({
+        message: "discovery_projection_rebuild_completed",
+        projection: "follower-count",
+        replayedEventCount: 3,
+        durationMs: expect.any(Number),
+      }),
+    );
     const publicStore = await server.inject({
       method: "GET",
       url: "/v1/stores/rebuilt-follow-count",
@@ -439,6 +449,108 @@ describe("store following HTTP API with PostgreSQL", () => {
     `;
     expect(counts).toHaveLength(0);
     await sql.end();
+  });
+
+  it("projects follower counts from real identity status producer events", async () => {
+    const app = await startApp();
+    const ownerCookie = await signIn(app, "09123456789");
+    const buyerCookie = await signIn(app, "09123456788");
+    const store = await publishStore(app, ownerCookie, "identity-status-producer");
+    const server = app.getHttpAdapter().getInstance();
+    const followed = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${store.id}`,
+      headers: { cookie: buyerCookie, "idempotency-key": crypto.randomUUID() },
+    });
+    expect(followed.statusCode).toBe(200);
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const [relation] = await sql<Array<{ identityId: string }>>`
+      select identity_id as "identityId" from discovery_store_follows
+      where store_id = ${store.id}
+    `;
+    const [changed] = await sql<Array<{ statusVersion: number }>>`
+      update identity_identities set status = 'INACTIVE'
+      where id = ${relation!.identityId}
+      returning status_version as "statusVersion"
+    `;
+    expect(changed!.statusVersion).toBeGreaterThan(0);
+    const [storedEvent] = await sql<
+      Array<Record<string, unknown> & { occurredAt: Date }>
+    >`
+      select event_id as "eventId", envelope_version as version,
+        event_type as "eventType", aggregate_id as "aggregateId",
+        aggregate_version as "aggregateVersion", occurred_at as "occurredAt",
+        correlation_id as "correlationId", causation_id as "causationId",
+        jsonb_build_object('type', actor_type) as actor, payload
+      from platform_outbox_events
+      where event_type = 'IdentityStatusChanged.v1'
+        and aggregate_id = ${relation!.identityId}
+      order by aggregate_version desc limit 1
+    `;
+    expect(
+      identityStatusChangedV1Contract.parse({
+        ...storedEvent,
+        occurredAt: storedEvent!.occurredAt.toISOString(),
+      }),
+    ).toMatchObject({
+      aggregateId: relation!.identityId,
+      aggregateVersion: changed!.statusVersion,
+      payload: { status: "INACTIVE", statusVersion: changed!.statusVersion },
+    });
+    await sql.end();
+
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+    const publicStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/identity-status-producer",
+    });
+    expect(publicStore.json()).toMatchObject({ followerCount: { count: 0 } });
+
+    const reactivated = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const [activated] = await reactivated<Array<{ statusVersion: number }>>`
+      update identity_identities set status = 'ACTIVE'
+      where id = ${relation!.identityId}
+      returning status_version as "statusVersion"
+    `;
+    expect(activated!.statusVersion).toBe(changed!.statusVersion + 1);
+    await reactivated.end();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+    const restoredStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/identity-status-producer",
+    });
+    expect(restoredStore.json()).toMatchObject({ followerCount: { count: 1 } });
+
+    const rollback = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await expect(
+      rollback.begin(async (transaction) => {
+        await transaction`
+          update identity_identities set status = 'INACTIVE'
+          where id = ${relation!.identityId}
+        `;
+        throw new Error("rollback identity status change");
+      }),
+    ).rejects.toThrow("rollback identity status change");
+    const [rolledBack] = await rollback<
+      Array<{ status: string; statusVersion: number; eventCount: number }>
+    >`
+      select identity.status, identity.status_version as "statusVersion",
+        count(event.event_id)::int as "eventCount"
+      from identity_identities identity
+      left join platform_outbox_events event
+        on event.aggregate_id = identity.id
+       and event.event_type = 'IdentityStatusChanged.v1'
+      where identity.id = ${relation!.identityId}
+      group by identity.id
+    `;
+    expect(rolledBack).toEqual({
+      status: "ACTIVE",
+      statusVersion: activated!.statusVersion,
+      eventCount: 2,
+    });
+    await rollback.end();
   });
 
   it("rolls back a follower-count projection when its relation is missing", async () => {
@@ -491,6 +603,21 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(receipt).toHaveLength(0);
     expect(count).toHaveLength(0);
     expect(storedEvent).toEqual([{ status: "FAILED" }]);
+    const rebuildLogs: Array<Readonly<Record<string, unknown>>> = [];
+    await expect(
+      rebuildDiscoveryFollowerCountProjection(
+        apiTestEnvironment.DATABASE_URL,
+        (record) => rebuildLogs.push(record),
+      ),
+    ).rejects.toThrow("Store-follow relation is missing");
+    expect(rebuildLogs).toContainEqual(
+      expect.objectContaining({
+        message: "discovery_projection_rebuild_failed",
+        projection: "follower-count",
+        durationMs: expect.any(Number),
+        errorKind: "Error",
+      }),
+    );
     await verification.end();
   });
 
