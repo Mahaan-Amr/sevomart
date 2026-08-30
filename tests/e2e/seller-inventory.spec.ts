@@ -285,6 +285,21 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     await expect(
       page.getByRole("heading", { name: "اصلاح موجودی گونه‌ها" }),
     ).toBeVisible();
+    const reducedMotion = await page.locator("main").evaluate((main) => {
+      const firstAction = main.querySelector("button");
+      const duration = firstAction
+        ? getComputedStyle(firstAction).transitionDuration
+        : "0s";
+      const durationMs = duration.endsWith("ms")
+        ? Number.parseFloat(duration)
+        : Number.parseFloat(duration) * 1_000;
+      return {
+        requested: matchMedia("(prefers-reduced-motion: reduce)").matches,
+        durationMs,
+      };
+    });
+    expect(reducedMotion.requested).toBe(true);
+    expect(reducedMotion.durationMs).toBeLessThanOrEqual(0.01);
     await assertMinimumContrast(
       page.getByRole("heading", { name: "اصلاح موجودی گونه‌ها" }),
     );
@@ -295,6 +310,28 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     const simpleRow = page.getByRole("listitem").filter({ hasText: simpleProductName });
     await expect(simpleRow.getByText("گونه اصلی", { exact: true })).toBeVisible();
     await expect(simpleRow.getByText("ناموجود", { exact: true })).toBeVisible();
+    const simpleIncrease = simpleRow.getByRole("button", { name: /افزایش موجودی/ });
+    await search.focus();
+    await page.keyboard.press("Tab");
+    await expect(simpleIncrease).toBeFocused();
+    expect(
+      await simpleIncrease.evaluate((button) => {
+        const style = getComputedStyle(button);
+        return (
+          style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) >= 3
+        );
+      }),
+    ).toBe(true);
+    await page.keyboard.press("Enter");
+    await expect(page.getByLabel("مقدار افزایش")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("دلیل تغییر")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "انصراف" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByLabel("مقدار افزایش")).toHaveCount(0);
 
     await search.fill("آبی بزرگ");
     const blueRow = page.getByRole("listitem").filter({ hasText: blueLabel });
