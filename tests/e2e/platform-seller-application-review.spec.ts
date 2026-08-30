@@ -91,7 +91,9 @@ test("platform agent reviews a Persian RTL application on the approved compact w
   await assertMinimumContrast(submit);
   await submit.click();
 
-  await expect(page.getByText("این درخواست اکنون قابل تصمیم‌گیری نیست")).toBeVisible();
+  await expect(
+    page.getByText("قدم بعدی: منتظر تکمیل اطلاعات متقاضی بمانید."),
+  ).toBeVisible();
   await expect(page.getByText("نیاز به تکمیل").first()).toBeVisible();
   await assertNoHorizontalOverflow(page);
 });
@@ -125,6 +127,115 @@ test("shows a self-owned application read-only and asks for handoff", async ({
   await page.goto("/platform/seller-applications");
   await expect(page.getByText(/برای تصمیم به عامل دیگری بسپارید/)).toBeVisible();
   await expect(page.getByRole("button", { name: "ثبت درخواست تکمیل" })).toHaveCount(0);
+});
+
+test("retries an unchanged decision with the same idempotency key", async ({
+  page,
+}) => {
+  let application = sellerApplication();
+  const attemptedKeys: string[] = [];
+  await page.route("**/api/platform/seller-applications**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST") {
+      attemptedKeys.push(request.headers()["idempotency-key"] ?? "");
+      if (attemptedKeys.length === 1) {
+        await route.fulfill({
+          status: 503,
+          json: { message: "پاسخ سرور دریافت نشد. دوباره تلاش کنید." },
+        });
+        return;
+      }
+      application = {
+        ...application,
+        status: "NEEDS_INFORMATION",
+        revision: 2,
+      };
+      await route.fulfill({ status: 200, json: application });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: pathname.endsWith(application.applicationId)
+        ? application
+        : {
+            items: [
+              {
+                applicationId: application.applicationId,
+                applicantName: application.currentPayload.applicantName,
+                proposedStoreName: application.currentPayload.proposedStoreName,
+                status: application.status,
+                revision: application.revision,
+                lastSubmittedAt: application.lastSubmittedAt,
+              },
+            ],
+            nextCursor: null,
+          },
+    });
+  });
+
+  await page.goto("/platform/seller-applications");
+  await page
+    .getByLabel("دلیل قابل‌نمایش به متقاضی")
+    .fill("لطفاً روش فعلی فروش را روشن‌تر توضیح دهید.");
+  const submit = page.getByRole("button", { name: "ثبت درخواست تکمیل" });
+  await submit.click();
+  await expect(page.getByText("پاسخ سرور دریافت نشد.")).toBeVisible();
+  await submit.click();
+
+  await expect(
+    page.getByText("قدم بعدی: منتظر تکمیل اطلاعات متقاضی بمانید."),
+  ).toBeVisible();
+  expect(attemptedKeys).toHaveLength(2);
+  expect(attemptedKeys[0]).not.toBe("");
+  expect(attemptedKeys[1]).toBe(attemptedKeys[0]);
+});
+
+test("shows the platform agent the next step after rejection", async ({ page }) => {
+  let application = sellerApplication();
+  await page.route("**/api/platform/seller-applications**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST") {
+      application = { ...application, status: "REJECTED", revision: 2 };
+      await route.fulfill({ status: 200, json: application });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: pathname.endsWith(application.applicationId)
+        ? application
+        : {
+            items:
+              application.status === "REJECTED"
+                ? []
+                : [
+                    {
+                      applicationId: application.applicationId,
+                      applicantName: application.currentPayload.applicantName,
+                      proposedStoreName: application.currentPayload.proposedStoreName,
+                      status: application.status,
+                      revision: application.revision,
+                      lastSubmittedAt: application.lastSubmittedAt,
+                    },
+                  ],
+            nextCursor: null,
+          },
+    });
+  });
+
+  await page.goto("/platform/seller-applications");
+  await page.getByLabel("رد درخواست").check();
+  await page
+    .getByLabel("دلیل قابل‌نمایش به متقاضی")
+    .fill("شرایط فروشندگی برای این درخواست احراز نشد.");
+  await page.getByRole("button", { name: "ثبت رد درخواست" }).click();
+
+  await expect(
+    page.getByText(
+      "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.",
+    ),
+  ).toBeVisible();
 });
 
 test("platform agent confirms approval before the initial store is created", async ({
@@ -182,6 +293,9 @@ test("platform agent confirms approval before the initial store is created", asy
     .fill("شرایط فروشندگی شما تأیید شد.");
   await page.getByRole("button", { name: "تأیید و ساخت فروشگاه" }).click();
 
+  await expect(
+    page.getByText("درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد."),
+  ).toBeVisible();
   await expect(page.getByText("درخواستی برای بررسی باقی نمانده است.")).toBeVisible();
   expect(approvalPayload).toMatchObject({
     expectedRevision: 1,
@@ -195,7 +309,7 @@ function sellerApplication() {
   return {
     applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
     isSelfReview: false,
-    status: "SUBMITTED" as "SUBMITTED" | "NEEDS_INFORMATION",
+    status: "SUBMITTED" as "SUBMITTED" | "NEEDS_INFORMATION" | "REJECTED",
     revision: 1,
     payloadRevision: 1,
     currentPayload: {

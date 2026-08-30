@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+
+import { expect, test, type BrowserContext } from "@playwright/test";
 import postgres from "postgres";
 
 import {
@@ -10,6 +12,7 @@ import {
   sellerApplicationDraftTestMobiles,
   visualProjectIndex,
 } from "../helpers/visual-projects";
+import { establishPlatformAgentSession } from "../helpers/platform-agent-session";
 
 test("applicant keeps a Persian RTL draft across a return and sees the next step after submit", async ({
   page,
@@ -132,6 +135,84 @@ test("an approved application points to the canonical seller workspace", async (
   await expect(
     page.getByRole("link", { name: "رفتن به فضای فروشنده" }),
   ).toHaveAttribute("href", "/seller");
+});
+
+test("a rejected application explains the outcome and offers a fresh start", async ({
+  context,
+  page,
+}) => {
+  await establishIdentitySession(context);
+  await page.route("**/api/seller-applications/mine", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [rejectedApplication()], nextCursor: null }),
+    }),
+  );
+  await page.goto("/seller/application");
+
+  await expect(page.getByText("این درخواست تأیید نشد.")).toBeVisible();
+  await expect(
+    page.getByText("شرایط فروشندگی برای این درخواست احراز نشد."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "ثبت درخواست تازه" })).toBeVisible();
+});
+
+test("applicant and platform agent complete the real seller approval journey", async ({
+  context,
+  page,
+}) => {
+  const identityId = await establishIdentitySession(context);
+  const proposedStoreName = `خانه پذیرش ${identityId.slice(0, 6)}`;
+
+  await page.goto("/seller/application");
+  await page.getByLabel("نام و نام خانوادگی").fill("نگار محمدی");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByLabel("نام پیشنهادی فروشگاه").fill(proposedStoreName);
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByLabel("چه کالاهایی می‌فروشید؟").fill("سفال دست‌ساز");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByLabel("الان چطور می‌فروشید؟").fill("فروش در شبکه‌های اجتماعی");
+  await page.getByRole("button", { name: "ثبت درخواست" }).click();
+  await expect(
+    page.getByText("قدم بعدی: نتیجه بررسی را همین‌جا می‌بینید."),
+  ).toBeVisible();
+
+  await page.goto("/seller");
+  await expect(page).toHaveURL(/\/seller\/application$/);
+
+  await establishPlatformAgentSession(context, ["SELLER_APPLICATION_REVIEW"]);
+  await page.goto("/platform/seller-applications");
+  await page.getByRole("button", { name: new RegExp(proposedStoreName) }).click();
+  await page
+    .getByLabel("دلیل قابل‌نمایش به متقاضی")
+    .fill("لطفاً روش فعلی فروش را روشن‌تر توضیح دهید.");
+  await page.getByRole("button", { name: "ثبت درخواست تکمیل" }).click();
+  await expect(
+    page.getByText("قدم بعدی: منتظر تکمیل اطلاعات متقاضی بمانید."),
+  ).toBeVisible();
+
+  await page.goto("/seller/application");
+  await page
+    .getByLabel("الان چطور می‌فروشید؟")
+    .fill("فروش از راه اینستاگرام و پیام مستقیم");
+  await page.getByRole("button", { name: "ثبت اطلاعات تکمیلی" }).click();
+  await expect(page.getByText("درخواست شما ثبت شد.")).toBeVisible();
+
+  await page.goto("/platform/seller-applications");
+  await page.getByRole("button", { name: new RegExp(proposedStoreName) }).click();
+  await page.getByLabel("تأیید درخواست").check();
+  await page
+    .getByLabel("دلیل قابل‌نمایش به متقاضی")
+    .fill("شرایط فروشندگی شما تأیید شد.");
+  await page.getByRole("button", { name: "تأیید و ساخت فروشگاه" }).click();
+  await expect(
+    page.getByText("درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد."),
+  ).toBeVisible();
+
+  await page.goto("/seller/application");
+  await expect(page).toHaveURL(/\/seller$/);
+  await expect(page.getByRole("heading", { name: "کارهای نزدیک" })).toBeVisible();
 });
 
 test("a legacy store draft loads in the existing form and saves with its revision", async ({
@@ -323,6 +404,27 @@ function approvedApplication() {
   } as const;
 }
 
+function rejectedApplication() {
+  const application = approvedApplication();
+  return {
+    ...application,
+    status: "REJECTED",
+    nextStep: "APPLICATION_ENDED",
+    timeline: [
+      application.timeline[0],
+      {
+        revision: 2,
+        status: "REJECTED",
+        title: "درخواست تأیید نشد",
+        publicReason: "شرایط فروشندگی برای این درخواست احراز نشد.",
+        reasonCode: "ELIGIBILITY_NOT_ESTABLISHED",
+        requestedFields: [],
+        occurredAt: "2026-08-24T09:00:00.000Z",
+      },
+    ],
+  } as const;
+}
+
 function legacyStoreDraft() {
   return {
     id: "5e652775-b807-4fb6-956e-62418495e424",
@@ -354,4 +456,40 @@ function legacyStoreDraft() {
     revision: 7,
     updatedAt: "2026-08-28T10:00:00.000Z",
   };
+}
+
+async function establishIdentitySession(context: BrowserContext) {
+  const identityId = randomUUID();
+  const token = randomBytes(32).toString("base64url");
+  const databaseUrl =
+    process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    await sql.begin(async (transaction) => {
+      await transaction`
+        insert into identity_identities (id, status)
+        values (${identityId}, 'ACTIVE')
+      `;
+      await transaction`
+        insert into identity_sessions
+          (id, token_hash, identity_id, audience, expires_at)
+        values
+          (${randomUUID()}, ${createHash("sha256").update(token).digest("hex")},
+           ${identityId}, 'PUBLIC', now() + interval '1 hour')
+      `;
+    });
+    await context.addCookies([
+      {
+        name: "sevo_session",
+        value: token,
+        domain: "127.0.0.1",
+        path: "/",
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+    ]);
+    return identityId;
+  } finally {
+    await sql.end();
+  }
 }
