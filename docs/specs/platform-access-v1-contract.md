@@ -114,7 +114,14 @@ client نیستند. درخواست‌های حساس فقط scope یک پرون
 مصرف‌کننده پیش از آشکارسازی یا تغییر حساس، context تراکنشی opaque ماژول
 identity-access را می‌فرستد؛ هسته در همان transaction مسئولیت، وضعیت grant، TTL،
 شناسه پرونده و action مجاز را دوباره بررسی و مشاهده صریح را در audit append-only
-ثبت می‌کند. تلاش ردشده نیز بدون مقدار حساس با outcome برابر `DENIED` یا
+ثبت می‌کند. در موفقیت، `authorizeSensitiveAction` یک
+`SensitiveAccessAuthorizationReceipt` برمی‌گرداند که فقط `grantId`، scope همان action
+مجاز، `accessedAt` همان مشاهده ممیزی‌شده و `expiresAt` واقعی grant زنده را دارد؛ دلیل
+داخلی، مسئولیت، اطلاعات پرونده و دیگر facts مربوط به grant از این receipt بیرون
+می‌مانند. وضعیت فعال، لغو و انقضا با زمان واقعی همان authorization و زیر قفل اشتراکی
+grant دوباره بررسی می‌شوند، بنابراین grant لغوشده یا منقضی receipt تولید نمی‌کند.
+
+تلاش ردشده نیز بدون مقدار حساس با outcome برابر `DENIED` یا
 `STOPPED_AFTER_REVOCATION` در audit ماندگار می‌شود، حتی اگر transaction مصرف‌کننده
 rollback شود. اگر شناسه به هیچ ردیف grant حساس از نوع درست حل نشود، audit فقط facts
 تلاش‌شده (`grantId`، actor، مسئولیت، scope و action) را نگه می‌دارد؛ subject، وضعیت و

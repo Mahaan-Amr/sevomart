@@ -19,6 +19,7 @@ import type {
   WithdrawSellerApplication,
   PlatformAccessGrant,
   PlatformAccessScope,
+  SensitiveAccessAuthorizationReceipt,
   Responsibility,
 } from "@sevo/contracts/identity-access/v1";
 import type { IdentityId } from "@sevo/contracts/platform/v1";
@@ -197,7 +198,7 @@ export interface PlatformSensitiveAccess {
   authorizeSensitiveAction(
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformSensitiveAction,
-  ): Promise<void>;
+  ): Promise<SensitiveAccessAuthorizationReceipt>;
 }
 
 export interface PlatformAccessCore extends PlatformSensitiveAccess {
