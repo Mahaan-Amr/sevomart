@@ -1,5 +1,7 @@
 import type {
   OrderConversationEligibilityInput,
+  OrderPurchaseExperienceEligibilityDecision,
+  OrderPurchaseExperienceEligibilityInput,
   AttachCartInput,
   Cart,
   CartConflict,
@@ -50,6 +52,12 @@ export type BuyerPaymentState = Readonly<{
 
 export interface OrderConversationEligibility {
   checkConversationOrder(input: OrderConversationEligibilityInput): Promise<boolean>;
+}
+
+export interface OrderPurchaseExperienceEligibilityRead {
+  readPurchaseExperienceEligibility(
+    input: OrderPurchaseExperienceEligibilityInput,
+  ): Promise<OrderPurchaseExperienceEligibilityDecision>;
 }
 
 export interface OrderPaymentWorkflow {

@@ -1,1 +1,82 @@
 // Tables in this file are owned by the content module.
+
+model ContentSalesContent {
+  id              String   @id @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  source          String   @default("SELLER") @db.VarChar(24)
+  moderationState String   @default("PUBLISHED") @map("moderation_state") @db.VarChar(16)
+  mediaId         String   @map("media_id") @db.Uuid
+  mediaKind       String   @map("media_kind") @db.VarChar(8)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  products        ContentSalesContentProduct[]
+
+  @@index([storeId, createdAt])
+  @@map("content_sales_contents")
+}
+
+model ContentSalesContentProduct {
+  contentId         String              @map("content_id") @db.Uuid
+  productId         String              @map("product_id") @db.Uuid
+  publicationVersion Int                @map("publication_version")
+  active            Boolean             @default(true)
+  content           ContentSalesContent @relation(fields: [contentId], references: [id], onDelete: Restrict)
+
+  @@id([contentId, productId])
+  @@index([productId, active])
+  @@map("content_sales_content_products")
+}
+
+model ContentProductState {
+  productId          String   @id @map("product_id") @db.Uuid
+  aggregateVersion   Int      @map("aggregate_version")
+  publicationVersion Int      @map("publication_version")
+  active             Boolean
+  updatedAt          DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("content_product_states")
+}
+
+model ContentPurchaseExperience {
+  id              String   @id @db.Uuid
+  buyerIdentityId String   @map("buyer_identity_id") @db.Uuid
+  orderItemId     String   @unique @map("order_item_id") @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  productId       String   @map("product_id") @db.Uuid
+  source          String   @default("VERIFIED_PURCHASE") @db.VarChar(24)
+  moderationState String   @default("PUBLISHED") @map("moderation_state") @db.VarChar(16)
+  rating          Int
+  text            String   @db.VarChar(2000)
+  mediaIds        String[] @map("media_ids") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([storeId, productId, createdAt])
+  @@map("content_purchase_experiences")
+}
+
+model ContentIdempotencyRecord {
+  operation    String   @db.VarChar(48)
+  actorId      String   @map("actor_id") @db.Uuid
+  key          String   @db.VarChar(200)
+  requestHash  String   @map("request_hash") @db.Char(64)
+  responseJson Json     @map("response_json") @db.JsonB
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, actorId, key])
+  @@map("content_idempotency_records")
+}
+
+model ContentAudit {
+  id              String   @id @db.Uuid
+  aggregateKind   String   @map("aggregate_kind") @db.VarChar(32)
+  aggregateId     String   @map("aggregate_id") @db.Uuid
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  operation       String   @db.VarChar(48)
+  outcome         String   @db.VarChar(16)
+  correlationId   String   @map("correlation_id") @db.VarChar(128)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([aggregateKind, aggregateId, createdAt])
+  @@map("content_audits")
+}

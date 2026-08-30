@@ -17,11 +17,15 @@ import type {
   SellerApplicationStatus,
   SellerApplicationView,
   WithdrawSellerApplication,
+  PlatformAccessGrant,
+  PlatformAccessScope,
+  Responsibility,
 } from "@sevo/contracts/identity-access/v1";
 import type { IdentityId } from "@sevo/contracts/platform/v1";
 
 export const IDENTITY_SESSION_READER = Symbol("IDENTITY_SESSION_READER");
 export const SELLER_ACCESS_READ = Symbol("SELLER_ACCESS_READ");
+export const PLATFORM_SENSITIVE_ACCESS = Symbol("PLATFORM_SENSITIVE_ACCESS");
 
 export interface SellerAccessRead {
   isActiveSeller(identityId: IdentityId): Promise<boolean>;
@@ -122,6 +126,25 @@ export class SellerApplicationIdempotencyConflictError extends Error {}
 export class SellerApplicationIdempotencyInProgressError extends Error {}
 export class SellerApplicationCursorError extends Error {}
 export class PlatformPermissionRequiredError extends Error {}
+export class PlatformAccessError extends Error {
+  constructor(
+    readonly code:
+      | "SELF_GRANT_FORBIDDEN"
+      | "SELF_APPROVAL_FORBIDDEN"
+      | "SECOND_MANAGER_REQUIRED"
+      | "RESPONSIBILITY_REQUIRED"
+      | "SENSITIVE_SCOPE_REQUIRED"
+      | "STRONG_AUTHENTICATION_REQUIRED"
+      | "STRONG_AUTHENTICATION_STALE"
+      | "ACCESS_GRANT_NOT_FOUND"
+      | "ACCESS_GRANT_REVISION_CONFLICT"
+      | "INVALID_ACCESS_TRANSITION"
+      | "ACCESS_ALREADY_REVOKED"
+      | "IDEMPOTENCY_CONFLICT",
+  ) {
+    super(code);
+  }
+}
 export class PlatformAgentSessionUnauthorizedError extends Error {}
 export class SellerApplicationSelfReviewForbiddenError extends Error {
   constructor(
@@ -147,6 +170,77 @@ export interface PlatformAgentSessionAuthorizer {
   authorizePaymentReview(
     token: string,
   ): Promise<PlatformAgentActor & { permission: "PAYMENT_REVIEW" }>;
+}
+
+export type PlatformAccessCommandContext = {
+  sessionToken: string;
+  correlationId: string;
+  idempotencyKey: string;
+};
+
+export type OpaquePlatformAccessTransactionContext = Readonly<{
+  kind: "opaque-platform-access-transaction";
+}>;
+
+export type PlatformSensitiveAction = {
+  grantId: string;
+  actorIdentityId: string;
+  responsibility: Responsibility;
+  resourceType: PlatformAccessScope["resourceType"];
+  resourceId: string;
+  action: PlatformAccessScope["allowedActions"][number];
+  reason: string;
+  correlationId: string;
+};
+
+export interface PlatformSensitiveAccess {
+  authorizeSensitiveAction(
+    transaction: OpaquePlatformAccessTransactionContext,
+    input: PlatformSensitiveAction,
+  ): Promise<void>;
+}
+
+export interface PlatformAccessCore extends PlatformSensitiveAccess {
+  requestResponsibility(
+    context: PlatformAccessCommandContext,
+    input: {
+      recipientIdentityId: string;
+      responsibility: Responsibility;
+      reason: string;
+    },
+  ): Promise<PlatformAccessGrant>;
+  approveResponsibility(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    expectedRevision: number,
+  ): Promise<PlatformAccessGrant>;
+  revokeResponsibility(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessGrant>;
+  requestSensitiveAccess(
+    context: PlatformAccessCommandContext,
+    input: {
+      recipientIdentityId?: string;
+      responsibility: Responsibility;
+      purposeCode:
+        "RESOLVE_ASSIGNED_CASE" | "VERIFY_CASE_EVIDENCE" | "CONTAIN_ACTIVE_INCIDENT";
+      reason: string;
+      scope: PlatformAccessScope;
+      ttlMinutes: number;
+    },
+  ): Promise<PlatformAccessGrant>;
+  approveSensitiveAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    expectedRevision: number,
+  ): Promise<PlatformAccessGrant>;
+  revokeSensitiveAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessGrant>;
 }
 
 export type SellerApplicationReviewContext = SellerApplicationCommandContext & {

@@ -2,7 +2,11 @@ import type { DynamicModule, Type } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
 import { ConversationsModule } from "../modules/conversations/composition";
-import { ContentModule } from "../modules/content/composition";
+import {
+  createOrderPurchaseEligibilityRead,
+  ContentModule,
+  PostgresContentRepository,
+} from "../modules/content/composition";
 import {
   DiscoveryModule,
   PostgresStoreFollowingRepository,
@@ -68,6 +72,7 @@ function createApiCompositionContext(
     createOpaqueProductTransactionContext,
     createOpaqueStoreTransactionContext,
   );
+  const contentRepository = new PostgresContentRepository(environment.DATABASE_URL);
   const platformAgentSessions = new PostgresPlatformAgentSessionAuthorizer(
     environment.DATABASE_URL,
   );
@@ -80,6 +85,7 @@ function createApiCompositionContext(
       conversationMediaAccess = access;
     },
     checkoutRepository,
+    contentRepository,
     environment,
     identityOptions,
     inventoryAuthoring,
@@ -127,6 +133,7 @@ export const canonicalApiModuleRegistry: readonly {
       environment,
       productRepository,
       storeRepository,
+      contentRepository,
       authorizeConversationMedia,
     }) =>
       MediaModule.register(
@@ -134,6 +141,7 @@ export const canonicalApiModuleRegistry: readonly {
         undefined,
         async (mediaId) => {
           if (await storeRepository.isMediaPublished(mediaId)) return true;
+          if (await contentRepository.isMediaPublished(mediaId)) return true;
           const storeId = await productRepository.findPublishedMediaStoreId(mediaId);
           if (!storeId) return false;
           return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
@@ -229,7 +237,21 @@ export const canonicalApiModuleRegistry: readonly {
     artifact: ProblemFollowUpModule,
     compose: () => ProblemFollowUpModule,
   },
-  { owner: "content", artifact: ContentModule, compose: () => ContentModule },
+  {
+    owner: "content",
+    artifact: ContentModule,
+    compose: ({
+      contentRepository,
+      environment,
+      productRepository,
+      checkoutRepository,
+    }) =>
+      ContentModule.register(environment, {
+        products: productRepository,
+        purchases: createOrderPurchaseEligibilityRead(checkoutRepository),
+        repository: contentRepository,
+      }),
+  },
   {
     owner: "discovery",
     artifact: DiscoveryModule,

@@ -83,3 +83,17 @@ PostgreSQL و ۱۳۶ E2E در چهار viewport سبز است. تست‌های �
 افزودن قرارداد سازگار است و HTTP، OpenAPI عمومی، migration، env، startup و dependency
 را تغییر نمی‌دهد. adapter در Docker و native از همان مسیر اتصال PostgreSQL استفاده
 می‌کند. آزمون قرارداد و integration موجود، تعلق و همه وضعیت‌های سفارش را پوشش می‌دهند.
+
+## eligibility تجربه خرید
+
+[افزودن eligibility تجربه خرید به producer سفارش](https://github.com/Mahaan-Amr/sevomart/issues/186)
+یک UUID پایدار و یکتا برای هر قلم سفارش و read هم‌زمان
+`OrderPurchaseExperienceEligibilityRead` اضافه می‌کند. ورودی strict فقط `buyerId`
+نشست و `orderItemId` است. تصمیم مثبت فقط برای قلم همان خریدار در سفارش `PAID`،
+با `purchaseStatus: CONFIRMED`، `storeId` و `productId` برمی‌گردد؛ تصمیم منفی فقط
+`NOT_ELIGIBLE` است و داده سفارش را افشا نمی‌کند. خطای PostgreSQL propagate می‌شود.
+
+migration متعلق به orders برای ردیف‌های موجود UUID تصادفی backfill می‌کند و برای
+قلم‌های تازه default پایگاه داده دارد. تغییر additive است، compatibility window
+نمی‌خواهد و در صورت اشکال با migration forward-fix اصلاح می‌شود. مصرف‌کننده حق
+خواندن مستقیم جدول orders یا تفسیر وضعیت پرداخت را ندارد.

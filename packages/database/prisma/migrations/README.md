@@ -101,7 +101,38 @@ unchanged. No compatibility window is required and deployment corrections use a
 forward migration. The 45-migration history was verified through both
 `docker compose up --build --wait` and `pnpm dev` startup on 2026-08-29.
 
+[Build: create a safe demo and QA runtime and orchestrator](https://github.com/Mahaan-Amr/sevomart/issues/126)
+additively creates the platform-owned managed-data target fingerprint and versioned
+demo-manifest receipt. Existing product data is not read or changed, no compatibility
+window is required, and deployment corrections use a forward migration. Both supported
+startup paths continue to use the same `prisma migrate deploy` history; their smoke
+evidence is recorded in the delivery note for the Issue.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op
 for fresh databases that already contain the required column.
+
+Issue 139 adds six content-owned tables: sales content, product links, the latest
+product-state projection, purchase experience, idempotency and audit, after
+`20260827120000__conversations__send-claims`. References to store, product, media,
+identity and order-item identifiers remain scalar; the only foreign key stays within
+the content aggregate. The migration is additive, needs no compatibility window and
+uses a forward fix if deployment must be corrected. Both supported runtime paths use
+the same `prisma migrate deploy` history; verification evidence is recorded on the
+Issue handoff.
+
+Issue 127 additively introduces identity-access-owned responsibility and
+case-scoped sensitive-access aggregates, command idempotency and immutable audit.
+The existing platform-permission table remains the live compatibility projection
+used by current authorizers and is updated atomically with each responsibility
+activation or revocation. The migration needs no compatibility window and uses a
+forward migration for corrections. Sensitive values are never copied into audit or
+outbox payloads; every reveal is re-authorized inside the caller's transaction.
+
+Issue 186 additively gives every orders-owned `order_items` row a stable unique UUID
+and publishes the authoritative confirmed-purchase eligibility read for content.
+Existing rows are backfilled, new rows use a database default, and no cross-module
+foreign key or private order snapshot is exposed. No compatibility window is needed;
+deployment corrections use a forward-fix migration. Docker and native both apply the
+same `prisma migrate deploy` history.
