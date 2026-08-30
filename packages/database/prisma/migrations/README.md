@@ -130,6 +130,17 @@ activation or revocation. The migration needs no compatibility window and uses a
 forward migration for corrections. Sensitive values are never copied into audit or
 outbox payloads; every reveal is re-authorized inside the caller's transaction.
 
+The identity-access-owned follow-up migration
+`20260830113000__identity-access__audit-unresolved-sensitive-attempts` preserves the
+attempted grant identifier while making the resolved grant relationship explicit and
+nullable. It backfills existing audit rows under an exclusive lock in one transaction,
+temporarily disables the append-only trigger only inside that transaction, and restores
+the trigger before commit. Failed deployment rolls back the schema, backfill and trigger
+state together; deployed corrections therefore use another forward migration. The
+change is additive for the published v1 audit page and needs no compatibility window.
+Docker and native startup continue to apply the same `prisma migrate deploy` history;
+their Issue 127 follow-up verification is recorded in the delivery note.
+
 Issue 186 additively gives every orders-owned `order_items` row a stable unique UUID
 and publishes the authoritative confirmed-purchase eligibility read for content.
 Existing rows are backfilled, new rows use a database default, and no cross-module

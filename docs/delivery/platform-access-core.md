@@ -30,6 +30,14 @@ idempotency و audit append-only را اضافه می‌کند. جدول موج�
 می‌ماند و در همان transaction فعال یا لغو می‌شود. migration افزودنی است، پنجره
 سازگاری نمی‌خواهد و اصلاح احتمالی فقط با forward migration انجام می‌شود.
 
+migration تکمیلی
+`20260830113000__identity-access__audit-unresolved-sensitive-attempts` شناسه تلاش‌شده را
+از رابطه nullable با grant حل‌شده جدا می‌کند تا grant ناموجود یا با نوع نادرست نیز با
+نتیجه `DENIED` و بدون نسبت‌دادن subject یا استثنای ساختگی ثبت شود. backfill تاریخچه،
+تغییر constraintها و بازگرداندن trigger تغییرناپذیری زیر یک lock و در یک transaction
+انجام می‌شوند؛ تست failure-injection ثابت می‌کند خطا همه تغییرها را rollback می‌کند.
+شکل `PlatformAccessAuditPage` نسخه اول ثابت مانده و اصلاح بعدی فقط forward است.
+
 چرخه دسترسی اضطراری عمداً در این برش نیست و Issue سازنده مستقل خودش را دارد.
 
 ## شواهد اجرای محلی
@@ -47,3 +55,12 @@ idempotency و audit append-only را اضافه می‌کند. جدول موج�
 
 پورت‌های موقت فقط برای جلوگیری از تداخل با محیط توسعه فعال استفاده و پس از بررسی
 پاک شدند؛ قرارداد پورت یا متغیر محیطی محصول تغییر نکرد.
+
+در ۳۰ اوت ۲۰۲۶ migration تکمیلی audit نیز روی دو محیط disposable تازه بررسی شد:
+
+- `docker compose up --build --wait` هر چهار image را از candidate نهایی ساخت، هر ۵۰
+  migration را اعمال کرد و PostgreSQL، MinIO، API، وب و worker همگی healthy شدند.
+- `pnpm dev` همان ۵۰ migration را روی پایگاه تازه اعمال کرد؛ health checkهای API، وب
+  و worker هر سه `ok` برگرداندند.
+
+هر دو محیط با نام پروژه و پورت‌های مستقل اجرا و همراه volumeهای موقت پاک شدند.
