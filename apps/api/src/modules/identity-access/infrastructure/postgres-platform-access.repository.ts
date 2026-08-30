@@ -31,6 +31,7 @@ import {
   PlatformPermissionRequiredError,
   type PlatformAccessCommandContext,
   type PlatformAccessCore,
+  type PlatformSensitiveAction,
   type OpaquePlatformAccessTransactionContext,
 } from "../public";
 import { readOpaquePlatformAccessTransaction } from "./opaque-platform-access-transaction";
@@ -795,16 +796,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
 
   async authorizeSensitiveAction(
     transaction: OpaquePlatformAccessTransactionContext,
-    input: {
-      grantId: string;
-      actorIdentityId: string;
-      responsibility: Responsibility;
-      resourceType: PlatformAccessScope["resourceType"];
-      resourceId: string;
-      action: PlatformAccessScope["allowedActions"][number];
-      reason: string;
-      correlationId: string;
-    },
+    input: PlatformSensitiveAction,
   ): Promise<void> {
     await this.#expireSensitiveGrantIfDue(input.grantId);
     const sql = readOpaquePlatformAccessTransaction(transaction);
@@ -819,15 +811,23 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       grant.scope.resourceId !== input.resourceId ||
       !grant.scope.allowedActions.includes(input.action)
     ) {
+      if (grant) await this.#auditDeniedSensitiveAction(grant, input);
       throw new PlatformAccessError("SENSITIVE_SCOPE_REQUIRED");
     }
-    await requireResponsibility(sql, input.actorIdentityId, input.responsibility);
+    try {
+      await requireResponsibility(sql, input.actorIdentityId, input.responsibility);
+    } catch (error) {
+      if (
+        error instanceof PlatformAccessError &&
+        error.code === "RESPONSIBILITY_REQUIRED"
+      ) {
+        await this.#auditDeniedSensitiveAction(grant, input);
+      }
+      throw error;
+    }
     await insertAudit(sql, {
       grantId: grant.grantId,
-      action:
-        input.action === "REVEAL_MINIMUM"
-          ? "SENSITIVE_FIELD_REVEALED"
-          : "SENSITIVE_CHANGE_ATTEMPTED",
+      action: sensitiveAuditAction(input.action),
       actorIdentityId: input.actorIdentityId,
       subjectIdentityId: input.actorIdentityId,
       scope: grant.scope,
@@ -837,6 +837,34 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       correlationId: input.correlationId,
       occurredAt: new Date(),
     });
+  }
+
+  async #auditDeniedSensitiveAction(
+    grant: SensitiveGrantRow,
+    input: PlatformSensitiveAction,
+  ): Promise<void> {
+    const stoppedAfterRevocation = grant.status === "REVOKED";
+    await this.#sql.begin((sql) =>
+      insertAudit(sql, {
+        grantId: grant.grantId,
+        action: sensitiveAuditAction(input.action),
+        actorIdentityId: input.actorIdentityId,
+        subjectIdentityId: grant.subjectIdentityId,
+        scope: {
+          resourceType: input.resourceType,
+          resourceId: input.resourceId,
+          allowedActions: [input.action],
+        },
+        reasonCode: stoppedAfterRevocation
+          ? "ACCESS_REVOKED_FOR_SAFETY"
+          : "ACCESS_REQUEST_REJECTED",
+        reason: input.reason,
+        outcome: stoppedAfterRevocation ? "STOPPED_AFTER_REVOCATION" : "DENIED",
+        singleManagerException: grant.singleManagerException,
+        correlationId: input.correlationId,
+        occurredAt: new Date(),
+      }),
+    );
   }
 
   async #expireSensitiveGrantIfDue(grantId: string): Promise<void> {
@@ -1099,6 +1127,7 @@ async function insertAudit(
     singleManagerException: boolean;
     correlationId: string;
     occurredAt: Date;
+    outcome?: "SUCCEEDED" | "DENIED" | "STOPPED_AFTER_REVOCATION";
   },
 ) {
   const audit = platformAccessAuditEntryContract.parse({
@@ -1110,7 +1139,7 @@ async function insertAudit(
     ...(entry.scope ? { scope: entry.scope } : {}),
     reasonCode: entry.reasonCode,
     reason: entry.reason,
-    outcome: "SUCCEEDED",
+    outcome: entry.outcome ?? "SUCCEEDED",
     singleManagerException: entry.singleManagerException,
     correlationId: entry.correlationId,
     occurredAt: entry.occurredAt.toISOString(),
@@ -1125,6 +1154,14 @@ async function insertAudit(
        ${audit.reasonCode}, ${audit.reason}, ${audit.outcome},
        ${audit.singleManagerException}, ${audit.correlationId}, ${audit.occurredAt})
   `;
+}
+
+function sensitiveAuditAction(
+  action: PlatformSensitiveAction["action"],
+): "SENSITIVE_FIELD_REVEALED" | "SENSITIVE_CHANGE_ATTEMPTED" {
+  return action === "REVEAL_MINIMUM"
+    ? "SENSITIVE_FIELD_REVEALED"
+    : "SENSITIVE_CHANGE_ATTEMPTED";
 }
 
 async function beginIdempotentCommand(

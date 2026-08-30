@@ -16,6 +16,9 @@
   ۶۰ دقیقه محدود است.
 - adapter تراکنشی opaque، مسئولیت و grant را در transaction تغییر حساس دوباره
   می‌سنجد و آشکارسازی را بدون کپی مقدار حساس در audit ثبت می‌کند.
+- رد استفاده حساس نیز بیرون از transaction مصرف‌کننده با نتیجه `DENIED` یا
+  `STOPPED_AFTER_REVOCATION` ماندگار می‌شود؛ بنابراین rollback عملیات یا لغو هم‌زمان
+  سابقه تلاش را پاک نمی‌کند و mutation پس از لغو اجرا نمی‌شود.
 - commandهای پیاده‌شده با actor، operation و `Idempotency-Key` یکتا هستند؛ replay
   همان پاسخ را می‌دهد و payload متفاوت conflict است.
 
@@ -38,6 +41,9 @@ idempotency و audit append-only را اضافه می‌کند. جدول موج�
 - `docker compose up --build --wait` imageهای migrate، API، وب و worker را از نو
   ساخت، migrationها را روی PostgreSQL خالی اعمال کرد و سلامت PostgreSQL، MinIO، API،
   وب و worker را تأیید کرد.
+- integration test رقابت چندمدیر میان تأیید و لغو و رقابت تک‌مدیر میان استفاده حساس
+  و لغو را با قفل واقعی PostgreSQL می‌آزماید؛ در هر دو مسیر لغو اختیار زنده را باقی
+  نمی‌گذارد.
 
 پورت‌های موقت فقط برای جلوگیری از تداخل با محیط توسعه فعال استفاده و پس از بررسی
 پاک شدند؛ قرارداد پورت یا متغیر محیطی محصول تغییر نکرد.
