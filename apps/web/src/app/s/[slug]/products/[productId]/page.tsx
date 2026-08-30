@@ -1,18 +1,11 @@
-import {
-  publicProductContract,
-  publicSimpleProductContract,
-  type PublicProduct,
-  type PublicSimpleProduct,
-} from "@sevo/contracts/product/v1";
-import { publicStoreContract } from "@sevo/contracts/store/v1";
+import type { PublicProduct, PublicSimpleProduct } from "@sevo/contracts/product/v1";
 import { notFound } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
 import { newProductConversationHref } from "../../../../../lib/conversation-navigation";
+import { readPublicProductPage } from "../../../../../lib/public-product-page";
 import { AddToCart } from "./add-to-cart";
 import styles from "./product-public.module.css";
-
-const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
 
 export default async function PublicProductPage({
   params,
@@ -20,7 +13,7 @@ export default async function PublicProductPage({
   params: Promise<{ slug: string; productId: string }>;
 }) {
   const { slug, productId } = await params;
-  const result = await readProductPage(slug, productId);
+  const result = await readPublicProductPage(slug, productId);
   if (result.state === "not-found") notFound();
   if (result.state === "error")
     return <ProductPageError retryHref={`/s/${slug}/products/${productId}`} />;
@@ -79,7 +72,6 @@ export default async function PublicProductPage({
               ))}
             </ul>
           ) : null}
-          <AddToCart variants={cartVariants(product)} />
           <section className={styles.purchaseTerms} aria-labelledby="store-title">
             <span id="store-title">فروشگاه</span>
             <strong>{store.name}</strong>
@@ -90,7 +82,9 @@ export default async function PublicProductPage({
               .filter((method) => method.enabled)
               .map((method) => (
                 <p key={method.id}>
-                  <strong>{method.label}</strong> — {method.estimatedDeliveryText}
+                  <strong>{method.label}</strong> —{" "}
+                  {formatIrrAsToman(method.fixedFee.amount)}،{" "}
+                  {method.estimatedDeliveryText}
                 </p>
               ))}
           </section>
@@ -109,6 +103,7 @@ export default async function PublicProductPage({
             <strong>{store.returnPolicy}</strong>
             <p>این سیاست را فروشنده اعلام کرده است.</p>
           </section>
+          <AddToCart variants={cartVariants(product)} />
           <p className={styles.payment}>
             روش پرداخت پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
@@ -117,43 +112,6 @@ export default async function PublicProductPage({
       </article>
     </main>
   );
-}
-
-async function readProductPage(slug: string, productId: string) {
-  try {
-    const encodedSlug = encodeURIComponent(slug);
-    const [productResponse, storeResponse] = await Promise.all([
-      fetch(
-        `${API_BASE_URL}/v1/stores/${encodedSlug}/products/${encodeURIComponent(productId)}`,
-        {
-          cache: "no-store",
-          headers: { "x-correlation-id": crypto.randomUUID() },
-        },
-      ),
-      fetch(`${API_BASE_URL}/v1/stores/${encodedSlug}`, {
-        cache: "no-store",
-        headers: { "x-correlation-id": crypto.randomUUID() },
-      }),
-    ]);
-    if (productResponse.status === 404 || storeResponse.status === 404) {
-      return { state: "not-found" } as const;
-    }
-    if (!productResponse.ok || !storeResponse.ok) return { state: "error" } as const;
-    const body: unknown = await productResponse.json();
-    const multivariant = publicProductContract.safeParse(body);
-    const simple = publicSimpleProductContract.safeParse(body);
-    const store = publicStoreContract.safeParse(await storeResponse.json());
-    if ((!multivariant.success && !simple.success) || !store.success) {
-      return { state: "error" } as const;
-    }
-    return {
-      state: "ready" as const,
-      product: multivariant.success ? multivariant.data : simple.data!,
-      store: store.data,
-    };
-  } catch {
-    return { state: "error" } as const;
-  }
 }
 
 function productImages(product: PublicProduct | PublicSimpleProduct) {

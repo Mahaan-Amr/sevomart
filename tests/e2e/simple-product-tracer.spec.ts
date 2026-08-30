@@ -374,6 +374,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
   await expect(page.getByText("خانه فنجان", { exact: true })).toBeVisible();
   await expect(page.getByText("پست پیشتاز", { exact: true })).toBeVisible();
+  await expect(page.getByText("۰ تومان", { exact: true })).toBeVisible();
   await expect(
     page.getByText("زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود."),
   ).toBeVisible();
@@ -383,14 +384,30 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     ),
   ).toBeVisible();
   const variantSelector = page.getByLabel("گونه", { exact: true });
+  const addButton = page.getByRole("button", { name: "گونه را انتخاب کنید" });
+  const selectedOffer = page
+    .getByText("برای دیدن قیمت و موجودی، گونه را انتخاب کنید.")
+    .locator("..");
+  await expect(selectedOffer).toHaveAttribute("aria-live", "polite");
+  const addButtonHandle = await addButton.elementHandle();
+  if (!addButtonHandle) throw new Error("The add-to-cart action must be rendered");
+  for (const termsId of ["store-title", "shipping-title", "returns-title"]) {
+    expect(
+      await page.locator(`#${termsId}`).evaluate((terms, button) => {
+        return Boolean(
+          terms.compareDocumentPosition(button as Node) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }, addButtonHandle),
+    ).toBe(true);
+  }
   await expect(variantSelector).toHaveValue("");
-  await expect(
-    page.getByRole("button", { name: "گونه را انتخاب کنید" }),
-  ).toBeDisabled();
+  await expect(addButton).toBeDisabled();
   await expect(page.getByLabel("تعداد")).toBeDisabled();
   await variantSelector.focus();
   await expect(variantSelector).toBeFocused();
   await variantSelector.selectOption({ label: "قرمز، بزرگ — ناموجود" });
+  await expect(selectedOffer).toContainText("قیمت گونه انتخاب‌شده");
   await expect(page.getByText("۴۶۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await expect(page.getByText("ناموجود", { exact: true }).last()).toBeVisible();
   await expect(page.getByLabel("تعداد")).toBeDisabled();

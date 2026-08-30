@@ -99,17 +99,19 @@ export function AddToCart({
     <div className={styles.cartAction}>
       {variants.length > 1 ? (
         <>
-          {selectedVariant ? (
-            <div className={styles.selectedOffer} aria-live="polite">
-              <span>قیمت گونه انتخاب‌شده</span>
-              <strong>{selectedVariant.priceLabel}</strong>
-              <span>{selectedVariant.available ? "موجود" : "ناموجود"}</span>
-            </div>
-          ) : (
-            <p className={styles.selectionHint}>
-              برای دیدن قیمت و موجودی، گونه را انتخاب کنید.
-            </p>
-          )}
+          <div className={styles.selectedOffer} aria-live="polite">
+            {selectedVariant ? (
+              <>
+                <span>قیمت گونه انتخاب‌شده</span>
+                <strong>{selectedVariant.priceLabel}</strong>
+                <span>{selectedVariant.available ? "موجود" : "ناموجود"}</span>
+              </>
+            ) : (
+              <span className={styles.selectionHint}>
+                برای دیدن قیمت و موجودی، گونه را انتخاب کنید.
+              </span>
+            )}
+          </div>
           <label htmlFor="cart-variant">گونه</label>
           <select
             id="cart-variant"
