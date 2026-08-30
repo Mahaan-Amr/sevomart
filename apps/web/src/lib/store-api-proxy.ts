@@ -8,6 +8,7 @@ export async function proxyStoreRequest(
     return Response.json({ message: "مسیر درخواست معتبر نیست." }, { status: 404 });
   }
   const path = `/v1/${segments.map(encodeURIComponent).join("/")}`;
+  const search = allowedSearch(request, segments);
   try {
     const headers = new Headers({
       cookie: request.headers.get("cookie") ?? "",
@@ -21,7 +22,7 @@ export async function proxyStoreRequest(
       if (value) headers.set(name, value);
     }
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
-    const upstream = await fetch(`${API_BASE_URL}${path}`, {
+    const upstream = await fetch(`${API_BASE_URL}${path}${search}`, {
       method: request.method,
       headers,
       body: hasBody ? await request.arrayBuffer() : undefined,
@@ -48,6 +49,18 @@ export async function proxyStoreRequest(
       { status: 503 },
     );
   }
+}
+
+function allowedSearch(request: Request, segments: readonly string[]) {
+  if (segments.join("/") !== "seller/products") return "";
+  const source = new URL(request.url).searchParams;
+  const forwarded = new URLSearchParams();
+  for (const name of ["cursor", "limit", "state"]) {
+    const value = source.get(name);
+    if (value !== null) forwarded.set(name, value);
+  }
+  const query = forwarded.toString();
+  return query ? `?${query}` : "";
 }
 
 function isAllowedPath(segments: readonly string[]) {

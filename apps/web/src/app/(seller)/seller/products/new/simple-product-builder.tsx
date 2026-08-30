@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
 import styles from "./simple-product-builder.module.css";
+import { axisValueErrorId, domIdPart } from "./product-builder-dom";
 
 type Step = "details" | "images" | "sale" | "review" | "published" | "unpublished";
 type AxisValue = { clientKey: string; name: string };
@@ -35,7 +36,12 @@ type SaleRow = {
   onHand: string;
   inventoryRevision: number;
 };
-type ImageDraft = { key: string; mediaId?: MediaId; file?: File };
+type ImageDraft = {
+  key: string;
+  mediaId?: MediaId;
+  file?: File;
+  uploadKey?: string;
+};
 type IdempotentRequest = { payload: string; key: string };
 type RequestRef = { current: IdempotentRequest | undefined };
 type ProductIssue = { path: string; code: string };
@@ -196,22 +202,24 @@ export function SimpleProductBuilder({
   }
 
   async function saveWorkingCopy(
-    options: { uploadImage?: boolean; applyLiveSale?: boolean } = {},
+    options: {
+      uploadImage?: boolean;
+      applyLiveSale?: boolean;
+    } = {},
   ) {
     const desiredRows = saleRows;
     let effectiveImages = images;
     if (options.uploadImage && images.some((entry) => entry.file)) {
-      effectiveImages = await Promise.all(
-        images.map(async (entry) =>
-          entry.file
-            ? {
-                key: entry.key,
-                mediaId: await uploadProductImage(productId, entry.file),
-              }
-            : entry,
-        ),
-      );
-      setImages(effectiveImages);
+      effectiveImages = [...images];
+      for (const [index, entry] of effectiveImages.entries()) {
+        if (!entry.file) continue;
+        const uploadKey = entry.uploadKey ?? crypto.randomUUID();
+        effectiveImages[index] = { ...entry, uploadKey };
+        setImages([...effectiveImages]);
+        const mediaId = await uploadProductImage(productId, entry.file, uploadKey);
+        effectiveImages[index] = { key: entry.key, mediaId };
+        setImages([...effectiveImages]);
+      }
     }
     const currentVariants = buildVariants(kind === "simple" ? [] : axes);
     const payload = {
@@ -262,6 +270,7 @@ export function SimpleProductBuilder({
     }
     if (productState === "DRAFT" || !options.applyLiveSale) {
       hydrate(parsed.data);
+      if (productState !== "DRAFT") setSaleRows(desiredRows);
       return parsed.data;
     }
     return saveLiveSaleBatches(parsed.data, desiredRows);
@@ -400,10 +409,10 @@ export function SimpleProductBuilder({
   }
 
   async function backTo(next: Step) {
+    if (!validateDraftExit()) return;
     await runPending(async () => {
       await saveWorkingCopy({
         uploadImage: step === "images" && images.some((entry) => entry.file),
-        applyLiveSale: step === "sale",
       });
       setStep(next);
     });
@@ -455,10 +464,56 @@ export function SimpleProductBuilder({
   }
 
   async function saveAndExit() {
+    if (!validateDraftExit()) return;
+    await runPending(async () => {
+      await saveWorkingCopy({
+        uploadImage: images.some((entry) => entry.file),
+        applyLiveSale: step === "sale",
+      });
+      window.location.assign("/seller/products");
+    });
+  }
+
+  async function saveDraftAndExit() {
+    if (!validateDraftExit()) return;
+    if (
+      step === "sale" &&
+      productState !== "DRAFT" &&
+      !window.confirm(
+        "تغییرهای قیمت و موجودی اعمال نمی‌شوند. بدون اعمال فروش خارج می‌شوید؟",
+      )
+    ) {
+      return;
+    }
     await runPending(async () => {
       await saveWorkingCopy({ uploadImage: images.some((entry) => entry.file) });
       window.location.assign("/seller/products");
     });
+  }
+
+  function validateDraftExit() {
+    if (name.trim().length === 1) {
+      setShowDetailsErrors(true);
+      setStep("details");
+      setMessage("نام کالا را کامل کنید.");
+      return false;
+    }
+    if (step !== "sale") return true;
+    const hasInvalidRow = variants.some((variant) => {
+      const row = saleRows[variant.clientKey];
+      const price = row?.priceToman ?? "";
+      const stock = row?.onHand ?? "";
+      return (
+        (price.length > 0 && !tomanToMoney(price)) ||
+        (stock.length > 0 && saleStockError(stock, true).length > 0)
+      );
+    });
+    if ((kind === "multi" && !validAxes(axes)) || hasInvalidRow) {
+      setShowSaleErrors(true);
+      setMessage("مقدارهای مشخص‌شده را پیش از خروج بررسی کنید.");
+      return false;
+    }
+    return true;
   }
 
   async function runPending(action: () => Promise<void>) {
@@ -541,9 +596,16 @@ export function SimpleProductBuilder({
     <main className={styles.page}>
       <section className={styles.workspace} aria-live="polite">
         <header className={styles.header}>
-          <Link className={styles.textButton} href="/seller/products">
-            بازگشت به کالاها
-          </Link>
+          <button
+            type="button"
+            className={styles.textButton}
+            disabled={pending}
+            onClick={saveDraftAndExit}
+          >
+            {step === "sale" && productState !== "DRAFT"
+              ? "خروج بدون اعمال فروش"
+              : "بازگشت به کالاها"}
+          </button>
           <span className={styles.progress}>{stepLabel(step)} از ۴</span>
           <button
             type="button"
@@ -551,7 +613,9 @@ export function SimpleProductBuilder({
             disabled={pending}
             onClick={saveAndExit}
           >
-            ذخیره و خروج
+            {step === "sale" && productState !== "DRAFT"
+              ? "اعمال فروش و خروج"
+              : "ذخیره و خروج"}
           </button>
         </header>
         {step === "details" ? (
@@ -742,6 +806,7 @@ function ImageStep(props: {
             const selected = Array.from(event.target.files ?? []).map((file) => ({
               key: crypto.randomUUID(),
               file,
+              uploadKey: crypto.randomUUID(),
             }));
             props.onImages([...props.images, ...selected]);
             event.target.value = "";
@@ -865,6 +930,11 @@ function VariantFields(props: {
                   aria-invalid={Boolean(
                     axisError(props.axes, axisIndex, props.showErrors),
                   )}
+                  aria-describedby={
+                    axisError(props.axes, axisIndex, props.showErrors)
+                      ? `axis-name-error-${domIdPart(axis.clientKey)}`
+                      : undefined
+                  }
                   onChange={(event) =>
                     props.onAxes(
                       updateAxis(props.axes, axisIndex, {
@@ -876,7 +946,10 @@ function VariantFields(props: {
                   placeholder="مثلاً رنگ"
                 />
                 {axisError(props.axes, axisIndex, props.showErrors) ? (
-                  <small className={styles.fieldError}>
+                  <small
+                    className={styles.fieldError}
+                    id={`axis-name-error-${domIdPart(axis.clientKey)}`}
+                  >
                     {axisError(props.axes, axisIndex, props.showErrors)}
                   </small>
                 ) : null}
@@ -891,6 +964,11 @@ function VariantFields(props: {
                       aria-invalid={Boolean(
                         axisValueError(axis, valueIndex, props.showErrors),
                       )}
+                      aria-describedby={
+                        axisValueError(axis, valueIndex, props.showErrors)
+                          ? axisValueErrorId(axis.clientKey, value.clientKey)
+                          : undefined
+                      }
                       onChange={(event) => {
                         const values = axis.values.map((candidate, index) =>
                           index === valueIndex
@@ -904,7 +982,10 @@ function VariantFields(props: {
                       placeholder="مثلاً زرشکی"
                     />
                     {axisValueError(axis, valueIndex, props.showErrors) ? (
-                      <small className={styles.fieldError}>
+                      <small
+                        className={styles.fieldError}
+                        id={axisValueErrorId(axis.clientKey, value.clientKey)}
+                      >
                         {axisValueError(axis, valueIndex, props.showErrors)}
                       </small>
                     ) : null}
@@ -998,6 +1079,11 @@ function SaleStep(props: {
           با ادامه، قیمت و موجودی تازه همان لحظه برای خریدار اعمال می‌شود؛ انتشار
           تغییرهای متن و تصویر جداگانه تأیید خواهد شد.
         </p>
+      ) : props.productState === "UNPUBLISHED" ? (
+        <p className={styles.liveChangeNotice}>
+          قیمت و موجودی تازه اکنون ذخیره می‌شود و فقط پس از انتشار دوباره برای خریدار
+          دیده خواهد شد.
+        </p>
       ) : null}
       <VariantFields
         kind={props.kind}
@@ -1033,10 +1119,18 @@ function SaleStep(props: {
                   inputMode="numeric"
                   value={row.priceToman}
                   aria-invalid={Boolean(priceError || producerPriceError)}
+                  aria-describedby={
+                    priceError || producerPriceError
+                      ? `sale-price-error-${domIdPart(variant.clientKey)}`
+                      : undefined
+                  }
                   onChange={(event) => update({ priceToman: event.target.value })}
                 />
                 {priceError || producerPriceError ? (
-                  <small className={styles.fieldError}>
+                  <small
+                    className={styles.fieldError}
+                    id={`sale-price-error-${domIdPart(variant.clientKey)}`}
+                  >
                     {priceError || producerPriceError}
                   </small>
                 ) : null}
@@ -1047,10 +1141,20 @@ function SaleStep(props: {
                   aria-label={`شناسه فروشنده ${label}`}
                   value={row.sku}
                   aria-invalid={Boolean(producerSkuError)}
+                  aria-describedby={
+                    producerSkuError
+                      ? `sale-sku-error-${domIdPart(variant.clientKey)}`
+                      : undefined
+                  }
                   onChange={(event) => update({ sku: event.target.value })}
                 />
                 {producerSkuError ? (
-                  <small className={styles.fieldError}>{producerSkuError}</small>
+                  <small
+                    className={styles.fieldError}
+                    id={`sale-sku-error-${domIdPart(variant.clientKey)}`}
+                  >
+                    {producerSkuError}
+                  </small>
                 ) : null}
               </label>
               <label className={styles.field}>
@@ -1060,10 +1164,18 @@ function SaleStep(props: {
                   inputMode="numeric"
                   value={row.onHand}
                   aria-invalid={Boolean(stockError || producerStockError)}
+                  aria-describedby={
+                    stockError || producerStockError
+                      ? `sale-stock-error-${domIdPart(variant.clientKey)}`
+                      : undefined
+                  }
                   onChange={(event) => update({ onHand: event.target.value })}
                 />
                 {stockError || producerStockError ? (
-                  <small className={styles.fieldError}>
+                  <small
+                    className={styles.fieldError}
+                    id={`sale-stock-error-${domIdPart(variant.clientKey)}`}
+                  >
                     {stockError || producerStockError}
                   </small>
                 ) : null}
@@ -1088,7 +1200,7 @@ function SaleStep(props: {
         >
           {props.pending
             ? "در حال ذخیره…"
-            : props.productState === "PUBLISHED"
+            : props.productState !== "DRAFT"
               ? "اعمال فروش و دیدن پیش‌نمایش"
               : "دیدن پیش‌نمایش"}
         </button>
@@ -1313,7 +1425,11 @@ function formatPriceRange(product: PublicProduct) {
     : `از ${formatIrrAsToman(product.priceRange.minimum.amount)} تا ${formatIrrAsToman(product.priceRange.maximum.amount)}`;
 }
 
-async function uploadProductImage(productId: string, file: File): Promise<MediaId> {
+async function uploadProductImage(
+  productId: string,
+  file: File,
+  uploadKey: string,
+): Promise<MediaId> {
   if (file.size > MEDIA_UPLOAD_MAX_BYTES)
     throw new Error("حجم تصویر باید حداکثر ۱۰ مگابایت باشد.");
   if (!(MEDIA_UPLOAD_ACCEPTED_TYPES as readonly string[]).includes(file.type))
@@ -1325,7 +1441,7 @@ async function uploadProductImage(productId: string, file: File): Promise<MediaI
     `/api/store/seller/products/${productId}/images`,
     {
       method: "POST",
-      headers: { "idempotency-key": crypto.randomUUID() },
+      headers: { "idempotency-key": uploadKey },
       body: form,
     },
   );

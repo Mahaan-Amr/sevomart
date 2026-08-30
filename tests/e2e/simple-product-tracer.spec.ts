@@ -80,16 +80,19 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("link", { name: "ادامه کار" }).click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
-  const backToProducts = page.getByRole("link", { name: "بازگشت به کالاها" });
-  await expect(backToProducts).toHaveAttribute("href", "/seller/products");
-  await backToProducts.click();
-  await expect(page).toHaveURL(/\/seller\/products$/);
-  await page.getByRole("link", { name: "ساخت کالای تازه" }).click();
-  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
   await page.getByLabel("نام کالا").fill("فنجان سرامیکی");
   await page
     .getByLabel("توضیح کالا")
     .fill("فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه");
+  const backToProducts = page.getByRole("button", { name: "بازگشت به کالاها" });
+  await backToProducts.click();
+  await expect(page).toHaveURL(/\/seller\/products$/);
+  await page.getByRole("link", { name: "ساخت کالای تازه" }).click();
+  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await expect(page.getByLabel("توضیح کالا")).toHaveValue(
+    "فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه",
+  );
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(page).toHaveURL(/\/seller\/products$/);
   await page.getByRole("link", { name: "ساخت کالای تازه" }).click();
@@ -105,13 +108,24 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     .png()
     .toBuffer();
   const imageUploadKeys: string[] = [];
-  let rejectedImageUpload = false;
+  let firstUploadKey = "";
+  let exhaustedUploadKey = "";
+  let exhaustedAttempts = 0;
   await page.route("**/api/store/seller/products/*/images", async (route) => {
-    imageUploadKeys.push(route.request().headers()["idempotency-key"] ?? "");
-    if (!rejectedImageUpload) {
-      rejectedImageUpload = true;
+    const key = route.request().headers()["idempotency-key"] ?? "";
+    imageUploadKeys.push(key);
+    if (!firstUploadKey) {
+      firstUploadKey = key;
       await route.abort("timedout");
       return;
+    }
+    if (key !== firstUploadKey) {
+      exhaustedUploadKey ||= key;
+      if (key === exhaustedUploadKey && exhaustedAttempts < 3) {
+        exhaustedAttempts += 1;
+        await route.abort("timedout");
+        return;
+      }
     }
     await route.continue();
   });
@@ -123,12 +137,18 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("button", { name: "انتقال تصویر 2 به ابتدا" }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(
+    page.getByText("پاسخ سرور به‌موقع نرسید. دوباره تلاش کنید."),
+  ).toBeVisible();
+  expect(imageUploadKeys.filter((key) => key === firstUploadKey)).toHaveLength(2);
+  expect(imageUploadKeys.filter((key) => key === exhaustedUploadKey)).toHaveLength(3);
+  await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
   const uploadAttemptsByKey = new Map<string, number>();
   for (const key of imageUploadKeys) {
     uploadAttemptsByKey.set(key, (uploadAttemptsByKey.get(key) ?? 0) + 1);
   }
-  expect([...uploadAttemptsByKey.values()].sort()).toEqual([1, 2]);
+  expect([...uploadAttemptsByKey.values()].sort()).toEqual([2, 4]);
   expect([...uploadAttemptsByKey.keys()].every(Boolean)).toBe(true);
   await page.reload();
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
@@ -167,8 +187,9 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
 
   await page.getByLabel("قیمت قرمز، کوچک").fill("450000");
   await page.getByLabel("موجودی قرمز، کوچک").fill("-1");
-  await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  await page.getByRole("button", { name: "برگشت", exact: true }).click();
   await expect(page.getByText("موجودی باید عدد صحیح و نامنفی باشد.")).toBeVisible();
+  await expect(page.getByLabel("موجودی قرمز، کوچک")).toHaveValue("-1");
   await page.getByLabel("موجودی قرمز، کوچک").fill("8");
   await page.getByLabel("قیمت قرمز، بزرگ").fill("460000");
   await page.getByLabel("موجودی قرمز، بزرگ").fill("0");
@@ -219,6 +240,29 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("link", { name: "ویرایش کالا" }).click();
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
   await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  const publishedProductId = new URL(page.url()).pathname.split("/").at(-2) ?? "";
+  await page.getByLabel("قیمت قرمز، کوچک").fill("456000");
+  await page.getByRole("button", { name: "برگشت", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "تصویرهای کالا" })).toBeVisible();
+  await expect(
+    readPublicVariantAmount(page, e2eApiUrl, slug, publishedProductId, [
+      "قرمز",
+      "کوچک",
+    ]),
+  ).resolves.toBe(4_550_000);
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByLabel("قیمت قرمز، کوچک")).toHaveValue("456000");
+  await page.getByRole("button", { name: "اعمال فروش و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/products$/);
+  await expect(
+    readPublicVariantAmount(page, e2eApiUrl, slug, publishedProductId, [
+      "قرمز",
+      "کوچک",
+    ]),
+  ).resolves.toBe(4_560_000);
+  await page.getByRole("link", { name: "ویرایش فنجان سرامیکی" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
   let offersSaved = 0;
@@ -284,6 +328,17 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   expect(new Set(unpublicationKeys).size).toBe(1);
 
   const productId = new URL(page.url()).pathname.split("/").at(-2) ?? "";
+  await page.getByRole("button", { name: "ادامه ویرایش" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(
+    page.getByText(
+      "قیمت و موجودی تازه اکنون ذخیره می‌شود و فقط پس از انتشار دوباره برای خریدار دیده خواهد شد.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "اعمال فروش و دیدن پیش‌نمایش" }),
+  ).toBeVisible();
   const unpublishedResponse = await page.request.get(
     `${e2eApiUrl}/v1/stores/${slug}/products/${productId}`,
   );
@@ -310,7 +365,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("button", { name: "انتشار دوباره" }).click();
   await page.getByRole("link", { name: "دیدن کالا در فروشگاه" }).click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
-  await expect(page.getByText("از ۴۵۵٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("از ۴۵۶٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
   await expect(page.getByText("قرمز، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
   await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
@@ -343,3 +398,28 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.locator("img")).toHaveJSProperty("complete", true);
   await assertNoHorizontalOverflow(page);
 });
+
+async function readPublicVariantAmount(
+  page: import("@playwright/test").Page,
+  apiUrl: string,
+  slug: string,
+  productId: string,
+  values: string[],
+) {
+  const response = await page.request.get(
+    `${apiUrl}/v1/stores/${slug}/products/${productId}`,
+  );
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as {
+    variants: Array<{
+      combination: Array<{ value: string }>;
+      price: { amount: number };
+    }>;
+  };
+  const variant = body.variants.find(
+    (candidate) =>
+      candidate.combination.map((part) => part.value).join("|") === values.join("|"),
+  );
+  if (!variant) throw new Error(`Public variant ${values.join(", ")} was not found`);
+  return variant.price.amount;
+}
