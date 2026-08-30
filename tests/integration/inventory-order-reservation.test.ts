@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkoutPreparationContract,
   directSettlementDisclosure,
+  orderItemIdContract,
 } from "@sevo/contracts/orders/v1";
 
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
@@ -618,9 +619,7 @@ describe("inventory reservation transaction seam", () => {
       select id from order_items where order_id = ${winner.value.orderId}
     `;
     expect(createdItems).toHaveLength(1);
-    expect(createdItems[0]?.id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
+    expect(orderItemIdContract.safeParse(createdItems[0]?.id).success).toBe(true);
     await expect(
       sql`
         insert into order_items
