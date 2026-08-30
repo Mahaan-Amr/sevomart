@@ -365,16 +365,29 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("button", { name: "انتشار دوباره" }).click();
   await page.getByRole("link", { name: "دیدن کالا در فروشگاه" }).click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
-  await expect(page.getByText("از ۴۵۶٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("از ۴۵۶٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toHaveCount(0);
+  await expect(page.getByText("رنگ", { exact: true })).toBeVisible();
+  await expect(page.getByText("قرمز، آبی", { exact: true })).toBeVisible();
+  await expect(page.getByText("اندازه", { exact: true })).toBeVisible();
+  await expect(page.getByText("کوچک، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText("قرمز، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
-  await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("خانه فنجان", { exact: true })).toBeVisible();
+  await expect(page.getByText("پست پیشتاز", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود."),
+  ).toBeVisible();
   await expect(
     page.getByText(
       "تا هفت روز پس از تحویل می‌توانید برای کالای استفاده‌نشده درخواست مرجوعی ثبت کنید؛ کالا باید با بسته‌بندی و متعلقات کامل بازگردانده شود.",
     ),
   ).toBeVisible();
   const variantSelector = page.getByLabel("گونه", { exact: true });
+  await expect(variantSelector).toHaveValue("");
+  await expect(
+    page.getByRole("button", { name: "گونه را انتخاب کنید" }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("تعداد")).toBeDisabled();
   await variantSelector.focus();
   await expect(variantSelector).toBeFocused();
   await variantSelector.selectOption({ label: "قرمز، بزرگ — ناموجود" });

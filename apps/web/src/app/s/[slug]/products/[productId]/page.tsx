@@ -21,8 +21,11 @@ export default async function PublicProductPage({
 }) {
   const { slug, productId } = await params;
   const result = await readProductPage(slug, productId);
-  if (!result) notFound();
-  const { product, returnPolicy } = result;
+  if (result.state === "not-found") notFound();
+  if (result.state === "error")
+    return <ProductPageError retryHref={`/s/${slug}/products/${productId}`} />;
+  const { product, store } = result;
+  const multivariant = "variants" in product && product.variants.length > 1;
 
   return (
     <main className={styles.page}>
@@ -30,18 +33,37 @@ export default async function PublicProductPage({
         <a className={styles.back} href={`/s/${slug}`}>
           بازگشت به فروشگاه
         </a>
-        <img
-          className={styles.image}
-          src={`/api/store/media/${productImageId(product)}`}
-          alt={product.name}
-        />
+        <div className={styles.gallery} aria-label="تصویرهای کالا">
+          {productImages(product).map((image, index) => (
+            <img
+              className={styles.image}
+              src={`/api/store/media/${image.id}`}
+              alt={index === 0 ? product.name : `${product.name}، تصویر ${index + 1}`}
+              key={image.id}
+            />
+          ))}
+        </div>
         <section className={styles.details}>
           <h1>{product.name}</h1>
           <p>{product.description}</p>
-          <strong>{formatProductPrice(product)}</strong>
-          <span className={styles.availability}>
-            {product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
-          </span>
+          {!multivariant ? (
+            <>
+              <strong>{formatProductPrice(product)}</strong>
+              <span className={styles.availability}>
+                {product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
+              </span>
+            </>
+          ) : null}
+          {"axes" in product && product.axes.length > 0 ? (
+            <dl className={styles.axes} aria-label="ویژگی‌های کالا">
+              {product.axes.map((axis) => (
+                <div key={axis.name}>
+                  <dt>{axis.name}</dt>
+                  <dd>{axis.values.join("، ")}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
           {"variants" in product && product.variants.length > 1 ? (
             <ul className={styles.variants} aria-label="گونه‌های کالا">
               {product.variants.map((variant) => (
@@ -58,6 +80,20 @@ export default async function PublicProductPage({
             </ul>
           ) : null}
           <AddToCart variants={cartVariants(product)} />
+          <section className={styles.purchaseTerms} aria-labelledby="store-title">
+            <span id="store-title">فروشگاه</span>
+            <strong>{store.name}</strong>
+          </section>
+          <section className={styles.purchaseTerms} aria-labelledby="shipping-title">
+            <span id="shipping-title">روش‌های ارسال</span>
+            {store.shippingMethods
+              .filter((method) => method.enabled)
+              .map((method) => (
+                <p key={method.id}>
+                  <strong>{method.label}</strong> — {method.estimatedDeliveryText}
+                </p>
+              ))}
+          </section>
           <a
             className={styles.conversation}
             href={newProductConversationHref(
@@ -70,7 +106,7 @@ export default async function PublicProductPage({
           </a>
           <section className={styles.purchaseTerms} aria-labelledby="returns-title">
             <span id="returns-title">شرایط مرجوعی</span>
-            <strong>{returnPolicy}</strong>
+            <strong>{store.returnPolicy}</strong>
             <p>این سیاست را فروشنده اعلام کرده است.</p>
           </section>
           <p className={styles.payment}>
@@ -99,25 +135,41 @@ async function readProductPage(slug: string, productId: string) {
         headers: { "x-correlation-id": crypto.randomUUID() },
       }),
     ]);
-    if (!productResponse.ok || !storeResponse.ok) return undefined;
+    if (productResponse.status === 404 || storeResponse.status === 404) {
+      return { state: "not-found" } as const;
+    }
+    if (!productResponse.ok || !storeResponse.ok) return { state: "error" } as const;
     const body: unknown = await productResponse.json();
     const multivariant = publicProductContract.safeParse(body);
     const simple = publicSimpleProductContract.safeParse(body);
     const store = publicStoreContract.safeParse(await storeResponse.json());
     if ((!multivariant.success && !simple.success) || !store.success) {
-      return undefined;
+      return { state: "error" } as const;
     }
     return {
+      state: "ready" as const,
       product: multivariant.success ? multivariant.data : simple.data!,
-      returnPolicy: store.data.returnPolicy,
+      store: store.data,
     };
   } catch {
-    return undefined;
+    return { state: "error" } as const;
   }
 }
 
-function productImageId(product: PublicProduct | PublicSimpleProduct) {
-  return "images" in product ? product.images[0]!.id : product.image.id;
+function productImages(product: PublicProduct | PublicSimpleProduct) {
+  return "images" in product ? product.images : [product.image];
+}
+
+function ProductPageError({ retryHref }: { retryHref: string }) {
+  return (
+    <main className={styles.page}>
+      <section className={styles.error} role="alert">
+        <h1>کالا فعلاً نمایش داده نمی‌شود</h1>
+        <p>ارتباط با سوو کامل نشد. چند لحظه دیگر دوباره تلاش کنید.</p>
+        <a href={retryHref}>تلاش دوباره</a>
+      </section>
+    </main>
+  );
 }
 
 function formatProductPrice(product: PublicProduct | PublicSimpleProduct) {
