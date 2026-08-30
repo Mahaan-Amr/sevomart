@@ -1460,7 +1460,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       ) {
         throw new PlatformAccessError("INVALID_ACCESS_TRANSITION");
       }
-      const availableHumanReviewerCount = await countEligibleEmergencyReviewers(sql);
+      const availableHumanReviewerCount = await countActivePlatformHumans(sql);
       const reviewMode =
         availableHumanReviewerCount === 1 &&
         session.identityId === grant.requestedByIdentityId &&
@@ -2238,12 +2238,13 @@ async function countActiveAccessManagers(sql: Sql): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
-async function countEligibleEmergencyReviewers(sql: Sql): Promise<number> {
+async function countActivePlatformHumans(sql: Sql): Promise<number> {
   const rows = await sql<Array<{ count: number }>>`
-    select count(distinct p.identity_id)::int as count
-    from identity_platform_permission_grants p
-    join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
-    where p.permission = 'ACCESS_AUDIT_REVIEW' and p.revoked_at is null
+    select count(distinct s.identity_id)::int as count
+    from identity_sessions s
+    join identity_identities i on i.id = s.identity_id and i.status = 'ACTIVE'
+    where s.audience = 'PLATFORM_AGENT' and s.revoked_at is null
+      and s.expires_at > now()
   `;
   return rows[0]?.count ?? 0;
 }

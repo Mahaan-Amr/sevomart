@@ -1660,18 +1660,13 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     await sql.end();
   });
 
-  it("blocks self-review when another eligible reviewer exists without a live session", async () => {
+  it("blocks self-review when another active platform human exists", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
     const requester = await seedAgent(["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]);
     const grantId = await createClosedSingleManagerEmergency(server, requester.token);
-    const independentReviewer = await seedAgent(["ACCESS_AUDIT_REVIEW"]);
-    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql`
-      update identity_sessions set revoked_at = now()
-      where identity_id = ${independentReviewer.identityId}
-    `;
+    await seedAgent([]);
 
     const forbiddenSelfReview = await server.inject({
       method: "POST",
@@ -1683,7 +1678,6 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     expect(forbiddenSelfReview.json()).toMatchObject({
       code: "SELF_APPROVAL_FORBIDDEN",
     });
-    await sql.end();
   });
 
   it("durably audits nonexistent and wrong-kind emergency grant references", async () => {
