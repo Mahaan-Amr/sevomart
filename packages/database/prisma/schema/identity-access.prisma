@@ -147,8 +147,9 @@ model PlatformAccessGrant {
   subjectIdentityId      String    @map("subject_identity_id") @db.Uuid
   requestedByIdentityId  String    @map("requested_by_identity_id") @db.Uuid
   approvedByIdentityId   String?   @map("approved_by_identity_id") @db.Uuid
-  responsibility         String    @db.VarChar(64)
+  responsibility         String?   @db.VarChar(64)
   purposeCode            String?   @map("purpose_code") @db.VarChar(48)
+  incidentId             String?   @map("incident_id") @db.VarChar(120)
   scope                   Json?     @db.JsonB
   status                  String    @db.VarChar(24)
   controlMode             String    @map("control_mode") @db.VarChar(32)
@@ -158,6 +159,12 @@ model PlatformAccessGrant {
   createdAt               DateTime  @map("created_at") @db.Timestamptz(3)
   activatedAt             DateTime? @map("activated_at") @db.Timestamptz(3)
   revokedAt               DateTime? @map("revoked_at") @db.Timestamptz(3)
+  reviewDueAt             DateTime? @map("review_due_at") @db.Timestamptz(3)
+  reviewedAt              DateTime? @map("reviewed_at") @db.Timestamptz(3)
+  reviewedByIdentityId    String?   @map("reviewed_by_identity_id") @db.Uuid
+  reviewMode              String?   @map("review_mode") @db.VarChar(48)
+  reviewFindingCode       String?   @map("review_finding_code") @db.VarChar(48)
+  rejectedAt              DateTime? @map("rejected_at") @db.Timestamptz(3)
 
   @@index([subjectIdentityId, status, createdAt])
   @@map("identity_platform_access_grants")
@@ -180,6 +187,8 @@ model PlatformAccessAudit {
   attemptedGrantId        String   @map("grant_id") @db.Uuid
   resolvedGrantId         String?  @map("resolved_grant_id") @db.Uuid
   attemptedResponsibility String?  @map("attempted_responsibility") @db.VarChar(64)
+  attemptedGrantKind      String?  @map("attempted_grant_kind") @db.VarChar(24)
+  attemptedIncidentId     String?  @map("attempted_incident_id") @db.VarChar(120)
   action                  String   @db.VarChar(48)
   actorIdentityId         String   @map("actor_identity_id") @db.Uuid
   subjectIdentityId       String?  @map("subject_identity_id") @db.Uuid
@@ -193,6 +202,21 @@ model PlatformAccessAudit {
 
   @@index([attemptedGrantId, occurredAt, id])
   @@map("identity_platform_access_audit")
+}
+
+model PlatformEmergencyAccessReview {
+  id                  String   @id @db.Uuid
+  grantId             String   @map("grant_id") @db.Uuid
+  reviewerIdentityId  String   @map("reviewer_identity_id") @db.Uuid
+  reviewMode          String   @map("review_mode") @db.VarChar(48)
+  findingCode         String   @map("finding_code") @db.VarChar(48)
+  reviewDueAt         DateTime @map("review_due_at") @db.Timestamptz(3)
+  reviewedAt          DateTime @map("reviewed_at") @db.Timestamptz(3)
+  supersedesReviewId  String?  @map("supersedes_review_id") @db.Uuid
+  correlationId       String   @map("correlation_id") @db.Uuid
+
+  @@index([grantId, reviewedAt, id])
+  @@map("identity_platform_emergency_access_reviews")
 }
 
 model SellerApplicationIdempotency {

@@ -143,6 +143,17 @@ change is additive for the published v1 audit page and needs no compatibility wi
 Docker and native startup continue to apply the same `prisma migrate deploy` history;
 their Issue 127 follow-up verification is recorded in the delivery note.
 
+Issue 128 additively extends the identity-access access aggregate with the incident,
+review deadline and immutable post-incident review facts needed for the emergency
+access lifecycle, plus the rejection timestamp and unresolved emergency-attempt facts.
+Post-incident review attempts are stored in a separate append-only history; a later
+independent review links to, rather than overwrites, a single-human review.
+Existing responsibility and sensitive grants remain unchanged. A rejected request
+keeps the approved state-machine vocabulary and is fenced by its separate timestamp;
+unresolved emergency audit rows keep the attempted kind and incident without a false
+grant foreign key. The migration needs no compatibility window and deployment
+corrections use a forward migration.
+
 Issue 186 additively gives every orders-owned `order_items` row a stable unique UUID
 and publishes the authoritative confirmed-purchase eligibility read for content.
 Existing rows are backfilled, new rows use a database default, and no cross-module
