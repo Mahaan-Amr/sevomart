@@ -17,6 +17,7 @@ import {
 test("seller publishes a two-axis product that a guest sees on the storefront", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(60_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = productTracerTestMobiles[projectIndex]!;
   const slug = `product-tracer-${projectIndex}`;
@@ -121,6 +122,12 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByText("۲ تصویر انتخاب شده است")).toBeVisible();
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
+  await page.getByLabel("قیمت گونه اصلی").fill("440000");
+  await page.getByLabel("موجودی گونه اصلی").fill("3");
+  await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  await expect(page.getByRole("heading", { name: "پیش‌نمایش کالا" })).toBeVisible();
+  await expect(page.getByText("۴۴۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "برگشت و ویرایش" }).click();
   await page.getByRole("radio", { name: "چندگونه" }).click();
   await page.getByLabel("نام محور 1").fill("رنگ");
   await page.getByRole("textbox", { name: "مقدار 1 محور 1", exact: true }).fill("قرمز");
@@ -204,9 +211,9 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     await route.continue();
   });
   await page.getByRole("button", { name: "اعمال فروش و دیدن پیش‌نمایش" }).click();
-  expect(offersSaved).toBe(1);
-  expect(inventorySaved).toBe(1);
   await expect(page.getByRole("button", { name: "توقف انتشار" })).toBeVisible();
+  await expect.poll(() => offersSaved).toBe(1);
+  await expect.poll(() => inventorySaved).toBe(1);
   const unpublicationKeys: string[] = [];
   let interruptedUnpublication = false;
   await page.route("**/api/store/seller/products/*/unpublication", async (route) => {

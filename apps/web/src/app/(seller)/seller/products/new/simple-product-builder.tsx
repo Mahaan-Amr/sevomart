@@ -195,7 +195,9 @@ export function SimpleProductBuilder({
     );
   }
 
-  async function saveWorkingCopy(options: { uploadImage?: boolean } = {}) {
+  async function saveWorkingCopy(
+    options: { uploadImage?: boolean; applyLiveSale?: boolean } = {},
+  ) {
     const desiredRows = saleRows;
     let effectiveImages = images;
     if (options.uploadImage && images.some((entry) => entry.file)) {
@@ -257,7 +259,7 @@ export function SimpleProductBuilder({
     if (!response.ok || !parsed.success) {
       throw new Error(humanError(body, "ذخیره پیش‌نویس انجام نشد."));
     }
-    if (productState === "DRAFT") {
+    if (productState === "DRAFT" || !options.applyLiveSale) {
       hydrate(parsed.data);
       return parsed.data;
     }
@@ -371,7 +373,7 @@ export function SimpleProductBuilder({
       }
     }
     await runPending(async () => {
-      await saveWorkingCopy();
+      await saveWorkingCopy({ applyLiveSale: true });
       const response = await fetchWithRetry(
         `/api/store/seller/products/${productId}/preview`,
         { cache: "no-store" },
