@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 import { createPostgresDemoSeedDatabase } from "../demo/postgres.mjs";
 import { assertQaProjectIsAbsent, createQaLifecycleRequest } from "./runtime.mjs";
 
 const request = createQaLifecycleRequest(process.argv.slice(2));
+const ownershipVolume = `${request.projectName}-owner`;
 const lifecycleEnvironment = { ...process.env };
 delete lifecycleEnvironment.DATABASE_URL;
 Object.assign(lifecycleEnvironment, {
@@ -68,6 +70,48 @@ function assertProjectAbsent() {
   });
 }
 
+function readOwnershipToken() {
+  return run(
+    "docker",
+    [
+      "volume",
+      "inspect",
+      "--format",
+      '{{ index .Labels "sevo.qa.owner-token" }}',
+      ownershipVolume,
+    ],
+    { capture: true },
+  );
+}
+
+function acquireOwnership() {
+  const token = randomUUID();
+  run(
+    "docker",
+    [
+      "volume",
+      "create",
+      "--label",
+      `sevo.qa.owner-token=${token}`,
+      "--label",
+      `sevo.qa.run-id=${request.runId}`,
+      ownershipVolume,
+    ],
+    { capture: true },
+  );
+  if (readOwnershipToken() !== token) {
+    throw new Error("This QA run id is already owned by another lifecycle process");
+  }
+  return token;
+}
+
+function releaseOwnership(token) {
+  if (readOwnershipToken() !== token) {
+    throw new Error("QA lifecycle ownership changed; refusing to release its lease");
+  }
+  run("docker", ["volume", "rm", ownershipVolume], { capture: true });
+}
+
 function publishedPort(service, containerPort) {
   const output = compose(["port", service, String(containerPort)], { capture: true });
   const port = Number(output.slice(output.lastIndexOf(":") + 1));
@@ -91,10 +135,12 @@ async function inspectQaTarget(databaseUrl) {
 }
 
 async function bringUp() {
-  let ownsProjectResources = false;
+  let ownershipToken;
+  let mayHaveCreatedProjectResources = false;
   try {
+    ownershipToken = acquireOwnership();
     assertProjectAbsent();
-    ownsProjectResources = true;
+    mayHaveCreatedProjectResources = true;
     compose(["up", "-d", "--wait", "postgres", "minio"]);
     const databasePort = publishedPort("postgres", 5432);
     const minioPort = publishedPort("minio", 9000);
@@ -115,11 +161,18 @@ async function bringUp() {
       })}\n`,
     );
   } catch (error) {
-    if (ownsProjectResources) {
+    if (mayHaveCreatedProjectResources) {
       try {
         compose(["down", "--volumes", "--remove-orphans"]);
       } catch {
         // Preserve the startup failure; the exact project name is printed in its error.
+      }
+    }
+    if (ownershipToken) {
+      try {
+        releaseOwnership(ownershipToken);
+      } catch {
+        // Preserve the startup failure and fail closed if lease cleanup is uncertain.
       }
     }
     throw error;
@@ -127,6 +180,10 @@ async function bringUp() {
 }
 
 async function tearDown() {
+  const ownershipToken = readOwnershipToken();
+  if (!ownershipToken) {
+    throw new Error("QA lifecycle ownership lease is missing; teardown refused");
+  }
   const databasePort = publishedPort("postgres", 5432);
   const databaseUrl = `postgresql://sevo:sevo_local@127.0.0.1:${databasePort}/${request.databaseName}`;
   const target = await inspectQaTarget(databaseUrl);
@@ -136,6 +193,7 @@ async function tearDown() {
     );
   }
   compose(["down", "--volumes", "--remove-orphans"]);
+  releaseOwnership(ownershipToken);
   process.stdout.write(
     `${JSON.stringify({
       profile: request.profile,

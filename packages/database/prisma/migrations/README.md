@@ -106,7 +106,9 @@ additively creates the platform-owned managed-data target fingerprint and versio
 demo-manifest receipt. Existing product data is not read or changed, no compatibility
 window is required, and deployment corrections use a forward migration. Both supported
 startup paths continue to use the same `prisma migrate deploy` history; their smoke
-evidence is recorded in the delivery note for the Issue.
+evidence is recorded in the delivery note for the Issue. The
+`platform_data_environment` and `platform_seed_manifest_receipts` tables are registered
+to the `platform` infrastructure owner in the canonical ownership registry.
 
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
