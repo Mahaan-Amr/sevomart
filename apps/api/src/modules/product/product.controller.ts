@@ -99,9 +99,15 @@ export class ProductController {
       : undefined;
     const limit = sellerProductPageLimitContract.safeParse(rawLimit ?? 20);
     const state = rawState ? sellerProductStateContract.safeParse(rawState) : undefined;
-    if (cursor && !cursor.success) throw validationError(request.id);
-    if (!limit.success) throw validationError(request.id);
-    if (state && !state.success) throw validationError(request.id);
+    if (cursor && !cursor.success) {
+      throw sellerProductListValidationError(request.id, "query.cursor");
+    }
+    if (!limit.success) {
+      throw sellerProductListValidationError(request.id, "query.limit");
+    }
+    if (state && !state.success) {
+      throw sellerProductListValidationError(request.id, "query.state");
+    }
     return this.handle(request, () =>
       this.products.list(identityId, {
         ...(cursor?.success
@@ -411,7 +417,7 @@ function decodeSellerProductCursor(cursor: string, correlationId: string) {
     }
     return boundary.data;
   } catch {
-    throw validationError(correlationId);
+    throw sellerProductListValidationError(correlationId, "query.cursor");
   }
 }
 
@@ -467,12 +473,35 @@ function validationError(correlationId: string) {
   );
 }
 
+function sellerProductListValidationError(
+  correlationId: string,
+  path: "query.cursor" | "query.limit" | "query.state",
+) {
+  const message = {
+    "query.cursor": "نشانی ادامه فهرست معتبر نیست؛ فهرست را از ابتدا باز کنید.",
+    "query.limit": "تعداد کالاهای هر صفحه باید بین ۱ تا ۵۰ باشد.",
+    "query.state": "وضعیت کالا معتبر نیست؛ یکی از وضعیت‌های فهرست را انتخاب کنید.",
+  }[path];
+  return new HttpException(
+    {
+      version: 1,
+      code: "VALIDATION_ERROR",
+      message,
+      correlationId,
+      details: { issues: [{ path, code: "INVALID_FORMAT" }] },
+    },
+    HttpStatus.UNPROCESSABLE_ENTITY,
+  );
+}
+
 function productNotFound(correlationId: string): never {
   throw new HttpException(
     {
+      version: 1,
       code: "PRODUCT_NOT_FOUND",
       message: "کالا پیدا نشد.",
       correlationId,
+      details: { issues: [] },
     },
     HttpStatus.NOT_FOUND,
   );

@@ -114,9 +114,28 @@ describe("OpenAPI simple product tracer", () => {
       ]),
     );
     expect(document.components.schemas).toHaveProperty("SellerProductList");
-    expect(Object.keys(document.paths["/v1/seller/products"].get.responses)).toEqual(
-      expect.arrayContaining(["200", "401", "403", "404", "422", "500"]),
-    );
+    const listOperation = document.paths["/v1/seller/products"].get;
+    for (const [status, schema] of [
+      ["200", "SellerProductList"],
+      ["403", "SellerProductAccessInactiveError"],
+      ["404", "ProductNotFoundError"],
+      ["422", "SellerProductListValidationError"],
+    ] as const) {
+      expect(
+        listOperation.responses[status].content["application/json"].schema,
+      ).toEqual({ $ref: `#/components/schemas/${schema}` });
+    }
+    for (const [name, schema] of [
+      ["cursor", "SellerProductCursor"],
+      ["limit", "SellerProductPageLimit"],
+      ["state", "SellerProductState"],
+    ] as const) {
+      expect(
+        listOperation.parameters.find(
+          (parameter: { name: string }) => parameter.name === name,
+        ).schema,
+      ).toEqual({ $ref: `#/components/schemas/${schema}` });
+    }
 
     for (const [method, path] of [
       ["put", "/v1/seller/products/{productId}/working-copy"],
