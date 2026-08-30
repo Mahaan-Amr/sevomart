@@ -94,6 +94,10 @@ fingerprint و حذف منابع، claim را نگه می‌دارد و در پ�
 - در follow-up بازبینی ۱۴۰۵-۰۶-۰۸، آزمون رقابت قطعی دو `qa:up` فقط یک owner و یک cleanup را
   پذیرفت. آزمون integration روی پایگاه disposable با ۴۹ migration ثابت کرد fingerprint نادرست
   دو سرویس و claim را نگه می‌دارد و fingerprint درست همان پروژه و claim را حذف می‌کند.
+- harness رقابت از coordinator واقعی startup با boundary تزریق‌شدهٔ Docker استفاده می‌کند و
+  به shebang، executable bit، پسوند command یا جداکنندهٔ `PATH` وابسته نیست؛ بنابراین همان
+  assertionهای one-owner، one-up، one-cleanup و owner-only release روی Windows، macOS و Linux
+  اجرا می‌شوند.
 
 ## اثر قرارداد و بازگشت
 

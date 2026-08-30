@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { createPostgresDemoSeedDatabase } from "../demo/postgres.mjs";
 import { assertQaProjectIsAbsent, createQaLifecycleRequest } from "./runtime.mjs";
+import { runOwnedQaStartup } from "./startup-ownership.mjs";
 
 const request = createQaLifecycleRequest(process.argv.slice(2));
 const ownershipVolume = `${request.projectName}-owner`;
@@ -135,48 +136,37 @@ async function inspectQaTarget(databaseUrl) {
 }
 
 async function bringUp() {
-  let ownershipToken;
-  let mayHaveCreatedProjectResources = false;
-  try {
-    ownershipToken = acquireOwnership();
-    assertProjectAbsent();
-    mayHaveCreatedProjectResources = true;
-    compose(["up", "-d", "--wait", "postgres", "minio"]);
-    const databasePort = publishedPort("postgres", 5432);
-    const minioPort = publishedPort("minio", 9000);
-    const databaseUrl = `postgresql://sevo:sevo_local@127.0.0.1:${databasePort}/${request.databaseName}`;
-    run("pnpm", ["--filter", "@sevo/database", "exec", "prisma", "migrate", "deploy"], {
-      environment: { ...lifecycleEnvironment, DATABASE_URL: databaseUrl },
-    });
-    const target = await inspectQaTarget(databaseUrl);
-    process.stdout.write(
-      `${JSON.stringify({
-        profile: request.profile,
-        runId: request.runId,
-        projectName: request.projectName,
-        databaseName: request.databaseName,
-        databasePort,
-        minioPort,
-        fingerprint: target.fingerprint,
-      })}\n`,
-    );
-  } catch (error) {
-    if (mayHaveCreatedProjectResources) {
-      try {
-        compose(["down", "--volumes", "--remove-orphans"]);
-      } catch {
-        // Preserve the startup failure; the exact project name is printed in its error.
-      }
-    }
-    if (ownershipToken) {
-      try {
-        releaseOwnership(ownershipToken);
-      } catch {
-        // Preserve the startup failure and fail closed if lease cleanup is uncertain.
-      }
-    }
-    throw error;
-  }
+  await runOwnedQaStartup({
+    acquireOwnership,
+    assertProjectAbsent,
+    startProject: () => compose(["up", "-d", "--wait", "postgres", "minio"]),
+    initializeProject: async () => {
+      const databasePort = publishedPort("postgres", 5432);
+      const minioPort = publishedPort("minio", 9000);
+      const databaseUrl = `postgresql://sevo:sevo_local@127.0.0.1:${databasePort}/${request.databaseName}`;
+      run(
+        "pnpm",
+        ["--filter", "@sevo/database", "exec", "prisma", "migrate", "deploy"],
+        {
+          environment: { ...lifecycleEnvironment, DATABASE_URL: databaseUrl },
+        },
+      );
+      const target = await inspectQaTarget(databaseUrl);
+      process.stdout.write(
+        `${JSON.stringify({
+          profile: request.profile,
+          runId: request.runId,
+          projectName: request.projectName,
+          databaseName: request.databaseName,
+          databasePort,
+          minioPort,
+          fingerprint: target.fingerprint,
+        })}\n`,
+      );
+    },
+    cleanupProject: () => compose(["down", "--volumes", "--remove-orphans"]),
+    releaseOwnership,
+  });
 }
 
 async function tearDown() {
