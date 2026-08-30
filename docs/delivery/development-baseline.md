@@ -158,15 +158,20 @@ Prometheus استفاده می‌شود؛ پروژهٔ فعال YAML، مجوز 
 ورودی غیرقابل‌اعتماد یا اثر runtime آن، سطح امنیتی را به parsing فایل ثابت مخزن
 محدود می‌کند.
 
-بازسازی کامل از آرشیو outbox با قفل تراکنشی و بدون نمایش حالت نیمه‌ساخته انجام
-می‌شود. اپراتور پس از اطمینان از اتصال به پایگاه مقصد، در PowerShell دستور زیر را
-اجرا می‌کند؛ مقدار تأیید از اجرای تصادفی جلوگیری می‌کند:
+هر projection کشف از آرشیو outbox با قفل و transaction مستقل خودش بازسازی می‌شود و
+حالت نیمه‌ساختهٔ همان projection نمایش داده نمی‌شود. فرمان عملیاتی ابتدا شمار
+دنبال‌کننده و سپس فید عمومی را بازسازی می‌کند. اگر مرحلهٔ دوم شکست بخورد، شمار تازه
+commitشده باقی می‌ماند و فید عمومی به‌علت rollback transaction خودش در حالت پیشین
+می‌ماند؛ اجرای دوبارهٔ فرمان امن و idempotent است. اپراتور پس از اطمینان از اتصال به
+پایگاه مقصد، در PowerShell دستور زیر را اجرا می‌کند؛ مقدار تأیید از اجرای تصادفی
+جلوگیری می‌کند:
 
 ```powershell
-$env:SEVO_REBUILD_CONFIRM='public-feed-v1'
+$env:SEVO_REBUILD_CONFIRM='discovery-projections-v1'
 pnpm projection:rebuild:discovery
 ```
 
 رخدادهای در انتظار پس از rebuild همچنان با receipt عادی worker مصرف می‌شوند.
-خروجی فقط تعداد replay، مدت، lag، poison و buffer را گزارش می‌کند؛ شکست replay کل
-تراکنش را rollback می‌کند و projection پیشین باقی می‌ماند.
+خروجی هر projection فقط تعداد replay، مدت و در صورت کاربرد lag، poison و buffer را
+گزارش می‌کند. شکست replay فقط transaction همان projection را rollback می‌کند و
+projection پیشین آن باقی می‌ماند.

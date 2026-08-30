@@ -1,14 +1,22 @@
 import {
   discoveryFeedProjectionEventTypes,
   publicFollowerCountV1Contract,
+  storeFollowActivatedV1Contract,
 } from "@sevo/contracts/discovery/v1";
 import { identityStatusChangedV1Contract } from "@sevo/contracts/identity-access/v1";
+import { DurableOutboxWorker, enqueueOutboxEvent } from "@sevo/outbox";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
-import { projectIdentityStatusForFollowerCount } from "../../apps/worker/src/modules/discovery";
+import {
+  catchUpDiscoveryFollowerCountProjection,
+  discoveryFollowerCountOutboxHandlers,
+  projectIdentityStatusForFollowerCount,
+  rebuildDiscoveryFollowerCountProjection,
+} from "../../apps/worker/src/modules/discovery";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
+import { drainFollowerCountEvents } from "../helpers/drain-follower-count-events";
 
 const environment = {
   ...apiTestEnvironment,
@@ -22,6 +30,7 @@ describe("store following HTTP API with PostgreSQL", () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     await sql`update identity_identities set status = 'ACTIVE'`;
     await sql`delete from discovery_follow_idempotency_records`;
+    await sql`delete from discovery_follower_count_relation_projections`;
     await sql`delete from discovery_store_follows`;
     await sql`delete from discovery_follow_sets`;
     await sql`delete from discovery_public_follower_counts`;
@@ -73,6 +82,8 @@ describe("store following HTTP API with PostgreSQL", () => {
       followSetRevision: 1,
     });
     expect(JSON.stringify(followed.json())).not.toMatch(/identity|mobile/i);
+
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 
     const guestStore = await server.inject({
       method: "GET",
@@ -236,6 +247,8 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(removed.json()).toMatchObject({ status: "INACTIVE", revision: 2 });
     expect(removedRetry.json()).toEqual(removed.json());
 
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const [count] = await sql<Array<{ count: number }>>`
       select follower_count as count from discovery_public_follower_counts
@@ -284,6 +297,8 @@ describe("store following HTTP API with PostgreSQL", () => {
     );
     expect(responses.map(({ statusCode }) => statusCode)).toEqual([200, 200]);
 
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+
     const publicStore = await server.inject({
       method: "GET",
       url: "/v1/stores/concurrent-follow-store",
@@ -296,6 +311,369 @@ describe("store following HTTP API with PostgreSQL", () => {
     `;
     expect(projection).toEqual({ count: 2 });
     await sql.end();
+  });
+
+  it("does not publish a follower count before the follow event is projected", async () => {
+    const app = await startApp();
+    const ownerCookie = await signIn(app, "09123456789");
+    const buyerCookie = await signIn(app, "09123456788");
+    const store = await publishStore(app, ownerCookie, "eventual-follow-count");
+    const server = app.getHttpAdapter().getInstance();
+
+    const followed = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${store.id}`,
+      headers: {
+        cookie: buyerCookie,
+        "idempotency-key": "eventual-follow-count-1",
+      },
+    });
+    expect(followed.statusCode).toBe(200);
+
+    const publicStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/eventual-follow-count",
+    });
+    expect(publicStore.json()).toMatchObject({ followerCount: { count: 0 } });
+
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+    const projectedStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/eventual-follow-count",
+    });
+    expect(projectedStore.json()).toMatchObject({ followerCount: { count: 1 } });
+  });
+
+  it("reports follower-count catch-up replay completion", async () => {
+    const app = await startApp();
+    const ownerCookie = await signIn(app, "09123456789");
+    const buyerCookie = await signIn(app, "09123456788");
+    const store = await publishStore(app, ownerCookie, "catch-up-follow-count");
+    const server = app.getHttpAdapter().getInstance();
+    const followed = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${store.id}`,
+      headers: { cookie: buyerCookie, "idempotency-key": crypto.randomUUID() },
+    });
+    expect(followed.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update platform_outbox_events set status = 'PROCESSED', processed_at = now()
+      where event_type = 'StoreFollowActivated.v1'
+        and payload->>'storeId' = ${store.id}
+    `;
+    await sql.end();
+    const catchUpLogs: Array<Readonly<Record<string, unknown>>> = [];
+
+    const result = await catchUpDiscoveryFollowerCountProjection(
+      apiTestEnvironment.DATABASE_URL,
+      (record) => catchUpLogs.push(record),
+    );
+
+    expect(result).toEqual({ replayedEventCount: 1, poisonEventCount: 0 });
+    expect(catchUpLogs).toContainEqual(
+      expect.objectContaining({
+        level: "info",
+        message: "discovery_projection_catchup_completed",
+        projection: "follower-count",
+        replayedEventCount: 1,
+        poisonEventCount: 0,
+      }),
+    );
+  });
+
+  it("rebuilds the public follower count from the complete durable event history", async () => {
+    const app = await startApp();
+    const ownerCookie = await signIn(app, "09123456789");
+    const firstBuyerCookie = await signIn(app, "09123456788");
+    const secondBuyerCookie = await signIn(app, "09123456787");
+    const store = await publishStore(app, ownerCookie, "rebuilt-follow-count");
+    const server = app.getHttpAdapter().getInstance();
+
+    for (const [index, cookie] of [firstBuyerCookie, secondBuyerCookie].entries()) {
+      const followed = await server.inject({
+        method: "PUT",
+        url: `/v1/me/follows/${store.id}`,
+        headers: {
+          cookie,
+          "idempotency-key": `rebuild-follow-count-${index}`,
+        },
+      });
+      expect(followed.statusCode).toBe(200);
+    }
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const [firstRelation] = await sql<Array<{ identityId: string }>>`
+      select identity_id as "identityId"
+      from discovery_store_follows
+      where store_id = ${store.id}
+      order by activated_at
+      limit 1
+    `;
+    const inactiveEvent = identityStatusChangedV1Contract.parse({
+      version: 1,
+      eventId: crypto.randomUUID(),
+      eventType: "IdentityStatusChanged.v1",
+      aggregateId: firstRelation!.identityId,
+      aggregateVersion: 1,
+      occurredAt: new Date().toISOString(),
+      correlationId: crypto.randomUUID(),
+      causationId: crypto.randomUUID(),
+      actor: { type: "SYSTEM" },
+      payload: { status: "INACTIVE", statusVersion: 1 },
+    });
+    await sql.begin((transaction) => enqueueOutboxEvent(transaction, inactiveEvent));
+    await sql.end();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+
+    const damaged = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await damaged`delete from discovery_identity_status_projections`;
+    await damaged`delete from discovery_public_follower_counts`;
+    await damaged`delete from discovery_follower_count_relation_projections`;
+    await damaged.end();
+
+    const rebuildLogs: Array<Readonly<Record<string, unknown>>> = [];
+    const rebuilt = await rebuildDiscoveryFollowerCountProjection(
+      apiTestEnvironment.DATABASE_URL,
+      (record) => rebuildLogs.push(record),
+    );
+    expect(rebuilt.replayedEventCount).toBe(3);
+    expect(rebuildLogs).toContainEqual(
+      expect.objectContaining({
+        message: "discovery_projection_rebuild_completed",
+        projection: "follower-count",
+        replayedEventCount: 3,
+        durationMs: expect.any(Number),
+      }),
+    );
+    const publicStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/rebuilt-follow-count",
+    });
+    expect(publicStore.json()).toMatchObject({ followerCount: { count: 1 } });
+  });
+
+  it("treats a first inactive identity event as a zero-to-zero transition", async () => {
+    const identityId = crypto.randomUUID();
+    const storeId = crypto.randomUUID();
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      insert into discovery_follower_count_relation_projections
+        (relation_id, identity_id, store_id, status, relation_revision, updated_at)
+      values
+        (${crypto.randomUUID()}, ${identityId}, ${storeId}, 'ACTIVE', 1, now())
+    `;
+    const inactiveEvent = identityStatusChangedV1Contract.parse({
+      version: 1,
+      eventId: crypto.randomUUID(),
+      eventType: "IdentityStatusChanged.v1",
+      aggregateId: identityId,
+      aggregateVersion: 1,
+      occurredAt: new Date().toISOString(),
+      correlationId: crypto.randomUUID(),
+      causationId: crypto.randomUUID(),
+      actor: { type: "SYSTEM" },
+      payload: { status: "INACTIVE", statusVersion: 1 },
+    });
+
+    await expect(
+      sql.begin((transaction) =>
+        projectIdentityStatusForFollowerCount(inactiveEvent, transaction),
+      ),
+    ).resolves.toBeUndefined();
+    const counts = await sql`
+      select follower_count from discovery_public_follower_counts
+      where store_id = ${storeId}
+    `;
+    expect(counts).toHaveLength(0);
+    await sql.end();
+  });
+
+  it("projects follower counts from real identity status producer events", async () => {
+    const app = await startApp();
+    const ownerCookie = await signIn(app, "09123456789");
+    const buyerCookie = await signIn(app, "09123456788");
+    const store = await publishStore(app, ownerCookie, "identity-status-producer");
+    const server = app.getHttpAdapter().getInstance();
+    const followed = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${store.id}`,
+      headers: { cookie: buyerCookie, "idempotency-key": crypto.randomUUID() },
+    });
+    expect(followed.statusCode).toBe(200);
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const [relation] = await sql<Array<{ identityId: string }>>`
+      select identity_id as "identityId" from discovery_store_follows
+      where store_id = ${store.id}
+    `;
+    const [changed] = await sql<Array<{ statusVersion: number }>>`
+      update identity_identities set status = 'INACTIVE'
+      where id = ${relation!.identityId}
+      returning status_version as "statusVersion"
+    `;
+    expect(changed!.statusVersion).toBeGreaterThan(0);
+    const [storedEvent] = await sql<
+      Array<Record<string, unknown> & { occurredAt: Date }>
+    >`
+      select event_id as "eventId", envelope_version as version,
+        event_type as "eventType", aggregate_id as "aggregateId",
+        aggregate_version as "aggregateVersion", occurred_at as "occurredAt",
+        correlation_id as "correlationId", causation_id as "causationId",
+        jsonb_build_object('type', actor_type) as actor, payload
+      from platform_outbox_events
+      where event_type = 'IdentityStatusChanged.v1'
+        and aggregate_id = ${relation!.identityId}
+      order by aggregate_version desc limit 1
+    `;
+    expect(
+      identityStatusChangedV1Contract.parse({
+        ...storedEvent,
+        occurredAt: storedEvent!.occurredAt.toISOString(),
+      }),
+    ).toMatchObject({
+      aggregateId: relation!.identityId,
+      aggregateVersion: changed!.statusVersion,
+      payload: { status: "INACTIVE", statusVersion: changed!.statusVersion },
+    });
+    await sql.end();
+
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+    const publicStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/identity-status-producer",
+    });
+    expect(publicStore.json()).toMatchObject({ followerCount: { count: 0 } });
+
+    const reactivated = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const [activated] = await reactivated<Array<{ statusVersion: number }>>`
+      update identity_identities set status = 'ACTIVE'
+      where id = ${relation!.identityId}
+      returning status_version as "statusVersion"
+    `;
+    expect(activated!.statusVersion).toBe(changed!.statusVersion + 1);
+    await reactivated.end();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
+    const restoredStore = await server.inject({
+      method: "GET",
+      url: "/v1/stores/identity-status-producer",
+    });
+    expect(restoredStore.json()).toMatchObject({ followerCount: { count: 1 } });
+
+    const rollback = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await expect(
+      rollback.begin(async (transaction) => {
+        await transaction`
+          update identity_identities set status = 'INACTIVE'
+          where id = ${relation!.identityId}
+        `;
+        throw new Error("rollback identity status change");
+      }),
+    ).rejects.toThrow("rollback identity status change");
+    const [rolledBack] = await rollback<
+      Array<{ status: string; statusVersion: number; eventCount: number }>
+    >`
+      select identity.status, identity.status_version as "statusVersion",
+        count(event.event_id)::int as "eventCount"
+      from identity_identities identity
+      left join platform_outbox_events event
+        on event.aggregate_id = identity.id
+       and event.event_type = 'IdentityStatusChanged.v1'
+      where identity.id = ${relation!.identityId}
+      group by identity.id
+    `;
+    expect(rolledBack).toEqual({
+      status: "ACTIVE",
+      statusVersion: activated!.statusVersion,
+      eventCount: 2,
+    });
+    await rollback.end();
+  });
+
+  it("rolls back a follower-count projection when its relation is missing", async () => {
+    const relationId = crypto.randomUUID();
+    const storeId = crypto.randomUUID();
+    const event = storeFollowActivatedV1Contract.parse({
+      version: 1,
+      eventId: crypto.randomUUID(),
+      eventType: "StoreFollowActivated.v1",
+      aggregateId: relationId,
+      aggregateVersion: 1,
+      occurredAt: new Date().toISOString(),
+      correlationId: crypto.randomUUID(),
+      causationId: crypto.randomUUID(),
+      actor: { type: "SYSTEM" },
+      payload: { storeId, relationRevision: 1, followSetRevision: 1 },
+    });
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql.begin((transaction) => enqueueOutboxEvent(transaction, event));
+    await sql.end();
+
+    const worker = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, {
+      consumerName: "discovery-follower-count-v1",
+      handlers: discoveryFollowerCountOutboxHandlers,
+      maxAttempts: 1,
+      retryDelaysMs: [0],
+      log: () => undefined,
+    });
+    try {
+      expect(await worker.runOnce()).toBe("failed");
+    } finally {
+      await worker.close();
+    }
+
+    const verification = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const [receipt, count, storedEvent] = await Promise.all([
+      verification`
+        select event_id from platform_outbox_consumptions
+        where consumer_name = 'discovery-follower-count-v1'
+          and event_id = ${event.eventId}
+      `,
+      verification`
+        select store_id from discovery_public_follower_counts
+        where store_id = ${storeId}
+      `,
+      verification<Array<{ status: string }>>`
+        select status from platform_outbox_events where event_id = ${event.eventId}
+      `,
+    ]);
+    expect(receipt).toHaveLength(0);
+    expect(count).toHaveLength(0);
+    expect(storedEvent).toEqual([{ status: "FAILED" }]);
+    const catchUpLogs: Array<Readonly<Record<string, unknown>>> = [];
+    const catchUp = await catchUpDiscoveryFollowerCountProjection(
+      apiTestEnvironment.DATABASE_URL,
+      (record) => catchUpLogs.push(record),
+    );
+    expect(catchUp).toEqual({ replayedEventCount: 0, poisonEventCount: 1 });
+    expect(catchUpLogs).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "discovery_projection_catchup_failed",
+        projection: "follower-count",
+        eventType: "StoreFollowActivated.v1",
+        errorKind: "Error",
+      }),
+    );
+    const rebuildLogs: Array<Readonly<Record<string, unknown>>> = [];
+    await expect(
+      rebuildDiscoveryFollowerCountProjection(
+        apiTestEnvironment.DATABASE_URL,
+        (record) => rebuildLogs.push(record),
+      ),
+    ).rejects.toThrow("Store-follow relation is missing");
+    expect(rebuildLogs).toContainEqual(
+      expect.objectContaining({
+        message: "discovery_projection_rebuild_failed",
+        projection: "follower-count",
+        durationMs: expect.any(Number),
+        errorKind: "Error",
+      }),
+    );
+    await verification.end();
   });
 
   it("rejects self-following and unpublished stores without revealing them", async () => {
