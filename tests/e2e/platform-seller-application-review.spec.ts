@@ -188,6 +188,80 @@ test("keeps an explicit case selection when the initial detail arrives late", as
   await expect(page.getByRole("heading", { name: "خانه دوم" })).toBeVisible();
 });
 
+test("keeps an empty queue when an older case detail arrives late", async ({
+  page,
+}) => {
+  const first = sellerApplication();
+  const second = {
+    ...sellerApplication(),
+    applicationId: "25100f04-813c-44f9-b681-22cb4f3dbeae",
+    currentPayload: {
+      ...sellerApplication().currentPayload,
+      applicantName: "سارا احمدی",
+      proposedStoreName: "خانه دوم",
+    },
+  };
+  let decisionRecorded = false;
+  let releaseSecondDetail = () => {};
+  let secondDetailCompleted = false;
+  const secondDetailGate = new Promise<void>((resolve) => {
+    releaseSecondDetail = resolve;
+  });
+  await page.route("**/api/platform/seller-applications**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST") {
+      decisionRecorded = true;
+      await route.fulfill({
+        status: 200,
+        json: { ...first, status: "REJECTED", revision: 2 },
+      });
+      return;
+    }
+    if (pathname.endsWith(first.applicationId)) {
+      await route.fulfill({ status: 200, json: first });
+      return;
+    }
+    if (pathname.endsWith(second.applicationId)) {
+      await secondDetailGate;
+      await route.fulfill({ status: 200, json: second });
+      secondDetailCompleted = true;
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: {
+        items: decisionRecorded
+          ? []
+          : [first, second].map((application) => ({
+              applicationId: application.applicationId,
+              applicantName: application.currentPayload.applicantName,
+              proposedStoreName: application.currentPayload.proposedStoreName,
+              status: application.status,
+              revision: application.revision,
+              lastSubmittedAt: application.lastSubmittedAt,
+            })),
+        nextCursor: null,
+      },
+    });
+  });
+
+  await page.goto("/platform/seller-applications");
+  await expect(page.getByRole("heading", { name: "خانه ماه" })).toBeVisible();
+  await page.getByRole("button", { name: /خانه دوم/ }).click();
+  await page.getByLabel("رد درخواست").check();
+  await page
+    .getByLabel("دلیل قابل‌نمایش به متقاضی")
+    .fill("شرایط فروشندگی برای این درخواست احراز نشد.");
+  await page.getByRole("button", { name: "ثبت رد درخواست" }).click();
+  await expect(page.getByText("درخواستی برای بررسی باقی نمانده است.")).toBeVisible();
+
+  releaseSecondDetail();
+  await expect.poll(() => secondDetailCompleted).toBe(true);
+  await expect(page.getByText("درخواستی برای بررسی باقی نمانده است.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "خانه دوم" })).toHaveCount(0);
+});
+
 test("retries an unchanged decision with the same idempotency key", async ({
   page,
 }) => {

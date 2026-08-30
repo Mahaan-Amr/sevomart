@@ -42,6 +42,9 @@ const reasonLabels = {
   OTHER: "دلیل دیگر",
 } as const;
 
+const rejectionCompletionMessage =
+  "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.";
+
 export function PlatformSellerApplicationReview() {
   const [queue, setQueue] = useState<PlatformSellerApplicationPage["items"]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -107,6 +110,7 @@ export function PlatformSellerApplicationReview() {
           : parsed.items[0]?.applicationId;
       if (nextId) await readApplication(nextId);
       else {
+        detailRequestId.current += 1;
         setSelectedId(undefined);
         setApplication(undefined);
       }
@@ -208,8 +212,7 @@ export function PlatformSellerApplicationReview() {
         if (decision === "rejection") {
           setApplication(undefined);
           setSelectedId(undefined);
-          committedMessage =
-            "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.";
+          committedMessage = rejectionCompletionMessage;
           setMessage(committedMessage);
         } else {
           setApplication(updated);
@@ -471,7 +474,7 @@ function closedApplicationNextStep(status: PlatformSellerApplicationView["status
     return "قدم بعدی: منتظر تکمیل اطلاعات متقاضی بمانید.";
   }
   if (status === "REJECTED") {
-    return "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.";
+    return rejectionCompletionMessage;
   }
   return "این درخواست اکنون قابل تصمیم‌گیری نیست؛ وضعیت تازه در صف اعمال شده است.";
 }
