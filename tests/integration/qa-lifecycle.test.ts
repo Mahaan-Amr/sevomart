@@ -1,59 +1,52 @@
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-const runId = `behavior-${process.pid}`;
-const raceRunId = `race-${process.pid}`;
-let activeTarget:
-  | {
-      fingerprint: string;
-      projectName: string;
-    }
-  | undefined;
-let activeRaceTarget:
-  | {
-      fingerprint: string;
-      projectName: string;
-    }
-  | undefined;
+import { QA_PROJECT_CLEANUP_EVENT } from "../../scripts/qa/runtime.mjs";
+
+type QaTarget = { fingerprint: string; projectName: string };
+type QaFixture = { activeTarget?: QaTarget; runId: string };
+
+const uniqueRunId = (prefix: string) =>
+  `${prefix}-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+const guardedFixture: QaFixture = { runId: uniqueRunId("behavior") };
+const raceFixture: QaFixture = { runId: uniqueRunId("race") };
 
 afterAll(() => {
-  if (activeTarget) {
-    runLifecycle([
-      "down",
-      "--profile",
-      "qa",
-      "--run-id",
-      runId,
-      "--fingerprint",
-      activeTarget.fingerprint,
-    ]);
-  }
-  if (activeRaceTarget) {
-    runLifecycle([
-      "down",
-      "--profile",
-      "qa",
-      "--run-id",
-      raceRunId,
-      "--fingerprint",
-      activeRaceTarget.fingerprint,
-    ]);
+  for (const fixture of [guardedFixture, raceFixture]) {
+    if (fixture.activeTarget) {
+      runLifecycle([
+        "down",
+        "--profile",
+        "qa",
+        "--run-id",
+        fixture.runId,
+        "--fingerprint",
+        fixture.activeTarget.fingerprint,
+      ]);
+    }
   }
 });
 
 describe("QA lifecycle CLI", () => {
   it("preserves an owned environment when teardown presents the wrong fingerprint", () => {
-    const up = runLifecycle(["up", "--profile", "qa", "--run-id", runId]);
+    const up = runLifecycle([
+      "up",
+      "--profile",
+      "qa",
+      "--run-id",
+      guardedFixture.runId,
+    ]);
     expect(up.status, up.stderr).toBe(0);
-    activeTarget = parseLastJsonLine(up.stdout);
+    guardedFixture.activeTarget = parseLastJsonLine(up.stdout);
 
     const refused = runLifecycle([
       "down",
       "--profile",
       "qa",
       "--run-id",
-      runId,
+      guardedFixture.runId,
       "--fingerprint",
       "00000000-0000-4000-8000-000000000000",
     ]);
@@ -65,7 +58,7 @@ describe("QA lifecycle CLI", () => {
       [
         "compose",
         "--project-name",
-        activeTarget.projectName,
+        guardedFixture.activeTarget.projectName,
         "ps",
         "--quiet",
         "--status",
@@ -81,24 +74,24 @@ describe("QA lifecycle CLI", () => {
       "--profile",
       "qa",
       "--run-id",
-      runId,
+      guardedFixture.runId,
       "--fingerprint",
-      activeTarget.fingerprint,
+      guardedFixture.activeTarget.fingerprint,
     ]);
     expect(removed.status, removed.stderr).toBe(0);
     const releasedOwnership = spawnSync(
       "docker",
-      ["volume", "inspect", `${activeTarget.projectName}-owner`],
+      ["volume", "inspect", `${guardedFixture.activeTarget.projectName}-owner`],
       { encoding: "utf8" },
     );
     expect(releasedOwnership.status).not.toBe(0);
-    activeTarget = undefined;
+    guardedFixture.activeTarget = undefined;
   }, 60_000);
 
   it("allows only one real concurrent qa:up process to own and clean a run", async () => {
     const contenders = await Promise.all([
-      runLifecycleAsync(["up", "--profile", "qa", "--run-id", raceRunId]),
-      runLifecycleAsync(["up", "--profile", "qa", "--run-id", raceRunId]),
+      runLifecycleAsync(["up", "--profile", "qa", "--run-id", raceFixture.runId]),
+      runLifecycleAsync(["up", "--profile", "qa", "--run-id", raceFixture.runId]),
     ]);
     const winners = contenders.filter(({ status }) => status === 0);
     const losers = contenders.filter(({ status }) => status !== 0);
@@ -106,12 +99,13 @@ describe("QA lifecycle CLI", () => {
     expect(winners, contenders.map(formatLifecycleResult).join("\n")).toHaveLength(1);
     expect(losers, contenders.map(formatLifecycleResult).join("\n")).toHaveLength(1);
     expect(losers[0]?.stderr).toContain("already owned");
+    expect(cleanupEvents(losers[0]?.stderr ?? "")).toEqual([]);
 
-    activeRaceTarget = parseLastJsonLine(winners[0]?.stdout ?? "");
+    raceFixture.activeTarget = parseLastJsonLine(winners[0]?.stdout ?? "");
     const running = docker([
       "compose",
       "--project-name",
-      activeRaceTarget.projectName,
+      raceFixture.activeTarget.projectName,
       "ps",
       "--quiet",
       "--status",
@@ -125,7 +119,7 @@ describe("QA lifecycle CLI", () => {
       "inspect",
       "--format",
       '{{ index .Labels "sevo.qa.owner-token" }}',
-      `${activeRaceTarget.projectName}-owner`,
+      `${raceFixture.activeTarget.projectName}-owner`,
     ]);
     expect(ownershipToken.status, ownershipToken.stderr).toBe(0);
     expect(ownershipToken.stdout.trim()).toMatch(
@@ -137,12 +131,18 @@ describe("QA lifecycle CLI", () => {
       "--profile",
       "qa",
       "--run-id",
-      raceRunId,
+      raceFixture.runId,
       "--fingerprint",
-      activeRaceTarget.fingerprint,
+      raceFixture.activeTarget.fingerprint,
     ]);
     expect(removed.status, removed.stderr).toBe(0);
-    expect(projectResources(activeRaceTarget.projectName)).toEqual({
+    expect(cleanupEvents(removed.stderr)).toEqual([
+      {
+        event: QA_PROJECT_CLEANUP_EVENT,
+        projectName: raceFixture.activeTarget.projectName,
+      },
+    ]);
+    expect(projectResources(raceFixture.activeTarget.projectName)).toEqual({
       containers: [],
       networks: [],
       volumes: [],
@@ -150,10 +150,10 @@ describe("QA lifecycle CLI", () => {
     const releasedOwnership = docker([
       "volume",
       "inspect",
-      `${activeRaceTarget.projectName}-owner`,
+      `${raceFixture.activeTarget.projectName}-owner`,
     ]);
     expect(releasedOwnership.status).not.toBe(0);
-    activeRaceTarget = undefined;
+    raceFixture.activeTarget = undefined;
   }, 120_000);
 });
 
@@ -231,6 +231,13 @@ function formatLifecycleResult(result: {
   stdout: string;
 }) {
   return `status=${result.status}\nstdout=${result.stdout}\nstderr=${result.stderr}`;
+}
+
+function cleanupEvents(output: string) {
+  return output
+    .split("\n")
+    .filter((line) => line.includes(`"event":"${QA_PROJECT_CLEANUP_EVENT}"`))
+    .map((line) => JSON.parse(line) as { event: string; projectName: string });
 }
 
 function parseLastJsonLine(output: string) {

@@ -4,6 +4,8 @@ const runIdPattern = /^[a-z0-9][a-z0-9-]{2,30}$/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export const QA_PROJECT_CLEANUP_EVENT = "qa-project-cleanup";
+
 export function assertQaProjectIsAbsent(resources) {
   const existingResource = Object.values(resources).some((resourceIds) =>
     resourceIds.some(Boolean),

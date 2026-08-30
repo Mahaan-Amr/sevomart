@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { createPostgresDemoSeedDatabase } from "../demo/postgres.mjs";
 import { createQaCommandRunner } from "./command-runner.mjs";
-import { assertQaProjectIsAbsent, createQaLifecycleRequest } from "./runtime.mjs";
+import {
+  assertQaProjectIsAbsent,
+  createQaLifecycleRequest,
+  QA_PROJECT_CLEANUP_EVENT,
+} from "./runtime.mjs";
 import { runOwnedQaStartup } from "./startup-ownership.mjs";
 
 const request = createQaLifecycleRequest(process.argv.slice(2));
@@ -26,6 +30,16 @@ function compose(commandArguments, options) {
     ["compose", "--project-name", request.projectName, ...commandArguments],
     options,
   );
+}
+
+function removeProject() {
+  process.stderr.write(
+    `${JSON.stringify({
+      event: QA_PROJECT_CLEANUP_EVENT,
+      projectName: request.projectName,
+    })}\n`,
+  );
+  compose(["down", "--volumes", "--remove-orphans"]);
 }
 
 function projectResourceIds(resourceType) {
@@ -143,7 +157,7 @@ async function bringUp() {
         })}\n`,
       );
     },
-    cleanupProject: () => compose(["down", "--volumes", "--remove-orphans"]),
+    cleanupProject: removeProject,
     releaseOwnership,
   });
 }
@@ -161,7 +175,7 @@ async function tearDown() {
       "QA target fingerprint does not match --fingerprint; teardown refused",
     );
   }
-  compose(["down", "--volumes", "--remove-orphans"]);
+  removeProject();
   releaseOwnership(ownershipToken);
   process.stdout.write(
     `${JSON.stringify({
