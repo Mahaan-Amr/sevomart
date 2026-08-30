@@ -99,10 +99,14 @@
     "@sevo/contracts/fulfillment/v1": {
       "owner": "fulfillment",
       "approved": true,
-      "executable": false,
-      "consumersMigrated": "not-applicable",
+      "executable": true,
+      "consumersMigrated": "complete",
       "removable": false,
-      "evidence": { "schemas": [], "operations": [], "events": [] }
+      "evidence": {
+        "schemas": ["fulfillmentTimelineContract"],
+        "operations": ["fulfillmentV1Operations"],
+        "events": ["fulfillmentAdvancedV1Contract"]
+      }
     },
     "@sevo/contracts/conversations/v1": {
       "owner": "conversations",
