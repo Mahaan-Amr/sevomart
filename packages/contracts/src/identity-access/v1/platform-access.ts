@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { platformPermissionContract } from "../../identity-access-v1";
 import {
   eventEnvelopeV1Contract,
   identityIdContract,
@@ -48,18 +49,7 @@ export const platformAccessStatusContract = z.enum([
   "CLOSED",
 ]);
 
-export const responsibilityContract = z.enum([
-  "ACCESS_ADMINISTRATION",
-  "ACCESS_AUDIT_REVIEW",
-  "SELLER_APPLICATION_REVIEW",
-  "PAYMENT_REVIEW",
-  "PAYMENT_OUTCOME_CHANGE",
-  "DISPUTE_REVIEW",
-  "VIOLATION_REVIEW",
-  "RELATED_BUYER_CONTEXT_REVEAL",
-  "SENSITIVE_IDENTITY_BANKING_BROAD_VIEW",
-  "HIGH_RISK_BULK_EXPORT",
-]);
+export const responsibilityContract = platformPermissionContract;
 
 export const highRiskResponsibilityContract = z.enum([
   "ACCESS_ADMINISTRATION",
