@@ -4,6 +4,7 @@ import {
   type PublicProduct,
   type PublicSimpleProduct,
 } from "@sevo/contracts/product/v1";
+import { publicStoreContract } from "@sevo/contracts/store/v1";
 import { notFound } from "next/navigation";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
@@ -19,8 +20,9 @@ export default async function PublicProductPage({
   params: Promise<{ slug: string; productId: string }>;
 }) {
   const { slug, productId } = await params;
-  const product = await readProduct(slug, productId);
-  if (!product) notFound();
+  const result = await readProductPage(slug, productId);
+  if (!result) notFound();
+  const { product, returnPolicy } = result;
 
   return (
     <main className={styles.page}>
@@ -66,8 +68,13 @@ export default async function PublicProductPage({
           >
             پرسیدن درباره این کالا
           </a>
+          <section className={styles.purchaseTerms} aria-labelledby="returns-title">
+            <span id="returns-title">شرایط مرجوعی</span>
+            <strong>{returnPolicy}</strong>
+            <p>این سیاست را فروشنده اعلام کرده است.</p>
+          </section>
           <p className={styles.payment}>
-            روش پرداخت و شرایط مرجوعی پیش از ثبت سفارش نمایش داده می‌شود.
+            روش پرداخت پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
         </section>
         <footer>ساخته‌شده با سوو</footer>
@@ -76,18 +83,34 @@ export default async function PublicProductPage({
   );
 }
 
-async function readProduct(slug: string, productId: string) {
+async function readProductPage(slug: string, productId: string) {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/v1/stores/${encodeURIComponent(slug)}/products/${encodeURIComponent(productId)}`,
-      { cache: "no-store", headers: { "x-correlation-id": crypto.randomUUID() } },
-    );
-    if (!response.ok) return undefined;
-    const body: unknown = await response.json();
+    const encodedSlug = encodeURIComponent(slug);
+    const [productResponse, storeResponse] = await Promise.all([
+      fetch(
+        `${API_BASE_URL}/v1/stores/${encodedSlug}/products/${encodeURIComponent(productId)}`,
+        {
+          cache: "no-store",
+          headers: { "x-correlation-id": crypto.randomUUID() },
+        },
+      ),
+      fetch(`${API_BASE_URL}/v1/stores/${encodedSlug}`, {
+        cache: "no-store",
+        headers: { "x-correlation-id": crypto.randomUUID() },
+      }),
+    ]);
+    if (!productResponse.ok || !storeResponse.ok) return undefined;
+    const body: unknown = await productResponse.json();
     const multivariant = publicProductContract.safeParse(body);
-    if (multivariant.success) return multivariant.data;
     const simple = publicSimpleProductContract.safeParse(body);
-    return simple.success ? simple.data : undefined;
+    const store = publicStoreContract.safeParse(await storeResponse.json());
+    if ((!multivariant.success && !simple.success) || !store.success) {
+      return undefined;
+    }
+    return {
+      product: multivariant.success ? multivariant.data : simple.data!,
+      returnPolicy: store.data.returnPolicy,
+    };
   } catch {
     return undefined;
   }
@@ -111,6 +134,7 @@ function cartVariants(product: PublicProduct | PublicSimpleProduct) {
       {
         variantId: product.variantId,
         label: product.name,
+        priceLabel: formatIrrAsToman(product.price.amount),
         available: product.availability === "AVAILABLE",
       },
     ];
@@ -118,6 +142,7 @@ function cartVariants(product: PublicProduct | PublicSimpleProduct) {
   return product.variants.map((variant) => ({
     variantId: variant.variantId,
     label: variant.combination.map((part) => part.value).join("، ") || product.name,
+    priceLabel: formatIrrAsToman(variant.price.amount),
     available: variant.availability === "AVAILABLE",
   }));
 }
