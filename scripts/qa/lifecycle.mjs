@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 import { createPostgresDemoSeedDatabase } from "../demo/postgres.mjs";
+import { createQaCommandRunner } from "./command-runner.mjs";
 import { assertQaProjectIsAbsent, createQaLifecycleRequest } from "./runtime.mjs";
 import { runOwnedQaStartup } from "./startup-ownership.mjs";
 
@@ -19,28 +19,18 @@ Object.assign(lifecycleEnvironment, {
   MINIO_HOST_PORT: "0",
   MINIO_CONSOLE_HOST_PORT: "0",
 });
+const commands = createQaCommandRunner({ environment: lifecycleEnvironment });
 
 function run(command, commandArguments, options = {}) {
-  const result = spawnSync(command, commandArguments, {
-    encoding: options.capture ? "utf8" : undefined,
-    env: options.environment ?? lifecycleEnvironment,
-    shell: process.platform === "win32",
-    stdio: options.capture ? "pipe" : "inherit",
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(
-      options.capture && result.stderr
-        ? result.stderr.trim()
-        : `${command} exited with status ${result.status}`,
-    );
-  }
-  return options.capture ? result.stdout.trim() : "";
+  return commands.command(command, commandArguments, options);
+}
+
+function docker(commandArguments, options = {}) {
+  return commands.docker(commandArguments, options);
 }
 
 function compose(commandArguments, options) {
-  return run(
-    "docker",
+  return docker(
     ["compose", "--project-name", request.projectName, ...commandArguments],
     options,
   );
@@ -48,8 +38,7 @@ function compose(commandArguments, options) {
 
 function projectResourceIds(resourceType) {
   const allOption = resourceType === "container" ? ["--all"] : [];
-  const output = run(
-    "docker",
+  const output = docker(
     [
       resourceType,
       "ls",
@@ -72,8 +61,7 @@ function assertProjectAbsent() {
 }
 
 function readOwnershipToken() {
-  return run(
-    "docker",
+  return docker(
     [
       "volume",
       "inspect",
@@ -87,8 +75,7 @@ function readOwnershipToken() {
 
 function acquireOwnership() {
   const token = randomUUID();
-  run(
-    "docker",
+  docker(
     [
       "volume",
       "create",
@@ -110,7 +97,7 @@ function releaseOwnership(token) {
   if (readOwnershipToken() !== token) {
     throw new Error("QA lifecycle ownership changed; refusing to release its lease");
   }
-  run("docker", ["volume", "rm", ownershipVolume], { capture: true });
+  docker(["volume", "rm", ownershipVolume], { capture: true });
 }
 
 function publishedPort(service, containerPort) {
