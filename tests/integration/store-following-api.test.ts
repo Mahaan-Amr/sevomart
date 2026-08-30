@@ -82,7 +82,7 @@ describe("store following HTTP API with PostgreSQL", () => {
     });
     expect(JSON.stringify(followed.json())).not.toMatch(/identity|mobile/i);
 
-    await projectFollowerCountEvents();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 
     const guestStore = await server.inject({
       method: "GET",
@@ -246,7 +246,7 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(removed.json()).toMatchObject({ status: "INACTIVE", revision: 2 });
     expect(removedRetry.json()).toEqual(removed.json());
 
-    await projectFollowerCountEvents();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const [count] = await sql<Array<{ count: number }>>`
@@ -296,7 +296,7 @@ describe("store following HTTP API with PostgreSQL", () => {
     );
     expect(responses.map(({ statusCode }) => statusCode)).toEqual([200, 200]);
 
-    await projectFollowerCountEvents();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 
     const publicStore = await server.inject({
       method: "GET",
@@ -335,7 +335,7 @@ describe("store following HTTP API with PostgreSQL", () => {
     });
     expect(publicStore.json()).toMatchObject({ followerCount: { count: 0 } });
 
-    await projectFollowerCountEvents();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
     const projectedStore = await server.inject({
       method: "GET",
       url: "/v1/stores/eventual-follow-count",
@@ -362,7 +362,7 @@ describe("store following HTTP API with PostgreSQL", () => {
       });
       expect(followed.statusCode).toBe(200);
     }
-    await projectFollowerCountEvents();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const [firstRelation] = await sql<Array<{ identityId: string }>>`
@@ -386,7 +386,7 @@ describe("store following HTTP API with PostgreSQL", () => {
     });
     await sql.begin((transaction) => enqueueOutboxEvent(transaction, inactiveEvent));
     await sql.end();
-    await projectFollowerCountEvents();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 
     const damaged = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     await damaged`delete from discovery_identity_status_projections`;
@@ -823,8 +823,4 @@ async function publishStore(
     id: published.json<{ store: { id: string } }>().store.id,
     ownerId,
   };
-}
-
-async function projectFollowerCountEvents() {
-  await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 }

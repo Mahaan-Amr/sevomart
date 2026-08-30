@@ -69,7 +69,7 @@ describe("discovery projection with real store, product and inventory producers"
       },
     });
     expect(followed.statusCode, followed.body).toBe(200);
-    await projectFollowerCountEvents();
+    await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
     const following = await server.inject({
       method: "GET",
       url: "/v1/me/feeds/following?limit=30",
@@ -338,10 +338,6 @@ async function projectDiscoveryEvents() {
   } finally {
     await worker.close();
   }
-}
-
-async function projectFollowerCountEvents() {
-  await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 }
 
 function writeHeaders(cookie: string, key: string, expectedRevision: number) {
