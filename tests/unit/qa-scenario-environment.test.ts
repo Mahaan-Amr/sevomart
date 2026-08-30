@@ -61,6 +61,11 @@ describe("QA scenario process environment", () => {
       MINIO_ENDPOINT: "objects.example.com",
       MINIO_SECRET_KEY: "human-secret",
       OTEL_EXPORTER_OTLP_ENDPOINT: "https://telemetry.example.com",
+      INTERNAL_API_URL: "https://api.human.example",
+      API_BASE_URL: "https://public.human.example",
+      API_READINESS_URL: "https://api.human.example/ready",
+      SELLER_APPROVAL_RECOVERY_SECRET: "human-seller-recovery-secret",
+      PAYMENT_RECOVERY_SECRET: "human-payment-recovery-secret",
     });
 
     expect(environment).toMatchObject({
@@ -71,6 +76,11 @@ describe("QA scenario process environment", () => {
       MINIO_SECRET_KEY: "sevo_local_password",
       OTEL_EXPORTER_OTLP_ENDPOINT: "",
     });
+    expect(environment).not.toHaveProperty("INTERNAL_API_URL");
+    expect(environment).not.toHaveProperty("API_BASE_URL");
+    expect(environment).not.toHaveProperty("API_READINESS_URL");
+    expect(environment).not.toHaveProperty("SELLER_APPROVAL_RECOVERY_SECRET");
+    expect(environment).not.toHaveProperty("PAYMENT_RECOVERY_SECRET");
     expect(() =>
       assertQaScenarioCallbackEnvironment(environment, target),
     ).not.toThrow();

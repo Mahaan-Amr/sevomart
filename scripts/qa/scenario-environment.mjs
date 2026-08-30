@@ -1,12 +1,34 @@
+const neutralProcessEnvironmentKeys = new Set([
+  "APPDATA",
+  "CI",
+  "ComSpec",
+  "COREPACK_HOME",
+  "DOCKER_CONFIG",
+  "DOCKER_CONTEXT",
+  "DOCKER_HOST",
+  "FORCE_COLOR",
+  "GITHUB_ACTIONS",
+  "HOME",
+  "LOCALAPPDATA",
+  "NO_COLOR",
+  "PATH",
+  "PATHEXT",
+  "PNPM_HOME",
+  "SystemRoot",
+  "TEMP",
+  "TERM",
+  "TMP",
+  "TMPDIR",
+  "USERPROFILE",
+  "WINDIR",
+  "XDG_RUNTIME_DIR",
+]);
+
 export function createQaScenarioProcessEnvironment(environment = process.env) {
-  const qaEnvironment = { ...environment };
-  for (const key of Object.keys(qaEnvironment)) {
-    if (
-      key === "DATABASE_URL" ||
-      key === "OTEL_EXPORTER_OTLP_ENDPOINT" ||
-      key.startsWith("MINIO_")
-    ) {
-      delete qaEnvironment[key];
+  const qaEnvironment = {};
+  for (const [key, value] of Object.entries(environment)) {
+    if (neutralProcessEnvironmentKeys.has(key) && value !== undefined) {
+      qaEnvironment[key] = value;
     }
   }
   Object.assign(qaEnvironment, {
@@ -19,15 +41,10 @@ export function createQaScenarioProcessEnvironment(environment = process.env) {
 }
 
 export function createQaScenarioCallbackEnvironment(target, environment = process.env) {
+  const expected = createExpectedCallbackTargets(target);
   const callbackEnvironment = {
     ...createQaScenarioProcessEnvironment(environment),
-    DATABASE_URL: `postgresql://sevo:sevo_local@127.0.0.1:${target.databasePort}/${target.databaseName}`,
-    MINIO_ACCESS_KEY: "sevo_local",
-    MINIO_BUCKET: "sevo-media",
-    MINIO_ENDPOINT: "127.0.0.1",
-    MINIO_PORT: String(target.minioPort),
-    MINIO_SECRET_KEY: "sevo_local_password",
-    MINIO_USE_SSL: "false",
+    ...expected,
   };
   assertQaScenarioCallbackEnvironment(callbackEnvironment, target);
   return Object.freeze(callbackEnvironment);
