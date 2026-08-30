@@ -21,16 +21,8 @@ Object.assign(lifecycleEnvironment, {
 });
 const commands = createQaCommandRunner({ environment: lifecycleEnvironment });
 
-function run(command, commandArguments, options = {}) {
-  return commands.command(command, commandArguments, options);
-}
-
-function docker(commandArguments, options = {}) {
-  return commands.docker(commandArguments, options);
-}
-
 function compose(commandArguments, options) {
-  return docker(
+  return commands.docker(
     ["compose", "--project-name", request.projectName, ...commandArguments],
     options,
   );
@@ -38,7 +30,7 @@ function compose(commandArguments, options) {
 
 function projectResourceIds(resourceType) {
   const allOption = resourceType === "container" ? ["--all"] : [];
-  const output = docker(
+  const output = commands.docker(
     [
       resourceType,
       "ls",
@@ -61,7 +53,7 @@ function assertProjectAbsent() {
 }
 
 function readOwnershipToken() {
-  return docker(
+  return commands.docker(
     [
       "volume",
       "inspect",
@@ -75,7 +67,7 @@ function readOwnershipToken() {
 
 function acquireOwnership() {
   const token = randomUUID();
-  docker(
+  commands.docker(
     [
       "volume",
       "create",
@@ -97,7 +89,7 @@ function releaseOwnership(token) {
   if (readOwnershipToken() !== token) {
     throw new Error("QA lifecycle ownership changed; refusing to release its lease");
   }
-  docker(["volume", "rm", ownershipVolume], { capture: true });
+  commands.docker(["volume", "rm", ownershipVolume], { capture: true });
 }
 
 function publishedPort(service, containerPort) {
@@ -131,7 +123,7 @@ async function bringUp() {
       const databasePort = publishedPort("postgres", 5432);
       const minioPort = publishedPort("minio", 9000);
       const databaseUrl = `postgresql://sevo:sevo_local@127.0.0.1:${databasePort}/${request.databaseName}`;
-      run(
+      commands.command(
         "pnpm",
         ["--filter", "@sevo/database", "exec", "prisma", "migrate", "deploy"],
         {

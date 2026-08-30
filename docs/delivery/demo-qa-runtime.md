@@ -91,13 +91,13 @@ fingerprint و حذف منابع، claim را نگه می‌دارد و در پ�
   `demo` در Compose نیز همان manifest نسخهٔ ۱ و report شمار صفر را ثبت کرد.
 - `qa:up` پایگاه `sevo_qa_issue_126` را روی پورت تصادفی ساخت؛ `qa:down` با fingerprint نادرست
   حذف را رد کرد و با fingerprint درست فقط همان containerها و volumeها را حذف کرد.
-- در follow-up بازبینی ۱۴۰۵-۰۶-۰۸، آزمون رقابت قطعی دو `qa:up` فقط یک owner و یک cleanup را
-  پذیرفت. آزمون integration روی پایگاه disposable با ۴۹ migration ثابت کرد fingerprint نادرست
-  دو سرویس و claim را نگه می‌دارد و fingerprint درست همان پروژه و claim را حذف می‌کند.
-- harness رقابت از coordinator واقعی startup با boundary تزریق‌شدهٔ Docker استفاده می‌کند و
-  به shebang، executable bit، پسوند command یا جداکنندهٔ `PATH` وابسته نیست؛ بنابراین همان
-  assertionهای one-owner، one-up، one-cleanup و owner-only release روی Windows، macOS و Linux
-  اجرا می‌شوند.
+- در follow-up بازبینی ۱۴۰۵-۰۶-۰۸، آزمون integration دو process واقعی `qa:up` را هم‌زمان با
+  یک run id یکتا اجرا می‌کند. این آزمون روی claim واقعی Docker ثابت می‌کند دقیقاً یک process
+  owner و تنها startup موفق می‌شود، بازنده claim و سرویس‌های برنده را نگه می‌دارد، و teardown
+  برنده فقط همان پروژه و claim را حذف می‌کند و هیچ منبع QA باقی نمی‌ماند.
+- همان آزمون بدون script کمکی، shebang، executable bit، lookup در `PATH` یا shell، processهای
+  Node و Docker واقعی را اجرا می‌کند؛ بنابراین مسیر رقابت production روی Windows، macOS و Linux
+  یکسان است. آزمون واحد جداگانه فقط قرارداد حفظ claim هنگام cleanup ناموفق را پوشش می‌دهد.
 - همهٔ فرمان‌های Docker بدون shell اجرا می‌شوند تا argumentهایی مانند Go template مالکیت روی
   Windows بدون بازنویسی منتقل شوند؛ shell فقط برای command بومی `pnpm` در Windows باقی می‌ماند.
 - اگر cleanup پس از startup ناموفق تأیید نشود، claim حذف نمی‌شود؛ محیط ناقص owner بازیابی‌پذیر
