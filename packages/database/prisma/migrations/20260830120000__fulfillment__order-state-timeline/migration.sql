@@ -51,14 +51,23 @@ CREATE INDEX "fulfillment_timeline_entries_order_id_occurred_at_idx"
 ON "fulfillment_timeline_entries"("order_id", "occurred_at");
 
 CREATE TABLE "fulfillment_idempotency_records" (
+    "operation" VARCHAR(32) NOT NULL,
     "order_id" UUID NOT NULL,
     "actor_id" UUID NOT NULL,
     "key" VARCHAR(128) NOT NULL,
     "request_hash" CHAR(64) NOT NULL,
-    "response_json" JSONB NOT NULL,
+    "state" VARCHAR(16) NOT NULL,
+    "locked_until" TIMESTAMPTZ(3) NOT NULL,
+    "response_json" JSONB,
     "correlation_id" UUID NOT NULL,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completed_at" TIMESTAMPTZ(3),
 
     CONSTRAINT "fulfillment_idempotency_records_pkey"
-      PRIMARY KEY ("order_id", "actor_id", "key")
+      PRIMARY KEY ("operation", "order_id", "actor_id", "key"),
+    CONSTRAINT "fulfillment_idempotency_state_check"
+      CHECK ("state" IN ('IN_PROGRESS', 'COMPLETED')),
+    CONSTRAINT "fulfillment_idempotency_completion_check"
+      CHECK (("state" = 'IN_PROGRESS' AND "response_json" IS NULL AND "completed_at" IS NULL) OR
+             ("state" = 'COMPLETED' AND "response_json" IS NOT NULL AND "completed_at" IS NOT NULL))
 );

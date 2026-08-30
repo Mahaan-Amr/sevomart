@@ -26,6 +26,8 @@ type TimelineRow = {
   trackingCode: string | null;
 };
 
+const advanceOperation = "ADVANCE";
+
 export class PostgresFulfillmentRepository implements FulfillmentRepository {
   readonly #sql;
 
@@ -78,13 +80,13 @@ export class PostgresFulfillmentRepository implements FulfillmentRepository {
 
   async advance(command: Parameters<FulfillmentRepository["advance"]>[0]) {
     return this.#sql.begin(async (sql) => {
+      const replay = await claimAdvance(sql, command);
+      if (replay) return replay;
       await sql`
         select pg_advisory_xact_lock(
           hashtextextended(${`fulfillment:${command.orderId}`}, 0)
         )
       `;
-      const replay = await readAdvanceReplay(sql, command);
-      if (replay) return replay;
       const current = await sql<
         Array<{ status: FulfillmentStatus; version: number; storeId: string | null }>
       >`
@@ -129,7 +131,7 @@ export class PostgresFulfillmentRepository implements FulfillmentRepository {
           aggregateVersion: version,
           occurredAt: command.occurredAt.toISOString(),
           correlationId: command.correlationId,
-          causationId: entryId,
+          causationId: command.causationId,
           actor: { type: "IDENTITY", id: command.actorId },
           payload: {
             fromStatus: current[0].status,
@@ -140,11 +142,11 @@ export class PostgresFulfillmentRepository implements FulfillmentRepository {
       const result = await readTimeline(sql, command.orderId);
       if (!result) throw new FulfillmentFault("FULFILLMENT_NOT_FOUND");
       await sql`
-        insert into fulfillment_idempotency_records
-          (order_id, actor_id, key, request_hash, response_json, correlation_id)
-        values
-          (${command.orderId}, ${command.actorId}, ${command.idempotencyKey},
-           ${command.requestHash}, ${sql.json(asJson(result))}, ${command.correlationId})
+        update fulfillment_idempotency_records
+        set state = 'COMPLETED', locked_until = now(), completed_at = now(),
+          response_json = ${sql.json(asJson(result))}
+        where operation = ${advanceOperation} and order_id = ${command.orderId}
+          and actor_id = ${command.actorId} and key = ${command.idempotencyKey}
       `;
       return result;
     });
@@ -180,17 +182,72 @@ async function readAdvanceReplay(
     requestHash: string;
   },
 ) {
-  const rows = await sql<Array<{ requestHash: string; response: JSONValue }>>`
-    select request_hash as "requestHash", response_json as response
+  const rows = await sql<
+    Array<{
+      requestHash: string;
+      state: "IN_PROGRESS" | "COMPLETED";
+      lockedUntil: Date;
+      response: JSONValue | null;
+    }>
+  >`
+    select request_hash as "requestHash", state, locked_until as "lockedUntil",
+      response_json as response
     from fulfillment_idempotency_records
-    where order_id = ${command.orderId} and actor_id = ${command.actorId}
+    where operation = ${advanceOperation} and order_id = ${command.orderId}
+      and actor_id = ${command.actorId}
       and key = ${command.idempotencyKey}
   `;
   if (!rows[0]) return undefined;
   if (rows[0].requestHash !== command.requestHash) {
     throw new FulfillmentFault("IDEMPOTENCY_CONFLICT");
   }
-  return fulfillmentTimelineContract.parse(rows[0].response);
+  if (rows[0].state === "COMPLETED" && rows[0].response !== null) {
+    return fulfillmentTimelineContract.parse(rows[0].response);
+  }
+  if (rows[0].lockedUntil.getTime() > Date.now()) {
+    throw new FulfillmentFault("IDEMPOTENCY_IN_PROGRESS");
+  }
+  return undefined;
+}
+
+async function claimAdvance(
+  sql: ReturnType<typeof postgres>,
+  command: Parameters<FulfillmentRepository["advance"]>[0],
+) {
+  const lockKey = [
+    "fulfillment",
+    advanceOperation,
+    command.orderId,
+    command.actorId,
+    command.idempotencyKey,
+  ].join(":");
+  const lock = await sql<Array<{ locked: boolean }>>`
+    select pg_try_advisory_xact_lock(hashtextextended(${lockKey}, 0)) as locked
+  `;
+  if (!lock[0]?.locked) throw new FulfillmentFault("IDEMPOTENCY_IN_PROGRESS");
+
+  const replay = await readAdvanceReplay(sql, command);
+  if (replay) return replay;
+  const updated = await sql`
+    update fulfillment_idempotency_records
+    set state = 'IN_PROGRESS', locked_until = now() + interval '30 seconds',
+      response_json = null, correlation_id = ${command.correlationId}, completed_at = null
+    where operation = ${advanceOperation} and order_id = ${command.orderId}
+      and actor_id = ${command.actorId} and key = ${command.idempotencyKey}
+    returning key
+  `;
+  if (updated.count === 0) {
+    await sql`
+      insert into fulfillment_idempotency_records
+        (operation, order_id, actor_id, key, request_hash, state, locked_until,
+         correlation_id)
+      values
+        (${advanceOperation}, ${command.orderId}, ${command.actorId},
+         ${command.idempotencyKey}, ${command.requestHash}, 'IN_PROGRESS',
+         now() + interval '30 seconds', ${command.correlationId})
+    `;
+  }
+  return undefined;
 }
 
 function timelineFromRows(rows: TimelineRow[]): FulfillmentTimeline {

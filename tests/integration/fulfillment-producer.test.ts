@@ -163,6 +163,35 @@ describe("fulfillment producer persistence", () => {
       });
       expect(missingMethod.statusCode).toBe(422);
 
+      const busyPayload = {
+        targetStatus: "SHIPPED",
+        shipping: { method: "پست پیشتاز", trackingCode: "1234567890" },
+      } as const;
+      const busyKey = "ship-busy-134";
+      await sql`
+        insert into fulfillment_idempotency_records
+          (operation, order_id, actor_id, key, request_hash, state, locked_until,
+           correlation_id)
+        values
+          ('ADVANCE', ${orderId}, ${buyerAndSellerId}, ${busyKey},
+           ${createHash("sha256").update(JSON.stringify(busyPayload)).digest("hex")},
+           'IN_PROGRESS', now() + interval '30 seconds', ${randomUUID()})
+      `;
+      const busy = await server.inject({
+        method: "POST",
+        url: `/v1/seller/orders/${orderId}/fulfillment/advance`,
+        headers: { cookie, "idempotency-key": busyKey },
+        payload: busyPayload,
+      });
+      expect(busy.statusCode).toBe(409);
+      expect(busy.json().code).toBe("IDEMPOTENCY_IN_PROGRESS");
+      expect(busy.headers["retry-after"]).toBe("1");
+      await sql`
+        delete from fulfillment_idempotency_records
+        where operation = 'ADVANCE' and order_id = ${orderId}
+          and actor_id = ${buyerAndSellerId} and key = ${busyKey}
+      `;
+
       const shipped = await server.inject({
         method: "POST",
         url: `/v1/seller/orders/${orderId}/fulfillment/advance`,
@@ -262,12 +291,19 @@ describe("fulfillment producer persistence", () => {
       }),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
 
-    const events = await sql<Array<{ payload: Record<string, unknown> }>>`
-      select payload from platform_outbox_events
+    const events = await sql<
+      Array<{ causationId: string; payload: Record<string, unknown> }>
+    >`
+      select causation_id as "causationId", payload from platform_outbox_events
       where aggregate_id = ${orderId} and event_type = 'FulfillmentAdvanced.v1'
       order by aggregate_version
     `;
     expect(events).toHaveLength(3);
+    expect(events.map((event) => event.causationId)).toEqual([
+      preparing.causationId,
+      shipped.causationId,
+      delivered.causationId,
+    ]);
     expect(JSON.stringify(events)).not.toMatch(/tracking|mobile|address/i);
   });
 
@@ -286,6 +322,37 @@ describe("fulfillment producer persistence", () => {
       where order_id = ${orderId}
     `;
     expect(entries).toEqual([{ count: 2 }]);
+  });
+
+  it("rejects a simultaneous replay while the same idempotency claim is locked", async () => {
+    await sql.begin((transaction) =>
+      projectActionableOrder(actionableEvent(), transaction),
+    );
+    const inFlight = command("PREPARING", "advance-concurrent-134");
+    const lockKey = [
+      "fulfillment",
+      "ADVANCE",
+      inFlight.orderId,
+      inFlight.actorId,
+      inFlight.idempotencyKey,
+    ].join(":");
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await blocker.begin(async (transaction) => {
+        await transaction`
+          select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+        `;
+        await expect(repository.advance(inFlight)).rejects.toMatchObject({
+          code: "IDEMPOTENCY_IN_PROGRESS",
+        });
+      });
+    } finally {
+      await blocker.end();
+    }
+    expect(await repository.read(orderId)).toMatchObject({
+      status: "ACTION_REQUIRED",
+      timeline: [{ status: "ACTION_REQUIRED" }],
+    });
   });
 });
 
@@ -319,6 +386,7 @@ function command(
     actorId,
     storeId,
     correlationId: randomUUID(),
+    causationId: randomUUID(),
     occurredAt: new Date("2026-08-30T10:00:00.000Z"),
     idempotencyKey,
     requestHash: createHash("sha256").update(JSON.stringify(input)).digest("hex"),

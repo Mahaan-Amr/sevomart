@@ -34,14 +34,18 @@ model FulfillmentTimelineEntry {
 }
 
 model FulfillmentIdempotencyRecord {
+  operation     String   @db.VarChar(32)
   orderId       String   @map("order_id") @db.Uuid
   actorId       String   @map("actor_id") @db.Uuid
   key           String   @db.VarChar(128)
   requestHash   String   @map("request_hash") @db.Char(64)
-  responseJson  Json     @map("response_json") @db.JsonB
+  state         String   @db.VarChar(16)
+  lockedUntil   DateTime @map("locked_until") @db.Timestamptz(3)
+  responseJson  Json?    @map("response_json") @db.JsonB
   correlationId String   @map("correlation_id") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(3)
 
-  @@id([orderId, actorId, key])
+  @@id([operation, orderId, actorId, key])
   @@map("fulfillment_idempotency_records")
 }

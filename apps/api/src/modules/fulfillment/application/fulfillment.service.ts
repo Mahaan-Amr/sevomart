@@ -61,6 +61,7 @@ export class FulfillmentService {
       actorId,
       storeId,
       correlationId: request.correlationId,
+      causationId: request.correlationId,
       occurredAt: this.now(),
       idempotencyKey: parsedKey.data,
       requestHash,

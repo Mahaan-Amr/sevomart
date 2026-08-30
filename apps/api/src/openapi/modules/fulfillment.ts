@@ -23,6 +23,13 @@ const readErrors = [
   { status: 500, schema: "InternalServerError" },
 ] as const;
 
+const idempotencyRetryHeader = {
+  "Retry-After": {
+    description: "Seconds before retrying an in-progress idempotent request",
+    schema: { type: "string" as const, example: "1" },
+  },
+};
+
 const operations = [
   {
     ...fulfillmentV1Operations.advanceFulfillment,
@@ -44,7 +51,7 @@ const operations = [
     responses: [
       { status: 200, schema: "FulfillmentTimeline" },
       ...readErrors,
-      { status: 409, schema: "FulfillmentError" },
+      { status: 409, schema: "FulfillmentError", headers: idempotencyRetryHeader },
       { status: 422, schema: "FulfillmentError" },
       { status: 428, schema: "FulfillmentError" },
     ],

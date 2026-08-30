@@ -40,6 +40,7 @@ export type AdvanceFulfillmentCommand = Readonly<{
   actorId: IdentityId;
   storeId: StoreId;
   correlationId: string;
+  causationId: string;
   occurredAt: Date;
   idempotencyKey: string;
   requestHash: string;

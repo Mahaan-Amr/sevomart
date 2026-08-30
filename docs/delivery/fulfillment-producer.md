@@ -14,8 +14,12 @@
   جایگزین نمی‌کنند.
 - `AdvanceFulfillment.v1` برای `SHIPPED` روش ارسال را الزامی و کد رهگیری را
   اختیاری می‌گیرد. هر تغییر actor، زمان، correlation و نسخه افزایشی دارد؛ رخداد
-  outbox فقط وضعیت‌های پیشین/بعدی و envelope ممیزی را حمل می‌کند و کد رهگیری یا
-  داده خریدار در آن منتشر نمی‌شود.
+  outbox causation درخواست آغازگر را حفظ می‌کند و فقط وضعیت‌های پیشین/بعدی و
+  envelope ممیزی را حمل می‌کند؛ کد رهگیری یا داده خریدار در آن منتشر نمی‌شود.
+- تغییر وضعیت با هویت `ADVANCE + orderId + actorId + key`، hash درخواست، وضعیت
+  `IN_PROGRESS | COMPLETED` و lease سی‌ثانیه‌ای ثبت می‌شود. درخواست هم‌زمان با
+  `409 IDEMPOTENCY_IN_PROGRESS` و `Retry-After` پاسخ می‌گیرد و replay تکمیل‌شده
+  همان timeline قبلی را بدون اثر دوم برمی‌گرداند.
 - فروشنده فقط سفارش پرداخت‌شده همان فروشگاه را تغییر می‌دهد. readهای فروشنده و
   خریدار از یک projection و یک قرارداد timeline استفاده می‌کنند و پاسخ HTTP هر
   دو `Cache-Control: no-store` است.
@@ -51,8 +55,9 @@ native همان تاریخچه `prisma migrate deploy` را مصرف می‌کن
   snapshot نسخه‌دار و جلوگیری از دسترسی نامرتبط؛
 - contract: operationها، الزام روش ارسال، timeline، snapshot و رخداد بدون داده حساس؛
 - integration روی PostgreSQL تازه: مصرف تکراری handoff، replay، رقابت transition،
-  تعارض idempotency، مسیر کامل تا `DELIVERED`، زمان‌های snapshot، outbox اتمیک و
-  مسیرهای HTTP واقعی فروشنده/خریدار؛
+  تعارض و درخواست درحال‌اجرای idempotency، حفظ causation، مسیر کامل تا
+  `DELIVERED`، زمان‌های snapshot، outbox اتمیک و مسیرهای HTTP واقعی
+  فروشنده/خریدار؛
 - `docker compose up --build --wait`: API، وب، worker، PostgreSQL و MinIO همگی
   healthy؛
 - `pnpm dev`: migration تازه و build packageها موفق، API و worker آماده، health API
