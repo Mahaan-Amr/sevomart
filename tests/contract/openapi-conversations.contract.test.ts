@@ -42,6 +42,13 @@ describe("conversations v1 OpenAPI contract", () => {
     );
     expect(collection.post.responses["409"].headers).toHaveProperty("Retry-After");
 
+    const needsReply = document.paths["/v1/conversations/needs-reply"].get;
+    expect(needsReply.operationId).toBe("readConversationNeedsReply");
+    expect(needsReply.security).toEqual([{ identitySession: [] }]);
+    expect(needsReply.responses["200"].content["application/json"].schema.$ref).toBe(
+      "#/components/schemas/ConversationNeedsReplyV1",
+    );
+
     const thread = document.paths["/v1/conversations/{conversationId}"].get;
     expect(thread.operationId).toBe("readConversation");
     expect(thread.security).toEqual([{ identitySession: [] }]);
@@ -70,6 +77,7 @@ describe("conversations v1 OpenAPI contract", () => {
     expect(document.components.schemas).toMatchObject({
       ConversationContextEligibilityV1: expect.any(Object),
       ConversationThreadV1: expect.any(Object),
+      ConversationNeedsReplyV1: expect.any(Object),
       ConversationMessageV1: expect.any(Object),
       ConversationOutgoingMessageV1: expect.any(Object),
       ConversationErrorV1: expect.any(Object),

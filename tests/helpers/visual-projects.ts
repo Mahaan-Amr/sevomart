@@ -27,6 +27,19 @@ export const sellerWorkspaceTestMobiles = Array.from({ length: 4 }, (_, index) =
   testMobile(44 + index),
 );
 
+export const sellerConversationTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(144 + index),
+);
+
+export const buyerConversationTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(148 + index),
+);
+
+export const otherSellerConversationTestMobiles = Array.from(
+  { length: 4 },
+  (_, index) => testMobile(152 + index),
+);
+
 export const productTracerTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(50 + index),
 );

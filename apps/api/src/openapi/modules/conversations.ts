@@ -83,6 +83,17 @@ const operations = [
     ],
   },
   {
+    ...conversationsV1Operations.readConversationNeedsReply,
+    tag: "conversations",
+    auth: "identity-session",
+    responses: [
+      { status: 200, schema: "ConversationNeedsReplyV1" },
+      { status: 401, schema: "ConversationErrorV1" },
+      { status: 403, schema: "ConversationErrorV1" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...conversationsV1Operations.readConversation,
     tag: "conversations",
     auth: "identity-session",
