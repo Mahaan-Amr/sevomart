@@ -309,9 +309,11 @@ export class ProductController {
       if (error instanceof SellerAccessInactiveError) {
         throw new HttpException(
           {
+            version: 1,
             code: "SELLER_ACCESS_INACTIVE",
             message: "دسترسی فروشندگی شما فعال نیست.",
             correlationId: request.id,
+            details: { issues: [] },
           },
           HttpStatus.FORBIDDEN,
         );

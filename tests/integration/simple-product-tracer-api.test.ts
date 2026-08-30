@@ -165,6 +165,26 @@ describe("simple product tracer HTTP API", () => {
       headers: { cookie },
     });
     expect(invalidCursor.statusCode).toBe(422);
+
+    const accessSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await accessSql`update identity_seller_access set status = 'SUSPENDED'`;
+    } finally {
+      await accessSql.end();
+    }
+    const inactive = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products",
+      headers: { cookie },
+    });
+    expect(inactive.statusCode).toBe(403);
+    expect(inactive.json()).toEqual({
+      version: 1,
+      code: "SELLER_ACCESS_INACTIVE",
+      message: "دسترسی فروشندگی شما فعال نیست.",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
   });
 
   it("creates, previews and atomically publishes one sellable physical product", async () => {

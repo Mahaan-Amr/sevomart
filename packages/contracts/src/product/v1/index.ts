@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createJsonSchemaMap } from "../../json-schema";
 import { mediaIdContract } from "../../media-v1";
 import {
+  errorEnvelopeV1Contract,
   eventActorV1Contract,
   eventEnvelopeV1Contract,
   moneyV1Contract,
@@ -639,11 +640,9 @@ export const productPreconditionRequiredErrorContract = z
   })
   .strict();
 
-export const sellerProductAccessInactiveErrorContract = z
-  .object({
+export const sellerProductAccessInactiveErrorContract = errorEnvelopeV1Contract
+  .extend({
     code: z.literal("SELLER_ACCESS_INACTIVE"),
-    message: z.string().min(1),
-    correlationId: z.string().min(1),
   })
   .strict();
 
@@ -846,9 +845,11 @@ export const productV1Examples = {
     correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
   },
   SellerProductAccessInactiveError: {
+    version: 1,
     code: "SELLER_ACCESS_INACTIVE",
     message: "دسترسی فروشندگی شما فعال نیست.",
     correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+    details: { issues: [] },
   },
 } as const;
 
