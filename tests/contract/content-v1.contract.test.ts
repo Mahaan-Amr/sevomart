@@ -7,6 +7,7 @@ import {
   salesContentProductEligibilityDecisionContract,
   salesContentPublishedV1Contract,
 } from "@sevo/contracts/content/v1";
+import { orderItemIdContract as ordersOrderItemIdContract } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
 
 const ids = {
@@ -114,6 +115,14 @@ describe("content v1 contract", () => {
     expect(
       publishPurchaseExperienceInputContract.safeParse({ ...input, rating: 6 }).success,
     ).toBe(false);
+  });
+
+  it("re-exports the Orders-owned order item identifier seam", async () => {
+    const { orderItemIdContract } = await import("@sevo/contracts/content/v1");
+
+    const ownerValue = ordersOrderItemIdContract.parse(ids.orderItem);
+    expect(orderItemIdContract.parse(ownerValue)).toBe(ownerValue);
+    expect(orderItemIdContract.safeParse("not-an-order-item").success).toBe(false);
   });
 
   it("keeps seller content and verified purchase experience distinct in events", () => {
