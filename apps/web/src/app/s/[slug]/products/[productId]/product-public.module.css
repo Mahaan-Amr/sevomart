@@ -28,6 +28,26 @@
   padding-inline: 12px;
 }
 
+.selectedOffer {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding-block: 8px;
+  border-block: 1px solid var(--color-divider);
+}
+
+.selectedOffer span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.selectedOffer span:last-child {
+  grid-column: 1 / -1;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 .cartAction button {
   grid-column: 1 / -1;
   border: 0;
@@ -89,6 +109,64 @@
   object-fit: cover;
 }
 
+.gallery {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.gallery:has(.image:nth-child(2)) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gallery:has(.image:nth-child(2)) .image:first-child {
+  grid-column: 1 / -1;
+}
+
+.axes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.axes div {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr;
+  gap: 12px;
+}
+
+.axes dt {
+  color: var(--color-muted);
+}
+
+.axes dd {
+  margin: 0;
+}
+
+.selectionHint {
+  grid-column: 1 / -1;
+  color: var(--color-muted);
+}
+
+.error {
+  width: min(100%, 560px);
+  padding: 24px;
+  border-radius: 24px;
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.error a {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  padding-inline: 16px;
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  text-decoration: none;
+}
+
 .details {
   display: grid;
   gap: 12px;
@@ -118,6 +196,24 @@
 .payment {
   padding-block-start: 12px;
   border-block-start: 1px solid var(--color-divider);
+}
+
+.purchaseTerms {
+  display: grid;
+  gap: 4px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.purchaseTerms span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.purchaseTerms strong {
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.8;
 }
 
 .conversation {
@@ -179,5 +275,9 @@
   .details {
     align-content: center;
     padding: 32px;
+  }
+
+  .gallery {
+    grid-column: 1;
   }
 }

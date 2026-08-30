@@ -17,7 +17,7 @@ import {
 test("seller publishes a two-axis product that a guest sees on the storefront", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = productTracerTestMobiles[projectIndex]!;
   const slug = `product-tracer-${projectIndex}`;
@@ -57,7 +57,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
          theme_color, status, published_at, publication_version, revision)
       values
         (${storeId}, 'خانه فنجان', ${slug}, 'کالاهای ساده و دست‌ساز',
-         'تا هفت روز امکان درخواست مرجوعی وجود دارد.', 1,
+         'تا هفت روز پس از تحویل می‌توانید برای کالای استفاده‌نشده درخواست مرجوعی ثبت کنید؛ کالا باید با بسته‌بندی و متعلقات کامل بازگردانده شود.', 1,
          'TEST', 'TEST_VERIFIED', now(), '#A41439', 'PUBLISHED', now(), 1, 1)
     `;
     await sql`
@@ -365,20 +365,74 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("button", { name: "انتشار دوباره" }).click();
   await page.getByRole("link", { name: "دیدن کالا در فروشگاه" }).click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
-  await expect(page.getByText("از ۴۵۶٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("از ۴۵۶٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toHaveCount(0);
+  await expect(page.getByText("رنگ", { exact: true })).toBeVisible();
+  await expect(page.getByText("قرمز، آبی", { exact: true })).toBeVisible();
+  await expect(page.getByText("اندازه", { exact: true })).toBeVisible();
+  await expect(page.getByText("کوچک، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText("قرمز، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
-  await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("خانه فنجان", { exact: true })).toBeVisible();
+  await expect(page.getByText("پست پیشتاز", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "روش‌های ارسال" })).toContainText(
+    "۰ تومان",
+  );
+  await expect(
+    page.getByText("زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود."),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "تا هفت روز پس از تحویل می‌توانید برای کالای استفاده‌نشده درخواست مرجوعی ثبت کنید؛ کالا باید با بسته‌بندی و متعلقات کامل بازگردانده شود.",
+    ),
+  ).toBeVisible();
+  const variantSelector = page.getByLabel("گونه", { exact: true });
+  const addButton = page.getByRole("button", { name: "گونه را انتخاب کنید" });
+  const selectedOffer = page.getByRole("status");
+  await expect(selectedOffer).toContainText(
+    "برای دیدن قیمت و موجودی، گونه را انتخاب کنید.",
+  );
+  await expect(selectedOffer).toHaveAttribute("aria-live", "polite");
+  const addButtonHandle = await addButton.elementHandle();
+  if (!addButtonHandle) throw new Error("The add-to-cart action must be rendered");
+  for (const termsId of ["store-title", "shipping-title", "returns-title"]) {
+    expect(
+      await page.locator(`#${termsId}`).evaluate((terms, button) => {
+        return Boolean(
+          terms.compareDocumentPosition(button as Node) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }, addButtonHandle),
+    ).toBe(true);
+  }
+  await expect(variantSelector).toHaveValue("");
+  await expect(addButton).toBeDisabled();
+  await expect(page.getByLabel("تعداد")).toBeDisabled();
+  await variantSelector.focus();
+  await expect(variantSelector).toBeFocused();
+  await variantSelector.selectOption({ label: "قرمز، بزرگ — ناموجود" });
+  await expect(selectedOffer).toContainText("قیمت گونه انتخاب‌شده");
+  await expect(page.getByText("۴۶۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
+  await expect(page.getByText("ناموجود", { exact: true }).last()).toBeVisible();
+  await expect(page.getByLabel("تعداد")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "فعلاً ناموجود" })).toBeDisabled();
+  await variantSelector.selectOption({ label: "قرمز، کوچک" });
+  await expect(page.getByText("۴۵۶٬۰۰۰ تومان", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "افزودن به سبد" })).toBeEnabled();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
   const publicStoreResponse = await page.request.get(`${e2eApiUrl}/v1/stores/${slug}`);
   const publicProductsResponse = await page.request.get(
     `${e2eApiUrl}/v1/stores/${slug}/products`,
   );
+  const publicProductResponse = await page.request.get(
+    `${e2eApiUrl}/v1/stores/${slug}/products/${new URL(page.url()).pathname.split("/").at(-1)}`,
+  );
   expect(publicStoreResponse.ok()).toBe(true);
   expect(publicProductsResponse.ok()).toBe(true);
+  expect(publicProductResponse.ok()).toBe(true);
   const publicSurface = `${storefrontHtml}\n${await page.content()}\n${JSON.stringify([
     await publicStoreResponse.json(),
     await publicProductsResponse.json(),
+    await publicProductResponse.json(),
   ])}`;
   for (const privateField of [
     "sellerId",
@@ -395,8 +449,31 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   ]) {
     expect(publicSurface).not.toContain(`"${privateField}"`);
   }
-  await expect(page.locator("img")).toHaveJSProperty("complete", true);
+  await expect
+    .poll(() =>
+      page
+        .locator("img")
+        .evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).complete),
+        ),
+    )
+    .toBe(true);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await assertNoHorizontalOverflow(page);
+  await assertInteractiveTargets(page);
+  await assertMinimumContrast(
+    page.locator(
+      "main h1, main p, main span, main strong, main label, main select, main button, main a",
+    ),
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await page
+      .getByRole("button", { name: "افزودن به سبد" })
+      .evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).transitionDuration),
+      ),
+  ).toBeLessThan(0.001);
 });
 
 async function readPublicVariantAmount(
