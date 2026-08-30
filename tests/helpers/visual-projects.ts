@@ -44,6 +44,10 @@ export const productTracerTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(50 + index),
 );
 
+export const sellerInventoryTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(156 + index),
+);
+
 export const guestCartTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(60 + index),
 );
