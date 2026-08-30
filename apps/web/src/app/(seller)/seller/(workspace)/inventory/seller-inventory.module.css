@@ -130,6 +130,13 @@
   font-size: 12px;
 }
 
+.identity .availability {
+  width: fit-content;
+  margin-block-start: 2px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
 .counts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

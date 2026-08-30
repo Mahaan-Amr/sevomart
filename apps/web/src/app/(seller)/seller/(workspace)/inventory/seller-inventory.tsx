@@ -7,13 +7,22 @@ import {
   type ReplaceSellerInventoryBatch,
   type SellerInventoryList,
 } from "@sevo/contracts/inventory/v1";
-import { useEffect, useState } from "react";
+import { storeDraftContract } from "@sevo/contracts/store/v1";
+import { useEffect, useRef, useState } from "react";
+
+import {
+  variantLabelsFromPublishedProduct,
+  variantLabelsFromSellerProduct,
+} from "../../../../../lib/product-variant-labels";
 
 import {
   calculateInventoryTarget,
   type InventoryAdjustmentAction,
+  inventoryErrorGuidance,
+  type InventoryRecovery,
   matchesInventorySearch,
-  variantLabelsFromSellerProduct,
+  type PendingInventoryWrite,
+  prepareInventoryWrite,
 } from "./seller-inventory-model";
 import styles from "./seller-inventory.module.css";
 
@@ -25,17 +34,17 @@ type Editor = {
   variantId: string;
   action: InventoryAdjustmentAction;
   amount: string;
-  reasonCode: ReasonCode;
+  reasonCode: ReasonCode | "";
   note: string;
 };
 
 const actionCopy = {
-  INCREASE: { label: "افزایش", input: "مقدار افزایش", reason: "RETURNED_TO_STOCK" },
-  DECREASE: { label: "کاهش", input: "مقدار کاهش", reason: "DAMAGED" },
-  CORRECT: { label: "اصلاح", input: "موجودی شمارش‌شده", reason: "MANUAL_COUNT" },
+  INCREASE: { label: "افزایش", input: "مقدار افزایش" },
+  DECREASE: { label: "کاهش", input: "مقدار کاهش" },
+  CORRECT: { label: "اصلاح", input: "موجودی شمارش‌شده" },
 } as const satisfies Record<
   InventoryAdjustmentAction,
-  { label: string; input: string; reason: ReasonCode }
+  { label: string; input: string }
 >;
 
 const reasons: ReadonlyArray<{ value: ReasonCode; label: string }> = [
@@ -55,7 +64,8 @@ export function SellerInventory() {
   const [labelsIncomplete, setLabelsIncomplete] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [canRefresh, setCanRefresh] = useState(false);
+  const [recovery, setRecovery] = useState<InventoryRecovery>();
+  const pendingWrite = useRef<PendingInventoryWrite | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -85,12 +95,12 @@ export function SellerInventory() {
       variantId: item.variantId,
       action,
       amount: action === "CORRECT" ? item.onHand.toLocaleString("fa-IR") : "",
-      reasonCode: actionCopy[action].reason,
+      reasonCode: "",
       note: "",
     });
     setError("");
     setMessage("");
-    setCanRefresh(false);
+    setRecovery(undefined);
   }
 
   async function submitAdjustment(item: InventoryItem) {
@@ -98,43 +108,52 @@ export function SellerInventory() {
     const target = calculateInventoryTarget(editor.action, item.onHand, editor.amount);
     if ("error" in target) {
       setError(target.error);
-      setCanRefresh(false);
+      setRecovery(undefined);
+      return;
+    }
+    if (!editor.reasonCode) {
+      setError("دلیل تغییر را انتخاب کنید تا سابقه موجودی روشن بماند.");
+      setRecovery(undefined);
       return;
     }
     setPending(true);
     setError("");
     setMessage("");
-    setCanRefresh(false);
+    setRecovery(undefined);
     try {
+      const payload: ReplaceSellerInventoryBatch = {
+        reasonCode: editor.reasonCode,
+        ...(editor.note.trim() ? { note: editor.note.trim() } : {}),
+        rows: [
+          {
+            variantId: item.variantId,
+            onHand: target.value,
+            expectedRevision: item.revision,
+          },
+        ],
+      };
+      const write = prepareInventoryWrite(
+        pendingWrite.current,
+        JSON.stringify(payload),
+        () => crypto.randomUUID(),
+      );
+      pendingWrite.current = write;
       const response = await fetch("/api/seller/inventory", {
         method: "PUT",
         headers: {
           "content-type": "application/json",
-          "idempotency-key": crypto.randomUUID(),
+          "idempotency-key": write.idempotencyKey,
         },
-        body: JSON.stringify({
-          reasonCode: editor.reasonCode,
-          ...(editor.note.trim() ? { note: editor.note.trim() } : {}),
-          rows: [
-            {
-              variantId: item.variantId,
-              onHand: target.value,
-              expectedRevision: item.revision,
-            },
-          ],
-        } satisfies ReplaceSellerInventoryBatch),
+        body: write.payload,
       });
-      if (response.status === 401) {
-        window.location.assign("/seller/login?returnTo=%2Fseller%2Finventory");
-        return;
-      }
       const body: unknown = await response.json();
       if (!response.ok) {
-        showInventoryError(body);
+        if (showInventoryError(body)) pendingWrite.current = undefined;
         return;
       }
       const parsed = sellerInventoryBatchResultContract.safeParse(body);
       if (!parsed.success || !parsed.data.rows[0]) throw new Error("invalid response");
+      pendingWrite.current = undefined;
       const updated = parsed.data.rows[0];
       setItems((current) =>
         current.map((currentItem) =>
@@ -155,39 +174,22 @@ export function SellerInventory() {
   function showInventoryError(body: unknown) {
     const parsed = inventoryErrorContract.safeParse(body);
     if (!parsed.success) {
-      setError("تغییر موجودی ثبت نشد. دوباره تلاش کنید.");
-      return;
-    }
-    if (parsed.data.code === "REVISION_CONFLICT") {
       setError(
-        "موجودی پس از بازشدن این صفحه تغییر کرده است. اطلاعات تازه را بگیرید و دوباره ثبت کنید.",
+        "نتیجه درخواست روشن نشد. بدون تغییر اطلاعات، دوباره تلاش کنید تا همان درخواست پیگیری شود.",
       );
-      setCanRefresh(true);
-      return;
+      setRecovery(undefined);
+      return false;
     }
-    if (parsed.data.code === "RESERVED_STOCK_CONFLICT") {
-      setError(
-        "بخشی از موجودی برای سفارش فعال کنار گذاشته شده است. اطلاعات تازه را بگیرید و عددی کمتر از مقدار رزروشده ثبت نکنید.",
-      );
-      setCanRefresh(true);
-      return;
-    }
-    if (parsed.data.code === "INVENTORY_NOT_FOUND") {
-      setError("این گونه دیگر قابل مدیریت نیست. فهرست را تازه کنید.");
-      setCanRefresh(true);
-      return;
-    }
-    if (parsed.data.code === "VALIDATION_ERROR") {
-      setError("عدد قابل ثبت نیست؛ موجودی باید یک عدد صحیح و نامنفی باشد.");
-      return;
-    }
-    setError(parsed.data.message || "تغییر موجودی ثبت نشد. دوباره تلاش کنید.");
+    const guidance = inventoryErrorGuidance(parsed.data.code);
+    setError(guidance.message);
+    setRecovery(guidance.recovery);
+    return true;
   }
 
   async function refreshInventory() {
     setPending(true);
     setError("");
-    setCanRefresh(false);
+    setRecovery(undefined);
     const result = await readAllInventory();
     if (result.kind === "OK") {
       setItems(result.items);
@@ -197,7 +199,7 @@ export function SellerInventory() {
       window.location.assign("/seller/login?returnTo=%2Fseller%2Finventory");
     } else {
       setError("تازه‌سازی انجام نشد. دوباره تلاش کنید.");
-      setCanRefresh(true);
+      setRecovery("REFRESH");
     }
     setPending(false);
   }
@@ -230,13 +232,25 @@ export function SellerInventory() {
         {error ? (
           <div className={styles.error} role="alert" id="inventory-editor-error">
             <p>{error}</p>
-            {canRefresh ? (
+            {recovery ? (
               <button
                 type="button"
-                onClick={() => void refreshInventory()}
+                onClick={() => {
+                  if (recovery === "REFRESH") void refreshInventory();
+                  if (recovery === "LOGIN") {
+                    window.location.assign(
+                      "/seller/login?returnTo=%2Fseller%2Finventory",
+                    );
+                  }
+                  if (recovery === "SELLER_HOME") window.location.assign("/seller");
+                }}
                 disabled={pending}
               >
-                گرفتن اطلاعات تازه
+                {recovery === "REFRESH"
+                  ? "گرفتن اطلاعات تازه"
+                  : recovery === "LOGIN"
+                    ? "ورود دوباره"
+                    : "بازگشت به خانه فروشنده"}
               </button>
             ) : null}
           </div>
@@ -275,6 +289,9 @@ export function SellerInventory() {
                   <div className={styles.identity}>
                     <strong>{item.productName}</strong>
                     <span>{item.variantLabel || "گونه اصلی"}</span>
+                    <span className={styles.availability}>
+                      {item.available > 0 ? "موجود" : "ناموجود"}
+                    </span>
                   </div>
                   <dl className={styles.counts}>
                     <div>
@@ -340,6 +357,7 @@ export function SellerInventory() {
                           })
                         }
                       >
+                        <option value="">دلیل را انتخاب کنید</option>
                         {reasons.map((reason) => (
                           <option key={reason.value} value={reason.value}>
                             {reason.label}
@@ -412,9 +430,30 @@ async function readAllInventory(): Promise<
     } while (cursor);
 
     const labels = new Map<string, string>();
-    let labelsComplete = true;
+    const storeSlug = await readPublishedStoreSlug();
     await Promise.all(
       [...new Set(inventory.map((item) => item.productId))].map(async (productId) => {
+        if (storeSlug) {
+          try {
+            const publicResponse = await fetch(
+              `/api/store/stores/${encodeURIComponent(storeSlug)}/products/${productId}`,
+              { cache: "no-store" },
+            );
+            if (publicResponse.ok) {
+              for (const [variantId, label] of variantLabelsFromPublishedProduct(
+                await publicResponse.json(),
+              )) {
+                labels.set(variantId, label);
+              }
+            }
+          } catch {
+            // The private seller read below remains a safe fallback.
+          }
+        }
+        const productVariantIds = inventory
+          .filter((item) => item.productId === productId)
+          .map((item) => item.variantId);
+        if (productVariantIds.every((variantId) => labels.has(variantId))) return;
         try {
           const response = await fetch(`/api/store/seller/products/${productId}`, {
             cache: "no-store",
@@ -423,10 +462,10 @@ async function readAllInventory(): Promise<
           for (const [variantId, label] of variantLabelsFromSellerProduct(
             await response.json(),
           )) {
-            labels.set(variantId, label);
+            if (!labels.has(variantId)) labels.set(variantId, label);
           }
         } catch {
-          labelsComplete = false;
+          // Missing labels are reported after all available reads are exhausted.
         }
       }),
     );
@@ -436,9 +475,21 @@ async function readAllInventory(): Promise<
         ...item,
         variantLabel: labels.get(item.variantId) ?? "",
       })),
-      labelsComplete,
+      labelsComplete: inventory.every((item) => labels.has(item.variantId)),
     };
   } catch {
     return { kind: "FAILED" };
+  }
+}
+
+async function readPublishedStoreSlug() {
+  try {
+    const response = await fetch("/api/store/seller/store/draft", {
+      cache: "no-store",
+    });
+    const parsed = storeDraftContract.safeParse(await response.json());
+    return response.ok && parsed.success ? parsed.data.slug : null;
+  } catch {
+    return null;
   }
 }

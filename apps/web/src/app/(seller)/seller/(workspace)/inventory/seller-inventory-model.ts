@@ -59,36 +59,84 @@ export function matchesInventorySearch(
     .every((token) => haystack.includes(token));
 }
 
-export function variantLabelsFromSellerProduct(value: unknown) {
-  const parsed = sellerProductViewContract.safeParse(value);
-  const labels = new Map<string, string>();
-  if (!parsed.success || !parsed.data.workingCopy) return labels;
-  const workingCopy = parsed.data.workingCopy;
-  if (!("variants" in workingCopy)) {
-    if (workingCopy.variant?.variantId) labels.set(workingCopy.variant.variantId, "");
-    return labels;
+export type PendingInventoryWrite = Readonly<{
+  payload: string;
+  idempotencyKey: string;
+}>;
+
+export function prepareInventoryWrite(
+  pending: PendingInventoryWrite | undefined,
+  payload: string,
+  createIdempotencyKey: () => string,
+): PendingInventoryWrite {
+  return pending?.payload === payload
+    ? pending
+    : { payload, idempotencyKey: createIdempotencyKey() };
+}
+
+export type InventoryErrorCode =
+  | "INVENTORY_NOT_FOUND"
+  | "REVISION_CONFLICT"
+  | "IDEMPOTENCY_CONFLICT"
+  | "RESERVED_STOCK_CONFLICT"
+  | "SELLER_ACCESS_INACTIVE"
+  | "VALIDATION_ERROR"
+  | "PRECONDITION_REQUIRED"
+  | "UNAUTHORIZED";
+
+export type InventoryRecovery = "REFRESH" | "LOGIN" | "SELLER_HOME";
+
+export function inventoryErrorGuidance(code: InventoryErrorCode): {
+  message: string;
+  recovery?: InventoryRecovery;
+} {
+  switch (code) {
+    case "REVISION_CONFLICT":
+      return {
+        message:
+          "موجودی پس از بازشدن این صفحه تغییر کرده است. اطلاعات تازه را بگیرید و دوباره ثبت کنید.",
+        recovery: "REFRESH",
+      };
+    case "RESERVED_STOCK_CONFLICT":
+      return {
+        message:
+          "بخشی از موجودی برای سفارش فعال کنار گذاشته شده است. اطلاعات تازه را بگیرید و عددی کمتر از مقدار رزروشده ثبت نکنید.",
+        recovery: "REFRESH",
+      };
+    case "INVENTORY_NOT_FOUND":
+      return {
+        message: "این گونه دیگر قابل مدیریت نیست. فهرست را تازه کنید.",
+        recovery: "REFRESH",
+      };
+    case "IDEMPOTENCY_CONFLICT":
+      return {
+        message:
+          "این درخواست با اطلاعات دیگری ثبت شده است. اطلاعات تازه را بگیرید و تغییر را دوباره وارد کنید.",
+        recovery: "REFRESH",
+      };
+    case "SELLER_ACCESS_INACTIVE":
+      return {
+        message:
+          "دسترسی فروشندگی شما فعال نیست. برای دیدن وضعیت و مسیر پیگیری به خانه فروشنده برگردید.",
+        recovery: "SELLER_HOME",
+      };
+    case "VALIDATION_ERROR":
+      return {
+        message: "عدد قابل ثبت نیست؛ موجودی باید یک عدد صحیح و نامنفی باشد.",
+      };
+    case "PRECONDITION_REQUIRED":
+      return {
+        message:
+          "پیش‌نیاز ثبت تغییر کامل نشد. اطلاعات تازه را بگیرید و دوباره تلاش کنید.",
+        recovery: "REFRESH",
+      };
+    case "UNAUTHORIZED":
+      return {
+        message:
+          "نشست شما پایان یافته است. دوباره وارد شوید و تغییر را از نو بررسی کنید.",
+        recovery: "LOGIN",
+      };
   }
-  const axes = new Map(
-    workingCopy.axes.map((axis) => [
-      axis.clientKey,
-      {
-        name: axis.name,
-        values: new Map(axis.values.map((entry) => [entry.clientKey, entry.name])),
-      },
-    ]),
-  );
-  for (const variant of workingCopy.variants) {
-    const label = variant.combination
-      .map((entry) => {
-        const axis = axes.get(entry.axisClientKey);
-        const valueName = axis?.values.get(entry.valueClientKey);
-        return axis && valueName ? `${axis.name}: ${valueName}` : "";
-      })
-      .filter(Boolean)
-      .join("، ");
-    labels.set(variant.variantId, label);
-  }
-  return labels;
 }
 
 function normalizeSearchText(value: string) {
@@ -101,4 +149,3 @@ function normalizeSearchText(value: string) {
     .trim()
     .toLocaleLowerCase("fa-IR");
 }
-import { sellerProductViewContract } from "@sevo/contracts/product/v1";

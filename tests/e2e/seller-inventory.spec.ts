@@ -5,6 +5,7 @@ import postgres from "postgres";
 
 import {
   assertInteractiveTargets,
+  assertMinimumContrast,
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
 import {
@@ -25,7 +26,17 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     red: randomUUID(),
     blue: randomUUID(),
     media: randomUUID(),
+    simpleProduct: randomUUID(),
+    simpleVariant: randomUUID(),
+    simpleMedia: randomUUID(),
   };
+  const longProductName =
+    "کیف روزمره دست‌دوز چرمی با بند قابل تنظیم برای استفاده روزانه و سفرهای کوتاه شهری";
+  const simpleProductName = "دفتر برنامه‌ریزی ساده برای یادداشت کارهای روزانه";
+  const blueLabel =
+    "رنگ رویه بسیار بادوام: آبی آسمانی روشن، اندازه مناسب استفاده: بزرگ جادار";
+  const redLabel =
+    "رنگ رویه بسیار بادوام: قرمز گرم، اندازه مناسب استفاده: کوچک جمع‌وجور";
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/seller/login?returnTo=%2Fseller%2Finventory");
@@ -54,13 +65,21 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     `;
     await sql`
       insert into store_stores
-        (id, name, slug, return_policy, return_policy_revision,
+        (id, name, slug, bio, return_policy, return_policy_revision,
          settlement_kind, settlement_status, settlement_verified_at,
-         status, published_at, publication_version, revision)
+         theme_color, status, published_at, publication_version, revision)
       values
-        (${ids.store}, 'خانه کیف', ${`inventory-${projectIndex}`},
+        (${ids.store}, 'خانه کیف', ${`inventory-${projectIndex}`}, 'کیف دست‌دوز',
          'تا هفت روز امکان درخواست مرجوعی وجود دارد.', 1,
-         'TEST', 'TEST_VERIFIED', now(), 'PUBLISHED', now(), 1, 1)
+         'TEST', 'TEST_VERIFIED', now(), '#A41439', 'PUBLISHED', now(), 1, 1)
+    `;
+    await sql`
+      insert into store_shipping_methods
+        (id, store_id, position, code, label, revision, fixed_fee_amount,
+         currency, estimated_delivery_text, enabled,
+         requires_delivery_address, requires_postal_code)
+      values (${randomUUID()}, ${ids.store}, 0, 'NATIONAL_POST', 'پست پیشتاز',
+        1, 0, 'IRR', '۲ تا ۴ روز کاری', true, true, true)
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
@@ -84,18 +103,18 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     const axes = [
       {
         clientKey: "color",
-        name: "رنگ",
+        name: "رنگ رویه بسیار بادوام",
         values: [
-          { clientKey: "red", name: "قرمز" },
-          { clientKey: "blue", name: "آبی" },
+          { clientKey: "red", name: "قرمز گرم" },
+          { clientKey: "blue", name: "آبی آسمانی روشن" },
         ],
       },
       {
         clientKey: "size",
-        name: "اندازه",
+        name: "اندازه مناسب استفاده",
         values: [
-          { clientKey: "small", name: "کوچک" },
-          { clientKey: "large", name: "بزرگ" },
+          { clientKey: "small", name: "کوچک جمع‌وجور" },
+          { clientKey: "large", name: "بزرگ جادار" },
         ],
       },
     ];
@@ -118,15 +137,22 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
       },
     ];
     const definition = {
-      name: "کیف روزمره",
+      name: longProductName,
       description: "کیف سبک برای استفاده روزانه",
       orderedMediaIds: [ids.media],
-      axes,
+      axes: axes.map((axis) => ({
+        ...axis,
+        values: axis.values.map((value) =>
+          value.clientKey === "blue"
+            ? { ...value, name: "فیروزه‌ای ویرایش‌شده اما منتشرنشده" }
+            : value,
+        ),
+      })),
       variants,
     };
     const snapshot = {
       productId: ids.product,
-      name: "کیف روزمره",
+      name: longProductName,
       description: "کیف سبک برای استفاده روزانه",
       images: [{ id: ids.media, url: `/v1/media/${ids.media}` }],
       axes: axes.map((axis) => ({
@@ -137,8 +163,8 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
         {
           variantId: ids.red,
           combination: [
-            { axis: "رنگ", value: "قرمز" },
-            { axis: "اندازه", value: "کوچک" },
+            { axis: "رنگ رویه بسیار بادوام", value: "قرمز گرم" },
+            { axis: "اندازه مناسب استفاده", value: "کوچک جمع‌وجور" },
           ],
           price: { amount: 4_500_000, currency: "IRR" },
           availability: "AVAILABLE",
@@ -146,8 +172,8 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
         {
           variantId: ids.blue,
           combination: [
-            { axis: "رنگ", value: "آبی" },
-            { axis: "اندازه", value: "بزرگ" },
+            { axis: "رنگ رویه بسیار بادوام", value: "آبی آسمانی روشن" },
+            { axis: "اندازه مناسب استفاده", value: "بزرگ جادار" },
           ],
           price: { amount: 4_800_000, currency: "IRR" },
           availability: "AVAILABLE",
@@ -163,14 +189,14 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     await sql`
       insert into product_working_copies
         (product_id, name, description, media_id, variant_id, definition)
-      values (${ids.product}, 'کیف روزمره', 'کیف سبک برای استفاده روزانه',
+      values (${ids.product}, ${longProductName}, 'کیف سبک برای استفاده روزانه',
         ${ids.media}, ${ids.red}, ${sql.json(definition)})
     `;
     await sql`
       insert into product_publications
         (product_id, publication_version, name, description, media_id,
          variant_id, snapshot)
-      values (${ids.product}, 1, 'کیف روزمره', 'کیف سبک برای استفاده روزانه',
+      values (${ids.product}, 1, ${longProductName}, 'کیف سبک برای استفاده روزانه',
         ${ids.media}, ${ids.red}, ${sql.json(snapshot)})
     `;
     await sql`
@@ -187,22 +213,98 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
         (${ids.blue}, ${ids.store}, 8, 1)
     `;
 
+    const simpleDefinition = {
+      name: simpleProductName,
+      description: "دفتر ساده و دسته‌خنثی",
+      orderedMediaIds: [ids.simpleMedia],
+      axes: [],
+      variants: [
+        { clientKey: "simple", variantId: ids.simpleVariant, combination: [] },
+      ],
+    };
+    const simpleSnapshot = {
+      productId: ids.simpleProduct,
+      name: simpleProductName,
+      description: "دفتر ساده و دسته‌خنثی",
+      images: [{ id: ids.simpleMedia, url: `/v1/media/${ids.simpleMedia}` }],
+      axes: [],
+      variants: [
+        {
+          variantId: ids.simpleVariant,
+          combination: [],
+          price: { amount: 1_200_000, currency: "IRR" },
+          availability: "OUT_OF_STOCK",
+        },
+      ],
+      priceRange: {
+        minimum: { amount: 1_200_000, currency: "IRR" },
+        maximum: { amount: 1_200_000, currency: "IRR" },
+      },
+      availability: "OUT_OF_STOCK",
+      publicationVersion: 1,
+    };
+    await sql`
+      insert into product_products
+        (id, store_id, state, revision, publication_version, published_at)
+      values (${ids.simpleProduct}, ${ids.store}, 'PUBLISHED', 2, 1, now())
+    `;
+    await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key, retired,
+         ever_published)
+      values (${ids.simpleVariant}, ${ids.simpleProduct}, ${ids.store}, 'simple',
+        'simple', false, true)
+    `;
+    await sql`
+      insert into product_working_copies
+        (product_id, name, description, media_id, variant_id, definition)
+      values (${ids.simpleProduct}, ${simpleProductName},
+        'دفتر ساده و دسته‌خنثی', ${ids.simpleMedia}, ${ids.simpleVariant},
+        ${sql.json(simpleDefinition)})
+    `;
+    await sql`
+      insert into product_publications
+        (product_id, publication_version, name, description, media_id,
+         variant_id, snapshot)
+      values (${ids.simpleProduct}, 1, ${simpleProductName},
+        'دفتر ساده و دسته‌خنثی', ${ids.simpleMedia}, ${ids.simpleVariant},
+        ${sql.json(simpleSnapshot)})
+    `;
+    await sql`
+      insert into product_offers
+        (product_id, variant_id, amount, currency, revision)
+      values (${ids.simpleProduct}, ${ids.simpleVariant}, 1200000, 'IRR', 1)
+    `;
+    await sql`
+      insert into inventory_levels (variant_id, store_id, on_hand, revision)
+      values (${ids.simpleVariant}, ${ids.store}, 0, 1)
+    `;
+
     await page.goto("/seller/inventory");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(
       page.getByRole("heading", { name: "اصلاح موجودی گونه‌ها" }),
     ).toBeVisible();
-    await expect(page.getByText("رنگ: آبی، اندازه: بزرگ")).toBeVisible();
+    await assertMinimumContrast(
+      page.getByRole("heading", { name: "اصلاح موجودی گونه‌ها" }),
+    );
+    await expect(page.getByText(blueLabel)).toBeVisible();
+    await expect(page.getByText("فیروزه‌ای ویرایش‌شده اما منتشرنشده")).toHaveCount(0);
     const search = page.getByLabel("جست‌وجوی نام کالا یا ویژگی گونه");
+    await search.fill("دفتر برنامه‌ریزی");
+    const simpleRow = page.getByRole("listitem").filter({ hasText: simpleProductName });
+    await expect(simpleRow.getByText("گونه اصلی", { exact: true })).toBeVisible();
+    await expect(simpleRow.getByText("ناموجود", { exact: true })).toBeVisible();
+
     await search.fill("آبی بزرگ");
-    const blueRow = page
-      .getByRole("listitem")
-      .filter({ hasText: "رنگ: آبی، اندازه: بزرگ" });
+    const blueRow = page.getByRole("listitem").filter({ hasText: blueLabel });
     await expect(blueRow).toBeVisible();
     await expect(page.getByRole("listitem")).toHaveCount(1);
+    await assertMinimumContrast(blueRow.getByText(longProductName));
     await blueRow.getByRole("button", { name: /افزایش موجودی/ }).focus();
     await page.keyboard.press("Enter");
     await page.getByLabel("مقدار افزایش").fill("۲");
+    await page.getByLabel("دلیل تغییر").selectOption("RETURNED_TO_STOCK");
     await page.getByRole("button", { name: "ذخیره موجودی" }).click();
     await expect(page.getByRole("status")).toContainText("ثبت شد");
     await expect(
@@ -213,11 +315,10 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     ).toBeVisible();
 
     await search.fill("قرمز کوچک");
-    const redRow = page
-      .getByRole("listitem")
-      .filter({ hasText: "رنگ: قرمز، اندازه: کوچک" });
+    const redRow = page.getByRole("listitem").filter({ hasText: redLabel });
     await redRow.getByRole("button", { name: /اصلاح موجودی/ }).click();
     await page.getByLabel("موجودی شمارش‌شده").fill("۶");
+    await page.getByLabel("دلیل تغییر").selectOption("CORRECTION");
     await sql`
       update inventory_levels set on_hand = 4, revision = 2
       where variant_id = ${ids.red}
@@ -229,10 +330,12 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
 
     await redRow.getByRole("button", { name: /کاهش موجودی/ }).click();
     await page.getByLabel("مقدار کاهش").fill("۵");
+    await page.getByLabel("دلیل تغییر").selectOption("DAMAGED");
     await page.getByRole("button", { name: "ذخیره موجودی" }).click();
     await expect(page.locator("#inventory-editor-error")).toContainText(
       "موجودی نمی‌تواند کمتر از صفر شود",
     );
+    await assertMinimumContrast(page.locator("#inventory-editor-error"));
     await assertNoHorizontalOverflow(page);
     await assertInteractiveTargets(
       page,

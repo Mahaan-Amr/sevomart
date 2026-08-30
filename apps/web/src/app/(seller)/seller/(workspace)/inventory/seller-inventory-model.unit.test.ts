@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculateInventoryTarget,
+  inventoryErrorGuidance,
   matchesInventorySearch,
   parseInventoryQuantity,
-  variantLabelsFromSellerProduct,
+  prepareInventoryWrite,
 } from "./seller-inventory-model";
 
 describe("seller inventory input", () => {
@@ -41,39 +42,32 @@ describe("seller inventory search", () => {
     expect(matchesInventorySearch(item, "آبی بزرگ")).toBe(true);
     expect(matchesInventorySearch(item, "قرمز")).toBe(false);
   });
+});
 
-  it("builds searchable feature labels from the seller product read", () => {
-    const variantId = "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7";
-    expect(
-      variantLabelsFromSellerProduct({
-        productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
-        state: "PUBLISHED",
-        revision: 3,
-        publicationVersion: 1,
-        workingCopy: {
-          name: "کیف روزمره",
-          description: "",
-          orderedMediaIds: ["807c619f-a989-4fd9-8b78-a437a07c7bc4"],
-          axes: [
-            {
-              clientKey: "color",
-              name: "رنگ",
-              values: [{ clientKey: "blue", name: "آبی" }],
-            },
-          ],
-          variants: [
-            {
-              clientKey: "blue",
-              variantId,
-              combination: [{ axisClientKey: "color", valueClientKey: "blue" }],
-              price: { amount: 4_500_000, currency: "IRR" },
-              sku: null,
-              offerRevision: 1,
-            },
-          ],
-        },
-        inventory: [{ variantId, onHand: 8, revision: 2 }],
-      }),
-    ).toEqual(new Map([[variantId, "رنگ: آبی"]]));
+describe("seller inventory write recovery", () => {
+  it("reuses the idempotency key for an ambiguous retry of the same payload", () => {
+    const first = prepareInventoryWrite(undefined, '{"rows":[1]}', () => "key-1");
+    expect(prepareInventoryWrite(first, '{"rows":[1]}', () => "key-2")).toBe(first);
+    expect(prepareInventoryWrite(first, '{"rows":[2]}', () => "key-2")).toEqual({
+      payload: '{"rows":[2]}',
+      idempotencyKey: "key-2",
+    });
+  });
+
+  it("provides local Persian guidance for every typed producer error", () => {
+    for (const code of [
+      "INVENTORY_NOT_FOUND",
+      "REVISION_CONFLICT",
+      "IDEMPOTENCY_CONFLICT",
+      "RESERVED_STOCK_CONFLICT",
+      "SELLER_ACCESS_INACTIVE",
+      "VALIDATION_ERROR",
+      "PRECONDITION_REQUIRED",
+      "UNAUTHORIZED",
+    ] as const) {
+      expect(inventoryErrorGuidance(code).message.length).toBeGreaterThan(10);
+    }
+    expect(inventoryErrorGuidance("UNAUTHORIZED").recovery).toBe("LOGIN");
+    expect(inventoryErrorGuidance("REVISION_CONFLICT").recovery).toBe("REFRESH");
   });
 });
