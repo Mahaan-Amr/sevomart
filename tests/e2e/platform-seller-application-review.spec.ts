@@ -131,6 +131,63 @@ test("shows a self-owned application read-only and asks for handoff", async ({
   await expect(page.getByRole("button", { name: "ثبت درخواست تکمیل" })).toHaveCount(0);
 });
 
+test("keeps an explicit case selection when the initial detail arrives late", async ({
+  page,
+}) => {
+  const first = sellerApplication();
+  const second = {
+    ...sellerApplication(),
+    applicationId: "15100f04-813c-44f9-b681-22cb4f3dbeae",
+    currentPayload: {
+      ...sellerApplication().currentPayload,
+      applicantName: "سارا احمدی",
+      proposedStoreName: "خانه دوم",
+    },
+  };
+  let releaseFirstDetail = () => {};
+  let firstDetailCompleted = false;
+  const firstDetailGate = new Promise<void>((resolve) => {
+    releaseFirstDetail = resolve;
+  });
+  await page.route("**/api/platform/seller-applications**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith(first.applicationId)) {
+      await firstDetailGate;
+      await route.fulfill({ status: 200, json: first });
+      firstDetailCompleted = true;
+      return;
+    }
+    if (pathname.endsWith(second.applicationId)) {
+      await route.fulfill({ status: 200, json: second });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: {
+        items: [first, second].map((application) => ({
+          applicationId: application.applicationId,
+          applicantName: application.currentPayload.applicantName,
+          proposedStoreName: application.currentPayload.proposedStoreName,
+          status: application.status,
+          revision: application.revision,
+          lastSubmittedAt: application.lastSubmittedAt,
+        })),
+        nextCursor: null,
+      },
+    });
+  });
+
+  await page.goto("/platform/seller-applications");
+  const secondCase = page.getByRole("button", { name: /خانه دوم/ });
+  await secondCase.click();
+  await expect(page.getByRole("heading", { name: "خانه دوم" })).toBeVisible();
+
+  releaseFirstDetail();
+  await expect.poll(() => firstDetailCompleted).toBe(true);
+  await expect(secondCase).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "خانه دوم" })).toBeVisible();
+});
+
 test("retries an unchanged decision with the same idempotency key", async ({
   page,
 }) => {

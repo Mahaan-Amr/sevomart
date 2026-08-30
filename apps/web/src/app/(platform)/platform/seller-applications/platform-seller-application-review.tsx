@@ -61,17 +61,28 @@ export function PlatformSellerApplicationReview() {
   const [requestedFields, setRequestedFields] = useState<RequestedField[]>([
     "currentSalesMethod",
   ]);
+  const detailRequestId = useRef(0);
   const decisionAttempt = useRef<{ fingerprint: string; key: string }>(undefined);
 
   const readApplication = useCallback(async (applicationId: string) => {
-    const response = await fetch(`/api/platform/seller-applications/${applicationId}`, {
-      cache: "no-store",
-    });
-    const body: unknown = await response.json();
-    if (!response.ok) throw new Error(humanError(body));
-    const parsed = platformSellerApplicationViewContract.parse(body);
-    setApplication(parsed);
-    setSelectedId(applicationId);
+    const requestId = ++detailRequestId.current;
+    try {
+      const response = await fetch(
+        `/api/platform/seller-applications/${applicationId}`,
+        {
+          cache: "no-store",
+        },
+      );
+      const body: unknown = await response.json();
+      if (requestId !== detailRequestId.current) return;
+      if (!response.ok) throw new Error(humanError(body));
+      const parsed = platformSellerApplicationViewContract.parse(body);
+      setApplication(parsed);
+      setSelectedId(applicationId);
+    } catch (error) {
+      if (requestId !== detailRequestId.current) return;
+      throw error;
+    }
   }, []);
 
   const readQueue = useCallback(
