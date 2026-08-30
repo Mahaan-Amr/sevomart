@@ -10,6 +10,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   Res,
 } from "@nestjs/common";
@@ -18,6 +19,10 @@ import {
   createSimpleProductInputContract,
   productIdempotencyKeyContract,
   productRevisionTagContract,
+  sellerProductPageLimitContract,
+  sellerProductCursorContract,
+  sellerProductCursorBoundaryContract,
+  sellerProductStateContract,
   publishSimpleProductInputContract,
   replaceProductInventoryBatchContract,
   replaceProductOffersBatchContract,
@@ -79,6 +84,33 @@ export class ProductController {
     );
     response.header("etag", `"${product.revision}"`);
     return product;
+  }
+
+  @Get("seller/products")
+  async list(
+    @Req() request: FastifyRequest,
+    @Query("cursor") rawCursor?: string,
+    @Query("limit") rawLimit?: string,
+    @Query("state") rawState?: string,
+  ) {
+    const identityId = await requireIdentity(request, this.sessions);
+    const cursor = rawCursor
+      ? sellerProductCursorContract.safeParse(rawCursor)
+      : undefined;
+    const limit = sellerProductPageLimitContract.safeParse(rawLimit ?? 20);
+    const state = rawState ? sellerProductStateContract.safeParse(rawState) : undefined;
+    if (cursor && !cursor.success) throw validationError(request.id);
+    if (!limit.success) throw validationError(request.id);
+    if (state && !state.success) throw validationError(request.id);
+    return this.handle(request, () =>
+      this.products.list(identityId, {
+        ...(cursor?.success
+          ? { cursor: decodeSellerProductCursor(cursor.data, request.id) }
+          : {}),
+        limit: limit.data,
+        ...(state?.success ? { state: state.data } : {}),
+      }),
+    );
   }
 
   @Put("seller/products/:productId/working-copy")
@@ -277,9 +309,11 @@ export class ProductController {
       if (error instanceof SellerAccessInactiveError) {
         throw new HttpException(
           {
+            version: 1,
             code: "SELLER_ACCESS_INACTIVE",
             message: "دسترسی فروشندگی شما فعال نیست.",
             correlationId: request.id,
+            details: { issues: [] },
           },
           HttpStatus.FORBIDDEN,
         );
@@ -360,6 +394,24 @@ export class ProductController {
       }
       throw error;
     }
+  }
+}
+
+function decodeSellerProductCursor(cursor: string, correlationId: string) {
+  try {
+    const [createdAt, rawProductId, extra] = Buffer.from(cursor, "base64url")
+      .toString("utf8")
+      .split("|");
+    const boundary = sellerProductCursorBoundaryContract.safeParse({
+      createdAt,
+      productId: rawProductId,
+    });
+    if (extra !== undefined || !boundary.success) {
+      throw new Error("Invalid seller product cursor");
+    }
+    return boundary.data;
+  } catch {
+    throw validationError(correlationId);
   }
 }
 
