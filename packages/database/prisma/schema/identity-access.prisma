@@ -175,18 +175,20 @@ model PlatformAccessIdempotency {
 }
 
 model PlatformAccessAudit {
-  id                     String   @id @db.Uuid
-  grantId                String   @map("grant_id") @db.Uuid
-  action                 String   @db.VarChar(48)
-  actorIdentityId        String   @map("actor_identity_id") @db.Uuid
-  subjectIdentityId      String   @map("subject_identity_id") @db.Uuid
+  id                      String   @id @db.Uuid
+  grantId                 String   @map("grant_id") @db.Uuid
+  resolvedGrantId         String?  @map("resolved_grant_id") @db.Uuid
+  attemptedResponsibility String?  @map("attempted_responsibility") @db.VarChar(64)
+  action                  String   @db.VarChar(48)
+  actorIdentityId         String   @map("actor_identity_id") @db.Uuid
+  subjectIdentityId       String?  @map("subject_identity_id") @db.Uuid
   scope                   Json?    @db.JsonB
-  reasonCode             String   @map("reason_code") @db.VarChar(48)
-  reason                 String   @db.VarChar(1000)
-  outcome                String   @db.VarChar(32)
-  singleManagerException Boolean  @map("single_manager_exception")
-  correlationId          String   @map("correlation_id") @db.Uuid
-  occurredAt             DateTime @map("occurred_at") @db.Timestamptz(3)
+  reasonCode              String   @map("reason_code") @db.VarChar(48)
+  reason                  String   @db.VarChar(1000)
+  outcome                 String   @db.VarChar(32)
+  singleManagerException  Boolean? @map("single_manager_exception")
+  correlationId           String   @map("correlation_id") @db.Uuid
+  occurredAt              DateTime @map("occurred_at") @db.Timestamptz(3)
 
   @@index([grantId, occurredAt, id])
   @@map("identity_platform_access_audit")
