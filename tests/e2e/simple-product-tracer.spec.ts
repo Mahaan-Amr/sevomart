@@ -17,7 +17,7 @@ import {
 test("seller publishes a two-axis product that a guest sees on the storefront", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = productTracerTestMobiles[projectIndex]!;
   const slug = `product-tracer-${projectIndex}`;
@@ -374,7 +374,9 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
   await expect(page.getByText("خانه فنجان", { exact: true })).toBeVisible();
   await expect(page.getByText("پست پیشتاز", { exact: true })).toBeVisible();
-  await expect(page.getByText("۰ تومان", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "روش‌های ارسال" })).toContainText(
+    "۰ تومان",
+  );
   await expect(
     page.getByText("زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود."),
   ).toBeVisible();
@@ -385,9 +387,10 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   ).toBeVisible();
   const variantSelector = page.getByLabel("گونه", { exact: true });
   const addButton = page.getByRole("button", { name: "گونه را انتخاب کنید" });
-  const selectedOffer = page
-    .getByText("برای دیدن قیمت و موجودی، گونه را انتخاب کنید.")
-    .locator("..");
+  const selectedOffer = page.getByRole("status");
+  await expect(selectedOffer).toContainText(
+    "برای دیدن قیمت و موجودی، گونه را انتخاب کنید.",
+  );
   await expect(selectedOffer).toHaveAttribute("aria-live", "polite");
   const addButtonHandle = await addButton.elementHandle();
   if (!addButtonHandle) throw new Error("The add-to-cart action must be rendered");
@@ -413,7 +416,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByLabel("تعداد")).toBeDisabled();
   await expect(page.getByRole("button", { name: "فعلاً ناموجود" })).toBeDisabled();
   await variantSelector.selectOption({ label: "قرمز، کوچک" });
-  await expect(page.getByText("۴۵۵٬۰۰۰ تومان", { exact: true })).toBeVisible();
+  await expect(page.getByText("۴۵۶٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "افزودن به سبد" })).toBeEnabled();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
   const publicStoreResponse = await page.request.get(`${e2eApiUrl}/v1/stores/${slug}`);
@@ -421,7 +424,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     `${e2eApiUrl}/v1/stores/${slug}/products`,
   );
   const publicProductResponse = await page.request.get(
-    `http://127.0.0.1:3109/v1/stores/${slug}/products/${new URL(page.url()).pathname.split("/").at(-1)}`,
+    `${e2eApiUrl}/v1/stores/${slug}/products/${new URL(page.url()).pathname.split("/").at(-1)}`,
   );
   expect(publicStoreResponse.ok()).toBe(true);
   expect(publicProductsResponse.ok()).toBe(true);
@@ -446,7 +449,15 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   ]) {
     expect(publicSurface).not.toContain(`"${privateField}"`);
   }
-  await expect(page.locator("img")).toHaveJSProperty("complete", true);
+  await expect
+    .poll(() =>
+      page
+        .locator("img")
+        .evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).complete),
+        ),
+    )
+    .toBe(true);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);

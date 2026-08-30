@@ -99,7 +99,7 @@ export function AddToCart({
     <div className={styles.cartAction}>
       {variants.length > 1 ? (
         <>
-          <div className={styles.selectedOffer} aria-live="polite">
+          <div className={styles.selectedOffer} role="status" aria-live="polite">
             {selectedVariant ? (
               <>
                 <span>قیمت گونه انتخاب‌شده</span>
