@@ -149,3 +149,12 @@ Existing rows are backfilled, new rows use a database default, and no cross-modu
 foreign key or private order snapshot is exposed. No compatibility window is needed;
 deployment corrections use a forward-fix migration. Docker and native both apply the
 same `prisma migrate deploy` history.
+
+Issue 134 additively creates fulfillment-owned order state, immutable timeline and
+idempotency tables after
+`20260830113000__identity-access__audit-unresolved-sensitive-attempts`. The order
+identifier and seller-confirmed store identifier remain scalar cross-module
+references; the only foreign key is internal to fulfillment. Existing orders are
+handed off by the versioned outbox event, so no
+backfill or compatibility window is required. Corrections use a forward migration,
+and Docker and native continue to apply the same `prisma migrate deploy` history.

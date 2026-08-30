@@ -215,7 +215,12 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "fulfillment",
     artifact: FulfillmentModule,
-    compose: () => FulfillmentModule,
+    compose: ({ checkoutRepository, environment, storeRepository }) =>
+      FulfillmentModule.register(environment, {
+        orders: checkoutRepository,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
+      }),
   },
   {
     owner: "conversations",
