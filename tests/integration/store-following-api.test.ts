@@ -15,6 +15,7 @@ import {
   rebuildDiscoveryFollowerCountProjection,
 } from "../../apps/worker/src/modules/discovery";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
+import { drainFollowerCountEvents } from "../helpers/drain-follower-count-events";
 
 const environment = {
   ...apiTestEnvironment,
@@ -342,7 +343,7 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(projectedStore.json()).toMatchObject({ followerCount: { count: 1 } });
   });
 
-  it("rebuilds the public follower count from the durable follow-event history", async () => {
+  it("rebuilds the public follower count from the complete durable event history", async () => {
     const app = await startApp();
     const ownerCookie = await signIn(app, "09123456789");
     const firstBuyerCookie = await signIn(app, "09123456788");
@@ -364,19 +365,80 @@ describe("store following HTTP API with PostgreSQL", () => {
     await projectFollowerCountEvents();
 
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql`delete from discovery_public_follower_counts`;
-    await sql`delete from discovery_follower_count_relation_projections`;
+    const [firstRelation] = await sql<Array<{ identityId: string }>>`
+      select identity_id as "identityId"
+      from discovery_store_follows
+      where store_id = ${store.id}
+      order by activated_at
+      limit 1
+    `;
+    const inactiveEvent = identityStatusChangedV1Contract.parse({
+      version: 1,
+      eventId: crypto.randomUUID(),
+      eventType: "IdentityStatusChanged.v1",
+      aggregateId: firstRelation!.identityId,
+      aggregateVersion: 1,
+      occurredAt: new Date().toISOString(),
+      correlationId: crypto.randomUUID(),
+      causationId: crypto.randomUUID(),
+      actor: { type: "SYSTEM" },
+      payload: { status: "INACTIVE", statusVersion: 1 },
+    });
+    await sql.begin((transaction) => enqueueOutboxEvent(transaction, inactiveEvent));
     await sql.end();
+    await projectFollowerCountEvents();
+
+    const damaged = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await damaged`delete from discovery_identity_status_projections`;
+    await damaged`delete from discovery_public_follower_counts`;
+    await damaged`delete from discovery_follower_count_relation_projections`;
+    await damaged.end();
 
     const rebuilt = await rebuildDiscoveryFollowerCountProjection(
       apiTestEnvironment.DATABASE_URL,
     );
-    expect(rebuilt.replayedEventCount).toBe(2);
+    expect(rebuilt.replayedEventCount).toBe(3);
     const publicStore = await server.inject({
       method: "GET",
       url: "/v1/stores/rebuilt-follow-count",
     });
-    expect(publicStore.json()).toMatchObject({ followerCount: { count: 2 } });
+    expect(publicStore.json()).toMatchObject({ followerCount: { count: 1 } });
+  });
+
+  it("treats a first inactive identity event as a zero-to-zero transition", async () => {
+    const identityId = crypto.randomUUID();
+    const storeId = crypto.randomUUID();
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      insert into discovery_follower_count_relation_projections
+        (relation_id, identity_id, store_id, status, relation_revision, updated_at)
+      values
+        (${crypto.randomUUID()}, ${identityId}, ${storeId}, 'ACTIVE', 1, now())
+    `;
+    const inactiveEvent = identityStatusChangedV1Contract.parse({
+      version: 1,
+      eventId: crypto.randomUUID(),
+      eventType: "IdentityStatusChanged.v1",
+      aggregateId: identityId,
+      aggregateVersion: 1,
+      occurredAt: new Date().toISOString(),
+      correlationId: crypto.randomUUID(),
+      causationId: crypto.randomUUID(),
+      actor: { type: "SYSTEM" },
+      payload: { status: "INACTIVE", statusVersion: 1 },
+    });
+
+    await expect(
+      sql.begin((transaction) =>
+        projectIdentityStatusForFollowerCount(inactiveEvent, transaction),
+      ),
+    ).resolves.toBeUndefined();
+    const counts = await sql`
+      select follower_count from discovery_public_follower_counts
+      where store_id = ${storeId}
+    `;
+    expect(counts).toHaveLength(0);
+    await sql.end();
   });
 
   it("rolls back a follower-count projection when its relation is missing", async () => {
@@ -764,15 +826,5 @@ async function publishStore(
 }
 
 async function projectFollowerCountEvents() {
-  const worker = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, {
-    consumerName: "discovery-follower-count-v1",
-    handlers: discoveryFollowerCountOutboxHandlers,
-  });
-  try {
-    while ((await worker.runOnce()) !== "idle") {
-      // Drain only the event types owned by the follower-count projection.
-    }
-  } finally {
-    await worker.close();
-  }
+  await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 }

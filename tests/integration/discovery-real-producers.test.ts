@@ -4,13 +4,13 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
-import { discoveryFollowerCountOutboxHandlers } from "../../apps/worker/src/modules/discovery";
 import {
   projectDiscoveryProductEvent,
   projectDiscoveryStoreEvent,
   rebuildDiscoveryPublicFeedProjection,
 } from "../../apps/worker/src/modules/discovery/project-public-feed";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
+import { drainFollowerCountEvents } from "../helpers/drain-follower-count-events";
 
 const environment = {
   ...apiTestEnvironment,
@@ -341,17 +341,7 @@ async function projectDiscoveryEvents() {
 }
 
 async function projectFollowerCountEvents() {
-  const worker = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, {
-    consumerName: "discovery-follower-count-v1",
-    handlers: discoveryFollowerCountOutboxHandlers,
-  });
-  try {
-    while ((await worker.runOnce()) !== "idle") {
-      // Drain only follow and identity events owned by the count projection.
-    }
-  } finally {
-    await worker.close();
-  }
+  await drainFollowerCountEvents(apiTestEnvironment.DATABASE_URL);
 }
 
 function writeHeaders(cookie: string, key: string, expectedRevision: number) {

@@ -11,9 +11,13 @@ import {
 } from "@sevo/outbox";
 import postgres, { type Sql } from "postgres";
 
-const followerCountEventTypes = [
+const storeFollowEventTypes = [
   "StoreFollowActivated.v1",
   "StoreFollowDeactivated.v1",
+] as const;
+
+const followerCountEventTypes = [
+  ...storeFollowEventTypes,
   "IdentityStatusChanged.v1",
 ] as const;
 
@@ -32,12 +36,18 @@ export const projectStoreFollowForFollowerCount: OutboxEventHandler = async (
 export const projectIdentityStatusForFollowerCount: OutboxEventHandler = async (
   event,
   sql,
-) => {
+) => projectIdentityStatus(event, sql, true);
+
+async function projectIdentityStatus(
+  event: StoredOutboxEvent,
+  sql: Sql,
+  acquireRebuildLock: boolean,
+) {
   const changed = identityStatusChangedV1Contract.parse(event);
   if (changed.aggregateVersion !== changed.payload.statusVersion) {
     throw new Error("Identity status event versions do not match");
   }
-  await lockFollowerCountRebuild(sql, "shared");
+  if (acquireRebuildLock) await lockFollowerCountRebuild(sql, "shared");
   await lockIdentity(sql, changed.aggregateId);
   const currentRows = await sql<
     Array<{ status: "ACTIVE" | "INACTIVE"; statusVersion: number }>
@@ -61,7 +71,9 @@ export const projectIdentityStatusForFollowerCount: OutboxEventHandler = async (
       status_version = excluded.status_version,
       updated_at = excluded.updated_at
   `;
-  if (current?.status === changed.payload.status) return;
+  const previousContribution = current?.status === "ACTIVE";
+  const nextContribution = changed.payload.status === "ACTIVE";
+  if (previousContribution === nextContribution) return;
 
   const relations = await sql<Array<{ storeId: string }>>`
     select store_id as "storeId"
@@ -69,11 +81,11 @@ export const projectIdentityStatusForFollowerCount: OutboxEventHandler = async (
     where identity_id = ${changed.aggregateId} and status = 'ACTIVE'
     order by store_id
   `;
-  const delta = changed.payload.status === "ACTIVE" ? 1 : -1;
+  const delta = nextContribution ? 1 : -1;
   for (const { storeId } of relations) {
     await applyFollowerCountDelta(sql, storeId, delta, changed.occurredAt);
   }
-};
+}
 
 export const discoveryFollowerCountOutboxHandlers: Readonly<
   Record<string, OutboxEventHandler>
@@ -97,9 +109,20 @@ export async function rebuildDiscoveryFollowerCountProjection(databaseUrl: strin
       await lockFollowerCountRebuild(transaction, "exclusive");
       await transaction`delete from discovery_public_follower_counts`;
       await transaction`delete from discovery_follower_count_relation_projections`;
+      await transaction`delete from discovery_identity_status_projections`;
+      await transaction`
+        insert into discovery_identity_status_projections
+          (identity_id, status, status_version, updated_at)
+        select identity_id, 'ACTIVE', 0, min(updated_at)
+        from discovery_store_follows
+        group by identity_id
+      `;
       const replayedEventCount = await replayOutboxEventHistory(transaction, {
-        eventTypes: followerCountEventTypes.slice(0, 2),
-        handler: (event, replaySql) => projectStoreFollow(event, replaySql, false),
+        eventTypes: followerCountEventTypes,
+        handler: (event, replaySql) =>
+          event.eventType === "IdentityStatusChanged.v1"
+            ? projectIdentityStatus(event, replaySql, false)
+            : projectStoreFollow(event, replaySql, false),
       });
       return { replayedEventCount };
     });

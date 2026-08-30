@@ -163,7 +163,7 @@ Prometheus استفاده می‌شود؛ پروژهٔ فعال YAML، مجوز 
 اجرا می‌کند؛ مقدار تأیید از اجرای تصادفی جلوگیری می‌کند:
 
 ```powershell
-$env:SEVO_REBUILD_CONFIRM='public-feed-v1'
+$env:SEVO_REBUILD_CONFIRM='discovery-projections-v1'
 pnpm projection:rebuild:discovery
 ```
 
