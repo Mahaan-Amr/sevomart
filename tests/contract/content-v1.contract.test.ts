@@ -1,5 +1,8 @@
 import {
+  contentV1Examples,
+  contentV1Schemas,
   contentV1Operations,
+  orderItemIdContract as contentOrderItemIdContract,
   publishPurchaseExperienceInputContract,
   publishSalesContentInputContract,
   purchaseExperienceEligibilityDecisionContract,
@@ -135,6 +138,11 @@ describe("content v1 contract", () => {
     const ownerValue = ordersOrderItemIdContract.parse(ids.orderItem);
     expect(orderItemIdContract.parse(ownerValue)).toBe(ownerValue);
     expect(orderItemIdContract.safeParse("not-an-order-item").success).toBe(false);
+    expect(contentV1Schemas.OrderItemId).toBe(contentOrderItemIdContract);
+    expect(contentV1Examples.OrderItemId).toBe(ids.orderItem);
+    expect(ordersOrderItemIdContract.parse(contentV1Examples.OrderItemId)).toBe(
+      ids.orderItem,
+    );
   });
 
   it("keeps seller content and verified purchase experience distinct in events", () => {
