@@ -72,9 +72,12 @@ SEVO_RUNTIME_ENV=test OTP_PROVIDER=dev pnpm qa:down -- --profile qa --run-id iss
 ```
 
 `DATABASE_URL` ارثی، runtime غیر test و provider بیرونی پیش از startup رد می‌شوند. نام پروژه
-Compose از run id محدود ساخته می‌شود؛ اگر container، volume یا network همان run id از قبل
-وجود داشته باشد startup پیش از مالک‌شدن یا حذف منابع رد می‌شود. teardown فقط volumeهای همان
-پروژه را هدف می‌گیرد.
+Compose از run id محدود ساخته می‌شود. `qa:up` پیش از مشاهده یا ساخت containerها یک volume
+بدون داده را با token تصادفی به‌صورت اتمیک claim می‌کند؛ Docker فقط token نخستین contender را
+نگه می‌دارد و contender دیگر پیش از cleanup رد می‌شود. اگر container، volume یا network همان
+run id از قبل وجود داشته باشد startup بدون حذف آن منابع رد می‌شود. `qa:down` تا پایان بررسی
+fingerprint و حذف منابع، claim را نگه می‌دارد و در پایان فقط claim و volumeهای همان پروژه را
+حذف می‌کند.
 
 ## شواهد smoke برای [ایجاد runtime و orchestrator امن demo و QA](https://github.com/Mahaan-Amr/sevomart/issues/126)
 
@@ -88,6 +91,9 @@ Compose از run id محدود ساخته می‌شود؛ اگر container، vol
   `demo` در Compose نیز همان manifest نسخهٔ ۱ و report شمار صفر را ثبت کرد.
 - `qa:up` پایگاه `sevo_qa_issue_126` را روی پورت تصادفی ساخت؛ `qa:down` با fingerprint نادرست
   حذف را رد کرد و با fingerprint درست فقط همان containerها و volumeها را حذف کرد.
+- در follow-up بازبینی ۱۴۰۵-۰۶-۰۸، آزمون رقابت قطعی دو `qa:up` فقط یک owner و یک cleanup را
+  پذیرفت. آزمون integration روی پایگاه disposable با ۴۹ migration ثابت کرد fingerprint نادرست
+  دو سرویس و claim را نگه می‌دارد و fingerprint درست همان پروژه و claim را حذف می‌کند.
 
 ## اثر قرارداد و بازگشت
 

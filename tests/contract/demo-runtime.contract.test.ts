@@ -4,6 +4,17 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("versioned demo runtime contract", () => {
+  it("registers the platform owner for every managed-data runtime table", () => {
+    const ownership = JSON.parse(
+      readFileSync("docs/architecture/module-ownership.json", "utf8"),
+    ) as { tables: Record<string, string> };
+
+    expect(ownership.tables).toMatchObject({
+      platform_data_environment: "platform",
+      platform_seed_manifest_receipts: "platform",
+    });
+  });
+
   it("publishes an explicit, versioned and namespaced manifest", () => {
     const manifest = JSON.parse(
       readFileSync("ops/demo/manifest.v1.json", "utf8"),
