@@ -33,7 +33,7 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page).not.toHaveURL(/\/seller\/login/);
+  await expect(page.getByRole("link", { name: "ادامه کار" })).toBeVisible();
 
   const sql = postgres(databaseUrl, { max: 1 });
   try {
