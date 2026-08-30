@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  productBatchResultContract,
   productPreviewContract,
   productViewContract,
   publicProductContract,
@@ -37,10 +38,10 @@ type SaleRow = {
 type ImageDraft = { key: string; mediaId?: MediaId; file?: File };
 type IdempotentRequest = { payload: string; key: string };
 type RequestRef = { current: IdempotentRequest | undefined };
+type ProductIssue = { path: string; code: string };
 
 const PRODUCT_ID_STORAGE = "sevo-product-authoring-id";
 const CREATE_KEY_STORAGE = "sevo-product-authoring-create-key";
-const LAST_PRODUCT_ID_STORAGE = "sevo-last-product-id";
 const WRITE_TIMEOUT_MS = 8_000;
 
 export function SimpleProductBuilder({
@@ -60,7 +61,7 @@ export function SimpleProductBuilder({
   const [axes, setAxes] = useState<Axis[]>([]);
   const [saleRows, setSaleRows] = useState<Record<string, SaleRow>>({});
   const [preview, setPreview] = useState<PublicProduct>();
-  const [issues, setIssues] = useState<Array<{ path: string; code: string }>>([]);
+  const [issues, setIssues] = useState<ProductIssue[]>([]);
   const [message, setMessage] = useState("");
   const [showDetailsErrors, setShowDetailsErrors] = useState(false);
   const [showImageError, setShowImageError] = useState(false);
@@ -161,7 +162,6 @@ export function SimpleProductBuilder({
   function hydrate(product: ProductView) {
     setRevision(product.revision);
     setProductState(product.state);
-    localStorage.setItem(LAST_PRODUCT_ID_STORAGE, product.productId);
     if (!product.workingCopy) return;
     setName(product.workingCopy.name ?? "");
     setDescription(product.workingCopy.description);
@@ -246,7 +246,7 @@ export function SimpleProductBuilder({
             }
           : null,
     };
-    const response = await fetchWriteWithRetry(
+    const response = await fetchWithRetry(
       `/api/store/seller/products/${productId}/working-copy`,
       {
         method: "PUT",
@@ -257,6 +257,7 @@ export function SimpleProductBuilder({
     const body: unknown = await response.json();
     const parsed = productViewContract.safeParse(body);
     if (!response.ok || !parsed.success) {
+      setIssues(apiIssues(body));
       throw new Error(humanError(body, "ذخیره پیش‌نویس انجام نشد."));
     }
     if (productState === "DRAFT" || !options.applyLiveSale) {
@@ -281,7 +282,7 @@ export function SimpleProductBuilder({
         expectedRevision: variant.offerRevision,
       })),
     };
-    const offerResponse = await fetchWriteWithRetry(
+    const offerResponse = await fetchWithRetry(
       `/api/store/seller/products/${productId}/offers`,
       {
         method: "PUT",
@@ -293,14 +294,16 @@ export function SimpleProductBuilder({
       },
     );
     const offerBody: unknown = await offerResponse.json();
-    if (!offerResponse.ok || !isBatchResult(offerBody)) {
+    const offerResult = productBatchResultContract.safeParse(offerBody);
+    if (!offerResponse.ok || !offerResult.success) {
+      setIssues(apiIssues(offerBody));
       throw new Error(humanError(offerBody, "ذخیره قیمت و شناسه‌ها انجام نشد."));
     }
     const inventoryByVariant = new Map(
       product.inventory.map((row) => [row.variantId, row] as const),
     );
     const inventoryPayload = {
-      expectedRevision: offerBody.productRevision,
+      expectedRevision: offerResult.data.productRevision,
       reasonCode: "MANUAL_COUNT",
       rows: workingCopy.variants.map((variant) => ({
         variantId: variant.variantId,
@@ -308,19 +311,21 @@ export function SimpleProductBuilder({
         expectedRevision: inventoryByVariant.get(variant.variantId)?.revision ?? 0,
       })),
     };
-    const inventoryResponse = await fetchWriteWithRetry(
+    const inventoryResponse = await fetchWithRetry(
       `/api/store/seller/products/${productId}/inventory`,
       {
         method: "PUT",
         headers: writeHeaders(
-          offerBody.productRevision,
+          offerResult.data.productRevision,
           requestKey(inventoryRequest, inventoryPayload),
         ),
         body: JSON.stringify(inventoryPayload),
       },
     );
     const inventoryBody: unknown = await inventoryResponse.json();
-    if (!inventoryResponse.ok || !isBatchResult(inventoryBody)) {
+    const inventoryResult = productBatchResultContract.safeParse(inventoryBody);
+    if (!inventoryResponse.ok || !inventoryResult.success) {
+      setIssues(apiIssues(inventoryBody));
       throw new Error(humanError(inventoryBody, "ذخیره موجودی انجام نشد."));
     }
     const refreshed = await fetch(`/api/store/seller/products/${productId}`, {
@@ -394,15 +399,20 @@ export function SimpleProductBuilder({
     });
   }
 
-  function backTo(next: Step) {
-    setMessage("");
-    setStep(next);
+  async function backTo(next: Step) {
+    await runPending(async () => {
+      await saveWorkingCopy({
+        uploadImage: step === "images" && images.some((entry) => entry.file),
+        applyLiveSale: step === "sale",
+      });
+      setStep(next);
+    });
   }
 
   async function publish() {
     await runPending(async () => {
       const payload = { expectedRevision: revision, confirmed: true };
-      const response = await fetchWriteWithRetry(
+      const response = await fetchWithRetry(
         `/api/store/seller/products/${productId}/publications`,
         {
           method: "POST",
@@ -416,7 +426,6 @@ export function SimpleProductBuilder({
         throw new Error(humanError(body, "انتشار کالا انجام نشد."));
       }
       setPreview(parsed.data);
-      localStorage.setItem(LAST_PRODUCT_ID_STORAGE, productId);
       sessionStorage.removeItem(PRODUCT_ID_STORAGE);
       sessionStorage.removeItem(CREATE_KEY_STORAGE);
       setStep("published");
@@ -426,7 +435,7 @@ export function SimpleProductBuilder({
   async function unpublish() {
     await runPending(async () => {
       const payload = { expectedRevision: revision, reasonCode: "SELLER_REQUEST" };
-      const response = await fetchWriteWithRetry(
+      const response = await fetchWithRetry(
         `/api/store/seller/products/${productId}/unpublication`,
         {
           method: "POST",
@@ -576,6 +585,7 @@ export function SimpleProductBuilder({
             rows={saleRows}
             pending={pending}
             showErrors={showSaleErrors}
+            issues={issues}
             onKind={(nextKind) => {
               setKind(nextKind);
               if (nextKind === "multi" && axes.length === 0) setAxes([newAxis()]);
@@ -972,6 +982,7 @@ function SaleStep(props: {
   rows: Record<string, SaleRow>;
   pending: boolean;
   showErrors: boolean;
+  issues: ProductIssue[];
   onKind: (kind: "simple" | "multi") => void;
   onAxes: (axes: Axis[]) => void;
   onRows: (rows: Record<string, SaleRow>) => void;
@@ -1007,6 +1018,9 @@ function SaleStep(props: {
           const label = variantLabel(variant, props.axes) || "گونه اصلی";
           const priceError = salePriceError(row.priceToman, props.showErrors);
           const stockError = saleStockError(row.onHand, props.showErrors);
+          const producerPriceError = rowIssue(props.issues, index, "price");
+          const producerSkuError = rowIssue(props.issues, index, "sku");
+          const producerStockError = rowIssue(props.issues, index, "onHand");
           const update = (next: Partial<SaleRow>) =>
             props.onRows({ ...props.rows, [variant.clientKey]: { ...row, ...next } });
           return (
@@ -1018,11 +1032,13 @@ function SaleStep(props: {
                   aria-label={`قیمت ${label}`}
                   inputMode="numeric"
                   value={row.priceToman}
-                  aria-invalid={Boolean(priceError)}
+                  aria-invalid={Boolean(priceError || producerPriceError)}
                   onChange={(event) => update({ priceToman: event.target.value })}
                 />
-                {priceError ? (
-                  <small className={styles.fieldError}>{priceError}</small>
+                {priceError || producerPriceError ? (
+                  <small className={styles.fieldError}>
+                    {priceError || producerPriceError}
+                  </small>
                 ) : null}
               </label>
               <label className={styles.field}>
@@ -1030,8 +1046,12 @@ function SaleStep(props: {
                 <input
                   aria-label={`شناسه فروشنده ${label}`}
                   value={row.sku}
+                  aria-invalid={Boolean(producerSkuError)}
                   onChange={(event) => update({ sku: event.target.value })}
                 />
+                {producerSkuError ? (
+                  <small className={styles.fieldError}>{producerSkuError}</small>
+                ) : null}
               </label>
               <label className={styles.field}>
                 <span>موجودی</span>
@@ -1039,11 +1059,13 @@ function SaleStep(props: {
                   aria-label={`موجودی ${label}`}
                   inputMode="numeric"
                   value={row.onHand}
-                  aria-invalid={Boolean(stockError)}
+                  aria-invalid={Boolean(stockError || producerStockError)}
                   onChange={(event) => update({ onHand: event.target.value })}
                 />
-                {stockError ? (
-                  <small className={styles.fieldError}>{stockError}</small>
+                {stockError || producerStockError ? (
+                  <small className={styles.fieldError}>
+                    {stockError || producerStockError}
+                  </small>
                 ) : null}
               </label>
               <span className={styles.rowNumber}>گونه {index + 1}</span>
@@ -1252,18 +1274,6 @@ function redirectIfUnauthorized(response: Response, productId?: string) {
   window.location.assign(`/seller/login?returnTo=${encodeURIComponent(returnTo)}`);
   return true;
 }
-function isBatchResult(
-  value: unknown,
-): value is { productRevision: number; rows: Array<{ revision: number }> } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "productRevision" in value &&
-    typeof value.productRevision === "number" &&
-    "rows" in value &&
-    Array.isArray(value.rows)
-  );
-}
 function tomanToMoney(value: string) {
   if (!/^\d+$/u.test(value)) return null;
   const amount = Number(value) * 10;
@@ -1274,10 +1284,6 @@ function tomanToMoney(value: string) {
 function parseStock(value: string) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
-}
-
-async function fetchWriteWithRetry(input: RequestInfo | URL, init: RequestInit) {
-  return fetchWithRetry(input, init);
 }
 
 async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit) {
@@ -1315,10 +1321,14 @@ async function uploadProductImage(productId: string, file: File): Promise<MediaI
   const form = new FormData();
   form.set("purpose", "PRODUCT_IMAGE");
   form.set("file", file, file.name);
-  const response = await fetch(`/api/store/seller/products/${productId}/images`, {
-    method: "POST",
-    body: form,
-  });
+  const response = await fetchWithRetry(
+    `/api/store/seller/products/${productId}/images`,
+    {
+      method: "POST",
+      headers: { "idempotency-key": crypto.randomUUID() },
+      body: form,
+    },
+  );
   const body: unknown = await response.json();
   const parsed = mediaReferenceContract.safeParse(body);
   if (!response.ok || !parsed.success)
@@ -1363,4 +1373,26 @@ function humanError(body: unknown, fallback: string) {
     typeof body.message === "string"
     ? body.message
     : fallback;
+}
+
+function apiIssues(body: unknown): ProductIssue[] {
+  if (typeof body !== "object" || body === null || !("details" in body)) return [];
+  const details = body.details as {
+    issues?: Array<{ field?: string; path?: string; code?: string }>;
+  };
+  return (details.issues ?? []).flatMap((issue) => {
+    const path = issue.path ?? issue.field;
+    return path ? [{ path, code: issue.code ?? "INVALID" }] : [];
+  });
+}
+
+function rowIssue(issues: ProductIssue[], index: number, field: string) {
+  const matchesRow = (path: string) =>
+    path.includes(`rows.${index}`) || path.includes(`rows[${index}]`);
+  return issues.some(
+    (issue) =>
+      matchesRow(issue.path) && issue.path.toLowerCase().includes(field.toLowerCase()),
+  )
+    ? "این مقدار را بررسی کنید."
+    : "";
 }

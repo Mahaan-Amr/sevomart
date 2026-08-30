@@ -290,7 +290,7 @@
 }
 
 .liveChangeNotice {
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-inline-start: 3px solid var(--color-primary);
   background: var(--color-cover-start);
   color: var(--color-primary-dark);
