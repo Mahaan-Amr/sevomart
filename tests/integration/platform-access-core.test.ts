@@ -312,6 +312,106 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     }
   });
 
+  it("does not issue a receipt when access expires while authorization waits for its permission lock", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const agent = await seedAgent([]);
+
+    const responsibility = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/responsibility-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: agent.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        reason: "واگذاری مسئولیت برای آزمون انقضای هم‌زمان",
+      },
+    });
+    expect(responsibility.statusCode).toBe(202);
+
+    const resourceId = randomUUID();
+    const assigned = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/sensitive-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: agent.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "RESOLVE_ASSIGNED_CASE",
+        reason: "تخصیص پرونده برای آزمون انقضای هم‌زمان",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          allowedActions: ["REVEAL_MINIMUM"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    expect(assigned.statusCode).toBe(202);
+    const grantId = assigned.json<{ grantId: string }>().grantId;
+
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await observer`
+      update identity_platform_access_grants
+      set expires_at = clock_timestamp() + interval '500 milliseconds'
+      where id = ${grantId}
+    `;
+    const lockAcquired = deferred();
+    const releaseLock = deferred();
+    const blockingTransaction = blocker.begin(async (transaction) => {
+      await transaction`
+        select id from identity_platform_permission_grants
+        where identity_id = ${agent.identityId}
+          and permission = 'PAYMENT_REVIEW'
+          and revoked_at is null
+        for update
+      `;
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+
+    try {
+      await lockAcquired.promise;
+      const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+      const sensitiveUse = actionSql
+        .begin((transaction) =>
+          access.authorizeSensitiveAction(
+            createOpaquePlatformAccessTransactionContext(transaction),
+            {
+              grantId,
+              actorIdentityId: agent.identityId,
+              responsibility: "PAYMENT_REVIEW",
+              resourceType: "PAYMENT_REVIEW",
+              resourceId,
+              action: "REVEAL_MINIMUM",
+              reason: "تلاش برای مشاهده پس از انقضا هنگام انتظار قفل",
+              correlationId: randomUUID(),
+            },
+          ),
+        )
+        .then(
+          (receipt) => ({ receipt }),
+          (error: unknown) => ({ error }),
+        );
+      await waitForSensitiveAuthorizationLockWaiter(observer);
+      await waitUntilGrantExpires(observer, grantId);
+
+      releaseLock.resolve();
+      await blockingTransaction;
+      await expect(sensitiveUse).resolves.toMatchObject({
+        error: { code: "SENSITIVE_SCOPE_REQUIRED" },
+      });
+    } finally {
+      releaseLock.resolve();
+      await blockingTransaction;
+      await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
+    }
+  });
+
   it("durably audits nonexistent and wrong-kind sensitive grant references", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -838,6 +938,34 @@ async function waitForPlatformGrantLockWaiter(sql: Sql) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("revocation did not queue on the platform grant lock");
+}
+
+async function waitForSensitiveAuthorizationLockWaiter(sql: Sql) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await sql<Array<{ waiting: boolean }>>`
+      select exists(
+        select 1 from pg_stat_activity
+        where datname = current_database()
+          and wait_event_type = 'Lock'
+          and pid <> pg_backend_pid()
+      ) as waiting
+    `;
+    if (rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("sensitive authorization did not wait on its permission lock");
+}
+
+async function waitUntilGrantExpires(sql: Sql, grantId: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await sql<Array<{ expired: boolean }>>`
+      select expires_at <= clock_timestamp() as expired
+      from identity_platform_access_grants where id = ${grantId}
+    `;
+    if (rows[0]?.expired) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("sensitive grant did not reach its expiry time");
 }
 
 async function waitForAuditTableWaiters(sql: Sql, expected: number) {

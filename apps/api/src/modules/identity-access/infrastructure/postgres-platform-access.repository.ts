@@ -83,10 +83,6 @@ type SensitiveGrantRow = {
   expiresAt: Date;
 };
 
-type AuthorizedSensitiveGrantRow = SensitiveGrantRow & {
-  accessedAt: Date;
-};
-
 export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   readonly #sql: Sql;
 
@@ -808,10 +804,9 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
     await this.#expireSensitiveGrantIfDue(input.grantId);
     const sql = readOpaquePlatformAccessTransaction(transaction);
     const grant = await readAuthorizedSensitiveGrant(sql, input);
-    if (!grant) {
-      const denialCode = await this.#auditDeniedSensitiveAction(input);
-      throw new PlatformAccessError(denialCode);
-    }
+    if (!grant) return this.#denySensitiveAction(input);
+    const accessedAt = await readDatabaseClock(sql);
+    if (grant.expiresAt <= accessedAt) return this.#denySensitiveAction(input);
     await insertAudit(sql, {
       grantId: grant.grantId,
       action: sensitiveAuditAction(input.action),
@@ -822,7 +817,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       reason: input.reason,
       singleManagerException: grant.singleManagerException,
       correlationId: input.correlationId,
-      occurredAt: grant.accessedAt,
+      occurredAt: accessedAt,
     });
     return sensitiveAccessAuthorizationReceiptContract.parse({
       grantId: grant.grantId,
@@ -831,9 +826,14 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         resourceId: input.resourceId,
         allowedActions: [input.action],
       },
-      accessedAt: grant.accessedAt.toISOString(),
+      accessedAt: accessedAt.toISOString(),
       expiresAt: grant.expiresAt.toISOString(),
     });
+  }
+
+  async #denySensitiveAction(input: PlatformSensitiveAction): Promise<never> {
+    const denialCode = await this.#auditDeniedSensitiveAction(input);
+    throw new PlatformAccessError(denialCode);
   }
 
   async #auditDeniedSensitiveAction(
@@ -964,21 +964,16 @@ async function readSensitiveGrant(
 async function readAuthorizedSensitiveGrant(
   sql: Sql,
   input: PlatformSensitiveAction,
-): Promise<AuthorizedSensitiveGrantRow | undefined> {
-  const rows = await sql<AuthorizedSensitiveGrantRow[]>`
-    with access_time as materialized (
-      select clock_timestamp() as accessed_at
-    )
+): Promise<SensitiveGrantRow | undefined> {
+  const rows = await sql<SensitiveGrantRow[]>`
     select g.id as "grantId", g.subject_identity_id as "subjectIdentityId",
       g.requested_by_identity_id as "requestedByIdentityId",
       g.approved_by_identity_id as "approvedByIdentityId", g.responsibility,
       g.purpose_code as "purposeCode", g.scope, g.status, g.revision,
       g.single_manager_exception as "singleManagerException",
       g.created_at as "createdAt", g.activated_at as "activatedAt",
-      g.revoked_at as "revokedAt", g.expires_at as "expiresAt",
-      access_time.accessed_at as "accessedAt"
+      g.revoked_at as "revokedAt", g.expires_at as "expiresAt"
     from identity_platform_access_grants g
-    cross join access_time
     join identity_platform_permission_grants p
       on p.identity_id = ${input.actorIdentityId}
       and p.permission = ${input.responsibility}
@@ -986,7 +981,7 @@ async function readAuthorizedSensitiveGrant(
     join identity_identities i
       on i.id = p.identity_id and i.status = 'ACTIVE'
     where g.id = ${input.grantId} and g.grant_kind = 'SENSITIVE_ACCESS'
-      and g.status = 'ACTIVE' and g.expires_at > access_time.accessed_at
+      and g.status = 'ACTIVE'
       and g.subject_identity_id = ${input.actorIdentityId}
       and g.responsibility = ${input.responsibility}
       and g.scope ->> 'resourceType' = ${input.resourceType}
@@ -995,6 +990,13 @@ async function readAuthorizedSensitiveGrant(
     for share of g, p
   `;
   return rows[0];
+}
+
+async function readDatabaseClock(sql: Sql): Promise<Date> {
+  const rows = await sql<Array<{ accessedAt: Date }>>`
+    select clock_timestamp() as "accessedAt"
+  `;
+  return rows[0]!.accessedAt;
 }
 
 function sensitiveGrantMatchesAction(
