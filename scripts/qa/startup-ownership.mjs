@@ -8,14 +8,16 @@ export async function runOwnedQaStartup(operations) {
     await operations.startProject();
     return await operations.initializeProject();
   } catch (error) {
+    let cleanupConfirmed = !mayHaveCreatedProjectResources;
     if (mayHaveCreatedProjectResources) {
       try {
         await operations.cleanupProject();
+        cleanupConfirmed = true;
       } catch {
         // Preserve the startup failure; project ownership remains scoped by its claim.
       }
     }
-    if (ownershipToken) {
+    if (ownershipToken && cleanupConfirmed) {
       try {
         await operations.releaseOwnership(ownershipToken);
       } catch {

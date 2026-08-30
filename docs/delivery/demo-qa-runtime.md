@@ -98,6 +98,10 @@ fingerprint و حذف منابع، claim را نگه می‌دارد و در پ�
   به shebang، executable bit، پسوند command یا جداکنندهٔ `PATH` وابسته نیست؛ بنابراین همان
   assertionهای one-owner، one-up، one-cleanup و owner-only release روی Windows، macOS و Linux
   اجرا می‌شوند.
+- همهٔ فرمان‌های Docker بدون shell اجرا می‌شوند تا argumentهایی مانند Go template مالکیت روی
+  Windows بدون بازنویسی منتقل شوند؛ shell فقط برای command بومی `pnpm` در Windows باقی می‌ماند.
+- اگر cleanup پس از startup ناموفق تأیید نشود، claim حذف نمی‌شود؛ محیط ناقص owner بازیابی‌پذیر
+  خود را نگه می‌دارد و اجرای بعدی نمی‌تواند آن منابع را تصاحب یا پاک کند.
 
 ## اثر قرارداد و بازگشت
 
