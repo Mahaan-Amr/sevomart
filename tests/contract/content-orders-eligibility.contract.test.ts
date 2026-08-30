@@ -1,4 +1,4 @@
-import { purchaseExperienceEligibilityDecisionContract } from "@sevo/contracts/content/v1";
+import { purchaseExperienceEligibilityDecisionV2Contract } from "@sevo/contracts/content/v2";
 import {
   orderPurchaseExperienceEligibilityDecisionContract,
   orderPurchaseExperienceEligibilityInputContract,
@@ -34,7 +34,7 @@ describe("content consumer of Orders purchase eligibility", () => {
     });
 
     expect(
-      purchaseExperienceEligibilityDecisionContract.parse(
+      purchaseExperienceEligibilityDecisionV2Contract.parse(
         await adapter.readEligibility(input),
       ),
     ).toEqual(decision);

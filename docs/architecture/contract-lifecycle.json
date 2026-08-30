@@ -132,12 +132,24 @@
       "owner": "content",
       "approved": true,
       "executable": true,
-      "consumersMigrated": "pending",
+      "consumersMigrated": "complete",
       "removable": false,
       "evidence": {
         "schemas": ["salesContentProductEligibilityDecisionContract"],
         "operations": ["contentV1Operations"],
         "events": ["salesContentPublishedV1Contract"]
+      }
+    },
+    "@sevo/contracts/content/v2": {
+      "owner": "content",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["publishSalesContentInputV2Contract"],
+        "operations": ["contentV2Operations"],
+        "events": []
       }
     },
     "@sevo/contracts/discovery/v1": {

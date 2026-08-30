@@ -8,11 +8,22 @@
 `20260826090000__payments__remove-cross-module-order-fk` است. این برش migration،
 dependency، متغیر محیطی، پورت یا رفتار runtime تازه ندارد.
 
-## قرارداد اجرایی
+## قراردادهای نسخه‌دار و پنجره سازگاری
 
-- `@sevo/contracts/content/v1` دو operation مصوب `PublishSalesContent.v1` و
-  `PublishPurchaseExperience.v1` را با path، شناسه idempotency، ورودی، نتیجه،
-  خطا و رخداد نسخه‌دار تثبیت می‌کند.
+- `@sevo/contracts/content/v1` قرارداد منتشرشده سازگار را نگه می‌دارد: دو operation
+  مصوب `PublishSalesContent.v1` و `PublishPurchaseExperience.v1` را با path، شناسه
+  idempotency، ورودی، نتیجه، خطا و رخداد نسخه‌دار تثبیت می‌کند. رسانه فروش در این
+  نسخه همچنان `IMAGE | VIDEO` است و تصمیم مثبت تجربه خرید همچنان
+  `fulfillmentStatus: DELIVERED` می‌خواهد؛ این wire shape درجا محدود نشده است.
+- `@sevo/contracts/content/v2` به‌صورت افزایشی کنار v1 منتشر می‌شود و رفتار اجرایی
+  موجود را صریح می‌کند: رسانه فروش فقط `IMAGE` است و eligibility تجربه خرید از
+  خرید `CONFIRMED` متعلق به Orders می‌آید، بدون ادعای وضعیت انجام سفارش.
+- مصرف‌کننده runtime و آزمون‌های HTTP به pathهای v2 مهاجرت کرده‌اند. path و schemaهای
+  v1 در پنجره سازگاری باقی می‌مانند و حذف آن‌ها به تصمیم و migration جداگانه نیاز دارد.
+  endpoint تجربه خرید v1 تا وجود evidence مالک fulfillment برای `DELIVERED` عمداً
+  fail-closed است؛ endpoint v2 از تصمیم مالک Orders برای خرید `CONFIRMED` استفاده می‌کند.
+- `OrderItemId` فقط در قرارداد مالک Orders تعریف می‌شود؛ Content همان schema و type
+  را re-export می‌کند و شناسه موازی نمی‌سازد.
 - محتوای فروش حداقل یک و حداکثر ده `productId` یکتا می‌پذیرد.
   `SalesContentProductEligibilityDecision` فقط وقتی مثبت است که همه کالاها
   منتشرشده، یکتا و متعلق به همان فروشگاه باشند؛ حالت منفی فقط
@@ -22,9 +33,9 @@ dependency، متغیر محیطی، پورت یا رفتار runtime تازه �
   `ALREADY_SUBMITTED` است؛ بنابراین producer می‌تواند یکتایی submission را روی
   `orderItemId` به‌طور قراردادی و در persistence آینده enforce کند.
 - امتیاز تجربه خرید از ۱ تا ۵، متن حداکثر ۲۰۰۰ نویسه و رسانه یکتای حداکثر چهار
-  مورد است. رسانه محتوای فروش در v1 اجرایی صریحاً `IMAGE` است. `VIDEO` تا زمانی
-  که producer رسانه upload، پردازش و خواندن واقعی ویدیو را contract-first منتشر
-  کند ورودی معتبر نیست؛ قرارداد مالکیت یا پردازش media بازتعریف نمی‌شود.
+  مورد است. runtime v2 فقط تصویر را می‌پذیرد. `VIDEO` در v1 سازگار می‌ماند، اما تا
+  زمانی که producer رسانه upload، پردازش و خواندن واقعی ویدیو را contract-first
+  منتشر نکند وارد مسیر اجرایی v2 نمی‌شود.
 
 ## مرز منبع و حریم خصوصی
 
@@ -43,8 +54,8 @@ dependency، متغیر محیطی، پورت یا رفتار runtime تازه �
 
 ## OpenAPI و پنجره پیاده‌سازی
 
-fragment ماژول content همه schemaهای شناسه، eligibility، فرمان، نتیجه، خطا و
-رخداد را در OpenAPI ثبت می‌کند. دو path مصوب نیز با operationId، نشست هویت،
+fragment ماژول content schemaها و pathهای v1 و v2 را هم‌زمان در OpenAPI ثبت
+می‌کند. pathهای مصوب با operationId، نشست هویت،
 `Idempotency-Key`، schema درخواست و نگاشت پاسخ‌های `201/401/403/409/422/428/500`
 مستقیماً از قرارداد نسخه‌دار ساخته می‌شوند. controller و رفتار runtime در
 [[ساخت] پیاده‌سازی producer محتوای فروش و تجربه خرید](https://github.com/Mahaan-Amr/sevomart/issues/139)
@@ -70,14 +81,15 @@ persistence enforce می‌شود. eligibility خرید تأییدشده از po
 contract testها حداقل یک کالای یکتا، هم‌فروشگاهی و منتشرشده، خرید تأییدشده،
 رد submission تکراری، validation امتیاز و رسانه، تمایز قطعی منبع رخداد، نبود
 شناسه خریدار و سفارش در payload عمومی و mapping کامل OpenAPI را
-می‌سنجند. آزمون unit سرویس authorization و eligibility را در مرز application
+می‌سنجند. آزمون سازگاری پذیرش `VIDEO` و الزام `DELIVERED` را در v1 و محدودیت
+تصویر/خرید تأییدشده را در v2 قفل می‌کند. آزمون unit سرویس authorization و eligibility را در مرز application
 می‌سنجد. آزمون integration روی PostgreSQL واقعی، migration، replay idempotent،
 یکتایی submission، audit/outbox بدون شناسه خصوصی، دسترسی عمومی media، deactivation
-رخدادمحور و HTTP happy-path/duplicate تجربه خرید را می‌سنجد. OpenAPI همچنان از
-artifact نسخه‌دار v1 ساخته می‌شود.
+رخدادمحور و HTTP happy-path/duplicate تجربه خرید را می‌سنجد. OpenAPI از
+artifactهای نسخه‌دار v1 و v2 ساخته می‌شود.
 
-نتیجه نهایی محلی اصلاح بازبینی در ۲۰۲۶-۰۸-۲۹: format، lint و architecture،
-typecheck و build سبزند؛ ۱۴۱ unit، ۱۴۸ contract و ۱۶۶ integration سبزند و
-integration همه ۴۷ migration موجود را از صفر اعمال کرد. مسیر native با healthcheck
-هر سه برنامه و مسیر رسمی Compose با build چهار image، migrate تازه و healthcheck
-همه سرویس‌ها سبز شدند.
+نتیجه نهایی محلی اصلاح بازبینی در ۲۰۲۶-۰۸-۳۰: format، lint و architecture،
+typecheck و build سبزند؛ ۱۵۷ unit، ۱۵۵ contract و ۱۷۴ integration سبزند و
+integration همه ۴۹ migration موجود را از صفر اعمال کرد. شواهد runtime و Compose
+اصلاح producer در اجرای پیشین سبز بوده‌اند؛ این اصلاح فقط قرارداد نسخه‌دار، route و
+adapter type را تغییر می‌دهد و migration، env، startup یا dependency runtime تازه ندارد.
