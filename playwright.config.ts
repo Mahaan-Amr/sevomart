@@ -1,24 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-import {
-  acceptanceTestMobiles,
-  differentStoreCartConflictTestMobiles,
-  sellerApplicationDraftTestMobiles,
-  sellerWorkspaceTestMobiles,
-  sellerConversationTestMobiles,
-  buyerConversationTestMobiles,
-  otherSellerConversationTestMobiles,
-  productTracerTestMobiles,
-  guestCartTestMobiles,
-  sameStoreCartConflictTestMobiles,
-  storefrontTestMobiles,
-  paymentBuyerTestMobiles,
-  paymentSellerTestMobiles,
-  releaseAgentTestMobiles,
-  releaseBuyerTestMobiles,
-  releaseSellerTestMobiles,
-  visualViewports,
-} from "./tests/helpers/visual-projects";
+import { allE2eTestMobiles, visualViewports } from "./tests/helpers/visual-projects";
 
 const e2eApiPort = process.env.SEVO_E2E_API_PORT ?? "3109";
 const e2eWebPort = process.env.SEVO_E2E_WEB_PORT ?? "3110";
@@ -64,26 +46,9 @@ export default defineConfig({
       url: `${e2eApiUrl}/v1/health`,
       env: {
         API_PORT: e2eApiPort,
-        DEV_OTP_TEST_MOBILES: [
-          "09123456789",
-          "09111111111",
-          ...storefrontTestMobiles,
-          ...acceptanceTestMobiles,
-          ...sellerApplicationDraftTestMobiles,
-          ...sellerWorkspaceTestMobiles,
-          ...sellerConversationTestMobiles,
-          ...buyerConversationTestMobiles,
-          ...otherSellerConversationTestMobiles,
-          ...productTracerTestMobiles,
-          ...guestCartTestMobiles,
-          ...sameStoreCartConflictTestMobiles,
-          ...differentStoreCartConflictTestMobiles,
-          ...paymentBuyerTestMobiles,
-          ...paymentSellerTestMobiles,
-          ...releaseSellerTestMobiles,
-          ...releaseAgentTestMobiles,
-          ...releaseBuyerTestMobiles,
-        ].join(","),
+        DEV_OTP_TEST_MOBILES: ["09123456789", "09111111111", ...allE2eTestMobiles].join(
+          ",",
+        ),
       },
       reuseExistingServer: process.env.SEVO_E2E_ISOLATED !== "1" && !process.env.CI,
       timeout: 120_000,

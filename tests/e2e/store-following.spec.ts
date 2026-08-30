@@ -2,7 +2,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import postgres from "postgres";
 
-import { acceptanceTestMobiles, visualProjectIndex } from "../helpers/visual-projects";
+import {
+  e2eApiBaseUrl,
+  storeFollowingTestMobiles,
+  visualProjectIndex,
+} from "../helpers/visual-projects";
 import {
   assertInteractiveTargets,
   assertMinimumContrast,
@@ -36,7 +40,7 @@ test.beforeAll(async ({ browserName }, testInfo) => {
     variantId: crypto.randomUUID(),
     mediaId: crypto.randomUUID(),
   }));
-  mobile = acceptanceTestMobiles[index]!;
+  mobile = storeFollowingTestMobiles[index]!;
   const sql = postgres(databaseUrl, { max: 1 });
   await sql`delete from discovery_follow_idempotency_records where store_id in (
     select id from store_stores where slug in ${sql([slug, secondarySlug])}
@@ -296,7 +300,7 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     on conflict (consumer_name, event_id) do nothing
   `;
   await sql.end();
-  const apiBaseUrl = process.env.API_BASE_URL ?? "http://127.0.0.1:3109";
+  const apiBaseUrl = e2eApiBaseUrl();
   const firstFeed = await page.request.get(
     `${apiBaseUrl}/v1/me/feeds/following?limit=1`,
   );

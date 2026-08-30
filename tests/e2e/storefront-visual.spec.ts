@@ -9,11 +9,13 @@ import {
 } from "../helpers/visual-assertions";
 import {
   deterministicScreenshotOptions,
+  e2eApiBaseUrl,
   storefrontTestMobiles,
   visualProjectIndex,
+  visualSnapshotTimestamp,
 } from "../helpers/visual-projects";
 
-const apiBaseUrl = "http://127.0.0.1:3109";
+const apiBaseUrl = e2eApiBaseUrl();
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
 type ProjectStores = {
@@ -65,6 +67,12 @@ test.beforeAll(async ({ browserName }, testInfo) => {
 
   await createStore(mobiles[0]!, stores.defaultSlug, "default");
   await createStore(mobiles[1]!, stores.customSlug, "custom");
+  const snapshotSql = postgres(databaseUrl, { max: 1 });
+  await snapshotSql`
+    update store_stores set updated_at = ${visualSnapshotTimestamp}
+    where slug in (${stores.defaultSlug}, ${stores.customSlug})
+  `;
+  await snapshotSql.end();
 });
 
 test("a guest reads a published empty storefront from the real API", async ({

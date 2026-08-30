@@ -1,0 +1,261 @@
+.page {
+  min-height: 100dvh;
+  place-items: start center;
+  padding: 24px 16px;
+}
+
+.workspace {
+  display: grid;
+  width: min(100%, 820px);
+  gap: 20px;
+}
+
+.header {
+  display: grid;
+  gap: 4px;
+}
+
+.header h1,
+.header p,
+.success,
+.notice,
+.empty,
+.error p {
+  margin: 0;
+}
+
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.search,
+.editor label {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.search input,
+.editor input,
+.editor select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--elevation-pressed);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.success,
+.notice,
+.empty,
+.error {
+  padding: 12px 14px;
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: 10px;
+  background: var(--color-surface);
+  font-size: 13px;
+}
+
+.success {
+  color: var(--color-primary-dark);
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.error p {
+  color: var(--color-text);
+}
+
+.error button {
+  flex: none;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-block-start: 1px solid var(--color-divider);
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: 14px;
+  padding-block: 18px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.summary {
+  display: grid;
+  gap: 12px;
+}
+
+.identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.identity strong {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.identity span,
+.counts dt {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.identity .availability {
+  width: fit-content;
+  margin-block-start: 2px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.counts div {
+  display: grid;
+  gap: 2px;
+  padding-inline: 10px;
+  border-inline-start: 1px solid var(--color-divider);
+}
+
+.counts div:first-child {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+
+.counts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.actions,
+.editorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action,
+.activeAction,
+.submit,
+.cancel {
+  min-height: 40px;
+  padding: 7px 14px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.activeAction {
+  background: var(--color-cover-start);
+  box-shadow: var(--elevation-pressed);
+}
+
+.editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+.note,
+.editorActions {
+  grid-column: 1 / -1;
+}
+
+.submit {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: var(--elevation-action);
+  color: var(--color-on-primary);
+}
+
+.cancel {
+  color: var(--color-muted);
+}
+
+.action:disabled,
+.activeAction:disabled,
+.submit:disabled,
+.cancel:disabled,
+.error button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.search input:focus-visible,
+.editor input:focus-visible,
+.editor select:focus-visible,
+.action:focus-visible,
+.activeAction:focus-visible,
+.submit:focus-visible,
+.cancel:focus-visible,
+.error button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (min-width: 640px) {
+  .summary {
+    grid-template-columns: minmax(180px, 1fr) minmax(300px, 1fr);
+    align-items: center;
+  }
+}
+
+@media (min-width: 768px) {
+  .page {
+    padding: 48px 32px;
+  }
+}
+
+@media (max-width: 520px) {
+  .editor {
+    grid-template-columns: 1fr;
+  }
+
+  .error {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
