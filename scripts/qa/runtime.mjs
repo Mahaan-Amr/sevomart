@@ -6,6 +6,13 @@ const uuidPattern =
 
 export const QA_PROJECT_CLEANUP_EVENT = "qa-project-cleanup";
 
+export function createQaTargetNames(runId) {
+  return Object.freeze({
+    databaseName: `sevo_qa_${runId.replaceAll("-", "_")}`,
+    projectName: `sevomart-qa-${runId}`,
+  });
+}
+
 export function assertQaProjectIsAbsent(resources) {
   const existingResource = Object.values(resources).some((resourceIds) =>
     resourceIds.some(Boolean),
@@ -49,10 +56,9 @@ export function createQaLifecycleRequest(argumentsList, environment = process.en
 
   return Object.freeze({
     action,
-    databaseName: `sevo_qa_${runId.replaceAll("-", "_")}`,
+    ...createQaTargetNames(runId),
     ...(fingerprint ? { fingerprint } : {}),
     profile: "qa",
-    projectName: `sevomart-qa-${runId}`,
     runId,
   });
 }

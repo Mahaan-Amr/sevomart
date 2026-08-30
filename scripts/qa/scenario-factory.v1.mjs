@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { createQaTargetNames } from "./runtime.mjs";
+
 const scenarioNamePattern = /^[a-z0-9][a-z0-9-]{2,17}$/;
 const randomIdPattern = /^[a-z0-9]{12}$/;
 const fixedTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -93,13 +95,12 @@ function createScenarioRequest(definition, randomId) {
 }
 
 function assertTarget(target, request) {
-  const expectedProjectName = `sevomart-qa-${request.runId}`;
-  const expectedDatabaseName = `sevo_qa_${request.runId.replaceAll("-", "_")}`;
+  const expectedTarget = createQaTargetNames(request.runId);
   if (
     target?.profile !== "qa" ||
     target.runId !== request.runId ||
-    target.projectName !== expectedProjectName ||
-    target.databaseName !== expectedDatabaseName ||
+    target.projectName !== expectedTarget.projectName ||
+    target.databaseName !== expectedTarget.databaseName ||
     !fingerprintPattern.test(target.fingerprint ?? "") ||
     !validPort(target.databasePort) ||
     !validPort(target.minioPort)

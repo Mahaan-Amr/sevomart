@@ -22,10 +22,32 @@ describe("versioned isolated QA scenario contract", () => {
       namespacePrefix: "sevo.qa.",
       clock: "explicit-fixed-utc",
       lifecycle: "disposable-owned-run",
+      processEnvironment: "scrubbed-before-callbacks",
       providers: "internal-only",
+      reportChannel: "owned-file-descriptor",
       teardownProof: ["runId", "fingerprint"],
     });
     expect(factorySource).not.toContain("demo/seed");
     expect(factorySource).not.toContain("ops/demo");
+  });
+
+  it("runs scenario integration outside the shared database runner", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const sharedConfig = readFileSync("vitest.integration.config.ts", "utf8");
+    const isolatedConfig = readFileSync("vitest.qa-scenario.config.ts", "utf8");
+
+    expect(packageJson.scripts["test:integration"]).toContain("pnpm test:qa-scenario");
+    expect(packageJson.scripts["test:qa-scenario"]).toBe(
+      "node scripts/run-qa-scenario-tests.mjs",
+    );
+    expect(sharedConfig).toContain(
+      'exclude: ["tests/integration/qa-scenario-factory.test.ts"]',
+    );
+    expect(isolatedConfig).toContain(
+      'include: ["tests/integration/qa-scenario-factory.test.ts"]',
+    );
+    expect(isolatedConfig).not.toContain("integration-test-setup");
   });
 });

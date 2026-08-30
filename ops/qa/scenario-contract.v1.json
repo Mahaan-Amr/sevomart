@@ -4,6 +4,8 @@
   "namespacePrefix": "sevo.qa.",
   "clock": "explicit-fixed-utc",
   "lifecycle": "disposable-owned-run",
+  "processEnvironment": "scrubbed-before-callbacks",
   "providers": "internal-only",
+  "reportChannel": "owned-file-descriptor",
   "teardownProof": ["runId", "fingerprint"]
 }

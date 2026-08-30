@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { createQaScenarioProcessEnvironment } from "./scenario-environment.mjs";
+
 const lifecycleScript = fileURLToPath(new URL("./lifecycle.mjs", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -8,20 +10,20 @@ export function createQaScenarioLifecycle({
   environment = process.env,
   spawn = spawnSync,
 } = {}) {
-  const lifecycleEnvironment = {
-    ...environment,
-    OTP_PROVIDER: "dev",
-    SEVO_RUNTIME_ENV: "test",
-  };
-  delete lifecycleEnvironment.DATABASE_URL;
+  const lifecycleEnvironment = createQaScenarioProcessEnvironment(environment);
 
-  function run(argumentsList) {
+  function run(argumentsList, { captureReport = false } = {}) {
+    const commandEnvironment = captureReport
+      ? { ...lifecycleEnvironment, SEVO_QA_REPORT_FD: "3" }
+      : lifecycleEnvironment;
     const result = spawn(process.execPath, [lifecycleScript, ...argumentsList], {
       cwd: repositoryRoot,
       encoding: "utf8",
-      env: lifecycleEnvironment,
+      env: commandEnvironment,
       shell: false,
-      stdio: "pipe",
+      stdio: captureReport
+        ? ["ignore", "pipe", "pipe", "pipe"]
+        : ["ignore", "pipe", "pipe"],
     });
     if (result.error) throw result.error;
     if (result.status !== 0) {
@@ -29,12 +31,14 @@ export function createQaScenarioLifecycle({
         result.stderr?.trim() || `QA lifecycle exited with status ${result.status}`,
       );
     }
-    return result.stdout ?? "";
+    return captureReport ? (result.output?.[3] ?? "") : (result.stdout ?? "");
   }
 
   return Object.freeze({
     async up(runId) {
-      const output = run(["up", "--profile", "qa", "--run-id", runId]);
+      const output = run(["up", "--profile", "qa", "--run-id", runId], {
+        captureReport: true,
+      });
       return parseTargetReport(output);
     },
     async down({ fingerprint, runId }) {

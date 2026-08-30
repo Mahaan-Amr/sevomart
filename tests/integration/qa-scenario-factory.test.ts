@@ -1,13 +1,21 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
 import { withQaScenario } from "../../scripts/qa/scenario.v1.mjs";
+import { QA_PROJECT_CLEANUP_EVENT } from "../../scripts/qa/runtime.mjs";
 
 describe("isolated QA scenario factory", () => {
   it("builds minimal fixed-time data and removes the whole owned run", async () => {
     let projectName = "";
+
+    expect(process.env).not.toHaveProperty("DATABASE_URL");
+    expect(process.env).toMatchObject({
+      OTP_PROVIDER: "dev",
+      SEVO_RUNTIME_ENV: "test",
+    });
 
     await withQaScenario(
       {
@@ -55,6 +63,35 @@ describe("isolated QA scenario factory", () => {
     );
 
     expect(projectName).not.toBe("");
+    expect(projectResources(projectName)).toEqual({
+      containers: [],
+      networks: [],
+      volumes: [],
+    });
+    expect(docker(["volume", "inspect", `${projectName}-owner`]).status).not.toBe(0);
+  }, 120_000);
+
+  it("cleans startup when the required report channel is unavailable", () => {
+    const runId = `report-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+    const projectName = `sevomart-qa-${runId}`;
+    const environment = {
+      ...process.env,
+      SEVO_QA_REPORT_FD: "3",
+    };
+    delete environment.DATABASE_URL;
+
+    const failed = spawnSync(
+      process.execPath,
+      ["scripts/qa/lifecycle.mjs", "up", "--profile", "qa", "--run-id", runId],
+      {
+        encoding: "utf8",
+        env: environment,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    expect(failed.status).not.toBe(0);
+    expect(failed.stderr).toContain(`"event":"${QA_PROJECT_CLEANUP_EVENT}"`);
     expect(projectResources(projectName)).toEqual({
       containers: [],
       networks: [],

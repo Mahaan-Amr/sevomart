@@ -45,11 +45,18 @@ await withQaScenario(
 
 - adapter هیچ `DATABASE_URL` ورودی نمی‌پذیرد، مقدار ارثی shell/CI را حذف می‌کند و مقصد را
   فقط از پورت گزارش‌شده lifecycle همان اجرا می‌سازد.
-- `SEVO_RUNTIME_ENV=test` و OTP داخلی `dev` درون adapter قطعی‌اند؛ interface انتخاب provider
-  بیرونی ندارد. MinIO نیز فقط از Compose همان پروژه disposable می‌آید.
+- runner مستقل `pnpm test:qa-scenario` پیش از ساخت process آزمون، `DATABASE_URL` را حذف و
+  `SEVO_RUNTIME_ENV=test` و OTP داخلی `dev` را قطعی می‌کند. خود `withQaScenario` همین env را
+  پیش از callbackهای `build` و `exercise` دوباره بررسی می‌کند؛ بنابراین composition واقعی
+  برنامه نیز نمی‌تواند ناخواسته مقصد انسانی یا provider بیرونی process والد را مصرف کند.
+  MinIO فقط از Compose همان پروژه disposable می‌آید.
 - lifecycle پیش از write، profile و نام allowlist‌شده پایگاه را از خود مقصد و fingerprint آن
   را بررسی می‌کند. گزارش ناهماهنگ اجرا را متوقف می‌کند و با proof معتبر، teardown
   owner-scoped را پیش از بازگرداندن خطا تلاش می‌کند.
+- گزارش startup برای factory روی file descriptor اختصاصی نوشته می‌شود و stdout فقط خروجی
+  انسانی است. اگر نوشتن کانال اجباری شکست بخورد، initialization ناموفق می‌شود و coordinator
+  موجود پیش از خروج، پروژه و claim همان run را حذف می‌کند؛ خروجی ناقص نمی‌تواند محیط orphan
+  و ظاهراً موفق باقی بگذارد.
 - اگر هم رفتار سناریو و هم teardown شکست بخورند، هر دو خطا در `AggregateError` حفظ می‌شوند؛
   موفق نشان‌دادن سناریویی که محیطش پاک نشده مجاز نیست.
 - factory هیچ import یا receipt از `demo:seed` و manifest داده نمایشی ندارد. حذف محیط QA نیز
@@ -57,11 +64,14 @@ await withQaScenario(
 
 ## مسیرهای اجرا و اثر قرارداد
 
-local، CI و checkout داخل Docker همگی همین factory و `scripts/qa/lifecycle.mjs` را اجرا
-می‌کنند؛ lifecycle از `compose.yaml` و همان فرمان `prisma migrate deploy` مسیر native و
-Compose استفاده می‌کند. اتصال انسانی برای این مسیر پشتیبانی نمی‌شود. تست integration واقعی
-یک هویت کمینه با timestamp ثابت می‌سازد، خالی‌بودن receiptهای demo را می‌سنجد و پس از پایان
-نبود container، network، volume و ownership claim همان run را بررسی می‌کند.
+local و CI، runner مستقل را روی host اجرا می‌کنند و runner برای هر تست stack تازه را از
+`compose.yaml` بالا می‌آورد؛ اجرای factory داخل container برنامه یا اتصال به stack از پیش
+موجود پشتیبانی نمی‌شود. lifecycle همان فرمان `prisma migrate deploy` رسمی را در container
+PostgreSQL disposable اجرا می‌کند، اما startup، env یا پورت مسیرهای runtime برنامه در
+`pnpm dev` و `docker compose up --build` را تغییر نمی‌دهد. تست integration واقعی یک هویت
+کمینه با timestamp ثابت می‌سازد، خالی‌بودن receiptهای demo را می‌سنجد و پس از پایان نبود
+container، network، volume و ownership claim همان run را بررسی می‌کند. regression دوم نیز
+شکست کانال report را ایجاد و cleanup کامل startup ناموفق را ثابت می‌کند.
 
 این تغییر endpoint HTTP، payload برنامه، schema پایگاه یا رفتار runtime خریدار/فروشنده را
 عوض نمی‌کند؛ در نتیجه OpenAPI و migration تازه‌ای ندارد. قرارداد افزوده‌شده فقط

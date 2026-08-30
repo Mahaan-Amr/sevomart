@@ -12,18 +12,25 @@ describe("QA scenario lifecycle adapter", () => {
         error: undefined,
         status: 0,
         stderr: "",
-        stdout: `migration output\n${JSON.stringify({
-          databaseName: "sevo_qa_checkout_failure_a1b2c3d4e5f6",
-          databasePort: 55432,
-          fingerprint,
-          minioPort: 59000,
-          profile: "qa",
-          projectName: "sevomart-qa-checkout-failure-a1b2c3d4e5f6",
-          runId: "checkout-failure-a1b2c3d4e5f6",
-        })}\n`,
+        output: [
+          null,
+          "malformed stdout that is not the target report\n",
+          "",
+          `${JSON.stringify({
+            databaseName: "sevo_qa_checkout_failure_a1b2c3d4e5f6",
+            databasePort: 55432,
+            fingerprint,
+            minioPort: 59000,
+            profile: "qa",
+            projectName: "sevomart-qa-checkout-failure-a1b2c3d4e5f6",
+            runId: "checkout-failure-a1b2c3d4e5f6",
+          })}\n`,
+        ],
+        stdout: "malformed stdout that is not the target report\n",
       })
       .mockReturnValueOnce({
         error: undefined,
+        output: [null, '{"removed":true}\n', '{"event":"qa-project-cleanup"}\n'],
         status: 0,
         stderr: '{"event":"qa-project-cleanup"}\n',
         stdout: '{"removed":true}\n',
@@ -55,6 +62,7 @@ describe("QA scenario lifecycle adapter", () => {
       "--run-id",
       "checkout-failure-a1b2c3d4e5f6",
     ]);
+    expect(spawn.mock.calls[0]?.[2]?.stdio).toEqual(["ignore", "pipe", "pipe", "pipe"]);
     expect(spawn.mock.calls[1]?.[1]).toEqual([
       expect.stringMatching(/scripts[/\\]qa[/\\]lifecycle\.mjs$/),
       "down",

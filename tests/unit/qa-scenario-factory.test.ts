@@ -114,6 +114,66 @@ describe("QA scenario factory v1", () => {
     });
   });
 
+  it("preserves both failures when scenario work and teardown fail", async () => {
+    const scenarioFailure = new Error("scenario failed");
+    const teardownFailure = new Error("teardown failed");
+    const lifecycle = {
+      up: vi.fn(async () => target),
+      down: vi.fn(async () => {
+        throw teardownFailure;
+      }),
+    };
+    const factory = createQaScenarioFactory({
+      lifecycle,
+      randomId: () => "a1b2c3d4e5f6",
+    });
+
+    const failure = await factory
+      .withScenario(
+        {
+          name: "checkout-failure",
+          fixedTime: "2026-08-30T08:30:00.000Z",
+          build: async () => ({}),
+        },
+        async () => {
+          throw scenarioFailure;
+        },
+      )
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      scenarioFailure,
+      teardownFailure,
+    ]);
+    expect((failure as AggregateError).cause).toBe(teardownFailure);
+  });
+
+  it("fails a successful scenario when teardown is not confirmed", async () => {
+    const teardownFailure = new Error("teardown failed");
+    const lifecycle = {
+      up: vi.fn(async () => target),
+      down: vi.fn(async () => {
+        throw teardownFailure;
+      }),
+    };
+    const factory = createQaScenarioFactory({
+      lifecycle,
+      randomId: () => "a1b2c3d4e5f6",
+    });
+
+    await expect(
+      factory.withScenario(
+        {
+          name: "checkout-failure",
+          fixedTime: "2026-08-30T08:30:00.000Z",
+          build: async () => ({}),
+        },
+        async () => "passed",
+      ),
+    ).rejects.toBe(teardownFailure);
+  });
+
   it.each([
     { name: "Demo Seed", fixedTime: "2026-08-30T08:30:00.000Z" },
     { name: "checkout", fixedTime: "2026-08-30" },
