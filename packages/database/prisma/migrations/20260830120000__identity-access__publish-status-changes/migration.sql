@@ -5,6 +5,26 @@ ALTER TABLE "identity_identities"
 ADD CONSTRAINT "identity_identities_status_version_check"
 CHECK ("status_version" >= 0);
 
+UPDATE "identity_identities"
+SET "status_version" = 1
+WHERE "status" <> 'ACTIVE';
+
+WITH inactive_identities AS (
+  SELECT "id", "status_version", gen_random_uuid() AS "event_id",
+    gen_random_uuid() AS "correlation_id",
+    gen_random_uuid() AS "causation_id", clock_timestamp() AS "occurred_at"
+  FROM "identity_identities"
+  WHERE "status" <> 'ACTIVE'
+)
+INSERT INTO "platform_outbox_events"
+  ("event_id", "envelope_version", "event_type", "aggregate_id",
+   "aggregate_version", "occurred_at", "correlation_id", "causation_id",
+   "actor_type", "actor_id", "payload")
+SELECT "event_id", 1, 'IdentityStatusChanged.v1', "id", "status_version",
+  "occurred_at", "correlation_id", "causation_id", 'SYSTEM', NULL,
+  jsonb_build_object('status', 'INACTIVE', 'statusVersion', "status_version")
+FROM inactive_identities;
+
 CREATE OR REPLACE FUNCTION identity_publish_status_change()
 RETURNS trigger
 LANGUAGE plpgsql

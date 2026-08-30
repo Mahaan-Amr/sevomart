@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import {
+  catchUpDiscoveryFollowerCountProjection,
   discoveryFollowerCountOutboxHandlers,
   projectIdentityStatusForFollowerCount,
   rebuildDiscoveryFollowerCountProjection,
@@ -343,6 +344,45 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(projectedStore.json()).toMatchObject({ followerCount: { count: 1 } });
   });
 
+  it("reports follower-count catch-up replay completion", async () => {
+    const app = await startApp();
+    const ownerCookie = await signIn(app, "09123456789");
+    const buyerCookie = await signIn(app, "09123456788");
+    const store = await publishStore(app, ownerCookie, "catch-up-follow-count");
+    const server = app.getHttpAdapter().getInstance();
+    const followed = await server.inject({
+      method: "PUT",
+      url: `/v1/me/follows/${store.id}`,
+      headers: { cookie: buyerCookie, "idempotency-key": crypto.randomUUID() },
+    });
+    expect(followed.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update platform_outbox_events set status = 'PROCESSED', processed_at = now()
+      where event_type = 'StoreFollowActivated.v1'
+        and payload->>'storeId' = ${store.id}
+    `;
+    await sql.end();
+    const catchUpLogs: Array<Readonly<Record<string, unknown>>> = [];
+
+    const result = await catchUpDiscoveryFollowerCountProjection(
+      apiTestEnvironment.DATABASE_URL,
+      (record) => catchUpLogs.push(record),
+    );
+
+    expect(result).toEqual({ replayedEventCount: 1, poisonEventCount: 0 });
+    expect(catchUpLogs).toContainEqual(
+      expect.objectContaining({
+        level: "info",
+        message: "discovery_projection_catchup_completed",
+        projection: "follower-count",
+        replayedEventCount: 1,
+        poisonEventCount: 0,
+      }),
+    );
+  });
+
   it("rebuilds the public follower count from the complete durable event history", async () => {
     const app = await startApp();
     const ownerCookie = await signIn(app, "09123456789");
@@ -603,6 +643,21 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(receipt).toHaveLength(0);
     expect(count).toHaveLength(0);
     expect(storedEvent).toEqual([{ status: "FAILED" }]);
+    const catchUpLogs: Array<Readonly<Record<string, unknown>>> = [];
+    const catchUp = await catchUpDiscoveryFollowerCountProjection(
+      apiTestEnvironment.DATABASE_URL,
+      (record) => catchUpLogs.push(record),
+    );
+    expect(catchUp).toEqual({ replayedEventCount: 0, poisonEventCount: 1 });
+    expect(catchUpLogs).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "discovery_projection_catchup_failed",
+        projection: "follower-count",
+        eventType: "StoreFollowActivated.v1",
+        errorKind: "Error",
+      }),
+    );
     const rebuildLogs: Array<Readonly<Record<string, unknown>>> = [];
     await expect(
       rebuildDiscoveryFollowerCountProjection(

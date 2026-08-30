@@ -110,11 +110,34 @@ export const discoveryFollowerCountOutboxHandlers: Readonly<
   "IdentityStatusChanged.v1": projectIdentityStatusForFollowerCount,
 };
 
-export async function catchUpDiscoveryFollowerCountProjection(databaseUrl: string) {
-  return catchUpOutboxConsumer(databaseUrl, {
+export async function catchUpDiscoveryFollowerCountProjection(
+  databaseUrl: string,
+  log: ProjectionLog = (record) => console.log(JSON.stringify(record)),
+) {
+  const result = await catchUpOutboxConsumer(databaseUrl, {
     consumerName: "discovery-follower-count-v1",
     handlers: discoveryFollowerCountOutboxHandlers,
+    log: (record) =>
+      log({
+        ...record,
+        message: "discovery_projection_catchup_failed",
+        projection: "follower-count",
+      }),
   });
+  if (result.replayedEventCount > 0 || result.poisonEventCount > 0) {
+    log({
+      level: result.poisonEventCount > 0 ? "error" : "info",
+      message: "discovery_projection_catchup_completed",
+      projection: "follower-count",
+      replayedEventCount: result.replayedEventCount,
+      poisonEventCount: result.poisonEventCount,
+    });
+  }
+  followerCountReplayMetric.add(result.replayedEventCount, {
+    projection: "follower-count",
+    operation: "catchup",
+  });
+  return result;
 }
 
 export async function rebuildDiscoveryFollowerCountProjection(
