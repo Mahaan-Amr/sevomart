@@ -152,9 +152,15 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "store",
     artifact: StoreModule,
-    compose: ({ environment, storeFollowingRepository, storeRepository }) =>
+    compose: ({
+      environment,
+      productRepository,
+      storeFollowingRepository,
+      storeRepository,
+    }) =>
       StoreModule.register(environment, {
         repository: storeRepository,
+        publicActiveProductCountReader: productRepository,
         publicStoreFollowingReader: storeFollowingRepository,
       }),
   },

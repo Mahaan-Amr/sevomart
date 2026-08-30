@@ -410,6 +410,21 @@ export class PostgresProductRepository implements ProductRepository {
     );
   }
 
+  async readActiveProductCount(storeId: string) {
+    const [row] = await this.#sql<Array<{ count: number }>>`
+      select count(*)::int as count
+      from product_products product
+      where product.store_id = ${storeId}::uuid
+        and product.state = 'PUBLISHED'
+        and exists (
+          select 1 from product_publications publication
+          where publication.product_id = product.id
+            and publication.publication_version = product.publication_version
+        )
+    `;
+    return row?.count ?? 0;
+  }
+
   async findPublishedMediaStoreId(mediaId: string) {
     const rows = await this.#sql<Array<{ storeId: string }>>`
       select p.store_id as "storeId"

@@ -187,6 +187,67 @@ describe("simple product tracer HTTP API", () => {
     });
   });
 
+  it("reports zero, one and zero active products as publication changes", async () => {
+    const { server, cookie } = await startSellerProductTest();
+    const readActiveProductCount = async () => {
+      const response = await server.inject({
+        method: "GET",
+        url: "/v1/stores/product-tracer-store",
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json<{ activeProductCount: number }>().activeProductCount;
+    };
+
+    expect(await readActiveProductCount()).toBe(0);
+
+    const created = await server.inject({
+      method: "POST",
+      url: "/v1/seller/products",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {},
+    });
+    expect(created.statusCode).toBe(201);
+    const productId = created.json<{ productId: string }>().productId;
+    const mediaId = await uploadProductImage(server, cookie, productId);
+    const saved = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 0),
+      payload: {
+        expectedRevision: 0,
+        workingCopy: {
+          name: "فنجان شمارش‌پذیر",
+          description: "کالای فیزیکی برای آزمون شمار عمومی فروشگاه",
+          orderedMediaIds: [mediaId],
+          variant: {
+            clientKey: "simple",
+            price: { amount: 4_500_000, currency: "IRR" },
+          },
+        },
+        inventory: { onHand: 1, expectedRevision: 0 },
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const published = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 1),
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(published.statusCode).toBe(200);
+    expect(await readActiveProductCount()).toBe(1);
+
+    const unpublished = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/unpublication`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 2),
+      payload: { expectedRevision: 2, reasonCode: "SELLER_REQUEST" },
+    });
+    expect(unpublished.statusCode).toBe(200);
+    expect(await readActiveProductCount()).toBe(0);
+  });
+
   it("creates, previews and atomically publishes one sellable physical product", async () => {
     const { server, cookie } = await startSellerProductTest();
 

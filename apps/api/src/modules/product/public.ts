@@ -61,6 +61,7 @@ export interface ProductAuthoritativeRead {
 }
 
 export interface ProductRepository extends ProductAuthoritativeRead {
+  readActiveProductCount(storeId: StoreId): Promise<number>;
   listOwned(
     storeId: StoreId,
     query: Readonly<{
