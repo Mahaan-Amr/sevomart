@@ -312,105 +312,159 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     }
   });
 
-  it("does not issue a receipt when access expires while authorization waits for its permission lock", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
-    const agent = await seedAgent([]);
+  it.each([
+    {
+      lockTarget: "permission",
+      waitingQuery: "identity_platform_permission_grants",
+    },
+    { lockTarget: "grant", waitingQuery: "identity_platform_access_grants" },
+  ])(
+    "does not issue a receipt when access expires while authorization waits for its $lockTarget lock",
+    async ({ lockTarget, waitingQuery }) => {
+      const app = await createApiApp(apiTestEnvironment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+      const agent = await seedAgent([]);
 
-    const responsibility = await server.inject({
-      method: "POST",
-      url: "/v1/platform/access/responsibility-grants",
-      headers: accessHeaders(manager.token),
-      payload: {
-        recipientIdentityId: agent.identityId,
-        responsibility: "PAYMENT_REVIEW",
-        reason: "واگذاری مسئولیت برای آزمون انقضای هم‌زمان",
-      },
-    });
-    expect(responsibility.statusCode).toBe(202);
-
-    const resourceId = randomUUID();
-    const assigned = await server.inject({
-      method: "POST",
-      url: "/v1/platform/access/sensitive-grants",
-      headers: accessHeaders(manager.token),
-      payload: {
-        recipientIdentityId: agent.identityId,
-        responsibility: "PAYMENT_REVIEW",
-        purposeCode: "RESOLVE_ASSIGNED_CASE",
-        reason: "تخصیص پرونده برای آزمون انقضای هم‌زمان",
-        scope: {
-          resourceType: "PAYMENT_REVIEW",
-          resourceId,
-          allowedActions: ["REVEAL_MINIMUM"],
+      const responsibility = await server.inject({
+        method: "POST",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: accessHeaders(manager.token),
+        payload: {
+          recipientIdentityId: agent.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          reason: "واگذاری مسئولیت برای آزمون انقضای هم‌زمان",
         },
-        ttlMinutes: 30,
-      },
-    });
-    expect(assigned.statusCode).toBe(202);
-    const grantId = assigned.json<{ grantId: string }>().grantId;
+      });
+      expect(responsibility.statusCode).toBe(202);
 
-    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await observer`
+      const resourceId = randomUUID();
+      const assigned = await server.inject({
+        method: "POST",
+        url: "/v1/platform/access/sensitive-grants",
+        headers: accessHeaders(manager.token),
+        payload: {
+          recipientIdentityId: agent.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          purposeCode: "RESOLVE_ASSIGNED_CASE",
+          reason: "تخصیص پرونده برای آزمون انقضای هم‌زمان",
+          scope: {
+            resourceType: "PAYMENT_REVIEW",
+            resourceId,
+            allowedActions: ["REVEAL_MINIMUM"],
+          },
+          ttlMinutes: 30,
+        },
+      });
+      expect(assigned.statusCode).toBe(202);
+      const grantId = assigned.json<{ grantId: string }>().grantId;
+
+      const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const actionBackend = await actionSql<Array<{ pid: number }>>`
+      select pg_backend_pid() as pid
+    `;
+      await observer`
       update identity_platform_access_grants
       set expires_at = clock_timestamp() + interval '500 milliseconds'
       where id = ${grantId}
     `;
-    const lockAcquired = deferred();
-    const releaseLock = deferred();
-    const blockingTransaction = blocker.begin(async (transaction) => {
-      await transaction`
-        select id from identity_platform_permission_grants
-        where identity_id = ${agent.identityId}
-          and permission = 'PAYMENT_REVIEW'
-          and revoked_at is null
-        for update
-      `;
-      lockAcquired.resolve();
-      await releaseLock.promise;
-    });
-
-    try {
-      await lockAcquired.promise;
-      const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
-      const sensitiveUse = actionSql
-        .begin((transaction) =>
-          access.authorizeSensitiveAction(
-            createOpaquePlatformAccessTransactionContext(transaction),
-            {
-              grantId,
-              actorIdentityId: agent.identityId,
-              responsibility: "PAYMENT_REVIEW",
-              resourceType: "PAYMENT_REVIEW",
-              resourceId,
-              action: "REVEAL_MINIMUM",
-              reason: "تلاش برای مشاهده پس از انقضا هنگام انتظار قفل",
-              correlationId: randomUUID(),
-            },
-          ),
-        )
-        .then(
-          (receipt) => ({ receipt }),
-          (error: unknown) => ({ error }),
-        );
-      await waitForSensitiveAuthorizationLockWaiter(observer);
-      await waitUntilGrantExpires(observer, grantId);
-
-      releaseLock.resolve();
-      await blockingTransaction;
-      await expect(sensitiveUse).resolves.toMatchObject({
-        error: { code: "SENSITIVE_SCOPE_REQUIRED" },
+      const lockAcquired = deferred();
+      const releaseLock = deferred();
+      const blockingTransaction = blocker.begin(async (transaction) => {
+        if (lockTarget === "permission") {
+          await transaction`
+          select id from identity_platform_permission_grants
+          where identity_id = ${agent.identityId}
+            and permission = 'PAYMENT_REVIEW'
+            and revoked_at is null
+          for update
+        `;
+        } else {
+          await transaction`
+          select id from identity_platform_access_grants
+          where id = ${grantId}
+          for update
+        `;
+        }
+        lockAcquired.resolve();
+        await releaseLock.promise;
       });
-    } finally {
-      releaseLock.resolve();
-      await blockingTransaction;
-      await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
-    }
-  });
+
+      try {
+        await lockAcquired.promise;
+        const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+        const correlationId = randomUUID();
+        const sensitiveUse = actionSql
+          .begin((transaction) =>
+            access.authorizeSensitiveAction(
+              createOpaquePlatformAccessTransactionContext(transaction),
+              {
+                grantId,
+                actorIdentityId: agent.identityId,
+                responsibility: "PAYMENT_REVIEW",
+                resourceType: "PAYMENT_REVIEW",
+                resourceId,
+                action: "REVEAL_MINIMUM",
+                reason: "تلاش برای مشاهده پس از انقضا هنگام انتظار قفل",
+                correlationId,
+              },
+            ),
+          )
+          .then(
+            (receipt) => ({ receipt }),
+            (error: unknown) => ({ error }),
+          );
+        await waitForSensitiveAuthorizationLockWaiter(
+          observer,
+          actionBackend[0]!.pid,
+          waitingQuery,
+        );
+        await waitUntilGrantExpires(observer, grantId);
+
+        releaseLock.resolve();
+        await blockingTransaction;
+        await expect(sensitiveUse).resolves.toMatchObject({
+          error: { code: "SENSITIVE_SCOPE_REQUIRED" },
+        });
+        const expired = await observer<
+          Array<{
+            status: string;
+            expiryAuditCount: number;
+            expiryEventCount: number;
+            denialAuditCount: number;
+          }>
+        >`
+        select g.status,
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.action = 'GRANT_EXPIRED')
+            as "expiryAuditCount",
+          (select count(*)::int from platform_outbox_events e
+           where e.aggregate_id = g.id
+             and e.event_type = 'SensitiveAccessExpired.v1')
+            as "expiryEventCount",
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.correlation_id = ${correlationId}
+             and a.outcome = 'DENIED') as "denialAuditCount"
+        from identity_platform_access_grants g where g.id = ${grantId}
+      `;
+        expect(expired).toEqual([
+          {
+            status: "EXPIRED",
+            expiryAuditCount: 1,
+            expiryEventCount: 1,
+            denialAuditCount: 1,
+          },
+        ]);
+      } finally {
+        releaseLock.resolve();
+        await blockingTransaction;
+        await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
+      }
+    },
+  );
 
   it("durably audits nonexistent and wrong-kind sensitive grant references", async () => {
     const app = await createApiApp(apiTestEnvironment);
@@ -940,20 +994,26 @@ async function waitForPlatformGrantLockWaiter(sql: Sql) {
   throw new Error("revocation did not queue on the platform grant lock");
 }
 
-async function waitForSensitiveAuthorizationLockWaiter(sql: Sql) {
+async function waitForSensitiveAuthorizationLockWaiter(
+  sql: Sql,
+  actionPid: number,
+  waitingQuery: string,
+) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const rows = await sql<Array<{ waiting: boolean }>>`
       select exists(
         select 1 from pg_stat_activity
         where datname = current_database()
+          and pid = ${actionPid}
           and wait_event_type = 'Lock'
-          and pid <> pg_backend_pid()
+          and query like ${`%${waitingQuery}%`}
+          and query like '%for share%'
       ) as waiting
     `;
     if (rows[0]?.waiting) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  throw new Error("sensitive authorization did not wait on its permission lock");
+  throw new Error(`sensitive authorization did not wait on its ${waitingQuery} lock`);
 }
 
 async function waitUntilGrantExpires(sql: Sql, grantId: string) {

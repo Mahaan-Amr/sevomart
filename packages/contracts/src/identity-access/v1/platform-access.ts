@@ -913,7 +913,13 @@ export const platformAccessAuditPageContract = z
 export const sensitiveAccessAuthorizationReceiptContract = z
   .object({
     grantId: platformAccessGrantIdContract,
-    scope: platformAccessScopeContract,
+    scope: z
+      .object({
+        resourceType: platformAccessResourceTypeContract,
+        resourceId: z.uuid(),
+        allowedActions: z.array(platformAccessAllowedActionContract).length(1),
+      })
+      .strict(),
     accessedAt: timestampV1Contract,
     expiresAt: timestampV1Contract,
   })

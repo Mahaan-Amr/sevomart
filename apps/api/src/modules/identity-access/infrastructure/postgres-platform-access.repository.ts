@@ -83,6 +83,10 @@ type SensitiveGrantRow = {
   expiresAt: Date;
 };
 
+type AuthorizedSensitiveGrantRow = SensitiveGrantRow & {
+  accessedAt: Date;
+};
+
 export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   readonly #sql: Sql;
 
@@ -801,12 +805,15 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformSensitiveAction,
   ): Promise<SensitiveAccessAuthorizationReceipt> {
-    await this.#expireSensitiveGrantIfDue(input.grantId);
     const sql = readOpaquePlatformAccessTransaction(transaction);
+    const permissionIsLive = await lockSensitiveActionPermission(sql, input);
+    if (!permissionIsLive) return this.#denySensitiveAction(input);
     const grant = await readAuthorizedSensitiveGrant(sql, input);
-    if (!grant) return this.#denySensitiveAction(input);
-    const accessedAt = await readDatabaseClock(sql);
-    if (grant.expiresAt <= accessedAt) return this.#denySensitiveAction(input);
+    if (!grant) {
+      await this.#expireSensitiveGrantIfDue(input.grantId);
+      return this.#denySensitiveAction(input);
+    }
+    const accessedAt = grant.accessedAt;
     await insertAudit(sql, {
       grantId: grant.grantId,
       action: sensitiveAuditAction(input.action),
@@ -878,7 +885,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   async #expireSensitiveGrantIfDue(grantId: string): Promise<void> {
     await this.#sql.begin(async (sql) => {
       const grant = await readSensitiveGrant(sql, grantId, "update");
-      const occurredAt = new Date();
+      const occurredAt = await readDatabaseClock(sql);
       if (!grant || grant.status !== "ACTIVE" || grant.expiresAt > occurredAt) return;
       const revision = grant.revision + 1;
       const correlationId = randomUUID();
@@ -964,7 +971,8 @@ async function readSensitiveGrant(
 async function readAuthorizedSensitiveGrant(
   sql: Sql,
   input: PlatformSensitiveAction,
-): Promise<SensitiveGrantRow | undefined> {
+): Promise<AuthorizedSensitiveGrantRow | undefined> {
+  await sql`savepoint sensitive_authorization_grant_lock`;
   const rows = await sql<SensitiveGrantRow[]>`
     select g.id as "grantId", g.subject_identity_id as "subjectIdentityId",
       g.requested_by_identity_id as "requestedByIdentityId",
@@ -974,12 +982,6 @@ async function readAuthorizedSensitiveGrant(
       g.created_at as "createdAt", g.activated_at as "activatedAt",
       g.revoked_at as "revokedAt", g.expires_at as "expiresAt"
     from identity_platform_access_grants g
-    join identity_platform_permission_grants p
-      on p.identity_id = ${input.actorIdentityId}
-      and p.permission = ${input.responsibility}
-      and p.revoked_at is null
-    join identity_identities i
-      on i.id = p.identity_id and i.status = 'ACTIVE'
     where g.id = ${input.grantId} and g.grant_kind = 'SENSITIVE_ACCESS'
       and g.status = 'ACTIVE'
       and g.subject_identity_id = ${input.actorIdentityId}
@@ -987,9 +989,34 @@ async function readAuthorizedSensitiveGrant(
       and g.scope ->> 'resourceType' = ${input.resourceType}
       and g.scope ->> 'resourceId' = ${input.resourceId}
       and g.scope -> 'allowedActions' @> ${sql.json([input.action])}::jsonb
-    for share of g, p
+    for share of g
   `;
-  return rows[0];
+  const accessedAt = await readDatabaseClock(sql);
+  const grant = rows[0];
+  if (!grant || grant.expiresAt <= accessedAt) {
+    await sql`rollback to savepoint sensitive_authorization_grant_lock`;
+    await sql`release savepoint sensitive_authorization_grant_lock`;
+    return undefined;
+  }
+  await sql`release savepoint sensitive_authorization_grant_lock`;
+  return { ...grant, accessedAt };
+}
+
+async function lockSensitiveActionPermission(
+  sql: Sql,
+  input: PlatformSensitiveAction,
+): Promise<boolean> {
+  const rows = await sql<Array<{ permissionId: string }>>`
+    select p.id as "permissionId"
+    from identity_platform_permission_grants p
+    join identity_identities i
+      on i.id = p.identity_id and i.status = 'ACTIVE'
+    where p.identity_id = ${input.actorIdentityId}
+      and p.permission = ${input.responsibility}
+      and p.revoked_at is null
+    for share of p
+  `;
+  return rows.length > 0;
 }
 
 async function readDatabaseClock(sql: Sql): Promise<Date> {

@@ -241,6 +241,15 @@ describe("platform access v1 contract", () => {
     expect(
       sensitiveAccessAuthorizationReceiptContract.safeParse({
         ...receipt,
+        scope: {
+          ...receipt.scope,
+          allowedActions: ["REVEAL_MINIMUM", "ADD_CASE_NOTE"],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      sensitiveAccessAuthorizationReceiptContract.safeParse({
+        ...receipt,
         accessedAt: "2026-08-26T11:30:00.000+01:00",
         expiresAt: "2026-08-26T10:45:00.000Z",
       }).success,
