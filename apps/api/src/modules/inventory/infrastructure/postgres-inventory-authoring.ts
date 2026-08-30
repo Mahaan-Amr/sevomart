@@ -15,7 +15,7 @@ import { enqueueOutboxEvent } from "@sevo/outbox";
 
 import {
   InventoryBatchConflictError,
-  InventoryNotFoundError,
+  InventoryBatchNotFoundError,
   InventoryRevisionConflictError,
   InventoryReservationUnavailableError,
   InventoryReservationNotConsumableError,
@@ -300,21 +300,27 @@ export class PostgresInventoryAuthoring
         return sellerInventoryBatchResultContract.parse(record.response);
       }
 
-      const orderedRows = [...command.input.rows].sort((left, right) =>
-        left.variantId.localeCompare(right.variantId),
-      );
+      const orderedRows = command.input.rows
+        .map((row, rowIndex) => ({ row, rowIndex }))
+        .sort((left, right) => left.row.variantId.localeCompare(right.row.variantId));
       const productIds = new Map<VariantId, ProductId>();
       const publications = new Map<
         VariantId,
         { productId: ProductId; publicationVersion: number }
       >();
-      for (const row of orderedRows) {
+      const missingVariants = [];
+      for (const { row, rowIndex } of orderedRows) {
         const publication = await command.readPublication(
           sql as unknown as InventoryTransactionContext,
           row.variantId,
         );
         if (!publication || publication.storeId !== command.storeId) {
-          throw new InventoryNotFoundError();
+          missingVariants.push({
+            code: "INVENTORY_NOT_FOUND" as const,
+            rowIndex,
+            variantId: row.variantId,
+          });
+          continue;
         }
         productIds.set(row.variantId, publication.productId);
         if (publication.sellable) {
@@ -323,6 +329,10 @@ export class PostgresInventoryAuthoring
             publicationVersion: publication.publicationVersion,
           });
         }
+      }
+      if (missingVariants.length > 0) {
+        missingVariants.sort((left, right) => left.rowIndex - right.rowIndex);
+        throw new InventoryBatchNotFoundError(missingVariants);
       }
       const results = await this.replaceBatchForProduct(
         sql as unknown as InventoryTransactionContext,

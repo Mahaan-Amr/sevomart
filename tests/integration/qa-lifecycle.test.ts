@@ -16,7 +16,7 @@ const raceFixture: QaFixture = { runId: uniqueRunId("race") };
 afterAll(() => {
   for (const fixture of [guardedFixture, raceFixture]) {
     if (fixture.activeTarget) {
-      runLifecycle([
+      const teardown = runLifecycle([
         "down",
         "--profile",
         "qa",
@@ -25,6 +25,7 @@ afterAll(() => {
         "--fingerprint",
         fixture.activeTarget.fingerprint,
       ]);
+      expect(teardown.status, teardown.stderr).toBe(0);
     }
   }
 });
@@ -96,64 +97,76 @@ describe("QA lifecycle CLI", () => {
     const winners = contenders.filter(({ status }) => status === 0);
     const losers = contenders.filter(({ status }) => status !== 0);
 
+    const successfulContender = winners[0];
+    if (successfulContender) {
+      raceFixture.activeTarget = parseLastJsonLine(successfulContender.stdout);
+    }
+
     expect(winners, contenders.map(formatLifecycleResult).join("\n")).toHaveLength(1);
     expect(losers, contenders.map(formatLifecycleResult).join("\n")).toHaveLength(1);
     expect(losers[0]?.stderr).toContain("already owned");
     expect(cleanupEvents(losers[0]?.stderr ?? "")).toEqual([]);
 
-    raceFixture.activeTarget = parseLastJsonLine(winners[0]?.stdout ?? "");
-    const running = docker([
-      "compose",
-      "--project-name",
-      raceFixture.activeTarget.projectName,
-      "ps",
-      "--quiet",
-      "--status",
-      "running",
-    ]);
-    expect(running.status, running.stderr).toBe(0);
-    expect(running.stdout.trim().split("\n")).toHaveLength(2);
+    expect(raceFixture.activeTarget).toBeDefined();
+    if (!raceFixture.activeTarget) {
+      return;
+    }
+    const activeTarget = raceFixture.activeTarget;
 
-    const ownershipToken = docker([
-      "volume",
-      "inspect",
-      "--format",
-      '{{ index .Labels "sevo.qa.owner-token" }}',
-      `${raceFixture.activeTarget.projectName}-owner`,
-    ]);
-    expect(ownershipToken.status, ownershipToken.stderr).toBe(0);
-    expect(ownershipToken.stdout.trim()).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    );
+    try {
+      const running = docker([
+        "compose",
+        "--project-name",
+        activeTarget.projectName,
+        "ps",
+        "--quiet",
+        "--status",
+        "running",
+      ]);
+      expect(running.status, running.stderr).toBe(0);
+      expect(running.stdout.trim().split("\n")).toHaveLength(2);
 
-    const removed = runLifecycle([
-      "down",
-      "--profile",
-      "qa",
-      "--run-id",
-      raceFixture.runId,
-      "--fingerprint",
-      raceFixture.activeTarget.fingerprint,
-    ]);
-    expect(removed.status, removed.stderr).toBe(0);
-    expect(cleanupEvents(removed.stderr)).toEqual([
-      {
-        event: QA_PROJECT_CLEANUP_EVENT,
-        projectName: raceFixture.activeTarget.projectName,
-      },
-    ]);
-    expect(projectResources(raceFixture.activeTarget.projectName)).toEqual({
-      containers: [],
-      networks: [],
-      volumes: [],
-    });
-    const releasedOwnership = docker([
-      "volume",
-      "inspect",
-      `${raceFixture.activeTarget.projectName}-owner`,
-    ]);
-    expect(releasedOwnership.status).not.toBe(0);
-    raceFixture.activeTarget = undefined;
+      const ownershipToken = docker([
+        "volume",
+        "inspect",
+        "--format",
+        '{{ index .Labels "sevo.qa.owner-token" }}',
+        `${activeTarget.projectName}-owner`,
+      ]);
+      expect(ownershipToken.status, ownershipToken.stderr).toBe(0);
+      expect(ownershipToken.stdout.trim()).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+    } finally {
+      const removed = runLifecycle([
+        "down",
+        "--profile",
+        "qa",
+        "--run-id",
+        raceFixture.runId,
+        "--fingerprint",
+        activeTarget.fingerprint,
+      ]);
+      expect(removed.status, removed.stderr).toBe(0);
+      expect(cleanupEvents(removed.stderr)).toEqual([
+        {
+          event: QA_PROJECT_CLEANUP_EVENT,
+          projectName: activeTarget.projectName,
+        },
+      ]);
+      expect(projectResources(activeTarget.projectName)).toEqual({
+        containers: [],
+        networks: [],
+        volumes: [],
+      });
+      const releasedOwnership = docker([
+        "volume",
+        "inspect",
+        `${activeTarget.projectName}-owner`,
+      ]);
+      expect(releasedOwnership.status).not.toBe(0);
+      raceFixture.activeTarget = undefined;
+    }
   }, 120_000);
 });
 
