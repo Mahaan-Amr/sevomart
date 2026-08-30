@@ -85,6 +85,8 @@
     "media_variants": "media",
     "platform_outbox_events": "platform",
     "platform_outbox_consumptions": "platform",
+    "platform_data_environment": "platform",
+    "platform_seed_manifest_receipts": "platform",
     "reporting_store_publications": "reporting-analytics",
     "conversation_threads": "conversations",
     "conversation_idempotency": "conversations",
