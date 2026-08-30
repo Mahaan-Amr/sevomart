@@ -40,6 +40,12 @@
 Playwright نیز قابل عبورند؛ برای نمونه
 `pnpm test:e2e -- tests/e2e/store-following.spec.ts` فقط همان فایل را اجرا می‌کند.
 
+سناریوی QA که به مالکیت کامل داده یا teardown مخرب نیاز دارد از
+[`withQaScenario`](isolated-qa-scenarios.md) استفاده می‌کند. این factory برای هر تست run id،
+namespace، ساعت ثابت، PostgreSQL و MinIO تازه می‌سازد و فقط با fingerprint همان اجرا حذف
+می‌کند. چنین سناریویی نباید `DATABASE_URL` محلی/CI، provider بیرونی یا demo manifest را
+مصرف کند؛ داده کمینه‌اش در callback `build` همان تست ساخته می‌شود.
+
 در CI، `DATABASE_URL` به سرویس PostgreSQL همان job اشاره می‌کند. CI همین فرمان‌ها را با نصب قفل‌شده و `pnpm audit --prod` اجرا می‌کند. imageهای web، API و
 worker از Dockerfileهای مستقل ولی با context ریشه ساخته می‌شوند.
 

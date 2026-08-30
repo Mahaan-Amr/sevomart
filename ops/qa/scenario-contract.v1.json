@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "interface": "withQaScenario",
+  "namespacePrefix": "sevo.qa.",
+  "clock": "explicit-fixed-utc",
+  "lifecycle": "disposable-owned-run",
+  "providers": "internal-only",
+  "teardownProof": ["runId", "fingerprint"]
+}
