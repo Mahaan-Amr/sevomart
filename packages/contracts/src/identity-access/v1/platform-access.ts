@@ -553,6 +553,23 @@ export const unresolvedSensitiveAccessAuditEntryContract = z
   })
   .strict();
 
+export const unresolvedEmergencyAccessAuditEntryContract = z
+  .object({
+    auditId: platformAccessAuditIdContract,
+    attemptedGrantId: platformAccessGrantIdContract,
+    attemptedGrantKind: z.literal("EMERGENCY_ACCESS"),
+    attemptedIncidentId: z.string().trim().min(3).max(120),
+    action: z.enum(["SENSITIVE_FIELD_REVEALED", "SENSITIVE_CHANGE_ATTEMPTED"]),
+    actorIdentityId: identityIdContract,
+    scope: platformAccessScopeContract,
+    reasonCode: z.literal("ACCESS_REQUEST_REJECTED"),
+    reason: internalReasonContract,
+    outcome: z.literal("DENIED"),
+    correlationId: z.uuid(),
+    occurredAt: timestampV1Contract,
+  })
+  .strict();
+
 const responsibilityGrantEventPayloadContract = z
   .object({
     grantKind: z.literal("RESPONSIBILITY"),
@@ -740,6 +757,7 @@ export const platformAccessErrorContract = z
       "SINGLE_MANAGER_EXCEPTION_REQUIRED",
       "RESPONSIBILITY_REQUIRED",
       "SENSITIVE_SCOPE_REQUIRED",
+      "EMERGENCY_SCOPE_REQUIRED",
       "STRONG_AUTHENTICATION_REQUIRED",
       "STRONG_AUTHENTICATION_STALE",
       "ACCESS_GRANT_NOT_FOUND",
@@ -952,6 +970,7 @@ export const platformAccessV1Schemas = {
   PlatformAccessAuditPage: platformAccessAuditPageContract,
   SensitiveAccessAuthorizationReceipt: sensitiveAccessAuthorizationReceiptContract,
   UnresolvedSensitiveAccessAuditEntry: unresolvedSensitiveAccessAuditEntryContract,
+  UnresolvedEmergencyAccessAuditEntry: unresolvedEmergencyAccessAuditEntryContract,
   PlatformAccessError: platformAccessErrorContract,
 } as const;
 
@@ -1062,6 +1081,24 @@ export const platformAccessV1Examples = {
     correlationId: "66666666-6666-4666-8666-666666666666",
     occurredAt: "2026-08-26T10:01:00.000Z",
   },
+  UnresolvedEmergencyAccessAuditEntry: {
+    auditId: "88888888-8888-4888-8888-888888888889",
+    attemptedGrantId: "44444444-4444-4444-8444-444444444445",
+    attemptedGrantKind: "EMERGENCY_ACCESS",
+    attemptedIncidentId: "INC-2026-0042",
+    action: "SENSITIVE_CHANGE_ATTEMPTED",
+    actorIdentityId: "11111111-1111-4111-8111-111111111111",
+    scope: {
+      resourceType: "PAYMENT_REVIEW",
+      resourceId: "55555555-5555-4555-8555-555555555555",
+      allowedActions: ["CONTAIN_INCIDENT"],
+    },
+    reasonCode: "ACCESS_REQUEST_REJECTED",
+    reason: "تلاش ردشده با شناسه دسترسی اضطراری نامعتبر",
+    outcome: "DENIED",
+    correlationId: "66666666-6666-4666-8666-666666666666",
+    occurredAt: "2026-08-26T10:01:00.000Z",
+  },
   PlatformAccessError: {
     code: "SELF_APPROVAL_FORBIDDEN",
     message: "تأییدکننده باید از درخواست‌کننده جدا باشد.",
@@ -1077,6 +1114,9 @@ export type SensitiveAccessAuthorizationReceipt = z.infer<
 export type PlatformAccessAuditEntry = z.infer<typeof platformAccessAuditEntryContract>;
 export type UnresolvedSensitiveAccessAuditEntry = z.infer<
   typeof unresolvedSensitiveAccessAuditEntryContract
+>;
+export type UnresolvedEmergencyAccessAuditEntry = z.infer<
+  typeof unresolvedEmergencyAccessAuditEntryContract
 >;
 export type PlatformAccessAuditReasonCode = z.infer<
   typeof platformAccessAuditReasonCodeContract

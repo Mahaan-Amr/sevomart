@@ -20,6 +20,7 @@ import {
   sensitiveAccessGrantViewContract,
   sensitiveAccessAuthorizationReceiptContract,
   sensitiveAccessRejectedV1Contract,
+  unresolvedEmergencyAccessAuditEntryContract,
   unresolvedSensitiveAccessAuditEntryContract,
 } from "@sevo/contracts/identity-access/v1";
 import * as rootContracts from "@sevo/contracts";
@@ -530,6 +531,25 @@ describe("platform access v1 contract", () => {
       occurredAt: "2026-08-26T10:01:00.000Z",
     });
     expect(unresolvedAudit.attemptedGrantId).toBe(grantId);
+
+    const unresolvedEmergencyAudit = unresolvedEmergencyAccessAuditEntryContract.parse({
+      auditId: "88888888-8888-4888-8888-888888888889",
+      attemptedGrantId: grantId,
+      attemptedGrantKind: "EMERGENCY_ACCESS",
+      attemptedIncidentId: "INC-2026-0042",
+      action: "SENSITIVE_CHANGE_ATTEMPTED",
+      actorIdentityId: requesterIdentityId,
+      scope: {
+        ...paymentReviewScope,
+        allowedActions: ["CONTAIN_INCIDENT"],
+      },
+      reasonCode: "ACCESS_REQUEST_REJECTED",
+      reason: "تلاش ردشده با شناسه دسترسی اضطراری نامعتبر",
+      outcome: "DENIED",
+      correlationId,
+      occurredAt: "2026-08-26T10:01:00.000Z",
+    });
+    expect(unresolvedEmergencyAudit.attemptedIncidentId).toBe("INC-2026-0042");
   });
 
   it("publishes stable errors for policy and lifecycle failures", () => {
