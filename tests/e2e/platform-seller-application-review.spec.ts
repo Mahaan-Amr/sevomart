@@ -94,6 +94,8 @@ test("platform agent reviews a Persian RTL application on the approved compact w
   await expect(
     page.getByText("قدم بعدی: منتظر تکمیل اطلاعات متقاضی بمانید."),
   ).toBeVisible();
+  await expect(page.getByText("1 پرونده در صف")).toBeVisible();
+  await expect(page.getByText("1 درخواست نیازمند اقدام")).toHaveCount(0);
   await expect(page.getByText("نیاز به تکمیل").first()).toBeVisible();
   await assertNoHorizontalOverflow(page);
 });
@@ -303,6 +305,67 @@ test("platform agent confirms approval before the initial store is created", asy
     publicReason: "شرایط فروشندگی شما تأیید شد.",
   });
   expect(approvalPayload).not.toHaveProperty("requestedFields");
+});
+
+test("keeps the committed approval clear when the queue refresh fails", async ({
+  page,
+}) => {
+  const application = sellerApplication();
+  let approved = false;
+  await page.route("**/api/platform/seller-applications**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST" && pathname.endsWith("/approval")) {
+      approved = true;
+      await route.fulfill({
+        status: 200,
+        json: {
+          applicationId: application.applicationId,
+          revision: 2,
+          sellerAccessId: "9ef2709b-066f-4d6e-82f6-791c75a46fc7",
+          storeId: "15f00f04-813c-44f9-b681-22cb4f3dbeae",
+        },
+      });
+      return;
+    }
+    if (approved) {
+      await route.fulfill({ status: 503, json: { message: "صف در دسترس نیست." } });
+      return;
+    }
+    if (pathname.endsWith(application.applicationId)) {
+      await route.fulfill({ status: 200, json: application });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: {
+        items: [
+          {
+            applicationId: application.applicationId,
+            applicantName: application.currentPayload.applicantName,
+            proposedStoreName: application.currentPayload.proposedStoreName,
+            status: application.status,
+            revision: application.revision,
+            lastSubmittedAt: application.lastSubmittedAt,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+  });
+
+  await page.goto("/platform/seller-applications");
+  await page.getByLabel("تأیید درخواست").check();
+  await page
+    .getByLabel("دلیل قابل‌نمایش به متقاضی")
+    .fill("شرایط فروشندگی شما تأیید شد.");
+  await page.getByRole("button", { name: "تأیید و ساخت فروشگاه" }).click();
+
+  await expect(
+    page.getByText(/درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد/),
+  ).toBeVisible();
+  await expect(page.getByText(/تازه‌سازی صف انجام نشد/)).toBeVisible();
+  await expect(page.getByText("صف در دسترس نیست.", { exact: true })).toHaveCount(0);
 });
 
 function sellerApplication() {

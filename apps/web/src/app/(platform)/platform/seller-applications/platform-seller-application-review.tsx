@@ -146,6 +146,7 @@ export function PlatformSellerApplicationReview() {
     setPending(true);
     setMessage("");
     try {
+      let committedMessage = "درخواست تکمیل ثبت شد؛ اکنون منتظر پاسخ متقاضی بمانید.";
       const decisionPayload = {
         expectedRevision: application.revision,
         reasonCode:
@@ -189,15 +190,16 @@ export function PlatformSellerApplicationReview() {
         approveSellerApplicationResultContract.parse(body);
         setApplication(undefined);
         setSelectedId(undefined);
-        setMessage("درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد.");
+        committedMessage = "درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد.";
+        setMessage(committedMessage);
       } else {
         const updated = platformSellerApplicationViewContract.parse(body);
         if (decision === "rejection") {
           setApplication(undefined);
           setSelectedId(undefined);
-          setMessage(
-            "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.",
-          );
+          committedMessage =
+            "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.";
+          setMessage(committedMessage);
         } else {
           setApplication(updated);
         }
@@ -205,9 +207,15 @@ export function PlatformSellerApplicationReview() {
       setPublicReason("");
       setInternalNote("");
       decisionAttempt.current = undefined;
-      await readQueue(
-        decision === "information" ? application.applicationId : undefined,
-      );
+      try {
+        await readQueue(
+          decision === "information" ? application.applicationId : undefined,
+        );
+      } catch {
+        setMessage(
+          `${committedMessage} تازه‌سازی صف انجام نشد؛ برای دیدن وضعیت تازه، صفحه را دوباره بارگذاری کنید.`,
+        );
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تصمیم ثبت نشد.");
     } finally {
@@ -222,7 +230,7 @@ export function PlatformSellerApplicationReview() {
           <span>سوو · عامل پلتفرم</span>
           <h1>بررسی درخواست‌های فروشندگی</h1>
         </div>
-        <p>{queue.length} درخواست نیازمند اقدام</p>
+        <p>{queue.length} پرونده در صف</p>
       </header>
 
       {message ? (
