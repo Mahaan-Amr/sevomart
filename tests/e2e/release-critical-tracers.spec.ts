@@ -6,13 +6,14 @@ import postgres from "postgres";
 import sharp from "sharp";
 
 import {
+  e2eApiBaseUrl,
   releaseAgentTestMobiles,
   releaseBuyerTestMobiles,
   releaseSellerTestMobiles,
   visualProjectIndex,
 } from "../helpers/visual-projects";
 
-const apiBaseUrl = "http://127.0.0.1:3109";
+const apiBaseUrl = e2eApiBaseUrl();
 
 test("traces seller approval and publication through discovery, follow, payment and seller action", async ({
   playwright,

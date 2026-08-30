@@ -8,8 +8,9 @@ import {
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
 import {
-  acceptanceTestMobiles,
   deterministicScreenshotOptions,
+  storeBuilderTestMobiles,
+  visualSnapshotTimestamp,
   visualProjectIndex,
 } from "../helpers/visual-projects";
 
@@ -17,8 +18,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   page,
 }, testInfo) => {
   const projectIndex = visualProjectIndex(testInfo.project.name);
-  const mobile = acceptanceTestMobiles[projectIndex];
-  if (!mobile) throw new Error(`Missing acceptance mobile for project ${projectIndex}`);
+  const mobile = storeBuilderTestMobiles[projectIndex];
+  if (!mobile)
+    throw new Error(`Missing store-builder mobile for project ${projectIndex}`);
   const slug = `e2e-builder-${projectIndex}`;
   const storeName = "فروشگاه دست‌سازه‌های کوچک و دوست‌داشتنی ماه‌نقره‌ای تهران";
   const storeBio =
@@ -453,6 +455,12 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     deterministicScreenshotOptions,
   );
 
+  const snapshotSql = postgres(databaseUrl, { max: 1 });
+  await snapshotSql`
+    update store_stores set updated_at = ${visualSnapshotTimestamp}
+    where slug = ${slug}
+  `;
+  await snapshotSql.end();
   await page.goto(`/s/${slug}`);
   await page.reload();
   await expect(page.getByRole("heading", { name: storeName })).toBeVisible();

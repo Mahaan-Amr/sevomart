@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import postgres from "postgres";
 
 import {
+  e2eApiBaseUrl,
   paymentBuyerTestMobiles,
   paymentSellerTestMobiles,
   visualProjectIndex,
@@ -76,8 +77,7 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       .update(Object.values(unsigned).join("."))
       .digest("hex");
     const callbackBody = { ...unsigned, signature };
-    const callbackUrl =
-      "http://127.0.0.1:3109/internal/v1/payment-providers/DEV/callbacks";
+    const callbackUrl = `${e2eApiBaseUrl()}/internal/v1/payment-providers/DEV/callbacks`;
     const confirmed = await page.context().request.post(callbackUrl, {
       data: callbackBody,
     });

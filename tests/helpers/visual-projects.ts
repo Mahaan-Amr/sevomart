@@ -11,12 +11,22 @@ export const deterministicScreenshotOptions = {
   maxDiffPixelRatio: 0.015,
 } as const;
 
+export const visualSnapshotTimestamp = "2026-08-29T09:00:00.000Z";
+
 export const storefrontTestMobiles = Array.from({ length: 8 }, (_, index) =>
   testMobile(20 + index),
 );
 
 export const acceptanceTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(30 + index),
+);
+
+export const storeBuilderTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(160 + index),
+);
+
+export const storeFollowingTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(164 + index),
 );
 
 export const sellerApplicationDraftTestMobiles = Array.from({ length: 4 }, (_, index) =>
@@ -81,10 +91,36 @@ export const releaseBuyerTestMobiles = Array.from({ length: 12 }, (_, index) =>
   testMobile(124 + index),
 );
 
+export const allE2eTestMobiles = [
+  ...storefrontTestMobiles,
+  ...acceptanceTestMobiles,
+  ...storeBuilderTestMobiles,
+  ...storeFollowingTestMobiles,
+  ...sellerApplicationDraftTestMobiles,
+  ...sellerWorkspaceTestMobiles,
+  ...sellerConversationTestMobiles,
+  ...buyerConversationTestMobiles,
+  ...otherSellerConversationTestMobiles,
+  ...productTracerTestMobiles,
+  ...sellerInventoryTestMobiles,
+  ...guestCartTestMobiles,
+  ...sameStoreCartConflictTestMobiles,
+  ...differentStoreCartConflictTestMobiles,
+  ...paymentBuyerTestMobiles,
+  ...paymentSellerTestMobiles,
+  ...releaseSellerTestMobiles,
+  ...releaseAgentTestMobiles,
+  ...releaseBuyerTestMobiles,
+];
+
 export function visualProjectIndex(projectName: string) {
   const index = visualViewports.findIndex(({ name }) => name === projectName);
   if (index === -1) throw new Error(`Unknown visual project ${projectName}`);
   return index;
+}
+
+export function e2eApiBaseUrl() {
+  return `http://127.0.0.1:${process.env.SEVO_E2E_API_PORT ?? "3109"}`;
 }
 
 function testMobile(suffix: number) {
