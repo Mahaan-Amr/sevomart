@@ -2,7 +2,7 @@
 
 مرجع: [[ساخت] ساخت رابط مستقل مدیریت موجودی فروشنده](https://github.com/Mahaan-Amr/sevomart/issues/145)
 
-مبنای اجرا `c603e81b7d89e0ca4ab33c5d97257f6191884ef8` و predecessor migration
+مبنای نهایی اجرا `1cad113c37974bc5b5abf8ff57ffac5cb70b4ea0` و predecessor migration
 `20260830113000__identity-access__audit-unresolved-sensitive-attempts` است. این تغییر
 migration، dependency، متغیر محیطی، پورت یا قرارداد producer تازه ندارد.
 
