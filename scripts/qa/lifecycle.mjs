@@ -5,6 +5,7 @@ import { createQaCommandRunner } from "./command-runner.mjs";
 import {
   assertQaProjectIsAbsent,
   createQaLifecycleRequest,
+  publishQaTargetReport,
   QA_PROJECT_CLEANUP_EVENT,
 } from "./runtime.mjs";
 import { runOwnedQaStartup } from "./startup-ownership.mjs";
@@ -145,17 +146,15 @@ async function bringUp() {
         },
       );
       const target = await inspectQaTarget(databaseUrl);
-      process.stdout.write(
-        `${JSON.stringify({
-          profile: request.profile,
-          runId: request.runId,
-          projectName: request.projectName,
-          databaseName: request.databaseName,
-          databasePort,
-          minioPort,
-          fingerprint: target.fingerprint,
-        })}\n`,
-      );
+      publishQaTargetReport({
+        profile: request.profile,
+        runId: request.runId,
+        projectName: request.projectName,
+        databaseName: request.databaseName,
+        databasePort,
+        minioPort,
+        fingerprint: target.fingerprint,
+      });
     },
     cleanupProject: removeProject,
     releaseOwnership,

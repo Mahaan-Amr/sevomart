@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+
 import { parseCommandOptions } from "../demo/runtime.mjs";
 
 const runIdPattern = /^[a-z0-9][a-z0-9-]{2,30}$/;
@@ -5,6 +7,36 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const QA_PROJECT_CLEANUP_EVENT = "qa-project-cleanup";
+
+export function isQaFingerprint(value) {
+  return typeof value === "string" && uuidPattern.test(value);
+}
+
+export function publishQaTargetReport(
+  report,
+  {
+    environment = process.env,
+    writeReport = (descriptor, payload) => writeFileSync(descriptor, payload),
+    writeStdout = (payload) => process.stdout.write(payload),
+  } = {},
+) {
+  const serializedReport = `${JSON.stringify(report)}\n`;
+  if (environment.SEVO_QA_REPORT_FD !== undefined) {
+    if (environment.SEVO_QA_REPORT_FD !== "3") {
+      throw new Error("QA lifecycle report descriptor must be 3");
+    }
+    writeReport(3, serializedReport);
+    return;
+  }
+  writeStdout(serializedReport);
+}
+
+export function createQaTargetNames(runId) {
+  return Object.freeze({
+    databaseName: `sevo_qa_${runId.replaceAll("-", "_")}`,
+    projectName: `sevomart-qa-${runId}`,
+  });
+}
 
 export function assertQaProjectIsAbsent(resources) {
   const existingResource = Object.values(resources).some((resourceIds) =>
@@ -43,16 +75,15 @@ export function createQaLifecycleRequest(argumentsList, environment = process.en
     );
   }
   const fingerprint = options.get("--fingerprint");
-  if (action === "down" && (!fingerprint || !uuidPattern.test(fingerprint))) {
+  if (action === "down" && !isQaFingerprint(fingerprint)) {
     throw new Error("an explicit UUID --fingerprint is required before QA teardown");
   }
 
   return Object.freeze({
     action,
-    databaseName: `sevo_qa_${runId.replaceAll("-", "_")}`,
+    ...createQaTargetNames(runId),
     ...(fingerprint ? { fingerprint } : {}),
     profile: "qa",
-    projectName: `sevomart-qa-${runId}`,
     runId,
   });
 }

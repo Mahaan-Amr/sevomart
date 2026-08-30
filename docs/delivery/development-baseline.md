@@ -28,6 +28,7 @@
 | `pnpm test:unit`        | قراردادهای کوچک بدون I/O                                                                 |
 | `pnpm test:contract`    | fake آداپترها و compatibility قرارداد                                                    |
 | `pnpm test:integration` | API و سپس هر ماژول روی PostgreSQL واقعی؛ در محیط محلی پایگاه داده را خودکار بالا می‌آورد |
+| `pnpm test:qa-scenario` | هر سناریو را با PostgreSQL/MinIO، namespace، ساعت و teardown مستقل اجرا می‌کند           |
 | `pnpm test:e2e`         | مسیرهای واقعی موبایل/دسکتاپ و RTL در Chromium روی PostgreSQL و MinIO موقت و جدا          |
 | `pnpm quality`          | کنترل سریع پیش از commit                                                                 |
 | `pnpm test`             | همه سطح‌های آزمون                                                                        |
@@ -39,6 +40,16 @@
 `10200/10201` اجرا می‌شود تا داده و پورت‌های runtime توسعه دست‌نخورده بمانند. آرگومان‌های
 Playwright نیز قابل عبورند؛ برای نمونه
 `pnpm test:e2e -- tests/e2e/store-following.spec.ts` فقط همان فایل را اجرا می‌کند.
+
+سناریوی QA که به مالکیت کامل داده یا teardown مخرب نیاز دارد از
+[`withQaScenario`](isolated-qa-scenarios.md) استفاده می‌کند. این factory برای هر تست run id،
+namespace، ساعت ثابت، PostgreSQL و MinIO تازه می‌سازد و فقط با fingerprint همان اجرا حذف
+می‌کند. چنین سناریویی نباید `DATABASE_URL` محلی/CI، provider بیرونی یا demo manifest را
+مصرف کند؛ runner مستقل `pnpm test:qa-scenario` env والد را پیش از callbackها پاک‌سازی و
+بررسی می‌کند و `scenario.environment` مقصد کامل PostgreSQL و MinIO disposable را برای
+composition واقعی هر دو callback می‌دهد؛ داده کمینه در callback `build` همان تست ساخته می‌شود. فرمان
+`pnpm test:integration` پس از suite مشترک، همین runner مستقل را نیز اجرا می‌کند؛ فایل‌های
+سناریوی ایزوله زیر runner عمومی دارای `DATABASE_URL` اجرا نمی‌شوند.
 
 در CI، `DATABASE_URL` به سرویس PostgreSQL همان job اشاره می‌کند. CI همین فرمان‌ها را با نصب قفل‌شده و `pnpm audit --prod` اجرا می‌کند. imageهای web، API و
 worker از Dockerfileهای مستقل ولی با context ریشه ساخته می‌شوند.
