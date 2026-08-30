@@ -21,32 +21,6 @@ import { CONTENT_SERVICE, ContentFault } from "./public";
 export class ContentController {
   constructor(@Inject(CONTENT_SERVICE) private readonly content: ContentService) {}
 
-  @Post("v1/seller/sales-content")
-  @HttpCode(HttpStatus.CREATED)
-  publishSalesContent(
-    @Req() request: FastifyRequest,
-    @Headers("idempotency-key") key: string | undefined,
-  ) {
-    return this.respond(request, () =>
-      this.content.publishSalesContentV1(this.context(request), request.body, key),
-    );
-  }
-
-  @Post("v1/purchase-experiences")
-  @HttpCode(HttpStatus.CREATED)
-  publishPurchaseExperience(
-    @Req() request: FastifyRequest,
-    @Headers("idempotency-key") key: string | undefined,
-  ) {
-    return this.respond(request, () =>
-      this.content.publishPurchaseExperienceV1(
-        this.context(request),
-        request.body,
-        key,
-      ),
-    );
-  }
-
   @Post("v2/seller/sales-content")
   @HttpCode(HttpStatus.CREATED)
   publishSalesContentV2(

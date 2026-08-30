@@ -86,7 +86,7 @@ describe("OpenAPI identity and store compatibility", () => {
 
   afterEach(async () => close?.());
 
-  it("matches the frozen Web consumer surface and complete v1 hash", async () => {
+  it("matches the frozen Web consumer surface and complete API hash", async () => {
     const app = await createApiApp(apiTestEnvironment);
     close = () => app.close();
     const response = await app.getHttpAdapter().getInstance().inject({
@@ -202,7 +202,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "e73319538e8c0a2c004cddd79bf271d74d767cac291d616df55df605043288b2",
+      "b16b7c55bbc028044bd530551018bd74c9c7cf9f8da10385abafb5e370ae8c10",
     );
   });
 

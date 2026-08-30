@@ -1,7 +1,7 @@
 import {
   contentV1Examples,
-  contentV1Schemas,
   contentV1Operations,
+  contentV1Schemas,
   orderItemIdContract as contentOrderItemIdContract,
   publishPurchaseExperienceInputContract,
   publishSalesContentInputContract,
@@ -133,11 +133,11 @@ describe("content v1 contract", () => {
   });
 
   it("re-exports the Orders-owned order item identifier seam", async () => {
-    const { orderItemIdContract } = await import("@sevo/contracts/content/v1");
-
     const ownerValue = ordersOrderItemIdContract.parse(ids.orderItem);
-    expect(orderItemIdContract.parse(ownerValue)).toBe(ownerValue);
-    expect(orderItemIdContract.safeParse("not-an-order-item").success).toBe(false);
+    expect(contentOrderItemIdContract.parse(ownerValue)).toBe(ownerValue);
+    expect(contentOrderItemIdContract.safeParse("not-an-order-item").success).toBe(
+      false,
+    );
     expect(contentV1Schemas.OrderItemId).toBe(contentOrderItemIdContract);
     expect(contentV1Examples.OrderItemId).toBe(ids.orderItem);
     expect(ordersOrderItemIdContract.parse(contentV1Examples.OrderItemId)).toBe(

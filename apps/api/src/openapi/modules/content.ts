@@ -1,8 +1,4 @@
-import {
-  contentV1Examples,
-  contentV1Operations,
-  createContentV1JsonSchemas,
-} from "@sevo/contracts/content/v1";
+import { contentV1Examples } from "@sevo/contracts/content/v1";
 import {
   contentV2Examples,
   contentV2Operations,
@@ -36,30 +32,6 @@ const publishingErrorResponses = [
   { status: 428, schema: "ContentError" },
   { status: 500, schema: "InternalServerError" },
 ] as const;
-
-const v1Operations = [
-  {
-    ...contentV1Operations.publishSalesContent,
-    ...authenticatedPublishing,
-    request: {
-      schema: "PublishSalesContentInput",
-      example: contentV1Examples.PublishSalesContentInput,
-    },
-    responses: [{ status: 201, schema: "SalesContent" }, ...publishingErrorResponses],
-  },
-  {
-    ...contentV1Operations.publishPurchaseExperience,
-    ...authenticatedPublishing,
-    request: {
-      schema: "PublishPurchaseExperienceInput",
-      example: contentV1Examples.PublishPurchaseExperienceInput,
-    },
-    responses: [
-      { status: 201, schema: "PurchaseExperience" },
-      ...publishingErrorResponses,
-    ],
-  },
-] as const satisfies readonly ApiOperationContract[];
 
 const v2Operations = [
   {
@@ -97,19 +69,11 @@ const responseMetadata = {
   },
 } as const;
 
-export const contribute_content_openApi: OpenApiContributor = (document) => {
+export const contribute_content_openApi: OpenApiContributor = (document) =>
   addModuleOpenApiContract(
     document,
-    createContentV1JsonSchemas(),
-    contentV1Examples,
-    v1Operations,
-    responseMetadata,
-  );
-  return addModuleOpenApiContract(
-    document,
     createContentV2JsonSchemas(),
-    contentV2Examples,
+    { ...contentV1Examples, ...contentV2Examples },
     v2Operations,
     responseMetadata,
   );
-};

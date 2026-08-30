@@ -73,11 +73,23 @@ export const publishPurchaseExperienceInputV2Contract =
   publishPurchaseExperienceInputContract;
 
 export const contentV2Schemas = {
+  ContentId: contentIdContract,
+  PurchaseExperienceId: purchaseExperienceIdContract,
+  ContentIdempotencyKey: contentIdempotencyKeyContract,
+  ContentSource: contentSourceContract,
+  ContentModerationState: contentModerationStateContract,
   SalesContentMediaV2: salesContentMediaV2Contract,
   PublishSalesContentInputV2: publishSalesContentInputV2Contract,
+  SalesContent: salesContentContract,
+  SalesContentProductEligibilityDecision:
+    salesContentProductEligibilityDecisionContract,
   PurchaseExperienceEligibilityDecisionV2:
     purchaseExperienceEligibilityDecisionV2Contract,
   PublishPurchaseExperienceInputV2: publishPurchaseExperienceInputV2Contract,
+  PurchaseExperience: purchaseExperienceContract,
+  ContentError: contentErrorContract,
+  SalesContentPublishedV1: salesContentPublishedV1Contract,
+  PurchaseExperiencePublishedV1: purchaseExperiencePublishedV1Contract,
 } as const;
 
 export function createContentV2JsonSchemas() {
