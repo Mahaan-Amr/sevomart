@@ -6,6 +6,7 @@ import sharp from "sharp";
 
 import {
   assertInteractiveTargets,
+  assertMinimumContrast,
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
 import {
@@ -21,6 +22,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   const slug = `product-tracer-${projectIndex}`;
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
+  const e2eApiUrl = `http://127.0.0.1:${process.env.SEVO_E2E_API_PORT ?? "3109"}`;
 
   await page.goto("/seller/login?returnTo=%2Fseller%2Fproducts%2Fnew");
   await page.getByLabel("شماره موبایل").fill(mobile);
@@ -94,29 +96,37 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByLabel("توضیح کالا")).toHaveValue(
     "فنجان دست‌ساز مناسب نوشیدنی گرم و استفاده روزانه",
   );
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByRole("heading", { name: "تصویر کالا" })).toBeVisible();
   const image = await sharp({
     create: { width: 900, height: 900, channels: 4, background: "#A41439" },
   })
     .png()
     .toBuffer();
-  await page.getByLabel("تصویر کالا").setInputFiles({
+  await page.getByLabel("انتخاب تصویر کالا").setInputFiles({
     name: "cup.png",
     mimeType: "image/png",
     buffer: image,
   });
   await page.getByRole("button", { name: "ادامه" }).click();
 
-  await expect(page.getByRole("heading", { name: "گونه‌های کالا" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
   await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByRole("heading", { name: "تصویر کالا" })).toBeVisible();
   await expect(page.getByText("تصویر ذخیره شده است")).toBeVisible();
   await page.getByRole("button", { name: "ادامه" }).click();
-  await expect(page.getByRole("heading", { name: "گونه‌های کالا" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
   await page.getByRole("radio", { name: "چندگونه" }).click();
   await page.getByLabel("نام محور 1").fill("رنگ");
   await page.getByRole("textbox", { name: "مقدار 1 محور 1", exact: true }).fill("قرمز");
   await page.getByRole("button", { name: "افزودن مقدار" }).click();
+  await page.getByRole("textbox", { name: "مقدار 2 محور 1", exact: true }).fill("قرمز");
+  await expect(
+    page.getByText("این مقدار در همین محور تکراری است.").first(),
+  ).toBeVisible();
   await page.getByRole("textbox", { name: "مقدار 2 محور 1", exact: true }).fill("آبی");
   await page.getByRole("button", { name: "افزودن محور دوم" }).click();
   await page.getByLabel("نام محور 2").fill("اندازه");
@@ -124,9 +134,11 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("button", { name: "افزودن مقدار" }).nth(1).click();
   await page.getByRole("textbox", { name: "مقدار 2 محور 2", exact: true }).fill("بزرگ");
   await expect(page.getByText("۴ گونه ساخته می‌شود")).toBeVisible();
-  await page.getByRole("button", { name: "ادامه" }).click();
 
   await page.getByLabel("قیمت قرمز، کوچک").fill("450000");
+  await page.getByLabel("موجودی قرمز، کوچک").fill("-1");
+  await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  await expect(page.getByText("موجودی باید عدد صحیح و نامنفی باشد.")).toBeVisible();
   await page.getByLabel("موجودی قرمز، کوچک").fill("8");
   await page.getByLabel("قیمت قرمز، بزرگ").fill("460000");
   await page.getByLabel("موجودی قرمز، بزرگ").fill("0");
@@ -148,36 +160,85 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByText("از ۴۵۵٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
+  await assertMinimumContrast(page.locator("main h1, main p, main button"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reducedTransition = await page
+    .getByRole("button", { name: "انتشار کالا" })
+    .evaluate((button) => getComputedStyle(button).transitionDuration);
+  expect(Number.parseFloat(reducedTransition) || 0).toBeLessThanOrEqual(0.001);
+  const publicationKeys: string[] = [];
+  let interruptedPublication = false;
+  await page.route("**/api/store/seller/products/*/publications", async (route) => {
+    publicationKeys.push(route.request().headers()["idempotency-key"] ?? "");
+    if (!interruptedPublication) {
+      interruptedPublication = true;
+      await route.fetch();
+      await route.abort("timedout");
+      return;
+    }
+    await route.continue();
+  });
   await page.getByRole("button", { name: "انتشار کالا" }).focus();
   await page.keyboard.press("Enter");
 
   const publicLink = page.getByRole("link", { name: "دیدن کالا در فروشگاه" });
   await expect(publicLink).toBeVisible();
+  expect(publicationKeys.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(publicationKeys).size).toBe(1);
 
-  await page.goto("/seller/inventory");
+  await page.getByRole("link", { name: "ویرایش کالا" }).click();
+  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  await expect(page.getByRole("button", { name: "توقف انتشار" })).toBeVisible();
+  const unpublicationKeys: string[] = [];
+  let interruptedUnpublication = false;
+  await page.route("**/api/store/seller/products/*/unpublication", async (route) => {
+    unpublicationKeys.push(route.request().headers()["idempotency-key"] ?? "");
+    if (!interruptedUnpublication) {
+      interruptedUnpublication = true;
+      await route.fetch();
+      await route.abort("timedout");
+      return;
+    }
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "توقف انتشار" }).click();
   await expect(
-    page.getByRole("heading", { name: "مدیریت موجودی هنوز فعال نیست" }),
+    page.getByRole("heading", { name: "انتشار کالا متوقف شد" }),
   ).toBeVisible();
-  await expect(page.getByRole("spinbutton")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "ذخیره موجودی" })).toHaveCount(0);
+  expect(unpublicationKeys.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(unpublicationKeys).size).toBe(1);
+
+  const productId = await readProductId(page);
+  const unpublishedResponse = await page.request.get(
+    `${e2eApiUrl}/v1/stores/${slug}/products/${productId}`,
+  );
+  expect(unpublishedResponse.status()).toBe(404);
 
   await page.goto(`/s/${slug}`);
-  await expect(page.getByText("۱ کالای فعال")).toBeVisible();
+  await expect(page.getByText("۰ کالای فعال")).toBeVisible();
   const storefrontHtml = await page.content();
-  const storefrontProduct = page.getByRole("link", { name: /فنجان سرامیکی/ });
-  await expect(storefrontProduct).toBeVisible();
-  await storefrontProduct.click();
+  await expect(page.getByRole("link", { name: /فنجان سرامیکی/ })).toHaveCount(0);
+
+  await page.goto("/seller/products");
+  await page.getByRole("link", { name: "ویرایش آخرین کالا" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  await page.getByRole("button", { name: "انتشار دوباره" }).click();
+  await page.getByRole("link", { name: "دیدن کالا در فروشگاه" }).click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
   await expect(page.getByText("از ۴۵۵٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toBeVisible();
   await expect(page.getByText("قرمز، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
   await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
-  const publicStoreResponse = await page.request.get(
-    `http://127.0.0.1:3109/v1/stores/${slug}`,
-  );
+  const publicStoreResponse = await page.request.get(`${e2eApiUrl}/v1/stores/${slug}`);
   const publicProductsResponse = await page.request.get(
-    `http://127.0.0.1:3109/v1/stores/${slug}/products`,
+    `${e2eApiUrl}/v1/stores/${slug}/products`,
   );
   expect(publicStoreResponse.ok()).toBe(true);
   expect(publicProductsResponse.ok()).toBe(true);
@@ -203,3 +264,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.locator("img")).toHaveJSProperty("complete", true);
   await assertNoHorizontalOverflow(page);
 });
+
+async function readProductId(page: import("@playwright/test").Page) {
+  return page.evaluate(() => localStorage.getItem("sevo-last-product-id") ?? "");
+}
