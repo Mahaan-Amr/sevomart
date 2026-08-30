@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import styles from "../workspace-page.module.css";
-import { LastProductLink } from "../../products/last-product-link";
+import { SellerProductList } from "../../products/seller-product-list";
 
 export default function SellerProductsPage() {
   return (
@@ -13,7 +13,7 @@ export default function SellerProductsPage() {
         <Link className={styles.primary} href="/seller/products/new">
           ساخت کالای تازه
         </Link>
-        <LastProductLink className={styles.secondary} />
+        <SellerProductList />
       </section>
     </main>
   );
