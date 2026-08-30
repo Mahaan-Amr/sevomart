@@ -1318,6 +1318,174 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     await sql.end();
   });
 
+  it("rejects emergency use when its grant expires while authorization waits for the grant lock", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const incidentId = "INC-2026-0128-EXPIRY-RACE";
+    const resourceId = randomUUID();
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        incidentId,
+        reason: "مهار خطر مشخص برای آزمون انقضا هنگام انتظار قفل",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          allowedActions: ["CONTAIN_INCIDENT"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    const grantId = requested.json<{ grantId: string }>().grantId;
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+          headers: accessHeaders(manager.token),
+          payload: { expectedRevision: 1 },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await observer`
+      update identity_platform_access_grants
+      set expires_at = clock_timestamp() + interval '500 milliseconds'
+      where id = ${grantId}
+    `;
+    const lockAcquired = deferred();
+    const releaseLock = deferred();
+    const blockingTransaction = blocker.begin(async (transaction) => {
+      await transaction`
+        select id from identity_platform_access_grants
+        where id = ${grantId} for update
+      `;
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+
+    try {
+      await lockAcquired.promise;
+      const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+      const correlationId = randomUUID();
+      const emergencyUse = actionSql
+        .begin((transaction) =>
+          access.authorizeEmergencyAction(
+            createOpaquePlatformAccessTransactionContext(transaction),
+            {
+              grantId,
+              actorIdentityId: manager.identityId,
+              incidentId,
+              resourceType: "PAYMENT_REVIEW",
+              resourceId,
+              action: "CONTAIN_INCIDENT",
+              reason: "تلاش اضطراری پس از انقضا هنگام انتظار قفل",
+              correlationId,
+            },
+          ),
+        )
+        .then(
+          () => ({ authorized: true }),
+          (error: unknown) => ({ error }),
+        );
+      await waitForPlatformGrantLockWaiter(observer);
+      await waitUntilGrantExpires(observer, grantId);
+
+      releaseLock.resolve();
+      await blockingTransaction;
+      await expect(emergencyUse).resolves.toMatchObject({
+        error: { code: "EMERGENCY_SCOPE_REQUIRED" },
+      });
+      const persisted = await observer<
+        Array<{
+          status: string;
+          expiryAuditCount: number;
+          expiryEventCount: number;
+          denialAuditCount: number;
+        }>
+      >`
+        select g.status,
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.action = 'GRANT_EXPIRED')
+            as "expiryAuditCount",
+          (select count(*)::int from platform_outbox_events e
+           where e.aggregate_id = g.id and e.event_type = 'EmergencyAccessExpired.v1')
+            as "expiryEventCount",
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.correlation_id = ${correlationId}
+             and a.outcome = 'DENIED') as "denialAuditCount"
+        from identity_platform_access_grants g where g.id = ${grantId}
+      `;
+      expect(persisted).toEqual([
+        {
+          status: "EXPIRED",
+          expiryAuditCount: 1,
+          expiryEventCount: 1,
+          denialAuditCount: 1,
+        },
+      ]);
+    } finally {
+      releaseLock.resolve();
+      await blockingTransaction;
+      await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
+    }
+  });
+
+  it("does not list an emergency grant as active after it expires while listing waits for its lock", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const grantId = await createActiveSingleManagerEmergency(server, manager.token);
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await observer`
+      update identity_platform_access_grants
+      set expires_at = clock_timestamp() + interval '500 milliseconds'
+      where id = ${grantId}
+    `;
+    const lockAcquired = deferred();
+    const releaseLock = deferred();
+    const blockingTransaction = blocker.begin(async (transaction) => {
+      await transaction`
+        select id from identity_platform_access_grants
+        where id = ${grantId} for update
+      `;
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+
+    try {
+      await lockAcquired.promise;
+      const listing = server.inject({
+        method: "GET",
+        url: "/v1/platform/access/emergency-grants?limit=20",
+        headers: { cookie: `sevo_platform_session=${manager.token}` },
+      });
+      await waitForPlatformGrantLockWaiter(observer);
+      await waitUntilGrantExpires(observer, grantId);
+
+      releaseLock.resolve();
+      await blockingTransaction;
+      const listed = await listing;
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toMatchObject({
+        items: [expect.objectContaining({ grantId, status: "EXPIRED" })],
+      });
+    } finally {
+      releaseLock.resolve();
+      await blockingTransaction;
+      await Promise.all([blocker.end(), observer.end()]);
+    }
+  });
+
   it("returns 409 when the live manager topology no longer matches activation control", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -1492,7 +1660,7 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     await sql.end();
   });
 
-  it("blocks self-review when another platform human already exists", async () => {
+  it("blocks self-review when another active platform human exists", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
@@ -1591,6 +1759,26 @@ async function createClosedSingleManagerEmergency(
   },
   token: string,
 ) {
+  const grantId = await createActiveSingleManagerEmergency(server, token);
+  const closed = await server.inject({
+    method: "POST",
+    url: `/v1/platform/access/emergency-grants/${grantId}/closure`,
+    headers: accessHeaders(token),
+    payload: {
+      expectedRevision: 2,
+      reason: "مهار حادثه تکمیل و نشست اضطراری بسته شد",
+    },
+  });
+  expect(closed.statusCode).toBe(200);
+  return grantId;
+}
+
+async function createActiveSingleManagerEmergency(
+  server: {
+    inject(input: unknown): Promise<{ json<T = unknown>(): T; statusCode: number }>;
+  },
+  token: string,
+) {
   const requested = await server.inject({
     method: "POST",
     url: "/v1/platform/access/emergency-grants",
@@ -1614,16 +1802,6 @@ async function createClosedSingleManagerEmergency(
     payload: { expectedRevision: 1 },
   });
   expect(activated.statusCode).toBe(200);
-  const closed = await server.inject({
-    method: "POST",
-    url: `/v1/platform/access/emergency-grants/${grantId}/closure`,
-    headers: accessHeaders(token),
-    payload: {
-      expectedRevision: 2,
-      reason: "مهار حادثه تکمیل و نشست اضطراری بسته شد",
-    },
-  });
-  expect(closed.statusCode).toBe(200);
   return grantId;
 }
 

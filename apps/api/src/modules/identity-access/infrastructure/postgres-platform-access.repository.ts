@@ -125,6 +125,10 @@ type EmergencyGrantRow = {
   rejectedAt: Date | null;
 };
 
+type AuthorizedEmergencyGrantRow = EmergencyGrantRow & {
+  accessedAt: Date;
+};
+
 export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   readonly #sql: Sql;
 
@@ -1560,7 +1564,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       reason: input.reason,
       singleManagerException: grant.singleManagerException,
       correlationId: input.correlationId,
-      occurredAt: new Date(),
+      occurredAt: grant.accessedAt,
     });
   }
 
@@ -1597,7 +1601,7 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   async #expireEmergencyGrantIfDue(grantId: string): Promise<void> {
     await this.#sql.begin(async (sql) => {
       const grant = await readEmergencyGrant(sql, grantId, "update");
-      const occurredAt = new Date();
+      const occurredAt = await readDatabaseClock(sql);
       if (!grant || grant.status !== "ACTIVE" || grant.expiresAt > occurredAt) return;
       const revision = grant.revision + 1;
       const correlationId = randomUUID();
@@ -1886,7 +1890,8 @@ async function readDatabaseClock(sql: Sql): Promise<Date> {
 async function readAuthorizedEmergencyGrant(
   sql: Sql,
   input: PlatformEmergencyAction,
-): Promise<EmergencyGrantRow | undefined> {
+): Promise<AuthorizedEmergencyGrantRow | undefined> {
+  await sql`savepoint emergency_authorization_grant_lock`;
   const rows = await sql<EmergencyGrantRow[]>`
     select g.id as "grantId", g.subject_identity_id as "subjectIdentityId",
       g.requested_by_identity_id as "requestedByIdentityId",
@@ -1901,7 +1906,7 @@ async function readAuthorizedEmergencyGrant(
     join identity_identities i
       on i.id = ${input.actorIdentityId} and i.status = 'ACTIVE'
     where g.id = ${input.grantId} and g.grant_kind = 'EMERGENCY_ACCESS'
-      and g.status = 'ACTIVE' and g.expires_at > now()
+      and g.status = 'ACTIVE'
       and g.subject_identity_id = ${input.actorIdentityId}
       and g.incident_id = ${input.incidentId}
       and g.scope ->> 'resourceType' = ${input.resourceType}
@@ -1909,7 +1914,15 @@ async function readAuthorizedEmergencyGrant(
       and g.scope -> 'allowedActions' @> ${sql.json([input.action])}::jsonb
     for share of g
   `;
-  return rows[0];
+  const accessedAt = await readDatabaseClock(sql);
+  const grant = rows[0];
+  if (!grant || grant.expiresAt <= accessedAt) {
+    await sql`rollback to savepoint emergency_authorization_grant_lock`;
+    await sql`release savepoint emergency_authorization_grant_lock`;
+    return undefined;
+  }
+  await sql`release savepoint emergency_authorization_grant_lock`;
+  return { ...grant, accessedAt };
 }
 
 function sensitiveGrantMatchesAction(
@@ -2256,7 +2269,6 @@ async function expireDueEmergencyGrants(
   sql: Sql,
   correlationId: string,
 ): Promise<void> {
-  const occurredAt = new Date();
   const grants = await sql<EmergencyGrantRow[]>`
     select id as "grantId", subject_identity_id as "subjectIdentityId",
       requested_by_identity_id as "requestedByIdentityId",
@@ -2269,11 +2281,11 @@ async function expireDueEmergencyGrants(
       review_mode as "reviewMode", rejected_at as "rejectedAt"
     from identity_platform_access_grants
     where grant_kind = 'EMERGENCY_ACCESS' and status = 'ACTIVE'
-      and expires_at <= ${occurredAt}
     order by created_at, id
     for update
   `;
-  for (const grant of grants) {
+  const occurredAt = await readDatabaseClock(sql);
+  for (const grant of grants.filter((candidate) => candidate.expiresAt <= occurredAt)) {
     const expiredGrant: EmergencyGrantRow = {
       ...grant,
       status: "EXPIRED",
