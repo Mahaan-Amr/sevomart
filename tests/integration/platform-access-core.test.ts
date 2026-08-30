@@ -312,6 +312,105 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     }
   });
 
+  it("durably audits nonexistent and wrong-kind sensitive grant references", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const agent = await seedAgent([]);
+
+    const responsibility = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/responsibility-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: agent.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        reason: "واگذاری مسئولیت برای آزمون ممیزی شناسه نامعتبر",
+      },
+    });
+    expect(responsibility.statusCode).toBe(202);
+    const wrongKindGrantId = responsibility.json<{ grantId: string }>().grantId;
+    const nonexistentGrantId = randomUUID();
+    const resourceId = randomUUID();
+    const attempts = [
+      { grantId: nonexistentGrantId, correlationId: randomUUID() },
+      { grantId: wrongKindGrantId, correlationId: randomUUID() },
+    ];
+    const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    let mutationCount = 0;
+
+    try {
+      for (const attempt of attempts) {
+        await expect(
+          actionSql.begin(async (transaction) => {
+            const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+            await access.authorizeSensitiveAction(
+              createOpaquePlatformAccessTransactionContext(transaction),
+              {
+                grantId: attempt.grantId,
+                actorIdentityId: agent.identityId,
+                responsibility: "PAYMENT_REVIEW",
+                resourceType: "PAYMENT_REVIEW",
+                resourceId,
+                action: "REVEAL_MINIMUM",
+                reason: "تلاش ردشده با شناسه اجازه حساس نامعتبر",
+                correlationId: attempt.correlationId,
+              },
+            );
+            mutationCount += 1;
+          }),
+        ).rejects.toMatchObject<Partial<PlatformAccessError>>({
+          code: "SENSITIVE_SCOPE_REQUIRED",
+        });
+      }
+      expect(mutationCount).toBe(0);
+
+      const unresolved = await actionSql<
+        Array<{
+          attemptedGrantId: string;
+          resolvedGrantId: string | null;
+          attemptedResponsibility: string | null;
+          action: string;
+          actorIdentityId: string;
+          subjectIdentityId: string | null;
+          outcome: string;
+          singleManagerException: boolean | null;
+          correlationId: string;
+        }>
+      >`
+        select grant_id as "attemptedGrantId", action,
+          resolved_grant_id as "resolvedGrantId",
+          attempted_responsibility as "attemptedResponsibility",
+          actor_identity_id as "actorIdentityId",
+          subject_identity_id as "subjectIdentityId", outcome,
+          single_manager_exception as "singleManagerException",
+          correlation_id as "correlationId"
+        from identity_platform_access_audit
+        where correlation_id in (${attempts[0].correlationId}, ${attempts[1].correlationId})
+        order by correlation_id
+      `;
+      expect(unresolved).toHaveLength(2);
+      expect(unresolved).toEqual(
+        expect.arrayContaining(
+          attempts.map((attempt) => ({
+            attemptedGrantId: attempt.grantId,
+            resolvedGrantId: null,
+            attemptedResponsibility: "PAYMENT_REVIEW",
+            action: "SENSITIVE_FIELD_REVEALED",
+            actorIdentityId: agent.identityId,
+            subjectIdentityId: null,
+            outcome: "DENIED",
+            singleManagerException: null,
+            correlationId: attempt.correlationId,
+          })),
+        ),
+      );
+    } finally {
+      await actionSql.end({ timeout: 0 });
+    }
+  });
+
   it("audits a share-first denial without blocking queued single-manager revocation", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
