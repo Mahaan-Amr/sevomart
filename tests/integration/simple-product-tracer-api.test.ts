@@ -165,6 +165,28 @@ describe("simple product tracer HTTP API", () => {
       headers: { cookie },
     });
     expect(invalidCursor.statusCode).toBe(422);
+    expect(invalidCursor.json()).toMatchObject({
+      version: 1,
+      code: "VALIDATION_ERROR",
+      details: { issues: [{ path: "query.cursor", code: "INVALID_FORMAT" }] },
+    });
+
+    for (const [query, path] of [
+      ["limit=0", "query.limit"],
+      ["state=ARCHIVED", "query.state"],
+    ] as const) {
+      const invalidQuery = await server.inject({
+        method: "GET",
+        url: `/v1/seller/products?${query}`,
+        headers: { cookie },
+      });
+      expect(invalidQuery.statusCode).toBe(422);
+      expect(invalidQuery.json()).toMatchObject({
+        version: 1,
+        code: "VALIDATION_ERROR",
+        details: { issues: [{ path, code: "INVALID_FORMAT" }] },
+      });
+    }
 
     const accessSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
@@ -182,6 +204,27 @@ describe("simple product tracer HTTP API", () => {
       version: 1,
       code: "SELLER_ACCESS_INACTIVE",
       message: "دسترسی فروشندگی شما فعال نیست.",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
+  });
+
+  it("returns the owner error envelope when the seller has no store", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const cookie = await signIn(server);
+
+    const missingStore = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products",
+      headers: { cookie },
+    });
+    expect(missingStore.statusCode).toBe(404);
+    expect(missingStore.json()).toEqual({
+      version: 1,
+      code: "PRODUCT_NOT_FOUND",
+      message: "کالا پیدا نشد.",
       correlationId: expect.any(String),
       details: { issues: [] },
     });

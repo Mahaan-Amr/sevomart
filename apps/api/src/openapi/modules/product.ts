@@ -67,7 +67,7 @@ const operations = [
       { status: 401, schema: "UnauthorizedError" },
       { status: 403, schema: "SellerProductAccessInactiveError" },
       { status: 404, schema: "ProductNotFoundError" },
-      { status: 422, schema: "ValidationError" },
+      { status: 422, schema: "SellerProductListValidationError" },
       { status: 500, schema: "InternalServerError" },
     ],
   },

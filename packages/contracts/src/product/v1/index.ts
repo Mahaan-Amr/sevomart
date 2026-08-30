@@ -611,11 +611,36 @@ export const publicProductListContract = z
   })
   .strict();
 
-export const productNotFoundErrorContract = z
+const productOwnerErrorDetailsContract = z
   .object({
+    issues: z.array(
+      z
+        .object({
+          path: z.string().min(1),
+          code: z.string().min(1),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const sellerProductListValidationDetailsContract = z
+  .object({
+    issues: z.array(
+      z
+        .object({
+          path: z.enum(["query.cursor", "query.limit", "query.state"]),
+          code: z.literal("INVALID_FORMAT"),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const productNotFoundErrorContract = errorEnvelopeV1Contract
+  .safeExtend({
     code: z.literal("PRODUCT_NOT_FOUND"),
-    message: z.string().min(1),
-    correlationId: z.string().min(1),
+    details: productOwnerErrorDetailsContract,
   })
   .strict();
 
@@ -641,8 +666,16 @@ export const productPreconditionRequiredErrorContract = z
   .strict();
 
 export const sellerProductAccessInactiveErrorContract = errorEnvelopeV1Contract
-  .extend({
+  .safeExtend({
     code: z.literal("SELLER_ACCESS_INACTIVE"),
+    details: productOwnerErrorDetailsContract,
+  })
+  .strict();
+
+export const sellerProductListValidationErrorContract = errorEnvelopeV1Contract
+  .safeExtend({
+    code: z.literal("VALIDATION_ERROR"),
+    details: sellerProductListValidationDetailsContract,
   })
   .strict();
 
@@ -739,6 +772,7 @@ export const productV1Schemas = {
   ProductWriteConflictError: productWriteConflictErrorContract,
   ProductPreconditionRequiredError: productPreconditionRequiredErrorContract,
   SellerProductAccessInactiveError: sellerProductAccessInactiveErrorContract,
+  SellerProductListValidationError: sellerProductListValidationErrorContract,
   ReplaceProductWorkingCopy: replaceProductWorkingCopyContract,
   ReplaceProductOffersBatch: replaceProductOffersBatchContract,
   ReplaceProductInventoryBatch: replaceProductInventoryBatchContract,
@@ -830,9 +864,11 @@ export const productV1Examples = {
     reasonCode: "SELLER_REQUEST",
   },
   ProductNotFoundError: {
+    version: 1,
     code: "PRODUCT_NOT_FOUND",
     message: "کالا پیدا نشد.",
     correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+    details: { issues: [] },
   },
   ProductWriteConflictError: {
     code: "REVISION_CONFLICT",
@@ -850,6 +886,15 @@ export const productV1Examples = {
     message: "دسترسی فروشندگی شما فعال نیست.",
     correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
     details: { issues: [] },
+  },
+  SellerProductListValidationError: {
+    version: 1,
+    code: "VALIDATION_ERROR",
+    message: "نشانی ادامه فهرست معتبر نیست؛ فهرست را از ابتدا باز کنید.",
+    correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+    details: {
+      issues: [{ path: "query.cursor", code: "INVALID_FORMAT" }],
+    },
   },
 } as const;
 
