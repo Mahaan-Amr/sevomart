@@ -14,6 +14,7 @@ import {
   sensitiveAccessGrantViewContract,
   sensitiveAccessRequestedV1Contract,
   sensitiveAccessRevokedV1Contract,
+  unresolvedSensitiveAccessAuditEntryContract,
   sensitiveAccessExpiredV1Contract,
   platformAccessGrantContract,
   platformAccessAuditEntryContract,
@@ -824,7 +825,10 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   ): Promise<"RESPONSIBILITY_REQUIRED" | "SENSITIVE_SCOPE_REQUIRED"> {
     return this.#sql.begin(async (sql) => {
       const grant = await readSensitiveGrant(sql, input.grantId, "none");
-      if (!grant) return "SENSITIVE_SCOPE_REQUIRED";
+      if (!grant) {
+        await insertUnresolvedSensitiveDenial(sql, input);
+        return "SENSITIVE_SCOPE_REQUIRED";
+      }
       const scopeMatches = sensitiveGrantMatchesAction(grant, input);
       const responsibilityGranted = scopeMatches
         ? await hasResponsibility(sql, input.actorIdentityId, input.responsibility)
@@ -1195,12 +1199,90 @@ async function insertAudit(
     correlationId: entry.correlationId,
     occurredAt: entry.occurredAt.toISOString(),
   });
+  await persistAuditRecord(sql, {
+    auditId: audit.auditId,
+    attemptedGrantId: audit.grantId,
+    resolvedGrantId: audit.grantId,
+    attemptedResponsibility: null,
+    action: audit.action,
+    actorIdentityId: audit.actorIdentityId,
+    subjectIdentityId: audit.subjectIdentityId,
+    scope: audit.scope,
+    reasonCode: audit.reasonCode,
+    reason: audit.reason,
+    outcome: audit.outcome,
+    singleManagerException: audit.singleManagerException,
+    correlationId: audit.correlationId,
+    occurredAt: audit.occurredAt,
+  });
+}
+
+async function insertUnresolvedSensitiveDenial(
+  sql: Sql,
+  input: PlatformSensitiveAction,
+): Promise<void> {
+  const audit = unresolvedSensitiveAccessAuditEntryContract.parse({
+    auditId: randomUUID(),
+    attemptedGrantId: input.grantId,
+    action: sensitiveAuditAction(input.action),
+    actorIdentityId: input.actorIdentityId,
+    attemptedResponsibility: input.responsibility,
+    scope: {
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      allowedActions: [input.action],
+    },
+    reasonCode: "ACCESS_REQUEST_REJECTED",
+    reason: input.reason,
+    outcome: "DENIED",
+    correlationId: input.correlationId,
+    occurredAt: new Date().toISOString(),
+  });
+  await persistAuditRecord(sql, {
+    auditId: audit.auditId,
+    attemptedGrantId: audit.attemptedGrantId,
+    resolvedGrantId: null,
+    attemptedResponsibility: audit.attemptedResponsibility,
+    action: audit.action,
+    actorIdentityId: audit.actorIdentityId,
+    subjectIdentityId: null,
+    scope: audit.scope,
+    reasonCode: audit.reasonCode,
+    reason: audit.reason,
+    outcome: audit.outcome,
+    singleManagerException: null,
+    correlationId: audit.correlationId,
+    occurredAt: audit.occurredAt,
+  });
+}
+
+async function persistAuditRecord(
+  sql: Sql,
+  audit: {
+    auditId: string;
+    attemptedGrantId: string;
+    resolvedGrantId: string | null;
+    attemptedResponsibility: Responsibility | null;
+    action: string;
+    actorIdentityId: string;
+    subjectIdentityId: string | null;
+    scope?: PlatformAccessScope;
+    reasonCode: string;
+    reason: string;
+    outcome: "SUCCEEDED" | "DENIED" | "STOPPED_AFTER_REVOCATION";
+    singleManagerException: boolean | null;
+    correlationId: string;
+    occurredAt: string;
+  },
+): Promise<void> {
   await sql`
     insert into identity_platform_access_audit
-      (id, grant_id, action, actor_identity_id, subject_identity_id, scope, reason_code,
-       reason, outcome, single_manager_exception, correlation_id, occurred_at)
+      (id, grant_id, resolved_grant_id, attempted_responsibility, action,
+       actor_identity_id, subject_identity_id, scope, reason_code, reason, outcome,
+       single_manager_exception, correlation_id, occurred_at)
     values
-      (${audit.auditId}, ${audit.grantId}, ${audit.action}, ${audit.actorIdentityId},
+      (${audit.auditId}, ${audit.attemptedGrantId}, ${audit.resolvedGrantId},
+       ${audit.attemptedResponsibility}, ${audit.action}, ${audit.actorIdentityId},
        ${audit.subjectIdentityId}, ${audit.scope ? sql.json(audit.scope) : null},
        ${audit.reasonCode}, ${audit.reason}, ${audit.outcome},
        ${audit.singleManagerException}, ${audit.correlationId}, ${audit.occurredAt})

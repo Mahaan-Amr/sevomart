@@ -19,6 +19,7 @@ import {
   sensitiveAccessGrantedV1Contract,
   sensitiveAccessGrantViewContract,
   sensitiveAccessRejectedV1Contract,
+  unresolvedSensitiveAccessAuditEntryContract,
 } from "@sevo/contracts/identity-access/v1";
 import * as rootContracts from "@sevo/contracts";
 import { describe, expect, it } from "vitest";
@@ -439,7 +440,37 @@ describe("platform access v1 contract", () => {
           reason,
         }).success,
       ).toBe(false);
+      expect(
+        unresolvedSensitiveAccessAuditEntryContract.safeParse({
+          auditId: "88888888-8888-4888-8888-888888888888",
+          attemptedGrantId: grantId,
+          action: "SENSITIVE_FIELD_REVEALED",
+          actorIdentityId: requesterIdentityId,
+          attemptedResponsibility: "PAYMENT_REVIEW",
+          scope: paymentReviewScope,
+          reasonCode: "ACCESS_REQUEST_REJECTED",
+          reason,
+          outcome: "DENIED",
+          correlationId,
+          occurredAt: "2026-08-26T10:01:00.000Z",
+        }).success,
+      ).toBe(false);
     }
+
+    const unresolvedAudit = unresolvedSensitiveAccessAuditEntryContract.parse({
+      auditId: "88888888-8888-4888-8888-888888888888",
+      attemptedGrantId: grantId,
+      action: "SENSITIVE_FIELD_REVEALED",
+      actorIdentityId: requesterIdentityId,
+      attemptedResponsibility: "PAYMENT_REVIEW",
+      scope: paymentReviewScope,
+      reasonCode: "ACCESS_REQUEST_REJECTED",
+      reason: "تلاش ردشده با شناسه اجازه حساس نامعتبر",
+      outcome: "DENIED",
+      correlationId,
+      occurredAt: "2026-08-26T10:01:00.000Z",
+    });
+    expect(unresolvedAudit.attemptedGrantId).toBe(grantId);
   });
 
   it("publishes stable errors for policy and lifecycle failures", () => {
@@ -468,6 +499,7 @@ describe("platform access v1 contract", () => {
       PlatformAccessGrant: expect.anything(),
       PlatformAccessRejection: expect.anything(),
       PlatformAccessAuditPage: expect.anything(),
+      UnresolvedSensitiveAccessAuditEntry: expect.anything(),
       PlatformAccessRejectionInput: expect.anything(),
       EmergencyAccessReviewInput: expect.anything(),
       PlatformAccessError: platformAccessErrorContract,
