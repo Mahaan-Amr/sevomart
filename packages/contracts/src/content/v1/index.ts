@@ -202,6 +202,7 @@ export const purchaseExperiencePublishedV1Contract = eventEnvelopeV1Contract.ext
 export const contentV1Schemas = {
   ContentId: contentIdContract,
   PurchaseExperienceId: purchaseExperienceIdContract,
+  OrderItemId: orderItemIdContract,
   ContentIdempotencyKey: contentIdempotencyKeyContract,
   ContentSource: contentSourceContract,
   ContentModerationState: contentModerationStateContract,
@@ -225,6 +226,7 @@ export function createContentV1JsonSchemas() {
 export const contentV1Examples = {
   ContentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
   PurchaseExperienceId: "61fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+  OrderItemId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
   ContentIdempotencyKey: "publish-content-01",
   PublishSalesContentInput: {
     storeId: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
