@@ -6,6 +6,7 @@ import sharp from "sharp";
 
 import {
   assertInteractiveTargets,
+  assertMinimumContrast,
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
 import {
@@ -54,7 +55,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
          theme_color, status, published_at, publication_version, revision)
       values
         (${storeId}, 'خانه فنجان', ${slug}, 'کالاهای ساده و دست‌ساز',
-         'تا هفت روز امکان درخواست مرجوعی وجود دارد.', 1,
+         'تا هفت روز پس از تحویل می‌توانید برای کالای استفاده‌نشده درخواست مرجوعی ثبت کنید؛ کالا باید با بسته‌بندی و متعلقات کامل بازگردانده شود.', 1,
          'TEST', 'TEST_VERIFIED', now(), '#A41439', 'PUBLISHED', now(), 1, 1)
     `;
     await sql`
@@ -172,6 +173,22 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByText("قرمز، بزرگ", { exact: true })).toBeVisible();
   await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
   await expect(page.getByText("موجود", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText(
+      "تا هفت روز پس از تحویل می‌توانید برای کالای استفاده‌نشده درخواست مرجوعی ثبت کنید؛ کالا باید با بسته‌بندی و متعلقات کامل بازگردانده شود.",
+    ),
+  ).toBeVisible();
+  const variantSelector = page.getByLabel("گونه", { exact: true });
+  await variantSelector.focus();
+  await expect(variantSelector).toBeFocused();
+  await variantSelector.selectOption({ label: "قرمز، بزرگ — ناموجود" });
+  await expect(page.getByText("۴۶۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
+  await expect(page.getByText("ناموجود", { exact: true }).last()).toBeVisible();
+  await expect(page.getByLabel("تعداد")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "فعلاً ناموجود" })).toBeDisabled();
+  await variantSelector.selectOption({ label: "قرمز، کوچک" });
+  await expect(page.getByText("۴۵۵٬۰۰۰ تومان", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "افزودن به سبد" })).toBeEnabled();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
   const publicStoreResponse = await page.request.get(
     `http://127.0.0.1:3109/v1/stores/${slug}`,
@@ -179,11 +196,16 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   const publicProductsResponse = await page.request.get(
     `http://127.0.0.1:3109/v1/stores/${slug}/products`,
   );
+  const publicProductResponse = await page.request.get(
+    `http://127.0.0.1:3109/v1/stores/${slug}/products/${new URL(page.url()).pathname.split("/").at(-1)}`,
+  );
   expect(publicStoreResponse.ok()).toBe(true);
   expect(publicProductsResponse.ok()).toBe(true);
+  expect(publicProductResponse.ok()).toBe(true);
   const publicSurface = `${storefrontHtml}\n${await page.content()}\n${JSON.stringify([
     await publicStoreResponse.json(),
     await publicProductsResponse.json(),
+    await publicProductResponse.json(),
   ])}`;
   for (const privateField of [
     "sellerId",
@@ -201,5 +223,20 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     expect(publicSurface).not.toContain(`"${privateField}"`);
   }
   await expect(page.locator("img")).toHaveJSProperty("complete", true);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await assertNoHorizontalOverflow(page);
+  await assertInteractiveTargets(page);
+  await assertMinimumContrast(
+    page.locator(
+      "main h1, main p, main span, main strong, main label, main select, main button, main a",
+    ),
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await page
+      .getByRole("button", { name: "افزودن به سبد" })
+      .evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).transitionDuration),
+      ),
+  ).toBeLessThan(0.001);
 });
