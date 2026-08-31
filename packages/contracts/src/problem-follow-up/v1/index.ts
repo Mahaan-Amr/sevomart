@@ -392,6 +392,7 @@ export const platformDisputeQueueContract = z
     nextCursor: problemFollowUpCursorContract.nullable(),
   })
   .strict();
+export const platformDisputeActionContract = z.enum(["RESOLVE", "REOPEN"]);
 const caseScopedSensitiveAccessContract = z
   .object({
     grantId: platformAccessGrantIdContract,
@@ -410,7 +411,10 @@ const caseScopedSensitiveAccessContract = z
     }
   });
 export const platformDisputeViewContract = relatedPartyDisputeViewContract
-  .extend({ access: caseScopedSensitiveAccessContract })
+  .extend({
+    platformAction: platformDisputeActionContract.nullable().optional(),
+    access: caseScopedSensitiveAccessContract,
+  })
   .superRefine((view, context) => {
     if (
       view.access.scope.resourceType !== "DISPUTE_CASE" ||
@@ -653,6 +657,7 @@ export const problemFollowUpV1Examples = {
   },
   PlatformDisputeView: {
     ...exampleDispute,
+    platformAction: "RESOLVE",
     access: {
       grantId: "6df3e69a-4d9c-4c5b-9bf2-75af372e18e5",
       mode: "REVEALED_MINIMUM",

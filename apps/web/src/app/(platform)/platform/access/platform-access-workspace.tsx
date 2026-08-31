@@ -20,11 +20,16 @@ import {
   useState,
 } from "react";
 
+import {
+  type AllowedAction,
+  type ScopeAction,
+  sensitiveRequestDetails,
+  supportsDisputeAssignment,
+} from "./platform-access-request-model";
 import styles from "./platform-access-workspace.module.css";
 
 type Section = "responsibility" | "sensitive" | "emergency" | "audit";
 type ResourceType = PlatformAccessScope["resourceType"];
-type AllowedAction = PlatformAccessScope["allowedActions"][number];
 type ReviewFinding =
   "CONTROLS_FOLLOWED" | "SCOPE_EXCEEDED" | "AUDIT_INCOMPLETE" | "FOLLOW_UP_REQUIRED";
 
@@ -106,6 +111,7 @@ const auditActionLabels: Record<PlatformAccessAuditEntry["action"], string> = {
 const responsibilities = Object.keys(responsibilityLabels) as Responsibility[];
 const resourceTypes = Object.keys(resourceLabels) as ResourceType[];
 const allowedActions = Object.keys(actionLabels) as AllowedAction[];
+const disputeAssignmentAction = "REVIEW_AND_RESOLVE_DISPUTE" as const;
 
 export function PlatformAccessWorkspace({
   actorIdentityId,
@@ -347,7 +353,7 @@ function CreateRequest({
   const [incidentId, setIncidentId] = useState("");
   const [reason, setReason] = useState("");
   const [ttlMinutes, setTtlMinutes] = useState(30);
-  const [action, setAction] = useState<AllowedAction>("READ_MASKED");
+  const [action, setAction] = useState<ScopeAction>("READ_MASKED");
   const [showScope, setShowScope] = useState(false);
   const [showJustification, setShowJustification] = useState(false);
 
@@ -355,6 +361,15 @@ function CreateRequest({
     setShowScope(false);
     setShowJustification(false);
   }, [section]);
+
+  useEffect(() => {
+    if (
+      action === disputeAssignmentAction &&
+      !supportsDisputeAssignment(responsibility, resourceType)
+    ) {
+      setAction("READ_MASKED");
+    }
+  }, [action, resourceType, responsibility]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -366,14 +381,19 @@ function CreateRequest({
         "درخواست مجوز ثبت شد؛ وضعیت و قدم بعدی در صف دیده می‌شود.",
       );
     } else if (section === "sensitive") {
+      const request = sensitiveRequestDetails({
+        responsibility,
+        resourceType,
+        action,
+      });
       await mutate(
         "sensitive-grants",
         {
           ...(recipient ? { recipientIdentityId: recipient } : {}),
           responsibility,
-          purposeCode: "VERIFY_CASE_EVIDENCE",
+          purposeCode: request.purposeCode,
           reason,
-          scope: { resourceType, resourceId, allowedActions: [action] },
+          scope: { resourceType, resourceId, allowedActions: request.allowedActions },
           ttlMinutes,
         },
         "درخواست دسترسی حساس ثبت شد؛ داده تا اقدام صریح پوشانده می‌ماند.",
@@ -477,13 +497,19 @@ function CreateRequest({
               اقدام لازم
               <select
                 value={action}
-                onChange={(event) => setAction(event.target.value as AllowedAction)}
+                onChange={(event) => setAction(event.target.value as ScopeAction)}
               >
                 {allowedActions.map((value) => (
                   <option key={value} value={value}>
                     {actionLabels[value]}
                   </option>
                 ))}
+                {section === "sensitive" &&
+                supportsDisputeAssignment(responsibility, resourceType) ? (
+                  <option value={disputeAssignmentAction}>
+                    مشاهده و ثبت نتیجه اختلاف
+                  </option>
+                ) : null}
               </select>
             </label>
             <label>
@@ -513,7 +539,7 @@ function CreateRequest({
               <p>
                 {section === "responsibility"
                   ? responsibilityLabels[responsibility]
-                  : `${resourceLabels[resourceType]} · ${actionLabels[action]} · ${ttlMinutes} دقیقه`}
+                  : `${resourceLabels[resourceType]} · ${scopeActionLabel(action)} · ${ttlMinutes} دقیقه`}
               </p>
               <button
                 type="button"
@@ -543,6 +569,12 @@ function CreateRequest({
       </form>
     </details>
   );
+}
+
+function scopeActionLabel(action: ScopeAction) {
+  return action === disputeAssignmentAction
+    ? "مشاهده و ثبت نتیجه اختلاف"
+    : actionLabels[action];
 }
 
 function GrantQueue({

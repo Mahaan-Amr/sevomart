@@ -168,6 +168,7 @@ describe("problem follow-up v1 least-data views", () => {
   it("reveals platform details only for a live scope bound to the same case", () => {
     const platformView = {
       ...visibleCase,
+      platformAction: null,
       access: {
         grantId: "00000000-0000-4000-8000-000000000013",
         mode: "REVEALED_MINIMUM",

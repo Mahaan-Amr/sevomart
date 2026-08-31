@@ -117,7 +117,7 @@ export class ProblemFollowUpController {
     return this.respond(request, response, () =>
       this.service.readPlatformDispute(this.platformContext(request), disputeId, {
         grantId: grantId ?? "",
-        reason: reason ?? "",
+        reason: decodeAccessReason(reason),
       }),
     );
   }
@@ -136,7 +136,7 @@ export class ProblemFollowUpController {
     return this.respond(request, response, () =>
       this.service.resolve(this.platformContext(request), disputeId, body, key, {
         grantId: grantId ?? "",
-        reason: reason ?? "",
+        reason: decodeAccessReason(reason),
       }),
     );
   }
@@ -155,7 +155,7 @@ export class ProblemFollowUpController {
     return this.respond(request, response, () =>
       this.service.reopen(this.platformContext(request), disputeId, body, key, {
         grantId: grantId ?? "",
-        reason: reason ?? "",
+        reason: decodeAccessReason(reason),
       }),
     );
   }

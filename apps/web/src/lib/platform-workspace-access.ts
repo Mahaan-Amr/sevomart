@@ -43,6 +43,12 @@ const platformDestinations: readonly PlatformDestinationRule[] = [
     shortLabel: "تخلف‌ها",
   },
   {
+    permission: "DISPUTE_REVIEW",
+    href: "/platform/disputes",
+    label: "رسیدگی به پرونده‌های اختلاف",
+    shortLabel: "اختلاف‌ها",
+  },
+  {
     permission: "ACCESS_ADMINISTRATION",
     acceptedPermissions: ["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"],
     href: "/platform/access",

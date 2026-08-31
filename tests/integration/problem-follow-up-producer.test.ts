@@ -17,6 +17,7 @@ const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
 const buyerId = identityIdContract.parse(randomUUID());
 const sellerId = identityIdContract.parse(randomUUID());
 const agentId = identityIdContract.parse(randomUUID());
+const competingAgentId = identityIdContract.parse(randomUUID());
 const orderId = orderIdContract.parse(randomUUID());
 const storeId = storeIdContract.parse(randomUUID());
 const grantId = randomUUID();
@@ -33,7 +34,10 @@ const repository = new PostgresProblemFollowUpRepository(
         scope: {
           resourceType: input.resourceType,
           resourceId: input.resourceId,
-          allowedActions: [input.action],
+          allowedActions:
+            input.resourceType === "DISPUTE_CASE"
+              ? ["REVEAL_MINIMUM", "UPDATE_CASE_STATUS"]
+              : [input.action],
         },
         accessedAt: "2026-08-30T10:00:00.000Z",
         expiresAt: "2026-08-30T10:30:00.000Z",
@@ -335,5 +339,74 @@ describe("problem follow-up producer persistence", () => {
         and event_type = 'DisputeResolved.v1'
     `;
     expect(resolvedEvent?.payload.fromStatus).toBe("UNDER_REVIEW");
+  });
+
+  it("serializes two agents competing to resolve the same dispute", async () => {
+    const raceCorrelationId = randomUUID();
+    const opened = await repository.open({
+      actorId: buyerId,
+      storeId,
+      input: {
+        orderId: orderIdContract.parse(randomUUID()),
+        category: "NOT_AS_DESCRIBED",
+        description: "شرح کالا با کالای تحویل‌شده سازگار نیست.",
+        evidence: [],
+      },
+      openedAt: new Date("2026-08-30T08:00:00.000Z"),
+      sellerResponseDeadline: new Date("2026-09-01T08:00:00.000Z"),
+      idempotencyKey: `race-open-${randomUUID()}`,
+      requestHash: "3".repeat(64),
+      correlationId: raceCorrelationId,
+    });
+    await repository.respond({
+      disputeId: opened.disputeId,
+      actorId: sellerId,
+      storeId,
+      input: { response: "فروشنده پاسخ پرونده را ثبت کرد.", evidence: [] },
+      occurredAt: new Date("2026-08-30T09:00:00.000Z"),
+      idempotencyKey: `race-response-${randomUUID()}`,
+      requestHash: "4".repeat(64),
+      correlationId: raceCorrelationId,
+    });
+
+    const resolve = (actorId: typeof agentId, suffix: string) =>
+      repository.resolve({
+        disputeId: opened.disputeId,
+        actorId,
+        input: {
+          status: "RESOLVED",
+          outcomeCode: "POLICY_EXPLAINED",
+          explanation: `نتیجه عامل ${suffix} برای طرفین ثبت شد.`,
+          evidence: [],
+        },
+        occurredAt: new Date("2026-08-30T10:00:00.000Z"),
+        idempotencyKey: `race-resolve-${suffix}-${randomUUID()}`,
+        requestHash: suffix.repeat(64).slice(0, 64),
+        correlationId: raceCorrelationId,
+        access: {
+          grantId: randomUUID(),
+          reason: "بررسی هم‌زمان برای اثبات قفل تراکنشی پرونده",
+        },
+        responsibility: "DISPUTE_REVIEW",
+        action: "UPDATE_CASE_STATUS",
+      });
+
+    const results = await Promise.allSettled([
+      resolve(agentId, "5"),
+      resolve(competingAgentId, "6"),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ code: "INVALID_TRANSITION" }),
+      }),
+    ]);
+
+    const [auditCount] = await sql<Array<{ count: number }>>`
+      select count(*)::int as count
+      from problem_dispute_audits
+      where dispute_id = ${opened.disputeId} and action = 'RESOLVE'
+    `;
+    expect(auditCount?.count).toBe(1);
   });
 });
