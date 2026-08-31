@@ -22,6 +22,9 @@ test("seller acts from the operational home and reads a private basic report", a
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
   const storeId = randomUUID();
+  const productId = randomUUID();
+  const variantId = randomUUID();
+  const mediaId = randomUUID();
   const orderIds = [randomUUID(), randomUUID(), randomUUID()] as const;
 
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -59,6 +62,32 @@ test("seller acts from the operational home and reads a private basic report", a
       values (${randomUUID()}, ${storeId}, ${identityId}, 'OWNER')
     `;
     await transaction`
+      insert into product_products
+        (id, store_id, state, revision, publication_version, published_at)
+      values (${productId}, ${storeId}, 'PUBLISHED', 1, 1, now())
+    `;
+    await transaction`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key, retired,
+         ever_published)
+      values (${variantId}, ${productId}, ${storeId}, 'simple', '', false, true)
+    `;
+    await transaction`
+      insert into product_publications
+        (product_id, publication_version, name, description, media_id, variant_id)
+      values (${productId}, 1,
+        'کالای دست‌ساز با نام بسیار بلند برای بررسی شکستن درست متن فارسی در فضای محدود موبایل',
+        'شرح کالای آزمون', ${mediaId}, ${variantId})
+    `;
+    await transaction`
+      insert into product_offers (product_id, variant_id, amount, currency, revision)
+      values (${productId}, ${variantId}, 1000000, 'IRR', 1)
+    `;
+    await transaction`
+      insert into inventory_levels (variant_id, store_id, on_hand, revision)
+      values (${variantId}, ${storeId}, 0, 1)
+    `;
+    await transaction`
       insert into reporting_seller_order_facts
         (order_id, store_id, total_amount, currency, paid_at,
          aggregate_version, last_event_id, projected_at)
@@ -89,6 +118,10 @@ test("seller acts from the operational home and reads a private basic report", a
     await expect(
       page.getByText("۱ سفارش بیش از ۲۴ ساعت در حال آماده‌سازی است"),
     ).toBeVisible();
+    await expect(
+      page.getByText("وضعیت آماده‌سازی را بررسی و قدم بعدی سفارش را ثبت کنید."),
+    ).toBeVisible();
+    await expect(page.getByText("۱ گونه کالا موجودی ندارد")).toBeVisible();
     const reportsLink = page.getByRole("link", { name: "دیدن گزارش فروش" });
     await expect(reportsLink).toHaveAttribute("href", "/seller/reports");
     await assertNoHorizontalOverflow(page);
@@ -97,6 +130,45 @@ test("seller acts from the operational home and reads a private basic report", a
       "main a, main button, main input, main select, main summary, main textarea",
     );
     await assertMinimumContrast(reportsLink);
+
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      if (await reportsLink.evaluate((element) => element === document.activeElement)) {
+        break;
+      }
+      await page.keyboard.press("Tab");
+    }
+    await expect(reportsLink).toBeFocused();
+    await expect(reportsLink).toHaveCSS("outline-style", "solid");
+
+    const preparingOrderId = randomUUID();
+    const freshOrderId = randomUUID();
+    await page.route("**/api/seller/orders", (route) =>
+      route.fulfill({
+        status: 200,
+        json: {
+          orders: [actionableOrder(preparingOrderId), actionableOrder(freshOrderId)],
+        },
+      }),
+    );
+    await page.route("**/api/seller/orders/*/fulfillment", (route) => {
+      const orderId = route.request().url().split("/").at(-2);
+      return route.fulfill({
+        status: 200,
+        json: fulfillmentTimeline(
+          orderId!,
+          orderId === preparingOrderId ? "PREPARING" : "ACTION_REQUIRED",
+        ),
+      });
+    });
+    await page.getByRole("link", { name: "بررسی آماده‌سازی‌ها" }).click();
+    await expect(page).toHaveURL(/\/seller\/orders\?status=preparing$/);
+    await expect(
+      page.getByRole("heading", { name: "سفارش‌های در حال آماده‌سازی" }),
+    ).toBeVisible();
+    await expect(page.getByText(`سفارش ${preparingOrderId}`)).toBeVisible();
+    await expect(page.getByText(`سفارش ${freshOrderId}`)).toHaveCount(0);
+
+    await page.goto("/seller");
 
     await reportsLink.click();
     await expect(page).toHaveURL(/\/seller\/reports$/);
@@ -112,6 +184,16 @@ test("seller acts from the operational home and reads a private basic report", a
       page,
       "main a, main button, main input, main select, main summary, main textarea",
     );
+    const backLink = page.getByRole("link", { name: "بازگشت به کارهای نزدیک" });
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (await backLink.evaluate((element) => element === document.activeElement)) {
+        break;
+      }
+      await page.keyboard.press("Tab");
+    }
+    await expect(backLink).toBeFocused();
+    await expect(backLink).toHaveCSS("outline-style", "solid");
 
     await sql`delete from reporting_fulfillment_states where order_id in ${sql(orderIds)}`;
     await sql`delete from reporting_seller_order_facts where store_id = ${storeId}`;
@@ -120,9 +202,38 @@ test("seller acts from the operational home and reads a private basic report", a
   } finally {
     await sql`delete from reporting_fulfillment_states where order_id in ${sql(orderIds)}`;
     await sql`delete from reporting_seller_order_facts where store_id = ${storeId}`;
+    await sql`delete from inventory_levels where variant_id = ${variantId}`;
+    await sql`delete from product_products where id = ${productId}`;
     await sql`delete from store_memberships where store_id = ${storeId}`;
     await sql`delete from store_stores where id = ${storeId}`;
     await sql`delete from identity_seller_access where identity_id = ${identityId}`;
     await sql.end();
   }
 });
+
+function actionableOrder(orderId: string) {
+  return {
+    orderId,
+    status: "PAID",
+    total: { amount: 1_000_000, currency: "IRR" },
+    paidAt: "2026-08-30T08:00:00.000Z",
+    createdAt: "2026-08-30T07:55:00.000Z",
+    itemCount: 1,
+  };
+}
+
+function fulfillmentTimeline(orderId: string, status: "ACTION_REQUIRED" | "PREPARING") {
+  return {
+    orderId,
+    status,
+    nextStatus: status === "PREPARING" ? "SHIPPED" : "PREPARING",
+    timeline: [
+      {
+        status,
+        actor: { type: "SYSTEM" },
+        occurredAt: "2026-08-30T08:00:00.000Z",
+        correlationId: randomUUID(),
+      },
+    ],
+  };
+}

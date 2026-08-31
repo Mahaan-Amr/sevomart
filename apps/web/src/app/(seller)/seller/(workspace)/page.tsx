@@ -3,15 +3,19 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { readNearestSellerConversation } from "../../../../lib/seller-conversation-api";
-import { readSellerOperationalSummary } from "../../../../lib/seller-reporting-api";
+import {
+  readSellerOperationalSummary,
+  readSellerOutOfStockCount,
+} from "../../../../lib/seller-reporting-api";
 import styles from "./workspace-page.module.css";
 
 export default async function SellerHomePage() {
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
-  const [summary, actionableConversation] = await Promise.all([
+  const [summary, actionableConversation, outOfStock] = await Promise.all([
     readSellerOperationalSummary(cookieHeader),
     readNearestSellerConversation(cookieHeader),
+    readSellerOutOfStockCount(cookieHeader),
   ]);
   const tasks =
     summary.kind === "OK" ? summary.data.tasks.filter(({ count }) => count > 0) : [];
@@ -19,6 +23,8 @@ export default async function SellerHomePage() {
     actionableConversation.kind === "ACTIONABLE"
       ? `/seller/conversations/${actionableConversation.conversation.conversationId}`
       : undefined;
+  const outOfStockCount = outOfStock.kind === "OK" ? outOfStock.data : 0;
+  const hasOutOfStock = outOfStockCount > 0;
   return (
     <main className={styles.page}>
       <section className={styles.workspace} aria-labelledby="seller-home-title">
@@ -29,16 +35,29 @@ export default async function SellerHomePage() {
           می‌آید.
         </p>
         <div className={styles.nextAction}>
-          {summary.kind === "UNAVAILABLE" && !conversationHref ? (
+          {summary.kind === "UNAVAILABLE" && !conversationHref && !hasOutOfStock ? (
             <>
               <h2>کارهای نزدیک دریافت نشد</h2>
               <p>کمی بعد صفحه را دوباره بررسی کنید.</p>
             </>
-          ) : tasks.length > 0 || conversationHref ? (
+          ) : tasks.length > 0 || conversationHref || hasOutOfStock ? (
             <ul className={styles.taskList}>
               {tasks.map((task) => (
                 <OperationalTask key={task.kind} task={task} />
               ))}
+              {hasOutOfStock ? (
+                <li>
+                  <div>
+                    <h2>
+                      {outOfStockCount.toLocaleString("fa-IR")} گونه کالا موجودی ندارد
+                    </h2>
+                    <p>موجودی واقعی را بررسی و شمارش تازه را ثبت کنید.</p>
+                  </div>
+                  <Link className={styles.secondary} href="/seller/inventory">
+                    رسیدگی به موجودی
+                  </Link>
+                </li>
+              ) : null}
               {conversationHref ? (
                 <li>
                   <div>
@@ -62,14 +81,8 @@ export default async function SellerHomePage() {
           )}
         </div>
         <nav className={styles.relatedActions} aria-label="کارهای مرتبط">
-          <Link className={styles.secondary} href="/seller/inventory">
-            بررسی موجودی
-          </Link>
           <Link className={styles.secondary} href="/seller/conversations">
             دیدن همه گفت‌وگوها
-          </Link>
-          <Link className={styles.secondary} href="/seller/disputes">
-            دیدن همه پرونده‌های اختلاف
           </Link>
           <Link className={styles.secondary} href="/seller/reports">
             دیدن گزارش فروش

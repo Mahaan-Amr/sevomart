@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
 import { readSellerBasicReport } from "../../../../../lib/seller-reporting-api";
+import workspaceStyles from "../workspace-page.module.css";
 import styles from "./seller-reports.module.css";
 
 export default async function SellerReportsPage() {
@@ -10,9 +11,12 @@ export default async function SellerReportsPage() {
   const report = await readSellerBasicReport(cookieStore.toString());
 
   return (
-    <main className={styles.page}>
-      <section className={styles.report} aria-labelledby="seller-report-title">
-        <span className={styles.eyebrow}>عملکرد خصوصی فروشگاه</span>
+    <main className={workspaceStyles.page}>
+      <section
+        className={workspaceStyles.workspace}
+        aria-labelledby="seller-report-title"
+      >
+        <span className={workspaceStyles.eyebrow}>عملکرد خصوصی فروشگاه</span>
         <h1 id="seller-report-title">گزارش فروش</h1>
         {report.kind === "UNAVAILABLE" ? (
           <div className={styles.status}>
@@ -55,7 +59,7 @@ export default async function SellerReportsPage() {
             )}
           </>
         )}
-        <Link className={styles.back} href="/seller">
+        <Link className={workspaceStyles.secondary} href="/seller">
           بازگشت به کارهای نزدیک
         </Link>
       </section>
