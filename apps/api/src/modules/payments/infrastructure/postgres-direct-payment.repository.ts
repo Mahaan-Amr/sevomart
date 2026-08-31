@@ -9,6 +9,7 @@ import {
   directPaymentAttemptContract,
   type DirectPaymentAttemptStatus,
   type PaymentAttemptAuditReasonCode,
+  paymentReviewDetailContract,
   paymentReviewItemContract,
 } from "@sevo/contracts/payments/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
@@ -16,6 +17,10 @@ import { paymentAttemptIdContract } from "@sevo/contracts/platform/v1";
 import postgres, { type Sql } from "postgres";
 
 import { eventCorrelationId } from "../../../event-correlation-id";
+import type {
+  OpaquePlatformAccessTransactionContext,
+  PlatformSensitiveAccess,
+} from "../../identity-access/public";
 import type {
   InventoryAuthoring,
   InventoryTransactionContext,
@@ -30,6 +35,8 @@ import {
   DirectPaymentAttemptNotFoundError,
   DirectPaymentIdempotencyConflictError,
   DirectPaymentOrderNotPayableError,
+  PaymentReconciliationNotAvailableError,
+  PaymentReviewNotFoundError,
   type DirectPaymentRepository,
 } from "../public";
 
@@ -54,6 +61,10 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     private readonly inventory: InventoryAuthoring,
     private readonly orders: OrderPaymentWorkflow,
     private readonly providerKey: string,
+    private readonly sensitiveAccess?: PlatformSensitiveAccess,
+    private readonly createAccessTransactionContext?: (
+      transaction: Sql,
+    ) => OpaquePlatformAccessTransactionContext,
   ) {
     this.#sql = postgres(databaseUrl, { max: 5 });
   }
@@ -824,13 +835,20 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
   }
 
   async listReviewRequired() {
-    const attempts = await this.#sql<AttemptRow[]>`
+    const attempts = await this.#sql<
+      Array<AttemptRow & { reviewStartedAt: Date; needsFollowUp: boolean }>
+    >`
       select attempt.id as "attemptId", attempt.order_id as "orderId",
         attempt.status, attempt.amount::int as amount, attempt.provider,
         attempt.provider_reference as "providerReference",
         attempt.redirect_url as "redirectUrl", attempt.created_at as "createdAt",
         attempt.confirmed_at as "confirmedAt",
-        attempt.dispatch_lease_until as "dispatchLeaseUntil"
+        attempt.dispatch_lease_until as "dispatchLeaseUntil",
+        coalesce(attempt.review_started_at, attempt.created_at) as "reviewStartedAt",
+        exists (
+          select 1 from payment_operational_alerts follow_up
+          where follow_up.attempt_id = attempt.id and follow_up.status = 'OPEN'
+        ) as "needsFollowUp"
       from payment_attempts attempt
       where attempt.status = 'REVIEW_REQUIRED'
         or exists (
@@ -872,25 +890,132 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           order by created_at, id
         `;
         return paymentReviewItemContract.parse({
-          attempt: mapAttempt(attempt),
-          reviewKind: audits.some((audit) => audit.reasonCode === "PAID_STOCK_CONFLICT")
-            ? ("PAID_STOCK_CONFLICT" as const)
-            : alerts.some((alert) =>
-                  [
-                    "PROVIDER_AMOUNT_MISMATCH",
-                    "PROVIDER_RESULT_CONTRADICTION",
-                  ].includes(alert.kind),
-                )
-              ? ("PROVIDER_CONFLICT" as const)
-              : ("RESULT_AMBIGUOUS" as const),
-          alertKinds: alerts.map((alert) => alert.kind),
-          audits: audits.map((audit) => ({
-            ...audit,
-            occurredAt: audit.occurredAt.toISOString(),
-          })),
+          reviewId: attempt.attemptId,
+          reviewKind: paymentReviewKind(audits, alerts),
+          amount: { amount: attempt.amount, currency: "IRR" },
+          provider: attempt.provider,
+          openedAt: attempt.reviewStartedAt.toISOString(),
+          needsFollowUp: attempt.needsFollowUp,
         });
       }),
     );
+  }
+
+  async revealReview(command: Parameters<DirectPaymentRepository["revealReview"]>[0]) {
+    if (!this.sensitiveAccess || !this.createAccessTransactionContext) {
+      throw new Error("Payment review sensitive access is not configured");
+    }
+    return this.#sql.begin(async (sql) => {
+      const authorization = await this.sensitiveAccess!.authorizeSensitiveAction(
+        this.createAccessTransactionContext!(sql),
+        {
+          grantId: command.grantId,
+          actorIdentityId: command.actorIdentityId,
+          responsibility: "PAYMENT_REVIEW",
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: command.reviewId,
+          action: "REVEAL_MINIMUM",
+          reason: command.reason,
+          correlationId: command.correlationId,
+        },
+      );
+      const attempts = await sql<
+        Array<
+          AttemptRow & {
+            reconciliationCount: number;
+            nextReconciliationAt: Date | null;
+          }
+        >
+      >`
+        select attempt.id as "attemptId", attempt.order_id as "orderId",
+          attempt.status, attempt.amount::int as amount, attempt.provider,
+          attempt.provider_reference as "providerReference",
+          attempt.redirect_url as "redirectUrl", attempt.created_at as "createdAt",
+          attempt.confirmed_at as "confirmedAt",
+          attempt.dispatch_lease_until as "dispatchLeaseUntil",
+          attempt.reconciliation_count as "reconciliationCount",
+          attempt.next_reconciliation_at as "nextReconciliationAt"
+        from payment_attempts attempt
+        where attempt.id = ${command.reviewId}
+          and (
+            attempt.status = 'REVIEW_REQUIRED'
+            or exists (
+              select 1 from payment_operational_alerts alert
+              where alert.attempt_id = attempt.id and alert.status = 'OPEN'
+            )
+          )
+        for share
+      `;
+      const attempt = attempts[0];
+      if (!attempt) throw new PaymentReviewNotFoundError();
+      const audits = await readPaymentReviewAudits(sql, attempt.attemptId);
+      const alerts = await readPaymentReviewAlerts(sql, attempt.attemptId);
+      const observations = await sql<
+        Array<{
+          providerEventId: string;
+          providerReference: string;
+          result: "CONFIRMED" | "FAILED" | "PENDING";
+          observedAt: Date;
+        }>
+      >`
+        select provider_event_id as "providerEventId",
+          provider_reference as "providerReference", result,
+          observed_at as "observedAt"
+        from payment_provider_observations
+        where attempt_id = ${attempt.attemptId}
+        order by observed_at, provider_event_id
+      `;
+      return paymentReviewDetailContract.parse({
+        reviewId: attempt.attemptId,
+        orderId: attempt.orderId,
+        status: attempt.status,
+        amount: { amount: attempt.amount, currency: "IRR" },
+        provider: attempt.provider,
+        ...(attempt.providerReference
+          ? { providerReference: attempt.providerReference }
+          : {}),
+        reviewKind: paymentReviewKind(audits, alerts),
+        alertKinds: alerts.map((alert) => alert.kind),
+        observations: observations.map((observation) => ({
+          ...observation,
+          observedAt: observation.observedAt.toISOString(),
+        })),
+        audits: audits.map(({ fromStatus, toStatus, reasonCode, occurredAt }) => ({
+          fromStatus,
+          toStatus,
+          reasonCode,
+          occurredAt: occurredAt.toISOString(),
+        })),
+        reconciliationCount: attempt.reconciliationCount,
+        ...(attempt.nextReconciliationAt
+          ? { nextReconciliationAt: attempt.nextReconciliationAt.toISOString() }
+          : {}),
+        revealedAt: authorization.accessedAt,
+        accessExpiresAt: authorization.expiresAt,
+      });
+    });
+  }
+
+  async requestReconciliation(
+    command: Parameters<DirectPaymentRepository["requestReconciliation"]>[0],
+  ) {
+    return this.#sql.begin(async (sql) => {
+      const rows = await sql<Array<{ requestedAt: Date }>>`
+        update payment_attempts
+        set next_reconciliation_at = least(
+          coalesce(next_reconciliation_at, clock_timestamp()),
+          clock_timestamp()
+        )
+        where id = ${command.reviewId} and status = 'REVIEW_REQUIRED'
+        returning clock_timestamp() as "requestedAt"
+      `;
+      const result = rows[0];
+      if (!result) throw new PaymentReconciliationNotAvailableError();
+      return {
+        reviewId: command.reviewId,
+        requestedAt: result.requestedAt.toISOString(),
+      };
+    });
   }
 
   async #protectFailedAttemptFromContradictoryResult(
@@ -977,6 +1102,60 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
   async onModuleDestroy() {
     await this.#sql.end();
   }
+}
+
+type PaymentReviewAuditRow = {
+  fromStatus: string | null;
+  toStatus: string;
+  reasonCode: string;
+  correlationId: string;
+  occurredAt: Date;
+};
+
+type PaymentReviewAlertRow = {
+  kind:
+    | "RECONCILIATION_OVERDUE"
+    | "PAID_STOCK_CONFLICT"
+    | "PROVIDER_AMOUNT_MISMATCH"
+    | "PROVIDER_RESULT_CONTRADICTION";
+};
+
+function readPaymentReviewAudits(sql: Sql, attemptId: string) {
+  return sql<PaymentReviewAuditRow[]>`
+    select from_status as "fromStatus", to_status as "toStatus",
+      reason_code as "reasonCode", correlation_id as "correlationId",
+      occurred_at as "occurredAt"
+    from payment_attempt_audits
+    where attempt_id = ${attemptId}
+    order by occurred_at, id
+  `;
+}
+
+function readPaymentReviewAlerts(sql: Sql, attemptId: string) {
+  return sql<PaymentReviewAlertRow[]>`
+    select kind from payment_operational_alerts
+    where attempt_id = ${attemptId} and status = 'OPEN'
+    order by created_at, id
+  `;
+}
+
+function paymentReviewKind(
+  audits: readonly Pick<PaymentReviewAuditRow, "reasonCode">[],
+  alerts: readonly PaymentReviewAlertRow[],
+) {
+  if (audits.some((audit) => audit.reasonCode === "PAID_STOCK_CONFLICT")) {
+    return "PAID_STOCK_CONFLICT" as const;
+  }
+  if (
+    alerts.some((alert) =>
+      ["PROVIDER_AMOUNT_MISMATCH", "PROVIDER_RESULT_CONTRADICTION"].includes(
+        alert.kind,
+      ),
+    )
+  ) {
+    return "PROVIDER_CONFLICT" as const;
+  }
+  return "RESULT_AMBIGUOUS" as const;
 }
 
 async function insertAttemptAudit(

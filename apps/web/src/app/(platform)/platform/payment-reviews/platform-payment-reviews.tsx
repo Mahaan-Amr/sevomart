@@ -5,6 +5,7 @@ import {
   type PaymentReviewItem,
 } from "@sevo/contracts/payments/v1";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import styles from "./platform-payment-reviews.module.css";
@@ -58,7 +59,7 @@ export function PlatformPaymentReviews() {
         ) : null}
         <ul className={styles.queue}>
           {items.map((item) => (
-            <li key={item.attempt.attemptId}>
+            <li key={item.reviewId}>
               <div className={styles.summary}>
                 <div>
                   <strong>
@@ -68,26 +69,18 @@ export function PlatformPaymentReviews() {
                         ? "نتیجه درگاه با سابقه پرداخت سازگار نیست"
                         : "نتیجه پرداخت در حال بررسی است"}
                   </strong>
-                  <span>سفارش {item.attempt.orderId}</span>
+                  <span>
+                    {item.provider} · ثبت در {formatDate(item.openedAt)}
+                  </span>
                 </div>
-                <span>{formatIrrAsToman(item.attempt.amount.amount)}</span>
+                <span>{formatIrrAsToman(item.amount.amount)}</span>
               </div>
-              {item.alertKinds.length > 0 ? (
+              {item.needsFollowUp ? (
                 <p role="status">این مورد نیازمند پیگیری عملیاتی است.</p>
               ) : null}
-              <dl>
-                {item.audits.map((audit, index) => (
-                  <div key={`${audit.occurredAt}-${index}`}>
-                    <dt>{reasonLabel(audit.reasonCode)}</dt>
-                    <dd>
-                      {new Intl.DateTimeFormat("fa-IR", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      }).format(new Date(audit.occurredAt))}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+              <Link href={`/platform/payment-reviews/${item.reviewId}`}>
+                بازکردن پرونده
+              </Link>
             </li>
           ))}
         </ul>
@@ -96,24 +89,9 @@ export function PlatformPaymentReviews() {
   );
 }
 
-function reasonLabel(reasonCode: PaymentReviewItem["audits"][number]["reasonCode"]) {
-  const labels: Record<PaymentReviewItem["audits"][number]["reasonCode"], string> = {
-    PAYMENT_ATTEMPT_CREATED: "تلاش پرداخت ساخته شد",
-    PROVIDER_DISPATCH_CLAIMED: "ارسال به درگاه ثبت شد",
-    PROVIDER_RESULT_PENDING: "درگاه نتیجه قطعی نداد",
-    DISPATCH_LEASE_EXPIRED: "نتیجه ارسال در مهلت نرسید",
-    PROVIDER_INITIATION_OUTCOME_UNKNOWN: "نتیجه شروع پرداخت نامشخص ماند",
-    PROVIDER_AMOUNT_MISMATCH: "مبلغ نتیجه درگاه با سفارش سازگار نبود",
-    PAID_STOCK_CONFLICT: "پرداخت ثبت شد؛ موجودی نیازمند بررسی است",
-    DISPATCH_NOT_STARTED_BEFORE_LEASE_EXPIRY: "ارسال به درگاه آغاز نشد",
-    PROVIDER_FAILED: "درگاه پرداخت را ناموفق اعلام کرد",
-    PROVIDER_CONFIRMED: "درگاه پرداخت را تأیید کرد",
-    DUPLICATE_PROVIDER_EVENT_AMOUNT_MISMATCH: "مبلغ نتیجه تکراری با سفارش سازگار نبود",
-    DUPLICATE_PROVIDER_EVENT_RESULT_CONFLICT:
-      "نتیجه تکراری درگاه با ثبت پیشین سازگار نبود",
-    PROVIDER_RESULT_CONTRADICTS_CONFIRMED: "نتیجه تازه با تأیید قطعی پیشین سازگار نبود",
-    PROVIDER_RESULT_CONTRADICTS_FAILED: "نتیجه تازه با شکست قطعی پیشین سازگار نبود",
-    PROVIDER_REFERENCE_RECOVERED: "شناسه درگاه برای ادامه تطبیق بازیابی شد",
-  };
-  return labels[reasonCode];
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

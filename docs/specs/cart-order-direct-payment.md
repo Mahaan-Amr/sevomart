@@ -458,6 +458,21 @@ OpenAPI نمی‌شوند؛ ثبت path بدون runtime مجاز نیست.
   عمومی؛
 - `/v1/platform/payment-reviews` برای صف محدود بررسی عملیاتی عامل دارای مجوز.
 
+صف بررسی پرداخت فقط شناسه پرونده، نوع بررسی، مبلغ، Provider، زمان ورود به صف و
+وجود نیاز به پیگیری را برمی‌گرداند؛ شناسه سفارش، reference و رویدادهای Provider و
+تاریخچه تطبیق در صف نمایش داده نمی‌شوند. آشکارسازی کمینه جزئیات از
+`/v1/platform/payment-reviews/{reviewId}/reveal` به اقدام صریح، دلیل انسانی و
+اجازه دسترسی حساس فعال با scope همان `reviewId` و action برابر
+`REVEAL_MINIMUM` نیاز دارد. مجوز مسئولیت و اجازه زمان‌دار در همان transaction
+خواندن دوباره بررسی و مشاهده در audit دسترسی ثبت می‌شوند؛ لغو یا انقضا fail-closed
+است.
+
+عامل می‌تواند از
+`/v1/platform/payment-reviews/{reviewId}/reconciliation` فقط تطبیق دوباره همان
+تلاش `REVIEW_REQUIRED` را زودتر در صف worker قرار دهد. این operation نتیجه مالی
+نمی‌گیرد و موفق یا ناموفق‌کردن دستی ارائه نمی‌کند؛ گذار فقط پس از نتیجه معتبر
+Provider در مسیر موجود نهایی‌سازی انجام می‌شود.
+
 `paymentsV1Operations` مرجع اجرایی operationId، method و path این routeهاست و
 fragment OpenAPI مستقیماً از همان مرجع ساخته می‌شود.
 

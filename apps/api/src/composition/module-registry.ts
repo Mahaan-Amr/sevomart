@@ -20,6 +20,7 @@ import {
 import {
   createOpaquePlatformAccessTransactionContext,
   IdentityAccessModule,
+  createOpaquePlatformAccessTransactionContext,
   PostgresPlatformAgentSessionAuthorizer,
   type IdentityAccessModuleOptions,
 } from "../modules/identity-access/composition";
@@ -228,6 +229,8 @@ export const canonicalApiModuleRegistry: readonly {
         orders: checkoutRepository,
         platformAgentSessions:
           identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        createPlatformAccessTransactionContext:
+          createOpaquePlatformAccessTransactionContext,
         fulfillment: fulfillmentRepository,
         resolveSellerStore: async (identityId) =>
           (await storeRepository.findBySellerId(identityId))?.id,

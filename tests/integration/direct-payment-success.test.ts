@@ -606,14 +606,9 @@ describe("successful direct payment transaction seam", () => {
     ).toEqual([{ count: 1 }]);
     expect(await service.listReviewRequired()).toMatchObject([
       {
-        attempt: { attemptId: attempt.attemptId, status: "REVIEW_REQUIRED" },
+        reviewId: attempt.attemptId,
         reviewKind: "RESULT_AMBIGUOUS",
-        alertKinds: [],
-        audits: [
-          { toStatus: "CREATED", reasonCode: "PAYMENT_ATTEMPT_CREATED" },
-          { toStatus: "DISPATCHED", reasonCode: "PROVIDER_DISPATCH_CLAIMED" },
-          { toStatus: "REVIEW_REQUIRED", reasonCode: "PROVIDER_RESULT_PENDING" },
-        ],
+        needsFollowUp: false,
       },
     ]);
 
@@ -722,9 +717,9 @@ describe("successful direct payment transaction seam", () => {
     ).toEqual([{ kind: "PAID_STOCK_CONFLICT", status: "OPEN" }]);
     expect(await service.listReviewRequired()).toMatchObject([
       {
-        attempt: { attemptId: attempt.attemptId, status: "CONFIRMED" },
+        reviewId: attempt.attemptId,
         reviewKind: "PAID_STOCK_CONFLICT",
-        alertKinds: ["PAID_STOCK_CONFLICT"],
+        needsFollowUp: true,
       },
     ]);
   });
@@ -791,9 +786,9 @@ describe("successful direct payment transaction seam", () => {
     ).toEqual([{ kind: "PROVIDER_AMOUNT_MISMATCH", status: "OPEN" }]);
     expect(await service.listReviewRequired()).toMatchObject([
       {
-        attempt: { attemptId: attempt.attemptId, status: "CONFIRMED" },
+        reviewId: attempt.attemptId,
         reviewKind: "PROVIDER_CONFLICT",
-        alertKinds: ["PROVIDER_AMOUNT_MISMATCH"],
+        needsFollowUp: true,
       },
     ]);
   });
@@ -838,9 +833,9 @@ describe("successful direct payment transaction seam", () => {
     ).toEqual([{ kind: "PROVIDER_RESULT_CONTRADICTION", status: "OPEN" }]);
     expect(await service.listReviewRequired()).toMatchObject([
       {
-        attempt: { status: "FAILED" },
+        reviewId: attempt.attemptId,
         reviewKind: "PROVIDER_CONFLICT",
-        alertKinds: ["PROVIDER_RESULT_CONTRADICTION"],
+        needsFollowUp: true,
       },
     ]);
     await expect(
@@ -928,7 +923,7 @@ describe("successful direct payment transaction seam", () => {
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "RECONCILIATION_OVERDUE", status: "OPEN" }]);
     expect(await service.listReviewRequired()).toMatchObject([
-      { alertKinds: ["RECONCILIATION_OVERDUE"] },
+      { reviewId: attempt.attemptId, needsFollowUp: true },
     ]);
   });
 });

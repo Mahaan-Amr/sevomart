@@ -87,6 +87,50 @@ const operations = [
     ],
   },
   {
+    ...paymentsV1Operations.revealPlatformPaymentReview,
+    tag: "payments",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "reviewId",
+      schema: "PaymentAttemptId",
+      example: paymentsV1Examples.DirectPaymentAttempt.attemptId,
+    },
+    request: {
+      schema: "PaymentReviewRevealInput",
+      example: paymentsV1Examples.PaymentReviewRevealInput,
+    },
+    responses: [
+      { status: 200, schema: "PaymentReviewDetail" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "PaymentReviewError" },
+      { status: 404, schema: "PaymentReviewError" },
+      { status: 422, schema: "PaymentReviewError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...paymentsV1Operations.requestPlatformPaymentReconciliation,
+    tag: "payments",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "reviewId",
+      schema: "PaymentAttemptId",
+      example: paymentsV1Examples.DirectPaymentAttempt.attemptId,
+    },
+    request: {
+      schema: "PaymentReconciliationRequestInput",
+      example: paymentsV1Examples.PaymentReconciliationRequestInput,
+    },
+    responses: [
+      { status: 202, schema: "PaymentReconciliationRequest" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "PaymentReviewError" },
+      { status: 409, schema: "PaymentReviewError" },
+      { status: 422, schema: "PaymentReviewError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...paymentsV1Operations.requestDirectRefund,
     tag: "payments",
     auth: "identity-session",
@@ -177,6 +221,7 @@ export const contribute_payments_openApi: OpenApiContributor = (document) =>
       descriptions: {
         200: "Payment state returned",
         201: "Payment attempt dispatched",
+        202: "Provider reconciliation requested",
         401: "Identity session is missing or invalid",
         403: "Required seller or platform permission is missing",
         404: "Payment attempt or direct refund is unavailable",

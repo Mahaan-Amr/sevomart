@@ -31,6 +31,16 @@ export const paymentsV1Operations = {
     method: "get",
     path: "/v1/platform/payment-reviews",
   },
+  revealPlatformPaymentReview: {
+    operationId: "revealPlatformPaymentReview",
+    method: "post",
+    path: "/v1/platform/payment-reviews/{reviewId}/reveal",
+  },
+  requestPlatformPaymentReconciliation: {
+    operationId: "requestPlatformPaymentReconciliation",
+    method: "post",
+    path: "/v1/platform/payment-reviews/{reviewId}/reconciliation",
+  },
   requestDirectRefund: {
     operationId: "requestDirectRefund",
     method: "post",
@@ -191,7 +201,14 @@ export const directPaymentErrorContract = z
 
 export const paymentReviewErrorContract = z
   .object({
-    code: z.literal("PLATFORM_PERMISSION_REQUIRED"),
+    code: z.enum([
+      "PLATFORM_PERMISSION_REQUIRED",
+      "RESPONSIBILITY_REQUIRED",
+      "SENSITIVE_SCOPE_REQUIRED",
+      "REVIEW_NOT_FOUND",
+      "RECONCILIATION_NOT_AVAILABLE",
+      "VALIDATION_ERROR",
+    ]),
     message: z.string().min(1),
     correlationId: z.string().min(1),
   })
@@ -271,32 +288,81 @@ export const paymentAttemptAuditContract = z
 const paymentAttemptAuditSummaryContract = paymentAttemptAuditContract.omit({
   attemptId: true,
   actorKind: true,
+  correlationId: true,
 });
+
+export const paymentReviewKindContract = z.enum([
+  "RESULT_AMBIGUOUS",
+  "PAID_STOCK_CONFLICT",
+  "PROVIDER_CONFLICT",
+]);
+
+export const paymentReviewAlertKindContract = z.enum([
+  "RECONCILIATION_OVERDUE",
+  "PAID_STOCK_CONFLICT",
+  "PROVIDER_AMOUNT_MISMATCH",
+  "PROVIDER_RESULT_CONTRADICTION",
+]);
 
 export const paymentReviewItemContract = z
   .object({
-    attempt: directPaymentAttemptContract,
-    reviewKind: z.enum([
-      "RESULT_AMBIGUOUS",
-      "PAID_STOCK_CONFLICT",
-      "PROVIDER_CONFLICT",
-    ]),
-    alertKinds: z
-      .array(
-        z.enum([
-          "RECONCILIATION_OVERDUE",
-          "PAID_STOCK_CONFLICT",
-          "PROVIDER_AMOUNT_MISMATCH",
-          "PROVIDER_RESULT_CONTRADICTION",
-        ]),
-      )
-      .readonly(),
-    audits: z.array(paymentAttemptAuditSummaryContract).readonly(),
+    reviewId: paymentAttemptIdContract,
+    reviewKind: paymentReviewKindContract,
+    amount: moneyV1Contract,
+    provider: z.string().min(1).max(24),
+    openedAt: z.iso.datetime({ offset: true }),
+    needsFollowUp: z.boolean(),
   })
   .strict();
 
 export const paymentReviewQueueContract = z
   .object({ items: z.array(paymentReviewItemContract).readonly() })
+  .strict();
+
+export const paymentReviewRevealInputContract = z
+  .object({
+    grantId: z.uuid(),
+    reason: z.string().trim().min(8).max(500),
+  })
+  .strict();
+
+export const paymentReconciliationRequestInputContract = z
+  .object({ reason: z.string().trim().min(8).max(500) })
+  .strict();
+
+export const paymentProviderObservationContract = z
+  .object({
+    providerEventId: z.string().min(1).max(128),
+    providerReference: z.string().min(1).max(128),
+    result: z.enum(["CONFIRMED", "FAILED", "PENDING"]),
+    observedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const paymentReviewDetailContract = z
+  .object({
+    reviewId: paymentAttemptIdContract,
+    orderId: orderIdContract,
+    status: directPaymentAttemptStatusContract,
+    amount: moneyV1Contract,
+    provider: z.string().min(1).max(24),
+    providerReference: z.string().min(1).max(128).optional(),
+    reviewKind: paymentReviewKindContract,
+    alertKinds: z.array(paymentReviewAlertKindContract).readonly(),
+    observations: z.array(paymentProviderObservationContract).readonly(),
+    audits: z.array(paymentAttemptAuditSummaryContract).readonly(),
+    reconciliationCount: z.int().nonnegative(),
+    nextReconciliationAt: z.iso.datetime({ offset: true }).optional(),
+    revealedAt: z.iso.datetime({ offset: true }).optional(),
+    accessExpiresAt: z.iso.datetime({ offset: true }).optional(),
+  })
+  .strict();
+
+export const paymentReconciliationRequestContract = z
+  .object({
+    reviewId: paymentAttemptIdContract,
+    requestedAt: z.iso.datetime({ offset: true }),
+  })
   .strict();
 
 export const paymentsV1Schemas = {
@@ -318,6 +384,10 @@ export const paymentsV1Schemas = {
   ProviderCallbackInput: providerCallbackInputContract,
   ProviderCallbackResult: providerCallbackResultContract,
   PaymentReviewQueue: paymentReviewQueueContract,
+  PaymentReviewRevealInput: paymentReviewRevealInputContract,
+  PaymentReviewDetail: paymentReviewDetailContract,
+  PaymentReconciliationRequestInput: paymentReconciliationRequestInputContract,
+  PaymentReconciliationRequest: paymentReconciliationRequestContract,
   PaymentReviewError: paymentReviewErrorContract,
   DirectPaymentError: directPaymentErrorContract,
   DirectPaymentAttemptStatus: directPaymentAttemptStatusContract,
@@ -395,6 +465,13 @@ export const paymentsV1Examples = {
     message: "مجوز بررسی عملیاتی برای این نشست فعال نیست.",
     correlationId: "01J5H8CZHJ2QX0M5MEQ7M6H1P4",
   },
+  PaymentReviewRevealInput: {
+    grantId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+    reason: "بررسی مدرک درگاه برای این پرونده پرداخت",
+  },
+  PaymentReconciliationRequestInput: {
+    reason: "درخواست تطبیق دوباره نتیجه درگاه",
+  },
 } as const;
 
 export type DirectPaymentAttempt = z.infer<typeof directPaymentAttemptContract>;
@@ -417,3 +494,5 @@ export type ProviderCallbackInput = z.infer<typeof providerCallbackInputContract
 export type ProviderCallbackResult = z.infer<typeof providerCallbackResultContract>;
 export type PaymentReviewItem = z.infer<typeof paymentReviewItemContract>;
 export type PaymentReviewQueue = z.infer<typeof paymentReviewQueueContract>;
+export type PaymentReviewRevealInput = z.infer<typeof paymentReviewRevealInputContract>;
+export type PaymentReviewDetail = z.infer<typeof paymentReviewDetailContract>;

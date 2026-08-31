@@ -18,6 +18,10 @@ import { ApiExcludeController } from "@nestjs/swagger";
 import {
   providerCallbackResultContract,
   paymentIdempotencyKeyContract,
+  paymentReconciliationRequestContract,
+  paymentReconciliationRequestInputContract,
+  paymentReviewDetailContract,
+  paymentReviewRevealInputContract,
   paymentReviewQueueContract,
 } from "@sevo/contracts/payments/v1";
 import type { RuntimeEnvironment } from "@sevo/config";
@@ -39,6 +43,7 @@ import {
   type IdentitySessionReader,
   PlatformAgentSessionUnauthorizedError,
   PlatformPermissionRequiredError,
+  PlatformAccessError,
   type PlatformAgentSessionAuthorizer,
 } from "../identity-access/public";
 import { DevDirectPaymentProvider } from "./testing/dev-direct-payment-provider";
@@ -63,6 +68,8 @@ import {
   DirectPaymentOrderNotPayableError,
   InvalidProviderCallbackError,
   DirectRefundFault,
+  PaymentReconciliationNotAvailableError,
+  PaymentReviewNotFoundError,
 } from "./public";
 
 @ApiExcludeController()
@@ -296,6 +303,137 @@ export class PlatformPaymentReviewController {
       throw error;
     }
   }
+
+  @Post(":reviewId/reveal")
+  @HttpCode(HttpStatus.OK)
+  async reveal(
+    @Param("reviewId") rawReviewId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
+    const input = paymentReviewRevealInputContract.safeParse(body);
+    if (!reviewId.success || !input.success) {
+      throw paymentReviewHttpError(
+        "VALIDATION_ERROR",
+        "شناسه پرونده، اجازه دسترسی و دلیل بررسی را کامل کنید.",
+        request.id,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const actor = await this.authorize(request);
+    try {
+      return paymentReviewDetailContract.parse(
+        await this.payments.revealReview({
+          reviewId: reviewId.data,
+          actorIdentityId: actor.identityId,
+          grantId: input.data.grantId,
+          reason: input.data.reason,
+          correlationId: request.id,
+        }),
+      );
+    } catch (error) {
+      this.handleReviewError(error, request.id);
+    }
+  }
+
+  @Post(":reviewId/reconciliation")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async reconcile(
+    @Param("reviewId") rawReviewId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
+    const input = paymentReconciliationRequestInputContract.safeParse(body);
+    if (!reviewId.success || !input.success) {
+      throw paymentReviewHttpError(
+        "VALIDATION_ERROR",
+        "شناسه پرونده و دلیل تطبیق دوباره را کامل کنید.",
+        request.id,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const actor = await this.authorize(request);
+    try {
+      return paymentReconciliationRequestContract.parse(
+        await this.payments.requestReconciliation({
+          reviewId: reviewId.data,
+          actorIdentityId: actor.identityId,
+          reason: input.data.reason,
+          correlationId: request.id,
+        }),
+      );
+    } catch (error) {
+      this.handleReviewError(error, request.id);
+    }
+  }
+
+  private async authorize(request: FastifyRequest) {
+    try {
+      return await this.sessions.authorizePaymentReview(
+        readPlatformSessionToken(request) ?? "",
+      );
+    } catch (error) {
+      this.handleReviewError(error, request.id);
+    }
+  }
+
+  private handleReviewError(error: unknown, correlationId: string): never {
+    if (error instanceof PlatformAgentSessionUnauthorizedError) {
+      throw paymentReviewHttpError(
+        "PLATFORM_PERMISSION_REQUIRED",
+        "برای ادامه با نشست عامل پلتفرم وارد شوید.",
+        correlationId,
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    if (error instanceof PlatformPermissionRequiredError) {
+      throw paymentReviewHttpError(
+        "PLATFORM_PERMISSION_REQUIRED",
+        "مجوز بررسی پرداخت برای این نشست فعال نیست.",
+        correlationId,
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (error instanceof PlatformAccessError) {
+      const responsibilityMissing = error.code === "RESPONSIBILITY_REQUIRED";
+      throw paymentReviewHttpError(
+        responsibilityMissing ? "RESPONSIBILITY_REQUIRED" : "SENSITIVE_SCOPE_REQUIRED",
+        responsibilityMissing
+          ? "مسئولیت بررسی پرداخت لغو شده است."
+          : "اجازه زمان‌دار این پرونده فعال نیست یا با این پرونده سازگار نیست.",
+        correlationId,
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (error instanceof PaymentReviewNotFoundError) {
+      throw paymentReviewHttpError(
+        "REVIEW_NOT_FOUND",
+        "این پرونده دیگر در صف مجاز شما نیست.",
+        correlationId,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (error instanceof PaymentReconciliationNotAvailableError) {
+      throw paymentReviewHttpError(
+        "RECONCILIATION_NOT_AVAILABLE",
+        "این پرونده دیگر نتیجه مبهمی برای تطبیق دوباره ندارد.",
+        correlationId,
+        HttpStatus.CONFLICT,
+      );
+    }
+    throw error;
+  }
+}
+
+function paymentReviewHttpError(
+  code: string,
+  message: string,
+  correlationId: string,
+  status: HttpStatus,
+) {
+  return new HttpException({ code, message, correlationId }, status);
 }
 
 @ApiExcludeController()

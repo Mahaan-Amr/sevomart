@@ -3,6 +3,7 @@ import type {
   DirectRefund,
   RecordDirectRefundResultInput,
   RequestDirectRefundInput,
+  PaymentReviewDetail,
   PaymentReviewItem,
 } from "@sevo/contracts/payments/v1";
 import type {
@@ -161,7 +162,19 @@ export interface DirectPaymentService {
   ): Promise<DirectPaymentAttempt>;
   reconcileNext(now: Date, correlationId: string): Promise<boolean>;
   listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
+  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetail>;
+  requestReconciliation(
+    command: Omit<PaymentReviewAccessCommand, "grantId">,
+  ): Promise<{ reviewId: PaymentAttemptId; requestedAt: string }>;
 }
+
+export type PaymentReviewAccessCommand = Readonly<{
+  reviewId: PaymentAttemptId;
+  actorIdentityId: string;
+  grantId: string;
+  reason: string;
+  correlationId: string;
+}>;
 
 export type DirectPaymentReconciliation = Readonly<{
   attemptId: PaymentAttemptId;
@@ -209,6 +222,10 @@ export interface DirectPaymentRepository {
     correlationId: string,
   ): Promise<DirectPaymentReconciliation | null>;
   listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
+  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetail>;
+  requestReconciliation(
+    command: Omit<PaymentReviewAccessCommand, "grantId">,
+  ): Promise<{ reviewId: PaymentAttemptId; requestedAt: string }>;
 }
 
 export class InvalidProviderCallbackError extends Error {}
@@ -217,3 +234,5 @@ export class DirectPaymentAmountMismatchError extends Error {}
 export class DirectPaymentIdempotencyConflictError extends Error {}
 export class DirectPaymentAttemptNotFoundError extends Error {}
 export class DirectPaymentDispatchInProgressError extends Error {}
+export class PaymentReviewNotFoundError extends Error {}
+export class PaymentReconciliationNotAvailableError extends Error {}
