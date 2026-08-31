@@ -5,17 +5,28 @@ import {
   type SellerActionableOrder,
 } from "@sevo/contracts/orders/v1";
 import { fulfillmentTimelineContract } from "@sevo/contracts/fulfillment/v1";
-import { isSellerPreparationOverdue } from "@sevo/contracts/reporting-analytics/v1";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../lib/format-money";
+import { isOverdueSellerPreparation } from "../../../../lib/seller-order-actionability";
 import styles from "./seller-orders.module.css";
 
-export function SellerOrders({ filter }: { filter?: "OVERDUE_PREPARING" }) {
+export function SellerOrders({
+  overdueOnly = false,
+  overdueAfterHours,
+}: {
+  overdueOnly?: boolean;
+  overdueAfterHours?: number;
+}) {
   const [orders, setOrders] = useState<SellerActionableOrder[]>();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    if (overdueOnly && overdueAfterHours === undefined) {
+      setFailed(true);
+      setOrders([]);
+      return;
+    }
     void fetch("/api/seller/orders", { cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) {
@@ -29,7 +40,7 @@ export function SellerOrders({ filter }: { filter?: "OVERDUE_PREPARING" }) {
         const actionable = await Promise.all(
           parsed.data.orders.map(async (order) => {
             if (order.status === "CANCELLATION_PENDING_REFUND") {
-              return filter ? undefined : order;
+              return overdueOnly ? undefined : order;
             }
             const fulfillmentResponse = await fetch(
               `/api/seller/orders/${encodeURIComponent(order.orderId)}/fulfillment`,
@@ -38,7 +49,7 @@ export function SellerOrders({ filter }: { filter?: "OVERDUE_PREPARING" }) {
             // IDs come from the store-scoped actionable list. Here, 404 means the
             // fulfillment projection has not caught up with a newly paid order yet.
             if (fulfillmentResponse.status === 404) {
-              return filter ? undefined : order;
+              return overdueOnly ? undefined : order;
             }
             const fulfillment = fulfillmentTimelineContract.safeParse(
               await fulfillmentResponse.json(),
@@ -47,16 +58,11 @@ export function SellerOrders({ filter }: { filter?: "OVERDUE_PREPARING" }) {
               throw new Error("fulfillment unavailable");
             }
             if (!fulfillment.data.nextStatus) return undefined;
-            if (!filter) return order;
-            const preparingAt = fulfillment.data.timeline.findLast(
-              ({ status }) => status === "PREPARING",
-            )?.occurredAt;
-            return isSellerPreparationOverdue(
-              {
-                fulfillmentStatus: fulfillment.data.status,
-                ...(preparingAt ? { fulfillmentOccurredAt: preparingAt } : {}),
-              },
+            if (!overdueOnly) return order;
+            return isOverdueSellerPreparation(
+              fulfillment.data,
               new Date(),
+              overdueAfterHours!,
             )
               ? order
               : undefined;
@@ -65,19 +71,17 @@ export function SellerOrders({ filter }: { filter?: "OVERDUE_PREPARING" }) {
         setOrders(actionable.filter((order) => order !== undefined));
       })
       .catch(() => setFailed(true));
-  }, [filter]);
+  }, [overdueAfterHours, overdueOnly]);
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="orders-title">
         <h1 id="orders-title">
-          {filter === "OVERDUE_PREPARING"
-            ? "سفارش‌های در حال آماده‌سازی"
-            : "سفارش‌های آماده اقدام"}
+          {overdueOnly ? "سفارش‌های در حال آماده‌سازی" : "سفارش‌های آماده اقدام"}
         </h1>
         {failed ? <p role="alert">سفارش‌ها دریافت نشدند. دوباره تلاش کنید.</p> : null}
         {orders?.length === 0 ? (
           <p>
-            {filter === "OVERDUE_PREPARING"
+            {overdueOnly
               ? "فعلاً سفارشی در حال آماده‌سازی نیست."
               : "فعلاً سفارش پرداخت‌شده‌ای ندارید."}
           </p>

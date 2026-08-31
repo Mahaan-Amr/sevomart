@@ -17,6 +17,8 @@ export default async function SellerHomePage() {
   ]);
   const tasks =
     summary.kind === "OK" ? summary.data.tasks.filter(({ count }) => count > 0) : [];
+  const preparationOverdueAfterHours =
+    summary.kind === "OK" ? summary.data.preparationOverdueAfterHours : undefined;
   const conversationHref =
     actionableConversation.kind === "ACTIONABLE"
       ? `/seller/conversations/${actionableConversation.conversation.conversationId}`
@@ -41,7 +43,11 @@ export default async function SellerHomePage() {
           ) : tasks.length > 0 || conversationHref || hasOutOfStock ? (
             <ul className={styles.taskList}>
               {tasks.map((task) => (
-                <OperationalTask key={task.kind} task={task} />
+                <OperationalTask
+                  key={task.kind}
+                  task={task}
+                  preparationOverdueAfterHours={preparationOverdueAfterHours!}
+                />
               ))}
               {hasOutOfStock ? (
                 <li>
@@ -93,7 +99,13 @@ export default async function SellerHomePage() {
 
 type SellerOperationalTask = ReturnType<typeof sellerOperationalTaskContract.parse>;
 
-function OperationalTask({ task }: { task: SellerOperationalTask }) {
+function OperationalTask({
+  task,
+  preparationOverdueAfterHours,
+}: {
+  task: SellerOperationalTask;
+  preparationOverdueAfterHours: number;
+}) {
   const copy = {
     NEW_ORDERS: {
       title: `${task.count.toLocaleString("fa-IR")} سفارش تازه آماده رسیدگی است`,
@@ -102,7 +114,7 @@ function OperationalTask({ task }: { task: SellerOperationalTask }) {
       href: "/seller/orders",
     },
     OVERDUE_PREPARATIONS: {
-      title: `${task.count.toLocaleString("fa-IR")} سفارش بیش از ۲۴ ساعت در حال آماده‌سازی است`,
+      title: `${task.count.toLocaleString("fa-IR")} سفارش بیش از ${preparationOverdueAfterHours.toLocaleString("fa-IR")} ساعت در حال آماده‌سازی است`,
       description:
         "وضعیت آماده‌سازی این سفارش‌ها را بررسی کنید؛ اگر بسته آماده است، قدم بعدی و اطلاعات ارسال را ثبت کنید تا خریدار بداند سفارش در چه مرحله‌ای است.",
       action: "بررسی آماده‌سازی‌ها",

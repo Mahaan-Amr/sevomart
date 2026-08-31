@@ -21,23 +21,6 @@ export const reportingAnalyticsV1Operations = {
   },
 } as const;
 
-export const sellerPreparationOverdueAfterHours = 24 as const;
-
-export function isSellerPreparationOverdue(
-  preparation: Readonly<{
-    fulfillmentStatus?: string;
-    fulfillmentOccurredAt?: string;
-  }>,
-  now: Date,
-) {
-  return (
-    preparation.fulfillmentStatus === "PREPARING" &&
-    preparation.fulfillmentOccurredAt !== undefined &&
-    Date.parse(preparation.fulfillmentOccurredAt) <=
-      now.getTime() - sellerPreparationOverdueAfterHours * 60 * 60 * 1_000
-  );
-}
-
 export const sellerReportRangeQueryContract = z
   .object({
     from: timestampV1Contract.optional(),
@@ -82,7 +65,7 @@ export const sellerOperationalSummaryContract = z
   .object({
     storeId: storeIdContract,
     tasks: z.array(sellerOperationalTaskContract).length(3),
-    preparationOverdueAfterHours: z.literal(sellerPreparationOverdueAfterHours),
+    preparationOverdueAfterHours: z.literal(24),
     projectionUpdatedAt: timestampV1Contract.nullable(),
   })
   .strict();
@@ -144,7 +127,7 @@ export const reportingAnalyticsV1Examples = {
         href: "/seller/conversations",
       },
     ],
-    preparationOverdueAfterHours: sellerPreparationOverdueAfterHours,
+    preparationOverdueAfterHours: 24,
     projectionUpdatedAt: "2026-08-31T12:00:00.000Z",
   },
   SellerBasicReport: {
