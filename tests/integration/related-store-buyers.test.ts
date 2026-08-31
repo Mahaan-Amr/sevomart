@@ -84,7 +84,7 @@ describe("related store buyers and contextual delivery reveal", () => {
       });
       await insertPaidOrder(unrelated, {
         storeId: randomUUID(),
-        buyerId: randomUUID(),
+        buyerId: firstBuyerId,
         recipientName: "خریدار فروشگاه دیگر",
         recipientMobile: "09901234567",
         createdAt: "2026-08-31T09:00:00.000Z",
