@@ -21,11 +21,13 @@ import { CheckoutController } from "./checkout.controller";
 import { PostgresCheckoutRepository } from "./infrastructure/postgres-checkout.repository";
 import { PostgresCartRepository } from "./infrastructure/postgres-cart.repository";
 import { PostgresSavedAddressRepository } from "./infrastructure/postgres-saved-address.repository";
+import { PostgresRelatedStoreBuyerRepository } from "./infrastructure/postgres-related-store-buyer.repository";
 import {
   CART_REPOSITORY,
   CART_SERVICE,
   CHECKOUT_REPOSITORY,
   CHECKOUT_SERVICE,
+  RELATED_STORE_BUYER_READ,
   SELLER_ORDER_STORE_RESOLVER,
   SAVED_ADDRESS_REPOSITORY,
   SAVED_ADDRESS_SERVICE,
@@ -37,6 +39,7 @@ import type {
 } from "./public";
 import { SavedAddressController } from "./saved-address.controller";
 import { SellerOrderController } from "./seller-order.controller";
+import { SellerBuyerController } from "./seller-buyer.controller";
 
 export type OrdersModuleOptions = {
   repository?: CartRepository;
@@ -64,9 +67,17 @@ export class OrdersModule {
         SavedAddressController,
         CheckoutController,
         SellerOrderController,
+        SellerBuyerController,
       ],
       providers: [
         { provide: "ORDERS_RUNTIME_ENVIRONMENT", useValue: environment },
+        {
+          provide: RELATED_STORE_BUYER_READ,
+          useValue: new PostgresRelatedStoreBuyerRepository(
+            environment.DATABASE_URL,
+            environment.CART_TOKEN_DERIVATION_SECRET,
+          ),
+        },
         {
           provide: SELLER_ORDER_STORE_RESOLVER,
           useValue: options.resolveSellerStore,

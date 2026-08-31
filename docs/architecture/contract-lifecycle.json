@@ -79,7 +79,7 @@
       "consumersMigrated": "complete",
       "removable": false,
       "evidence": {
-        "schemas": ["orderContract"],
+        "schemas": ["orderContract", "storeBuyerPageContract"],
         "operations": ["ordersV1Operations"],
         "events": [
           "orderBecameActionableV1Contract",

@@ -17,6 +17,10 @@ import {
   orderTerminalStatuses,
   ordersV1Operations,
   prepareCheckoutInputContract,
+  listStoreBuyersQueryContract,
+  storeBuyerPageContract,
+  revealOrderDeliveryDetailsInputContract,
+  revealedOrderDeliveryDetailsContract,
 } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
 
@@ -78,6 +82,60 @@ const preparation = {
 } as const;
 
 describe("checkout and CreateOrder.v1 contracts", () => {
+  it("publishes a masked, cursor-paged ListStoreBuyers.v1 contract", () => {
+    expect(listStoreBuyersQueryContract.parse({ search: "سارا", limit: 20 })).toEqual({
+      search: "سارا",
+      limit: 20,
+    });
+    expect(listStoreBuyersQueryContract.safeParse({ limit: 500 }).success).toBe(false);
+    expect(
+      storeBuyerPageContract.parse({
+        items: [
+          {
+            buyerId: "10000000-0000-4000-8000-000000000001",
+            displayName: "سارا ا.",
+            maskedMobile: "0912••••789",
+            orderCount: 2,
+            matchedOrderId: ids.order,
+            latestOrder: {
+              orderId: ids.order,
+              paymentStatus: "PAID",
+              fulfillmentStatus: "SHIPPED",
+              createdAt: "2026-08-24T20:00:00.000Z",
+            },
+          },
+        ],
+        nextCursor: "opaque.cursor",
+      }).items[0],
+    ).not.toHaveProperty("recipientMobile");
+  });
+
+  it("requires a human reason for delivery-detail reveal when requested", () => {
+    expect(
+      revealOrderDeliveryDetailsInputContract.parse({
+        reason: "پیگیری مشکل اعلام‌شده در تحویل",
+      }),
+    ).toEqual({ reason: "پیگیری مشکل اعلام‌شده در تحویل" });
+    expect(
+      revealOrderDeliveryDetailsInputContract.safeParse({ reason: "کوتاه" }).success,
+    ).toBe(false);
+    expect(revealOrderDeliveryDetailsInputContract.safeParse({}).success).toBe(false);
+    expect(
+      revealedOrderDeliveryDetailsContract.parse({
+        orderId: ids.order,
+        recipientName: "سارا احمدی",
+        recipientMobile: "09123456789",
+        address: {
+          provinceText: "تهران",
+          cityText: "تهران",
+          addressLine: "خیابان آزادی، کوچه بهار، پلاک ۱۲",
+          postalCode: "1234567890",
+        },
+        fulfillmentStatus: "DELIVERED",
+        revealedAt: "2026-08-31T08:00:00.000Z",
+      }).recipientMobile,
+    ).toBe("09123456789");
+  });
   it("defines the authoritative confirmed-purchase decision for one order item", () => {
     const input = {
       buyerId: "10000000-0000-4000-8000-000000000001",
