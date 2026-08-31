@@ -189,11 +189,15 @@
     },
     "@sevo/contracts/reporting-analytics/v1": {
       "owner": "reporting-analytics",
-      "approved": false,
-      "executable": false,
-      "consumersMigrated": "not-applicable",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
       "removable": false,
-      "evidence": { "schemas": [], "operations": [], "events": [] }
+      "evidence": {
+        "schemas": ["sellerBasicReportContract"],
+        "operations": ["reportingAnalyticsV1Operations"],
+        "events": []
+      }
     }
   },
   "artifacts": {
