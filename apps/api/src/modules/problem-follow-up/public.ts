@@ -1,6 +1,7 @@
 import type { FulfillmentOrderSnapshot } from "@sevo/contracts/fulfillment/v1";
 import type {
   buyerDisputeViewContract,
+  DisputeId,
   platformDisputeQueueContract,
   platformDisputeViewContract,
   platformViolationCaseViewContract,
@@ -11,6 +12,7 @@ import type {
   respondToDisputeInputContract,
   sellerDisputePageContract,
   sellerDisputeViewContract,
+  ViolationCaseId,
 } from "@sevo/contracts/problem-follow-up/v1";
 import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
 import type {
@@ -69,10 +71,15 @@ export type OpenDisputeCommand = Readonly<{
 }>;
 
 export interface ProblemFollowUpRepository {
+  replayOpen(command: {
+    actorId: IdentityId;
+    idempotencyKey: string;
+    requestHash: string;
+  }): Promise<BuyerDisputeView | undefined>;
   open(command: OpenDisputeCommand): Promise<BuyerDisputeView>;
-  readBuyer(actorId: IdentityId, disputeId: string): Promise<BuyerDisputeView>;
+  readBuyer(actorId: IdentityId, disputeId: DisputeId): Promise<BuyerDisputeView>;
   listSeller(storeId: StoreId, query: PageQuery): Promise<SellerDisputePage>;
-  readSeller(storeId: StoreId, disputeId: string): Promise<SellerDisputeView>;
+  readSeller(storeId: StoreId, disputeId: DisputeId): Promise<SellerDisputeView>;
   respond(
     command: DisputeMutationCommand<RespondToDisputeInput>,
   ): Promise<SellerDisputeView>;
@@ -91,7 +98,7 @@ export interface ProblemFollowUpRepository {
 export type PageQuery = Readonly<{ cursor?: string; limit: number }>;
 
 export type DisputeMutationCommand<Input> = Readonly<{
-  disputeId: string;
+  disputeId: DisputeId;
   actorId: IdentityId;
   storeId?: StoreId;
   input: Input;
@@ -107,7 +114,7 @@ export type SensitiveAccessInput = Readonly<{
 }>;
 
 export type SensitiveCaseRead = Readonly<{
-  caseId: string;
+  caseId: DisputeId | ViolationCaseId;
   actorId: IdentityId;
   responsibility: "DISPUTE_REVIEW" | "VIOLATION_REVIEW";
   resourceType: "DISPUTE_CASE" | "VIOLATION_CASE";

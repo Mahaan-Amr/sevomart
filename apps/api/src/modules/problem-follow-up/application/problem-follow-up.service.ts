@@ -47,6 +47,13 @@ export class ProblemFollowUpService {
     const actorId = await this.requireIdentity(request.sessionToken);
     const input = this.parse(openDisputeInputContract, body);
     const idempotencyKey = this.parseKey(key);
+    const requestHash = hash(input);
+    const replay = await this.repository.replayOpen({
+      actorId,
+      idempotencyKey,
+      requestHash,
+    });
+    if (replay) return replay;
     const snapshot = await this.fulfillment.readOrderSnapshot({
       orderId: input.orderId,
       buyerId: actorId,
@@ -72,7 +79,7 @@ export class ProblemFollowUpService {
         openedAt.getTime() + DISPUTE_SELLER_FIRST_RESPONSE_HOURS * HOUR_MS,
       ),
       idempotencyKey,
-      requestHash: hash(input),
+      requestHash,
       correlationId: request.correlationId,
     });
   }

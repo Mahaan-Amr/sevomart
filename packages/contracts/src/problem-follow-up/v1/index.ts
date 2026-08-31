@@ -45,6 +45,13 @@ export const disputeCategoryContract = z.enum([
   "WRONG_ITEM",
   "REFUND_NOT_COMPLETED",
 ]);
+export const violationTypeContract = z.enum([
+  "FULFILLMENT_NONCOMPLIANCE",
+  "MISREPRESENTATION",
+  "REFUND_NONCOMPLIANCE",
+  "REPEATED_DISPUTES",
+  "PLATFORM_POLICY_BREACH",
+]);
 export const disputeDeadlineKindContract = z.enum([
   "SELLER_FIRST_RESPONSE",
   "PLATFORM_REVIEW",
@@ -79,6 +86,9 @@ export const disputeEvidenceReferenceContract = z
     kind: disputeEvidenceKindContract,
     submittedAt: timestampV1Contract,
   })
+  .strict();
+export const disputeEvidenceInputContract = disputeEvidenceReferenceContract
+  .pick({ evidenceId: true, kind: true })
   .strict();
 export const disputeContributionContract = z
   .object({
@@ -210,7 +220,7 @@ const disputeRespondedPayloadContract = z
 const disputeResolvedPayloadContract = z
   .object({
     disputeId: disputeIdContract,
-    fromStatus: z.literal("UNDER_REVIEW"),
+    fromStatus: z.enum(["AWAITING_SELLER_RESPONSE", "UNDER_REVIEW"]),
     toStatus: z.enum(["RESOLVED", "CLOSED"]),
     nextDeadlineAt: timestampV1Contract,
     reasonCode: z.enum(["PLATFORM_RESOLVED_CASE", "PLATFORM_CLOSED_CASE"]),
@@ -324,13 +334,13 @@ export const openDisputeInputContract = z
     orderId: orderIdContract,
     category: disputeCategoryContract,
     description: z.string().trim().min(10).max(2_000),
-    evidenceIds: z.array(disputeEvidenceIdContract).min(1).max(10),
+    evidence: z.array(disputeEvidenceInputContract).min(1).max(10),
   })
   .strict();
 export const respondToDisputeInputContract = z
   .object({
     response: z.string().trim().min(10).max(2_000),
-    evidenceIds: z.array(disputeEvidenceIdContract).max(10),
+    evidence: z.array(disputeEvidenceInputContract).max(10),
   })
   .strict();
 export const resolveDisputeInputContract = z
@@ -338,13 +348,26 @@ export const resolveDisputeInputContract = z
     status: z.enum(["RESOLVED", "CLOSED"]),
     outcomeCode: disputeOutcomeCodeContract,
     explanation: z.string().trim().min(10).max(2_000),
-    evidenceIds: z.array(disputeEvidenceIdContract).max(10),
+    evidence: z.array(disputeEvidenceInputContract).max(10),
+    violationType: violationTypeContract.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    const requiresType = input.outcomeCode === "VIOLATION_RECORDED";
+    if (requiresType !== Boolean(input.violationType)) {
+      context.addIssue({
+        code: "custom",
+        path: ["violationType"],
+        message: requiresType
+          ? "violation type is required for a recorded violation"
+          : "violation type is only allowed for a recorded violation",
+      });
+    }
+  });
 export const reopenDisputeInputContract = z
   .object({
     reason: z.string().trim().min(10).max(2_000),
-    evidenceIds: z.array(disputeEvidenceIdContract).min(1).max(10),
+    evidence: z.array(disputeEvidenceInputContract).min(1).max(10),
   })
   .strict();
 
@@ -421,13 +444,6 @@ export const platformDisputeViewContract = relatedPartyDisputeViewContract
     }
   });
 
-export const violationTypeContract = z.enum([
-  "FULFILLMENT_NONCOMPLIANCE",
-  "MISREPRESENTATION",
-  "REFUND_NONCOMPLIANCE",
-  "REPEATED_DISPUTES",
-  "PLATFORM_POLICY_BREACH",
-]);
 export const violationSourceContract = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("DISPUTE"), disputeId: disputeIdContract }).strict(),
   z.object({ kind: z.literal("ORDER"), orderId: orderIdContract }).strict(),
@@ -623,21 +639,31 @@ export const problemFollowUpV1Examples = {
     orderId: exampleDispute.orderId,
     category: "DAMAGED",
     description: "کالا هنگام تحویل آسیب‌دیده بود.",
-    evidenceIds: [exampleDispute.contributions[0].evidence[0].evidenceId],
+    evidence: [
+      {
+        evidenceId: exampleDispute.contributions[0].evidence[0].evidenceId,
+        kind: "IMAGE",
+      },
+    ],
   },
   RespondToDisputeInput: {
     response: "پاسخ فروشگاه همراه با مدرک ارسال ثبت شد.",
-    evidenceIds: [],
+    evidence: [],
   },
   ResolveDisputeInput: {
     status: "RESOLVED",
     outcomeCode: "SELLER_ACTION_AGREED",
     explanation: "فروشگاه اقدام توافق‌شده را ثبت کرده است.",
-    evidenceIds: [],
+    evidence: [],
   },
   ReopenDisputeInput: {
     reason: "مدرک تازه‌ای پس از اعلام نتیجه دریافت شد.",
-    evidenceIds: [exampleDispute.contributions[0].evidence[0].evidenceId],
+    evidence: [
+      {
+        evidenceId: exampleDispute.contributions[0].evidence[0].evidenceId,
+        kind: "IMAGE",
+      },
+    ],
   },
   BuyerDisputeView: exampleDispute,
   BuyerDisputePage: { items: [exampleDispute], nextCursor: null },
@@ -710,6 +736,18 @@ const allowedDisputeTransitions = [
   {
     action: "RESOLVE",
     actorKind: "PLATFORM_AGENT",
+    fromStatus: "AWAITING_SELLER_RESPONSE",
+    toStatus: "RESOLVED",
+  },
+  {
+    action: "RESOLVE",
+    actorKind: "PLATFORM_AGENT",
+    fromStatus: "AWAITING_SELLER_RESPONSE",
+    toStatus: "CLOSED",
+  },
+  {
+    action: "RESOLVE",
+    actorKind: "PLATFORM_AGENT",
     fromStatus: "UNDER_REVIEW",
     toStatus: "RESOLVED",
   },
@@ -760,3 +798,6 @@ export const disputeTransitionContract = z
 
 export type DisputeStatus = z.infer<typeof disputeStatusContract>;
 export type DisputeTransition = z.infer<typeof disputeTransitionContract>;
+export type DisputeId = z.infer<typeof disputeIdContract>;
+export type ViolationCaseId = z.infer<typeof violationCaseIdContract>;
+export type DisputeEvidenceInput = z.infer<typeof disputeEvidenceInputContract>;

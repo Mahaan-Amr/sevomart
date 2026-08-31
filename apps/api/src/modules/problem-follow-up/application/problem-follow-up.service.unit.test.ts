@@ -12,7 +12,10 @@ const evidenceId = "00000000-0000-4000-8000-000000000004";
 describe("ProblemFollowUpService", () => {
   it("opens a delivered-order dispute for its buyer inside the seven-day window", async () => {
     const open = vi.fn().mockResolvedValue({ disputeId: "saved" });
-    const repository = { open } as unknown as ProblemFollowUpRepository;
+    const repository = {
+      replayOpen: vi.fn().mockResolvedValue(undefined),
+      open,
+    } as unknown as ProblemFollowUpRepository;
     const service = new ProblemFollowUpService(
       repository,
       { readActiveIdentitySession: vi.fn().mockResolvedValue({ identityId: buyerId }) },
@@ -36,7 +39,7 @@ describe("ProblemFollowUpService", () => {
         orderId,
         category: "DAMAGED",
         description: "کالا هنگام تحویل آسیب‌دیده بود.",
-        evidenceIds: [evidenceId],
+        evidence: [{ evidenceId, kind: "IMAGE" }],
       },
       "open-dispute-01",
     );
@@ -55,7 +58,10 @@ describe("ProblemFollowUpService", () => {
 
   it("rejects a dispute after the shipped-order fourteen-day window", async () => {
     const service = new ProblemFollowUpService(
-      { open: vi.fn() } as unknown as ProblemFollowUpRepository,
+      {
+        replayOpen: vi.fn().mockResolvedValue(undefined),
+        open: vi.fn(),
+      } as unknown as ProblemFollowUpRepository,
       { readActiveIdentitySession: vi.fn().mockResolvedValue({ identityId: buyerId }) },
       {
         readOrderSnapshot: vi.fn().mockResolvedValue({
@@ -77,11 +83,38 @@ describe("ProblemFollowUpService", () => {
           orderId,
           category: "DELIVERY_NOT_RECEIVED",
           description: "سفارش ارسال شده اما هنوز تحویل نشده است.",
-          evidenceIds: [evidenceId],
+          evidence: [{ evidenceId, kind: "IMAGE" }],
         },
         "open-dispute-02",
       ),
     ).rejects.toEqual(new ProblemFollowUpFault("WINDOW_CLOSED"));
+  });
+
+  it("replays an opened dispute before rechecking its fulfillment window", async () => {
+    const replay = { disputeId: "00000000-0000-4000-8000-000000000009" };
+    const readOrderSnapshot = vi.fn();
+    const service = new ProblemFollowUpService(
+      {
+        replayOpen: vi.fn().mockResolvedValue(replay),
+      } as unknown as ProblemFollowUpRepository,
+      { readActiveIdentitySession: vi.fn().mockResolvedValue({ identityId: buyerId }) },
+      { readOrderSnapshot },
+      () => new Date("2026-09-30T09:00:00.000Z"),
+    );
+
+    await expect(
+      service.open(
+        { sessionToken: "buyer-session", correlationId: evidenceId },
+        {
+          orderId,
+          category: "DAMAGED",
+          description: "کالا هنگام تحویل آسیب‌دیده بود.",
+          evidence: [{ evidenceId, kind: "IMAGE" }],
+        },
+        "open-dispute-replay",
+      ),
+    ).resolves.toBe(replay);
+    expect(readOrderSnapshot).not.toHaveBeenCalled();
   });
 
   it("requires a live seller and scopes the first response to their store", async () => {
@@ -98,7 +131,7 @@ describe("ProblemFollowUpService", () => {
     await service.respond(
       { sessionToken: "seller-session", correlationId: evidenceId },
       "00000000-0000-4000-8000-000000000005",
-      { response: "پاسخ فروشگاه همراه با مدرک ارسال ثبت شد.", evidenceIds: [] },
+      { response: "پاسخ فروشگاه همراه با مدرک ارسال ثبت شد.", evidence: [] },
       "respond-dispute-01",
     );
 
@@ -119,7 +152,7 @@ describe("ProblemFollowUpService", () => {
     );
     const input = {
       response: "پاسخ فروشگاه همراه با مدرک ارسال ثبت شد.",
-      evidenceIds: [],
+      evidence: [],
     };
 
     await service.respond(

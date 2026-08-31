@@ -33,26 +33,20 @@ import {
   type SensitiveDisputeMutation,
 } from "../public";
 import type { OpaquePlatformAccessTransactionContext } from "../../identity-access/public";
+import {
+  appendContribution,
+  contribution,
+  decodeCursor,
+  page,
+  platformQueueItem,
+  relatedView,
+  violationQueueItem,
+  type DisputeRow,
+  type DisputeStatus,
+  type ViolationRow,
+} from "./problem-follow-up-views";
 
 const REOPEN_WINDOW_MS = DISPUTE_REOPEN_WINDOW_DAYS * 24 * 60 * 60 * 1_000;
-
-type DisputeStatus =
-  "AWAITING_SELLER_RESPONSE" | "UNDER_REVIEW" | "RESOLVED" | "CLOSED";
-
-type DisputeRow = {
-  disputeId: string;
-  orderId: string;
-  buyerIdentityId: string;
-  storeId: string;
-  status: DisputeStatus;
-  category: string;
-  openedAt: Date;
-  deadlineKind: "SELLER_FIRST_RESPONSE" | "PLATFORM_REVIEW" | "REOPEN_WINDOW" | null;
-  deadlineAt: Date | null;
-  contributions: JSONValue;
-  outcome: JSONValue | null;
-  version: number;
-};
 
 type IdempotencyRow = { requestHash: string; response: JSONValue };
 
@@ -73,6 +67,15 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
     await this.#sql.end();
   }
 
+  async replayOpen(command: {
+    actorId: string;
+    idempotencyKey: string;
+    requestHash: string;
+  }) {
+    const replay = await readReplay(this.#sql, "OPEN", command);
+    return replay ? buyerDisputeViewContract.parse(replay) : undefined;
+  }
+
   async open(command: OpenDisputeCommand) {
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
@@ -83,7 +86,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       const contributions = contribution(
         "BUYER",
         command.input.description,
-        command.input.evidenceIds,
+        command.input.evidence,
         occurredAt,
       );
       try {
@@ -112,7 +115,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: null,
         toStatus: "AWAITING_SELLER_RESPONSE",
         reasonCode: "BUYER_OPENED_CASE",
-        evidenceCount: command.input.evidenceIds.length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.openedAt,
         correlationId: command.correlationId,
       });
@@ -194,7 +197,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "SELLER",
         command.input.response,
-        command.input.evidenceIds,
+        command.input.evidence,
         command.occurredAt,
       );
       await updateDispute(sql, row, {
@@ -213,7 +216,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: "UNDER_REVIEW",
         reasonCode: "SELLER_SUBMITTED_RESPONSE",
-        evidenceCount: command.input.evidenceIds.length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });
@@ -286,7 +289,11 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       }
       const row = await lockDispute(sql, command.disputeId);
       if (!row) throw new ProblemFollowUpFault("NOT_FOUND");
-      if (row.status !== "UNDER_REVIEW") {
+      const resolvingExpiredSellerCase =
+        row.status === "AWAITING_SELLER_RESPONSE" &&
+        row.deadlineAt !== null &&
+        command.occurredAt > row.deadlineAt;
+      if (row.status !== "UNDER_REVIEW" && !resolvingExpiredSellerCase) {
         throw new ProblemFollowUpFault("INVALID_TRANSITION");
       }
       const deadlineAt = new Date(command.occurredAt.getTime() + REOPEN_WINDOW_MS);
@@ -294,7 +301,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "PLATFORM_AGENT",
         command.input.explanation,
-        command.input.evidenceIds,
+        command.input.evidence,
         command.occurredAt,
       );
       const outcome = {
@@ -322,7 +329,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: command.input.status,
         reasonCode,
-        evidenceCount: command.input.evidenceIds.length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });
@@ -333,7 +340,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
             ...eventEnvelope(row, command, "DisputeResolved.v1"),
             payload: {
               disputeId: row.disputeId,
-              fromStatus: "UNDER_REVIEW",
+              fromStatus: row.status,
               toStatus: command.input.status,
               nextDeadlineAt: deadlineAt.toISOString(),
               reasonCode,
@@ -342,7 +349,13 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         ),
       );
       if (command.input.outcomeCode === "VIOLATION_RECORDED") {
-        await recordViolation(sql, row, command, contributions.at(-1)?.evidence ?? []);
+        await recordViolation(
+          sql,
+          row,
+          command,
+          command.input.violationType!,
+          contributions.at(-1)?.evidence ?? [],
+        );
       }
       const baseView = relatedView({
         ...row,
@@ -388,7 +401,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "PLATFORM_AGENT",
         command.input.reason,
-        command.input.evidenceIds,
+        command.input.evidence,
         command.occurredAt,
       );
       await updateDispute(sql, row, {
@@ -407,7 +420,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: "UNDER_REVIEW",
         reasonCode: "NEW_EVIDENCE_RECEIVED",
-        evidenceCount: command.input.evidenceIds.length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });
@@ -490,90 +503,6 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
   }
 }
 
-type ViolationRow = {
-  violationCaseId: string;
-  type: string;
-  sourceKind: "DISPUTE" | "ORDER" | "OPERATIONAL_REPORT";
-  sourceReferenceId: string;
-  status: "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "CLOSED";
-  openedAt: Date;
-  deadlineAt: Date | null;
-  nextActionCode: string;
-  evidence: JSONValue;
-  actionReasonCodes: string[];
-};
-
-function contribution(
-  authorKind: "BUYER" | "SELLER" | "PLATFORM_AGENT",
-  text: string,
-  evidenceIds: readonly string[],
-  submittedAt: string,
-) {
-  return {
-    authorKind,
-    text,
-    evidence: evidenceIds.map((evidenceId) => ({
-      evidenceId,
-      kind: "IMAGE" as const,
-      submittedAt,
-    })),
-    submittedAt,
-  };
-}
-
-function appendContribution(
-  row: DisputeRow,
-  authorKind: "SELLER" | "PLATFORM_AGENT",
-  text: string,
-  evidenceIds: readonly string[],
-  occurredAt: Date,
-) {
-  return [
-    ...(row.contributions as unknown as ReturnType<typeof contribution>[]),
-    contribution(authorKind, text, evidenceIds, occurredAt.toISOString()),
-  ];
-}
-
-function relatedView(row: DisputeRow) {
-  return {
-    disputeId: row.disputeId,
-    orderId: row.orderId,
-    storeId: row.storeId,
-    status: row.status,
-    category: row.category,
-    openedAt: row.openedAt.toISOString(),
-    deadline:
-      row.deadlineKind && row.deadlineAt
-        ? { kind: row.deadlineKind, dueAt: row.deadlineAt.toISOString() }
-        : null,
-    nextAction: nextAction(row.status),
-    contributions: row.contributions,
-    outcome: row.outcome,
-  };
-}
-
-function platformQueueItem(row: DisputeRow) {
-  const view = relatedView(row);
-  return {
-    disputeId: view.disputeId,
-    status: view.status,
-    category: view.category,
-    openedAt: view.openedAt,
-    deadline: view.deadline,
-    nextAction: view.nextAction,
-  };
-}
-
-function nextAction(status: DisputeStatus) {
-  if (status === "AWAITING_SELLER_RESPONSE") {
-    return { actorKind: "SELLER" as const, code: "SUBMIT_FIRST_RESPONSE" as const };
-  }
-  if (status === "UNDER_REVIEW") {
-    return { actorKind: "PLATFORM_AGENT" as const, code: "REVIEW_CASE" as const };
-  }
-  return { actorKind: null, code: "NO_ACTION" as const };
-}
-
 async function readDispute(
   sql: Sql,
   disputeId: string,
@@ -627,49 +556,6 @@ async function listDisputes(
   `;
 }
 
-function page<Row>(rows: Row[], limit: number, map: (row: Row) => unknown) {
-  const visible = rows.slice(0, limit);
-  const last = visible.at(-1) as
-    | (Row & { openedAt?: Date; disputeId?: string; violationCaseId?: string })
-    | undefined;
-  return {
-    items: visible.map(map),
-    nextCursor:
-      rows.length > limit && last?.openedAt
-        ? encodeCursor(last.openedAt, last.disputeId ?? last.violationCaseId ?? "")
-        : null,
-  };
-}
-
-function encodeCursor(occurredAt: Date, id: string) {
-  return Buffer.from(
-    JSON.stringify({ occurredAt: occurredAt.toISOString(), id }),
-  ).toString("base64url");
-}
-
-function decodeCursor(cursor?: string) {
-  if (!cursor) return undefined;
-  try {
-    const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
-      occurredAt?: string;
-      id?: string;
-    };
-    if (
-      !value.occurredAt ||
-      !value.id ||
-      Number.isNaN(Date.parse(value.occurredAt)) ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        value.id,
-      )
-    ) {
-      throw new Error("invalid cursor");
-    }
-    return { occurredAt: value.occurredAt, id: value.id };
-  } catch {
-    throw new ProblemFollowUpFault("VALIDATION_ERROR");
-  }
-}
-
 async function claim(
   sql: Sql,
   operation: string,
@@ -681,6 +567,14 @@ async function claim(
     ) as acquired
   `;
   if (!lock?.acquired) throw new ProblemFollowUpFault("IDEMPOTENCY_IN_PROGRESS");
+  return readReplay(sql, operation, command);
+}
+
+async function readReplay(
+  sql: Sql,
+  operation: string,
+  command: { actorId: string; idempotencyKey: string; requestHash: string },
+) {
   const [record] = await sql<IdempotencyRow[]>`
     select request_hash as "requestHash", response_json as response
     from problem_follow_up_idempotency_records
@@ -778,16 +672,10 @@ async function authorize(
   transaction: OpaquePlatformAccessTransactionContext,
   command: SensitiveCaseRead,
 ) {
-  return access.authorizeSensitiveAction(transaction, {
-    grantId: command.access.grantId,
-    actorIdentityId: command.actorId,
-    responsibility: command.responsibility,
-    resourceType: command.resourceType,
-    resourceId: command.caseId,
-    action: command.action,
-    reason: command.access.reason,
-    correlationId: command.correlationId,
-  });
+  return access.authorizeSensitiveAction(
+    transaction,
+    sensitiveAction(command, command.resourceType, command.caseId, command.action),
+  );
 }
 
 async function authorizeMutation(
@@ -795,36 +683,42 @@ async function authorizeMutation(
   transaction: OpaquePlatformAccessTransactionContext,
   command: SensitiveDisputeMutation<unknown>,
 ) {
-  await access.authorizeSensitiveAction(transaction, {
+  await access.authorizeSensitiveAction(
+    transaction,
+    sensitiveAction(command, "DISPUTE_CASE", command.disputeId, command.action),
+  );
+  return access.authorizeSensitiveAction(
+    transaction,
+    sensitiveAction(command, "DISPUTE_CASE", command.disputeId, "REVEAL_MINIMUM"),
+  );
+}
+
+function sensitiveAction(
+  command: SensitiveCaseRead | SensitiveDisputeMutation<unknown>,
+  resourceType: "DISPUTE_CASE" | "VIOLATION_CASE",
+  resourceId: string,
+  action: "REVEAL_MINIMUM" | "UPDATE_CASE_STATUS",
+) {
+  return {
     grantId: command.access.grantId,
     actorIdentityId: command.actorId,
     responsibility: command.responsibility,
-    resourceType: "DISPUTE_CASE",
-    resourceId: command.disputeId,
-    action: command.action,
+    resourceType,
+    resourceId,
+    action,
     reason: command.access.reason,
     correlationId: command.correlationId,
-  });
-  return access.authorizeSensitiveAction(transaction, {
-    grantId: command.access.grantId,
-    actorIdentityId: command.actorId,
-    responsibility: command.responsibility,
-    resourceType: "DISPUTE_CASE",
-    resourceId: command.disputeId,
-    action: "REVEAL_MINIMUM",
-    reason: command.access.reason,
-    correlationId: command.correlationId,
-  });
+  } as const;
 }
 
 async function recordViolation(
   sql: Sql,
   row: DisputeRow,
   command: SensitiveDisputeMutation<ResolveDisputeInput>,
+  type: string,
   evidence: unknown[],
 ) {
   const violationCaseId = randomUUID();
-  const type = violationType(row.category);
   await sql`
     insert into problem_violation_cases
       (id, type, source_kind, source_reference_id, status, opened_at,
@@ -863,29 +757,6 @@ async function recordViolation(
       }),
     ),
   );
-}
-
-function violationType(category: string) {
-  if (category === "DELIVERY_NOT_RECEIVED") return "FULFILLMENT_NONCOMPLIANCE";
-  if (category === "REFUND_NOT_COMPLETED") return "REFUND_NONCOMPLIANCE";
-  return "MISREPRESENTATION";
-}
-
-function violationQueueItem(row: ViolationRow) {
-  return {
-    violationCaseId: row.violationCaseId,
-    type: row.type,
-    source:
-      row.sourceKind === "DISPUTE"
-        ? { kind: "DISPUTE" as const, disputeId: row.sourceReferenceId }
-        : row.sourceKind === "ORDER"
-          ? { kind: "ORDER" as const, orderId: row.sourceReferenceId }
-          : { kind: "OPERATIONAL_REPORT" as const, referenceId: row.sourceReferenceId },
-    status: row.status,
-    openedAt: row.openedAt.toISOString(),
-    deadlineAt: row.deadlineAt?.toISOString() ?? null,
-    nextActionCode: row.nextActionCode,
-  };
 }
 
 function isUniqueViolation(error: unknown) {
