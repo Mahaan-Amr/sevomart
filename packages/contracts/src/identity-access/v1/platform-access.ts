@@ -895,6 +895,9 @@ export const emergencyAccessGrantViewContract = z
       "COMPLETED",
       "COMPLETED_WITHOUT_INDEPENDENT_REVIEW",
     ]),
+    reviewEligibility: z
+      .enum(["INDEPENDENT", "WITHOUT_INDEPENDENT_REVIEW", "NOT_ELIGIBLE"])
+      .optional(),
   })
   .strict();
 
