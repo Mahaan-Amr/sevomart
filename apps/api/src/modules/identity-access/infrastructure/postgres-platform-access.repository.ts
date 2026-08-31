@@ -36,6 +36,7 @@ import {
   rejectPlatformAccessCommandContract,
   unresolvedEmergencyAccessAuditEntryContract,
   type PlatformAccessGrant,
+  type PlatformAccessAuditEntry,
   type PlatformAccessRejection,
   type PlatformAccessScope,
   type Responsibility,
@@ -123,6 +124,11 @@ type EmergencyGrantRow = {
   reviewedAt: Date | null;
   reviewMode: "INDEPENDENT" | "WITHOUT_INDEPENDENT_REVIEW" | null;
   rejectedAt: Date | null;
+};
+
+type AccessAuditRow = Omit<PlatformAccessAuditEntry, "scope" | "occurredAt"> & {
+  scope: PlatformAccessScope | null;
+  occurredAt: Date;
 };
 
 type AuthorizedEmergencyGrantRow = EmergencyGrantRow & {
@@ -278,6 +284,51 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         view,
       );
       return view;
+    });
+  }
+
+  async listResponsibilityAccess(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: {
+      subjectIdentityId?: string;
+      status?: "PENDING_APPROVAL" | "ACTIVE" | "EXPIRED" | "REVOKED" | "CLOSED";
+      cursor?: string;
+      limit: number;
+    },
+  ): Promise<{ items: PlatformAccessGrant[]; nextCursor: string | null }> {
+    const cursor = query.cursor ? decodeAccessCursor(query.cursor) : undefined;
+    return this.#sql.begin(async (sql) => {
+      await authorizeAccessAdministrator(sql, context.sessionToken, false);
+      const subjectFilter = query.subjectIdentityId
+        ? sql`and subject_identity_id = ${query.subjectIdentityId}`
+        : sql``;
+      const statusFilter = query.status ? sql`and status = ${query.status}` : sql``;
+      const cursorFilter = cursor
+        ? sql`and (created_at, id) < (${cursor.createdAt}, ${cursor.grantId})`
+        : sql``;
+      const rows = await sql<ResponsibilityGrantRow[]>`
+        select id as "grantId", subject_identity_id as "subjectIdentityId",
+          requested_by_identity_id as "requestedByIdentityId",
+          approved_by_identity_id as "approvedByIdentityId",
+          responsibility, status, revision,
+          single_manager_exception as "singleManagerException",
+          created_at as "createdAt", activated_at as "activatedAt",
+          revoked_at as "revokedAt"
+        from identity_platform_access_grants
+        where grant_kind = 'RESPONSIBILITY' and rejected_at is null
+          ${subjectFilter} ${statusFilter} ${cursorFilter}
+        order by created_at desc, id desc
+        limit ${query.limit + 1}
+      `;
+      const pageRows = rows.slice(0, query.limit);
+      const last = pageRows.at(-1);
+      return {
+        items: pageRows.map(responsibilityView),
+        nextCursor:
+          rows.length > query.limit && last
+            ? encodeAccessCursor(last.createdAt, last.grantId)
+            : null,
+      };
     });
   }
 
@@ -658,6 +709,52 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         view,
       );
       return view;
+    });
+  }
+
+  async listSensitiveAccess(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: {
+      subjectIdentityId?: string;
+      status?: "PENDING_APPROVAL" | "ACTIVE" | "EXPIRED" | "REVOKED" | "CLOSED";
+      cursor?: string;
+      limit: number;
+    },
+  ): Promise<{ items: PlatformAccessGrant[]; nextCursor: string | null }> {
+    const cursor = query.cursor ? decodeAccessCursor(query.cursor) : undefined;
+    return this.#sql.begin(async (sql) => {
+      await authorizeAccessAdministrator(sql, context.sessionToken, false);
+      await expireDueSensitiveGrants(sql, context.correlationId);
+      const subjectFilter = query.subjectIdentityId
+        ? sql`and subject_identity_id = ${query.subjectIdentityId}`
+        : sql``;
+      const statusFilter = query.status ? sql`and status = ${query.status}` : sql``;
+      const cursorFilter = cursor
+        ? sql`and (created_at, id) < (${cursor.createdAt}, ${cursor.grantId})`
+        : sql``;
+      const rows = await sql<SensitiveGrantRow[]>`
+        select id as "grantId", subject_identity_id as "subjectIdentityId",
+          requested_by_identity_id as "requestedByIdentityId",
+          approved_by_identity_id as "approvedByIdentityId",
+          responsibility, purpose_code as "purposeCode", scope, status, revision,
+          single_manager_exception as "singleManagerException",
+          created_at as "createdAt", activated_at as "activatedAt",
+          revoked_at as "revokedAt", expires_at as "expiresAt"
+        from identity_platform_access_grants
+        where grant_kind = 'SENSITIVE_ACCESS' and rejected_at is null
+          ${subjectFilter} ${statusFilter} ${cursorFilter}
+        order by created_at desc, id desc
+        limit ${query.limit + 1}
+      `;
+      const pageRows = rows.slice(0, query.limit);
+      const last = pageRows.at(-1);
+      return {
+        items: pageRows.map(sensitiveView),
+        nextCursor:
+          rows.length > query.limit && last
+            ? encodeAccessCursor(last.createdAt, last.grantId)
+            : null,
+      };
     });
   }
 
@@ -1543,6 +1640,57 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
     });
   }
 
+  async listAudit(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: {
+      grantId?: string;
+      actorIdentityId?: string;
+      cursor?: string;
+      limit: number;
+    },
+  ): Promise<{ items: PlatformAccessAuditEntry[]; nextCursor: string | null }> {
+    const cursor = query.cursor ? decodeAccessCursor(query.cursor) : undefined;
+    return this.#sql.begin(async (sql) => {
+      const session = await authorizePlatformSession(sql, context.sessionToken, false);
+      await requireResponsibility(sql, session.identityId, "ACCESS_AUDIT_REVIEW");
+      const grantFilter = query.grantId ? sql`and grant_id = ${query.grantId}` : sql``;
+      const actorFilter = query.actorIdentityId
+        ? sql`and actor_identity_id = ${query.actorIdentityId}`
+        : sql``;
+      const cursorFilter = cursor
+        ? sql`and (occurred_at, id) < (${cursor.createdAt}, ${cursor.grantId})`
+        : sql``;
+      const rows = await sql<AccessAuditRow[]>`
+        select id as "auditId", grant_id as "grantId", action,
+          actor_identity_id as "actorIdentityId",
+          subject_identity_id as "subjectIdentityId", scope,
+          reason_code as "reasonCode", reason, outcome,
+          single_manager_exception as "singleManagerException",
+          correlation_id as "correlationId", occurred_at as "occurredAt"
+        from identity_platform_access_audit
+        where resolved_grant_id is not null
+          ${grantFilter} ${actorFilter} ${cursorFilter}
+        order by occurred_at desc, id desc
+        limit ${query.limit + 1}
+      `;
+      const pageRows = rows.slice(0, query.limit);
+      const last = pageRows.at(-1);
+      return {
+        items: pageRows.map(({ scope, occurredAt, ...entry }) =>
+          platformAccessAuditEntryContract.parse({
+            ...entry,
+            ...(scope ? { scope } : {}),
+            occurredAt: occurredAt.toISOString(),
+          }),
+        ),
+        nextCursor:
+          rows.length > query.limit && last
+            ? encodeAccessCursor(last.occurredAt, last.auditId)
+            : null,
+      };
+    });
+  }
+
   async authorizeEmergencyAction(
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformEmergencyAction,
@@ -2310,6 +2458,58 @@ async function expireDueEmergencyGrants(
     });
     await enqueueEmergencyEvent(sql, {
       eventType: "EmergencyAccessExpired.v1",
+      status: "EXPIRED",
+      grant: expiredGrant,
+      actorIdentityId: null,
+      correlationId,
+      occurredAt,
+    });
+  }
+}
+
+async function expireDueSensitiveGrants(
+  sql: Sql,
+  correlationId: string,
+): Promise<void> {
+  const grants = await sql<SensitiveGrantRow[]>`
+    select id as "grantId", subject_identity_id as "subjectIdentityId",
+      requested_by_identity_id as "requestedByIdentityId",
+      approved_by_identity_id as "approvedByIdentityId",
+      responsibility, purpose_code as "purposeCode", scope, status, revision,
+      single_manager_exception as "singleManagerException",
+      created_at as "createdAt", activated_at as "activatedAt",
+      revoked_at as "revokedAt", expires_at as "expiresAt"
+    from identity_platform_access_grants
+    where grant_kind = 'SENSITIVE_ACCESS' and status = 'ACTIVE'
+    order by created_at, id
+    for update
+  `;
+  const occurredAt = await readDatabaseClock(sql);
+  for (const grant of grants.filter((candidate) => candidate.expiresAt <= occurredAt)) {
+    const expiredGrant: SensitiveGrantRow = {
+      ...grant,
+      status: "EXPIRED",
+      revision: grant.revision + 1,
+    };
+    await sql`
+      update identity_platform_access_grants
+      set status = 'EXPIRED', revision = ${expiredGrant.revision}
+      where id = ${grant.grantId}
+    `;
+    await insertAudit(sql, {
+      grantId: grant.grantId,
+      action: "GRANT_EXPIRED",
+      actorIdentityId: grant.subjectIdentityId,
+      subjectIdentityId: grant.subjectIdentityId,
+      scope: grant.scope,
+      reasonCode: "TTL_EXPIRED",
+      reason: "پایان خودکار مهلت اجازه دسترسی حساس هنگام خواندن فهرست",
+      singleManagerException: grant.singleManagerException,
+      correlationId,
+      occurredAt,
+    });
+    await enqueueSensitiveEvent(sql, {
+      eventType: "SensitiveAccessExpired.v1",
       status: "EXPIRED",
       grant: expiredGrant,
       actorIdentityId: null,

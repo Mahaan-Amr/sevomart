@@ -53,6 +53,12 @@ export async function establishPlatformAgentIdentity(
   return seedPlatformAgent({ mobile, permissions });
 }
 
+export async function establishPlatformAgentRecipient(
+  permissions: readonly PlatformPermission[] = [],
+) {
+  return seedPlatformAgent({ permissions });
+}
+
 async function seedPlatformAgent({
   mobile,
   permissions,

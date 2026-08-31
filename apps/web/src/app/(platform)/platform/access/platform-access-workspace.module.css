@@ -1,0 +1,396 @@
+.page {
+  min-height: 100dvh;
+  padding: 32px 16px;
+  background: var(--color-background);
+}
+
+.workspace {
+  width: min(100%, 1060px);
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.header h1,
+.audit h2,
+.detailHeading h2 {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.header h1 {
+  font-size: clamp(20px, 3vw, 24px);
+}
+
+.header p,
+.audit > div p {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tabs {
+  display: flex;
+  max-width: 100%;
+  margin-top: 24px;
+  border-bottom: 1px solid var(--color-divider);
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.tabs button,
+.queue button,
+.actions button,
+.primary,
+.create summary {
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs button {
+  padding: 8px 14px;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.tabs button[aria-selected="true"] {
+  border-color: var(--color-border-primary);
+  background: var(--color-cover-start);
+  box-shadow: var(--elevation-pressed);
+  color: var(--color-primary-dark);
+}
+
+.message,
+.warning,
+.privacyNote,
+.nextStep,
+.empty {
+  padding: 12px 16px;
+  border-radius: 12px;
+}
+
+.message {
+  margin: 16px 0 0;
+  border-inline-start: 3px solid var(--color-primary);
+  background: var(--color-cover-start);
+}
+
+.create {
+  margin-top: 20px;
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+  background: var(--color-surface);
+}
+
+.create summary {
+  display: flex;
+  padding: 10px 16px;
+  align-items: center;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+  list-style: none;
+}
+
+.create summary::-webkit-details-marker {
+  display: none;
+}
+
+.create form {
+  display: grid;
+  padding: 0 16px 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.create label,
+.reason {
+  display: grid;
+  color: var(--color-muted);
+  font-size: 12px;
+  gap: 6px;
+}
+
+.create input,
+.create select,
+.create textarea,
+.reason textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.create textarea,
+.reason textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.create fieldset {
+  display: grid;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.create legend {
+  padding: 0 4px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.create .check {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.create .check input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.primary {
+  padding: 9px 16px;
+  background: var(--color-primary);
+  box-shadow: var(--elevation-action);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+.split {
+  display: grid;
+  margin-top: 20px;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.queue {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.queue button {
+  display: grid;
+  width: 100%;
+  padding: 12px;
+  border-color: var(--color-divider);
+  background: var(--color-surface);
+  text-align: start;
+  gap: 3px;
+}
+
+.queue button[aria-pressed="true"] {
+  border-color: var(--color-border-primary);
+  box-shadow: var(--elevation-pressed);
+}
+
+.queue span,
+.queue small,
+.detailHeading span,
+.audit span,
+.audit small {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.details,
+.audit {
+  min-width: 0;
+  max-width: 100%;
+  padding: 20px;
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+  background: var(--color-surface);
+}
+
+.detailHeading,
+.audit li > div,
+.details dl div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detailHeading > strong {
+  color: var(--color-primary-dark);
+}
+
+.nextStep {
+  background: var(--color-cover-start);
+}
+
+.warning {
+  border-inline-start: 3px solid var(--color-primary);
+  background: var(--color-background);
+}
+
+.details dl {
+  margin: 16px 0 0;
+}
+
+.details dl div {
+  padding: 9px 0;
+  border-top: 1px solid var(--color-divider);
+}
+
+.details dd {
+  margin: 0;
+  color: var(--color-muted);
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.privacyNote {
+  background: var(--color-background);
+  color: var(--color-muted);
+}
+
+.actions {
+  display: flex;
+  margin-top: 16px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  padding: 9px 14px;
+  border-color: var(--color-divider);
+  background: transparent;
+}
+
+.actions .primary {
+  border-color: transparent;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.reason {
+  margin-top: 12px;
+}
+
+.audit {
+  margin-top: 20px;
+}
+
+.audit ol {
+  display: grid;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+  gap: 12px;
+}
+
+.audit li {
+  min-width: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-divider);
+}
+
+.audit li p {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.audit li strong,
+.audit li small,
+.audit li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-muted);
+}
+
+.tabs button:hover,
+.queue button:hover,
+.actions button:hover,
+.create summary:hover {
+  box-shadow: var(--elevation-hover);
+}
+
+.tabs button:focus-visible,
+.queue button:focus-visible,
+.actions button:focus-visible,
+.primary:focus-visible,
+.create summary:focus-visible,
+.create input:focus-visible,
+.create select:focus-visible,
+.create textarea:focus-visible,
+.reason textarea:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 24px 12px;
+  }
+
+  .header,
+  .detailHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .create form,
+  .split {
+    grid-template-columns: 1fr;
+  }
+
+  .create fieldset {
+    grid-template-columns: 1fr;
+  }
+
+  .actions button,
+  .primary {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs button,
+  .queue button,
+  .actions button,
+  .primary,
+  .create summary {
+    transition: none;
+  }
+}

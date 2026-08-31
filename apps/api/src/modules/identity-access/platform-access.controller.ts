@@ -19,6 +19,7 @@ import {
   emergencyAccessRequestInputContract,
   emergencyAccessReviewInputContract,
   platformAccessListQueryContract,
+  platformAccessAuditQueryContract,
   platformAccessRejectionInputContract,
   platformAccessGrantIdContract,
   platformAccessRevocationInputContract,
@@ -58,6 +59,17 @@ export class PlatformAccessController {
     }
     return this.handle(request, commandKey.data, (context) =>
       this.access.requestResponsibility(context, input.data),
+    );
+  }
+
+  @Get("responsibility-grants")
+  async listResponsibilityAccess(
+    @Query() rawQuery: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const query = parseListQuery(rawQuery, request.id);
+    return this.handleRead(request, (context) =>
+      this.access.listResponsibilityAccess(context, query),
     );
   }
 
@@ -117,6 +129,17 @@ export class PlatformAccessController {
     }
     return this.handle(request, commandKey.data, (context) =>
       this.access.requestSensitiveAccess(context, input.data),
+    );
+  }
+
+  @Get("sensitive-grants")
+  async listSensitiveAccess(
+    @Query() rawQuery: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const query = parseListQuery(rawQuery, request.id);
+    return this.handleRead(request, (context) =>
+      this.access.listSensitiveAccess(context, query),
     );
   }
 
@@ -184,21 +207,21 @@ export class PlatformAccessController {
     @Query() rawQuery: unknown,
     @Req() request: FastifyRequest,
   ) {
-    const queryRecord =
-      typeof rawQuery === "object" && rawQuery !== null
-        ? (rawQuery as Record<string, unknown>)
-        : {};
-    const query = platformAccessListQueryContract.safeParse({
-      ...queryRecord,
-      ...(typeof queryRecord.limit === "string"
-        ? { limit: Number(queryRecord.limit) }
-        : {}),
-    });
+    const query = parseListQuery(rawQuery, request.id);
+    return this.handleRead(request, (context) =>
+      this.access.listEmergencyAccess(context, query),
+    );
+  }
+
+  @Get("audit")
+  async listAudit(@Query() rawQuery: unknown, @Req() request: FastifyRequest) {
+    const queryRecord = queryRecordWithNumericLimit(rawQuery);
+    const query = platformAccessAuditQueryContract.safeParse(queryRecord);
     if (!query.success) {
       throw accessHttpError("VALIDATION_ERROR", request.id, 422);
     }
     return this.handleRead(request, (context) =>
-      this.access.listEmergencyAccess(context, query.data),
+      this.access.listAudit(context, query.data),
     );
   }
 
@@ -372,6 +395,29 @@ export class PlatformAccessController {
       throw error;
     }
   }
+}
+
+function parseListQuery(rawQuery: unknown, correlationId: string) {
+  const query = platformAccessListQueryContract.safeParse(
+    queryRecordWithNumericLimit(rawQuery),
+  );
+  if (!query.success) {
+    throw accessHttpError("VALIDATION_ERROR", correlationId, 422);
+  }
+  return query.data;
+}
+
+function queryRecordWithNumericLimit(rawQuery: unknown) {
+  const queryRecord =
+    typeof rawQuery === "object" && rawQuery !== null
+      ? (rawQuery as Record<string, unknown>)
+      : {};
+  return {
+    ...queryRecord,
+    ...(typeof queryRecord.limit === "string"
+      ? { limit: Number(queryRecord.limit) }
+      : {}),
+  };
 }
 
 function accessStatus(code: PlatformAccessError["code"]): number {

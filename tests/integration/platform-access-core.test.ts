@@ -24,6 +24,108 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     await resetPlatformAccessData();
   });
 
+  it("lists responsibility and sensitive grants and exposes audit only to its reviewer", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const reviewer = await seedAgent(["ACCESS_AUDIT_REVIEW"]);
+    const recipient = await seedAgent([]);
+
+    const responsibility = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/responsibility-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: recipient.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        reason: "واگذاری مسئولیت بررسی پرداخت برای صف عملیاتی",
+      },
+    });
+    expect(responsibility.statusCode).toBe(202);
+
+    const sensitive = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/sensitive-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: recipient.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "VERIFY_CASE_EVIDENCE",
+        reason: "بررسی مدرک پرونده پرداخت در محدوده ثبت شده",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: randomUUID(),
+          allowedActions: ["READ_MASKED", "REVEAL_MINIMUM"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    expect(sensitive.statusCode).toBe(202);
+
+    const responsibilityList = await server.inject({
+      method: "GET",
+      url: `/v1/platform/access/responsibility-grants?subjectIdentityId=${recipient.identityId}&status=ACTIVE&limit=20`,
+      headers: { cookie: `sevo_platform_session=${manager.token}` },
+    });
+    expect(responsibilityList.statusCode).toBe(200);
+    expect(responsibilityList.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          grantKind: "RESPONSIBILITY",
+          subjectIdentityId: recipient.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          status: "ACTIVE",
+        }),
+      ],
+      nextCursor: null,
+    });
+
+    const sensitiveList = await server.inject({
+      method: "GET",
+      url: `/v1/platform/access/sensitive-grants?subjectIdentityId=${recipient.identityId}&status=ACTIVE&limit=20`,
+      headers: { cookie: `sevo_platform_session=${manager.token}` },
+    });
+    expect(sensitiveList.statusCode).toBe(200);
+    expect(sensitiveList.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          grantKind: "SENSITIVE_ACCESS",
+          subjectIdentityId: recipient.identityId,
+          status: "ACTIVE",
+        }),
+      ],
+      nextCursor: null,
+    });
+
+    const forbiddenAudit = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/audit?limit=50",
+      headers: { cookie: `sevo_platform_session=${manager.token}` },
+    });
+    expect(forbiddenAudit.statusCode).toBe(403);
+
+    const audit = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/audit?limit=50",
+      headers: { cookie: `sevo_platform_session=${reviewer.token}` },
+    });
+    expect(audit.statusCode).toBe(200);
+    expect(audit.json()).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          grantId: responsibility.json<{ grantId: string }>().grantId,
+          action: "GRANT_REQUESTED",
+        }),
+        expect.objectContaining({
+          grantId: sensitive.json<{ grantId: string }>().grantId,
+          action: "GRANT_ACTIVATED",
+        }),
+      ]),
+      nextCursor: null,
+    });
+  });
+
   it("activates a high-risk responsibility only through the explicit single-manager exception and rejects self-grant", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
