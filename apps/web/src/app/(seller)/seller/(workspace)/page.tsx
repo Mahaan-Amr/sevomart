@@ -1,27 +1,20 @@
-import { sellerActionableOrderListContract } from "@sevo/contracts/orders/v1";
+import { sellerOperationalTaskContract } from "@sevo/contracts/reporting-analytics/v1";
 import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { readNearestSellerConversation } from "../../../../lib/seller-conversation-api";
-import { readAllSellerDisputes } from "../../../../lib/seller-dispute-api";
-import { formatDisputeTime } from "../disputes/seller-dispute-copy";
-import { nearestSellerResponseDispute } from "../disputes/seller-dispute-model";
+import { readSellerOperationalSummary } from "../../../../lib/seller-reporting-api";
 import styles from "./workspace-page.module.css";
-
-const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
 
 export default async function SellerHomePage() {
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
-  const [actionableOrders, actionableConversation, disputePage] = await Promise.all([
-    readActionableOrders(cookieHeader),
+  const [summary, actionableConversation] = await Promise.all([
+    readSellerOperationalSummary(cookieHeader),
     readNearestSellerConversation(cookieHeader),
-    readAllSellerDisputes(cookieHeader),
   ]);
-  const actionableDispute =
-    disputePage.kind === "OK"
-      ? nearestSellerResponseDispute(disputePage.data)
-      : undefined;
+  const tasks =
+    summary.kind === "OK" ? summary.data.tasks.filter(({ count }) => count > 0) : [];
   const conversationHref =
     actionableConversation.kind === "ACTIONABLE"
       ? `/seller/conversations/${actionableConversation.conversation.conversationId}`
@@ -36,42 +29,28 @@ export default async function SellerHomePage() {
           می‌آید.
         </p>
         <div className={styles.nextAction}>
-          {actionableDispute ? (
-            <>
-              <h2>یک پرونده اختلاف منتظر پاسخ فروشگاه است</h2>
-              <p>مهلت پاسخ: {formatDisputeTime(actionableDispute.deadline!.dueAt)}</p>
-              <Link
-                className={styles.primary}
-                href={`/seller/disputes/${actionableDispute.disputeId}`}
-              >
-                پاسخ به پرونده اختلاف
-              </Link>
-            </>
-          ) : actionableOrders === undefined &&
-            !conversationHref &&
-            disputePage.kind === "UNAVAILABLE" ? (
+          {summary.kind === "UNAVAILABLE" && !conversationHref ? (
             <>
               <h2>کارهای نزدیک دریافت نشد</h2>
               <p>کمی بعد صفحه را دوباره بررسی کنید.</p>
             </>
-          ) : (actionableOrders ?? 0) > 0 ? (
-            <>
-              <h2>
-                {(actionableOrders ?? 0).toLocaleString("fa-IR")} سفارش آماده رسیدگی است
-              </h2>
-              <p>پرداخت این سفارش‌ها ثبت شده و منتظر اقدام شما هستند.</p>
-              <Link className={styles.primary} href="/seller/orders">
-                رسیدگی به سفارش‌ها
-              </Link>
-            </>
-          ) : conversationHref ? (
-            <>
-              <h2>یک گفت‌وگو منتظر پاسخ شماست</h2>
-              <p>تازه‌ترین پیام خریدار را در زمینه همان فروشگاه بررسی کنید.</p>
-              <Link className={styles.primary} href={conversationHref}>
-                پاسخ به گفت‌وگو
-              </Link>
-            </>
+          ) : tasks.length > 0 || conversationHref ? (
+            <ul className={styles.taskList}>
+              {tasks.map((task) => (
+                <OperationalTask key={task.kind} task={task} />
+              ))}
+              {conversationHref ? (
+                <li>
+                  <div>
+                    <h2>یک گفت‌وگو منتظر پاسخ شماست</h2>
+                    <p>تازه‌ترین پیام خریدار را در زمینه همان فروشگاه بررسی کنید.</p>
+                  </div>
+                  <Link className={styles.secondary} href={conversationHref}>
+                    پاسخ به گفت‌وگو
+                  </Link>
+                </li>
+              ) : null}
+            </ul>
           ) : (
             <>
               <h2>سفارش تازه‌ای برای رسیدگی نیست</h2>
@@ -83,21 +62,17 @@ export default async function SellerHomePage() {
           )}
         </div>
         <nav className={styles.relatedActions} aria-label="کارهای مرتبط">
-          {actionableDispute && (actionableOrders ?? 0) > 0 ? (
-            <Link className={styles.secondary} href="/seller/orders">
-              رسیدگی به سفارش‌ها
-            </Link>
-          ) : null}
-          {(actionableOrders ?? 0) > 0 && conversationHref ? (
-            <Link className={styles.secondary} href={conversationHref}>
-              پاسخ به نزدیک‌ترین گفت‌وگو
-            </Link>
-          ) : null}
+          <Link className={styles.secondary} href="/seller/inventory">
+            بررسی موجودی
+          </Link>
           <Link className={styles.secondary} href="/seller/conversations">
             دیدن همه گفت‌وگوها
           </Link>
           <Link className={styles.secondary} href="/seller/disputes">
             دیدن همه پرونده‌های اختلاف
+          </Link>
+          <Link className={styles.secondary} href="/seller/reports">
+            دیدن گزارش فروش
           </Link>
         </nav>
       </section>
@@ -105,17 +80,39 @@ export default async function SellerHomePage() {
   );
 }
 
-async function readActionableOrders(cookieHeader: string) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/v1/seller/orders`, {
-      headers: { cookie: cookieHeader },
-      cache: "no-store",
-    });
-    if (response.status === 404) return 0;
-    if (!response.ok) return undefined;
-    const parsed = sellerActionableOrderListContract.safeParse(await response.json());
-    return parsed.success ? parsed.data.orders.length : undefined;
-  } catch {
-    return undefined;
-  }
+type SellerOperationalTask = ReturnType<typeof sellerOperationalTaskContract.parse>;
+
+function OperationalTask({ task }: { task: SellerOperationalTask }) {
+  const copy = {
+    NEW_ORDERS: {
+      title: `${task.count.toLocaleString("fa-IR")} سفارش تازه آماده رسیدگی است`,
+      description: "پرداخت این سفارش‌ها ثبت شده و منتظر اقدام شما هستند.",
+      action: "رسیدگی به سفارش‌ها",
+      href: "/seller/orders",
+    },
+    OVERDUE_PREPARATIONS: {
+      title: `${task.count.toLocaleString("fa-IR")} سفارش بیش از ۲۴ ساعت در حال آماده‌سازی است`,
+      description: "وضعیت آماده‌سازی را بررسی و قدم بعدی سفارش را ثبت کنید.",
+      action: "بررسی آماده‌سازی‌ها",
+      href: "/seller/orders?status=preparing",
+    },
+    AWAITING_DISPUTE_RESPONSES: {
+      title: `${task.count.toLocaleString("fa-IR")} پرونده اختلاف منتظر پاسخ فروشگاه است`,
+      description: "پاسخ و مدارک فروشگاه را پیش از پایان مهلت ثبت کنید.",
+      action: "پاسخ به پرونده‌ها",
+      href: "/seller/disputes",
+    },
+  }[task.kind];
+
+  return (
+    <li>
+      <div>
+        <h2>{copy.title}</h2>
+        <p>{copy.description}</p>
+      </div>
+      <Link className={styles.secondary} href={copy.href}>
+        {copy.action}
+      </Link>
+    </li>
+  );
 }

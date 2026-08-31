@@ -1,0 +1,102 @@
+.page {
+  min-height: 100dvh;
+  place-items: start center;
+  padding: 24px 16px;
+}
+
+.report {
+  display: grid;
+  width: min(100%, 680px);
+  gap: 16px;
+  padding: 24px;
+}
+
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.report h1,
+.report h2,
+.report p {
+  margin: 0;
+}
+
+.range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding-block: 12px;
+  border-block: 1px solid var(--color-divider);
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.range strong {
+  width: 100%;
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.metrics {
+  display: grid;
+  margin: 0;
+}
+
+.metrics > div {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.metrics dt {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+.metrics dd {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.status {
+  display: grid;
+  gap: 4px;
+  padding-block: 16px;
+}
+
+.status h2 {
+  font-size: 18px;
+}
+
+.back {
+  display: inline-grid;
+  width: fit-content;
+  min-height: 44px;
+  align-items: center;
+  padding: 8px 16px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  color: var(--color-primary-dark);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.back:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .page {
+    padding: 48px 32px;
+  }
+}
