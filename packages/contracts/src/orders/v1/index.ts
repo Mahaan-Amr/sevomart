@@ -568,6 +568,20 @@ export const orderBecameActionableV1Contract = eventEnvelopeV1Contract.extend({
   payload: z.object({ status: z.literal("PAID") }).strict(),
 });
 
+export const orderReportingSnapshotV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("OrderReportingSnapshot.v1"),
+  causationId: z.uuid(),
+  actor: z.object({ type: z.literal("SYSTEM") }).strict(),
+  payload: z
+    .object({
+      storeId: storeIdContract,
+      status: z.literal("PAID"),
+      total: moneyV1Contract,
+      paidAt: z.iso.datetime({ offset: true }),
+    })
+    .strict(),
+});
+
 export const orderPaymentReviewRequiredV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("OrderPaymentReviewRequired.v1"),
   causationId: z.uuid(),
@@ -699,6 +713,7 @@ export const ordersV1Schemas = {
   OrderExpiredV1: orderExpiredV1Contract,
   OrderPaymentReviewRequiredV1: orderPaymentReviewRequiredV1Contract,
   OrderBecameActionableV1: orderBecameActionableV1Contract,
+  OrderReportingSnapshotV1: orderReportingSnapshotV1Contract,
 } as const;
 
 export function createOrdersV1JsonSchemas() {
