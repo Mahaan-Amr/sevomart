@@ -100,7 +100,18 @@ describe("demo seed runtime", () => {
       MINIO_ENDPOINT: "127.0.0.1",
       OTP_PROVIDER: "dev",
     });
-    const writeManifestReceipt = vi.fn();
+    const applyManifest = vi.fn();
+    const planManifest = vi.fn(async () => ({
+      counts: { created: 48, updated: 0, retired: 0, unchanged: 0 },
+      entities: {
+        loginIdentities: 5,
+        stores: 4,
+        products: 11,
+        salesContents: 6,
+        conversations: 3,
+        orders: 10,
+      },
+    }));
     const withNamespaceLock = vi.fn(async (_namespace, operation) => operation());
 
     const report = await executeDemoSeed(request, {
@@ -110,18 +121,47 @@ describe("demo seed runtime", () => {
         profile: "local",
       }),
       withNamespaceLock,
-      writeManifestReceipt,
+      planManifest,
+      applyManifest,
     });
 
     expect(report).toEqual({
-      manifestVersion: 1,
+      manifestVersion: 2,
       namespace: "sevo.demo",
       target: "local",
       dryRun: true,
-      counts: { created: 0, updated: 0, retired: 0, unchanged: 0 },
+      counts: { created: 48, updated: 0, retired: 0, unchanged: 0 },
+      entities: {
+        loginIdentities: 5,
+        stores: 4,
+        products: 11,
+        salesContents: 6,
+        conversations: 3,
+        orders: 10,
+      },
+      signIn: [
+        { mobile: "09000000001", name: "نیلوفر مرادی", startPath: "/" },
+        { mobile: "09000000002", name: "سارا نیک‌پی", startPath: "/seller" },
+        {
+          mobile: "09000000003",
+          name: "مهسا کریمی",
+          startPath: "/seller/application",
+        },
+        {
+          mobile: "09000000004",
+          name: "آرمان رضایی",
+          startPath: "/platform/seller-applications",
+        },
+        {
+          mobile: "09000000005",
+          name: "لیلا نادری",
+          startPath: "/platform/access",
+        },
+      ],
     });
     expect(withNamespaceLock).toHaveBeenCalledWith("sevo.demo", expect.any(Function));
-    expect(writeManifestReceipt).not.toHaveBeenCalled();
+    expect(planManifest).toHaveBeenCalledOnce();
+    expect(applyManifest).not.toHaveBeenCalled();
   });
 
   it("rejects a mismatched registered fingerprint before locking or writing", async () => {
@@ -131,7 +171,8 @@ describe("demo seed runtime", () => {
       OTP_PROVIDER: "dev",
     });
     const withNamespaceLock = vi.fn();
-    const writeManifestReceipt = vi.fn();
+    const planManifest = vi.fn();
+    const applyManifest = vi.fn();
 
     await expect(
       executeDemoSeed(request, {
@@ -141,10 +182,12 @@ describe("demo seed runtime", () => {
           profile: "local",
         }),
         withNamespaceLock,
-        writeManifestReceipt,
+        planManifest,
+        applyManifest,
       }),
     ).rejects.toThrow("fingerprint");
     expect(withNamespaceLock).not.toHaveBeenCalled();
-    expect(writeManifestReceipt).not.toHaveBeenCalled();
+    expect(planManifest).not.toHaveBeenCalled();
+    expect(applyManifest).not.toHaveBeenCalled();
   });
 });

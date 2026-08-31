@@ -15,8 +15,8 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
 
   async initiate(command: Parameters<DirectPaymentProvider["initiate"]>[0]) {
     return {
-      providerReference: `dev-${command.attemptId}`,
-      redirectUrl: `/v1/payment-providers/dev/pay/${command.attemptId}`,
+      providerReference: scenarioReference(command.attemptId, "PENDING"),
+      redirectUrl: `/v1/payment-providers/dev/pay/${command.attemptId}?scenario=success`,
     };
   }
 
@@ -27,6 +27,22 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
     providerEventId: string;
   }) {
     return this.callback({ ...input, result: "CONFIRMED" });
+  }
+
+  scenarioCallback(input: {
+    attemptId: string;
+    orderId: string;
+    amount: number;
+    providerEventId: string;
+    scenario: "success" | "failure" | "pending";
+  }) {
+    const { scenario, ...callback } = input;
+    return this.callback({
+      ...callback,
+      result: { success: "CONFIRMED", failure: "FAILED", pending: "PENDING" }[
+        scenario
+      ] as "CONFIRMED" | "FAILED" | "PENDING",
+    });
   }
 
   callback(input: {
@@ -63,13 +79,21 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
       amount: parsed.data.amount,
       result: parsed.data.result,
       providerEventId: parsed.data.providerEventId,
-      providerReference: `dev-${parsed.data.attemptId}`,
+      providerReference: scenarioReference(parsed.data.attemptId, parsed.data.result),
+      acceptedProviderReferences: ["CONFIRMED", "FAILED", "PENDING"].map((result) =>
+        scenarioReference(
+          parsed.data.attemptId,
+          result as "CONFIRMED" | "FAILED" | "PENDING",
+        ),
+      ),
     };
   }
 
   async query(command: Parameters<DirectPaymentProvider["query"]>[0]) {
-    const lastHex = command.attemptId.replaceAll("-", "").at(-1) ?? "0";
-    const result = Number.parseInt(lastHex, 16) % 2 === 0 ? "CONFIRMED" : "FAILED";
+    const result = resultFromScenarioReference(
+      command.attemptId,
+      command.providerReference,
+    );
     return {
       attemptId: command.attemptId,
       orderId: command.orderId,
@@ -143,6 +167,32 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
       )
       .digest("hex");
   }
+}
+
+const scenarioNames = {
+  CONFIRMED: "success",
+  FAILED: "failure",
+  PENDING: "pending",
+} as const;
+
+function scenarioReference(
+  attemptId: string,
+  result: "CONFIRMED" | "FAILED" | "PENDING",
+) {
+  return `dev-scenario-${scenarioNames[result]}-${attemptId}`;
+}
+
+function resultFromScenarioReference(attemptId: string, providerReference: string) {
+  const scenarios = ["CONFIRMED", "FAILED", "PENDING"] as const;
+  const result = scenarios.find(
+    (candidate) => scenarioReference(attemptId, candidate) === providerReference,
+  );
+  if (!result) {
+    throw new Error(
+      "Dev payment reconciliation requires an explicit demo payment scenario",
+    );
+  }
+  return result;
 }
 
 function safeEqual(left: string, right: string) {

@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 
+import { manifestSummary } from "./baseline.mjs";
+
 const manifest = JSON.parse(
   readFileSync(new URL("../../ops/demo/manifest.v1.json", import.meta.url), "utf8"),
 );
@@ -130,19 +132,30 @@ function assertKnownTarget(request, target) {
   }
 }
 
-export async function executeDemoSeed(request, database) {
+export async function executeDemoSeed(request, database, options = {}) {
+  const selectedManifest = options.manifest ?? manifest;
   const target = await database.inspectTarget();
   assertKnownTarget(request, target);
 
   return database.withNamespaceLock(request.namespace, async () => {
+    const now = options.now ?? new Date();
+    const plan = await database.planManifest(selectedManifest, now);
     const report = {
-      manifestVersion: manifest.manifestVersion,
+      manifestVersion: selectedManifest.manifestVersion,
       namespace: request.namespace,
       target: request.target,
       dryRun: request.dryRun,
-      counts: { created: 0, updated: 0, retired: 0, unchanged: 0 },
+      counts: plan.counts,
+      entities: plan.entities ?? manifestSummary(selectedManifest),
+      signIn: selectedManifest.signIn.map(({ mobile, name, startPath }) => ({
+        mobile,
+        name,
+        startPath,
+      })),
     };
-    if (!request.dryRun) await database.writeManifestReceipt(report);
+    if (!request.dryRun) {
+      await database.applyManifest(selectedManifest, now, report);
+    }
     return report;
   });
 }

@@ -24,6 +24,19 @@ COPY --chown=node:node packages/database/prisma ./prisma
 COPY --chown=node:node packages/database/prisma.config.ts ./prisma.config.ts
 COPY --chown=node:node scripts/demo ./scripts/demo
 COPY --chown=node:node ops/demo ./ops/demo
+COPY --chown=node:node apps/api/src/modules/content/demo-seed.composition.mjs ./apps/api/src/modules/content/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/conversations/demo-seed.composition.mjs ./apps/api/src/modules/conversations/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/discovery/demo-seed.composition.mjs ./apps/api/src/modules/discovery/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/fulfillment/demo-seed.composition.mjs ./apps/api/src/modules/fulfillment/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/identity-access/demo-seed.composition.mjs ./apps/api/src/modules/identity-access/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/inventory/demo-seed.composition.mjs ./apps/api/src/modules/inventory/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/media/demo-seed.composition.mjs ./apps/api/src/modules/media/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/orders/demo-seed.composition.mjs ./apps/api/src/modules/orders/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/payments/demo-seed.composition.mjs ./apps/api/src/modules/payments/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/problem-follow-up/demo-seed.composition.mjs ./apps/api/src/modules/problem-follow-up/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/product/demo-seed.composition.mjs ./apps/api/src/modules/product/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/reporting-analytics/demo-seed.composition.mjs ./apps/api/src/modules/reporting-analytics/demo-seed.composition.mjs
+COPY --chown=node:node apps/api/src/modules/store/demo-seed.composition.mjs ./apps/api/src/modules/store/demo-seed.composition.mjs
 USER node
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["./node_modules/.bin/prisma", "migrate", "deploy"]

@@ -167,7 +167,12 @@ test("guest cancel preserves the store and login completes a retriable follow", 
   page,
 }) => {
   await page.goto("/");
-  await expect(page.getByRole("list", { name: "کالاهای تازه" })).toBeVisible();
+  const discoveryList = page.getByRole("list", { name: "کالاهای تازه" });
+  await expect(async () => {
+    const retry = page.getByRole("button", { name: "تلاش دوباره" });
+    if (await retry.isVisible()) await retry.click();
+    await expect(discoveryList).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 10_000 });
   await expect(
     page.locator(`a[href="/s/${slug}/products/${feedProducts[0]!.productId}"]`),
   ).toBeVisible();

@@ -12,8 +12,9 @@ describe("DevDirectPaymentProvider", () => {
     });
 
     expect(initiated).toEqual({
-      providerReference: "dev-91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
-      redirectUrl: "/v1/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      providerReference: "dev-scenario-pending-91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      redirectUrl:
+        "/v1/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273?scenario=success",
     });
     const callback = provider.successCallback({
       attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
@@ -24,7 +25,7 @@ describe("DevDirectPaymentProvider", () => {
     await expect(provider.verifyAndMapCallback(callback)).resolves.toMatchObject({
       result: "CONFIRMED",
       amount: 4_500_000,
-      providerReference: "dev-91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      providerReference: "dev-scenario-success-91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
     });
   });
 
@@ -60,7 +61,7 @@ describe("DevDirectPaymentProvider", () => {
         amount: { amount: verified.amount, currency: "IRR" },
         providerReference: verified.providerReference,
       }),
-    ).resolves.toMatchObject({ result: "CONFIRMED" });
+    ).resolves.toMatchObject({ result: "PENDING" });
 
     await expect(
       provider.verifyAndMapCallback(
@@ -73,5 +74,24 @@ describe("DevDirectPaymentProvider", () => {
         }),
       ),
     ).resolves.toMatchObject({ result: "FAILED" });
+  });
+
+  it("reconciles an initiated attempt after the provider is restarted", async () => {
+    const initiated = await new DevDirectPaymentProvider(
+      "test-signing-secret",
+    ).initiate({
+      attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+      amount: { amount: 4_500_000, currency: "IRR" },
+    });
+    const provider = new DevDirectPaymentProvider("test-signing-secret");
+    await expect(
+      provider.query({
+        attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+        orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+        amount: { amount: 4_500_000, currency: "IRR" },
+        providerReference: initiated.providerReference,
+      }),
+    ).resolves.toMatchObject({ result: "PENDING" });
   });
 });

@@ -124,6 +124,7 @@ export type VerifiedProviderCallback = Readonly<{
   result: "CONFIRMED" | "FAILED" | "PENDING";
   providerEventId: string;
   providerReference: string;
+  acceptedProviderReferences?: readonly string[];
 }>;
 
 export interface DirectPaymentProvider {

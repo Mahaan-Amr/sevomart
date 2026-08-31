@@ -20,12 +20,43 @@ describe("versioned demo runtime contract", () => {
       readFileSync("ops/demo/manifest.v1.json", "utf8"),
     ) as Record<string, unknown>;
 
-    expect(manifest).toEqual({
+    expect(manifest).toMatchObject({
       schemaVersion: 1,
-      manifestVersion: 1,
+      manifestVersion: 2,
       namespace: "sevo.demo",
-      resources: [],
     });
+    const resources = manifest.resources as Array<{
+      kind: string;
+      key: string;
+      mediaKind?: string;
+    }>;
+    expect(resources).toHaveLength(48);
+    expect(new Set(resources.map(({ key }) => key)).size).toBe(48);
+    expect(resources.filter(({ kind }) => kind === "loginIdentity")).toHaveLength(5);
+    expect(resources.filter(({ kind }) => kind === "store")).toHaveLength(4);
+    expect(resources.filter(({ kind }) => kind === "product")).toHaveLength(11);
+    expect(resources.filter(({ kind }) => kind === "salesContent")).toHaveLength(6);
+    expect(resources.filter(({ kind }) => kind === "conversation")).toHaveLength(3);
+    expect(resources.filter(({ kind }) => kind === "order")).toHaveLength(10);
+    expect(
+      (manifest.signIn as Array<{ startPath: string }>).map(
+        ({ startPath }) => startPath,
+      ),
+    ).toEqual([
+      "/",
+      "/seller",
+      "/seller/application",
+      "/platform/seller-applications",
+      "/platform/access",
+    ]);
+    expect(
+      resources.filter(({ kind }) => kind === "salesContent").map((item) => item),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mediaKind: "IMAGE" }),
+        expect.objectContaining({ mediaKind: "VIDEO" }),
+      ]),
+    );
   });
 
   it("uses the same guarded command after migration in native and Compose paths", () => {
@@ -65,8 +96,23 @@ describe("versioned demo runtime contract", () => {
     const seed = services["demo-seed"];
 
     expect(seed?.depends_on).toHaveProperty("migrate");
+    expect(seed?.depends_on).toHaveProperty("minio");
     expect(seed?.environment).not.toHaveProperty("DATABASE_URL");
     expect(seed?.command).toContain("scripts/demo/seed.mjs");
     expect(seed?.command).not.toContain("--skip-migrate");
+  });
+
+  it("runs the stateful baseline after shared integration tests", () => {
+    const sharedConfig = readFileSync("vitest.integration.config.ts", "utf8");
+    const demoConfig = readFileSync("vitest.demo-seed.integration.config.ts", "utf8");
+    const runner = readFileSync("scripts/run-integration-tests.mjs", "utf8");
+
+    expect(sharedConfig).toContain("tests/integration/demo-seed-runtime.test.ts");
+    expect(demoConfig).toContain(
+      'include: ["tests/integration/demo-seed-runtime.test.ts"]',
+    );
+    expect(runner.indexOf("vitest.integration.config.ts")).toBeLessThan(
+      runner.indexOf("vitest.demo-seed.integration.config.ts"),
+    );
   });
 });

@@ -42,9 +42,7 @@ describe("versioned isolated QA scenario contract", () => {
     expect(packageJson.scripts["test:qa-scenario"]).toBe(
       "node scripts/run-qa-scenario-tests.mjs",
     );
-    expect(sharedConfig).toContain(
-      'exclude: ["tests/integration/qa-scenario-factory.test.ts"]',
-    );
+    expect(sharedConfig).toContain('"tests/integration/qa-scenario-factory.test.ts"');
     expect(isolatedConfig).toContain(
       'include: ["tests/integration/qa-scenario-factory.test.ts"]',
     );

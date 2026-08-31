@@ -11,6 +11,7 @@ import {
   Inject,
   Param,
   Post,
+  Query,
   Req,
   Res,
 } from "@nestjs/common";
@@ -590,6 +591,7 @@ export class DevPaymentController {
   @Get("pay/:attemptId")
   async completeDevPayment(
     @Param("attemptId") attemptId: string,
+    @Query("scenario") scenario: string | undefined,
     @Req() request: FastifyRequest,
     @Res() response: FastifyReply,
   ) {
@@ -598,12 +600,21 @@ export class DevPaymentController {
       identityIdContract.parse(identityId),
       paymentAttemptIdContract.parse(attemptId),
     );
+    if (!scenario || !["success", "failure", "pending"].includes(scenario)) {
+      throw paymentError(
+        "DEV_PAYMENT_SCENARIO_REQUIRED",
+        "برای پرداخت نمایشی یکی از نتیجه‌های success، failure یا pending را انتخاب کنید.",
+        request.id,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     await this.payments.applyCallback(
-      this.provider.successCallback({
+      this.provider.scenarioCallback({
         attemptId: attempt.attemptId,
         orderId: attempt.orderId,
         amount: attempt.amount.amount,
-        providerEventId: `dev-${attempt.attemptId}`,
+        providerEventId: `dev-${scenario}-${attempt.attemptId}`,
+        scenario: scenario as "success" | "failure" | "pending",
       }),
       request.id,
     );

@@ -102,6 +102,7 @@
     "platform_outbox_consumptions": "platform",
     "platform_data_environment": "platform",
     "platform_seed_manifest_receipts": "platform",
+    "platform_seed_resources": "platform",
     "reporting_store_publications": "reporting-analytics",
     "reporting_fulfillment_states": "reporting-analytics",
     "reporting_seller_order_facts": "reporting-analytics",
