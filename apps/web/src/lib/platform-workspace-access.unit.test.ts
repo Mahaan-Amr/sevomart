@@ -63,6 +63,7 @@ describe("platform workspace access", () => {
     );
     expect(platformEntryPath(["PAYMENT_REVIEW"])).toBe("/platform/payment-reviews");
     expect(platformEntryPath(["VIOLATION_REVIEW"])).toBe("/platform/violations");
+    expect(platformEntryPath(["DISPUTE_REVIEW"])).toBe("/platform/disputes");
     expect(platformEntryPath(["ACCESS_ADMINISTRATION"])).toBe("/platform/access");
     expect(platformEntryPath(["ACCESS_AUDIT_REVIEW"])).toBe("/platform/access");
     expect(
@@ -92,7 +93,18 @@ describe("platform workspace access", () => {
         shortLabel: "تخلف‌ها",
       },
     ]);
-    expect(platformDestinationsFor(["DISPUTE_REVIEW"])).toEqual([]);
+  });
+
+  it("routes dispute reviewers to the dispute queue", () => {
+    expect(platformEntryPath(["DISPUTE_REVIEW"])).toBe("/platform/disputes");
+    expect(platformDestinationsFor(["DISPUTE_REVIEW"])).toEqual([
+      {
+        permission: "DISPUTE_REVIEW",
+        href: "/platform/disputes",
+        label: "رسیدگی به پرونده‌های اختلاف",
+        shortLabel: "اختلاف‌ها",
+      },
+    ]);
   });
 
   it("shows one access destination when administration and audit review coexist", () => {

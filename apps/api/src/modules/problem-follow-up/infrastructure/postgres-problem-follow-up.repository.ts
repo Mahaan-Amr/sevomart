@@ -39,6 +39,7 @@ import {
   contribution,
   decodeCursor,
   page,
+  platformDisputeAction,
   platformQueueItem,
   relatedView,
   violationQueueItem,
@@ -266,8 +267,10 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       );
       const row = await readDispute(sql, command.caseId);
       if (!row) throw new ProblemFollowUpFault("NOT_FOUND");
+      const view = relatedView(row);
       return platformDisputeViewContract.parse({
-        ...relatedView(row),
+        ...view,
+        platformAction: platformDisputeAction(view, new Date()),
         access: { ...access, mode: "REVEALED_MINIMUM" },
       });
     });
@@ -285,16 +288,21 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       if (replay) {
         return platformDisputeViewContract.parse({
           ...(replay as object),
+          platformAction: platformDisputeAction(
+            replay as ReturnType<typeof relatedView>,
+            command.occurredAt,
+          ),
           access: { ...access, mode: "REVEALED_MINIMUM" },
         });
       }
       const lockedRow = await lockDispute(sql, command.disputeId);
       if (!lockedRow) throw new ProblemFollowUpFault("NOT_FOUND");
+      const lockedView = relatedView(lockedRow);
       const resolvingExpiredSellerCase =
         lockedRow.status === "AWAITING_SELLER_RESPONSE" &&
         lockedRow.deadlineAt !== null &&
         command.occurredAt > lockedRow.deadlineAt;
-      if (lockedRow.status !== "UNDER_REVIEW" && !resolvingExpiredSellerCase) {
+      if (platformDisputeAction(lockedView, command.occurredAt) !== "RESOLVE") {
         throw new ProblemFollowUpFault("INVALID_TRANSITION");
       }
       let row = lockedRow;
@@ -400,6 +408,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       await remember(sql, "RESOLVE", command, baseView);
       return platformDisputeViewContract.parse({
         ...baseView,
+        platformAction: platformDisputeAction(baseView, command.occurredAt),
         access: { ...access, mode: "REVEALED_MINIMUM" },
       });
     });
@@ -417,15 +426,19 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       if (replay) {
         return platformDisputeViewContract.parse({
           ...(replay as object),
+          platformAction: platformDisputeAction(
+            replay as ReturnType<typeof relatedView>,
+            command.occurredAt,
+          ),
           access: { ...access, mode: "REVEALED_MINIMUM" },
         });
       }
       const row = await lockDispute(sql, command.disputeId);
       if (!row) throw new ProblemFollowUpFault("NOT_FOUND");
-      if (row.status !== "RESOLVED" && row.status !== "CLOSED") {
-        throw new ProblemFollowUpFault("INVALID_TRANSITION");
-      }
-      if (!row.deadlineAt || command.occurredAt > row.deadlineAt) {
+      if (platformDisputeAction(relatedView(row), command.occurredAt) !== "REOPEN") {
+        if (row.status !== "RESOLVED" && row.status !== "CLOSED") {
+          throw new ProblemFollowUpFault("INVALID_TRANSITION");
+        }
         throw new ProblemFollowUpFault("DEADLINE_PASSED");
       }
       const contributions = appendContribution(
@@ -482,6 +495,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       await remember(sql, "REOPEN", command, baseView);
       return platformDisputeViewContract.parse({
         ...baseView,
+        platformAction: platformDisputeAction(baseView, command.occurredAt),
         access: { ...access, mode: "REVEALED_MINIMUM" },
       });
     });

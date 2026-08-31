@@ -13,7 +13,7 @@ const forwardedRequestHeaderNames = [
   "x-platform-access-reason",
 ] as const;
 
-export async function proxyIdentityRequest(
+export async function proxyApiRequest(
   request: Request,
   path: string,
   forwardSessionCookie = false,
@@ -65,6 +65,9 @@ function forwardedRequestHeaders(request: Request) {
   }
   return headers;
 }
+
+// Compatibility name for identity routes; new cross-domain routes use the generic name.
+export const proxyIdentityRequest = proxyApiRequest;
 
 export async function readIdentitySession(
   cookieHeader: string,

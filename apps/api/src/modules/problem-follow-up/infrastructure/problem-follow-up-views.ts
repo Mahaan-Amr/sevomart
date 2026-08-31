@@ -90,6 +90,28 @@ export function platformQueueItem(row: DisputeRow) {
   };
 }
 
+export function platformDisputeAction(
+  dispute: Pick<ReturnType<typeof relatedView>, "status" | "deadline">,
+  occurredAt: Date,
+) {
+  if (dispute.status === "UNDER_REVIEW") return "RESOLVE" as const;
+  if (
+    dispute.status === "AWAITING_SELLER_RESPONSE" &&
+    dispute.deadline?.kind === "SELLER_FIRST_RESPONSE" &&
+    Date.parse(dispute.deadline.dueAt) < occurredAt.getTime()
+  ) {
+    return "RESOLVE" as const;
+  }
+  if (
+    (dispute.status === "RESOLVED" || dispute.status === "CLOSED") &&
+    dispute.deadline?.kind === "REOPEN_WINDOW" &&
+    Date.parse(dispute.deadline.dueAt) >= occurredAt.getTime()
+  ) {
+    return "REOPEN" as const;
+  }
+  return null;
+}
+
 function nextAction(status: DisputeStatus, deadlineAt: Date | null) {
   if (status === "AWAITING_SELLER_RESPONSE") {
     if (deadlineAt && deadlineAt.getTime() < Date.now()) {
