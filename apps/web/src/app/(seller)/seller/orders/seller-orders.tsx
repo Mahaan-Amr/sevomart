@@ -5,6 +5,7 @@ import {
   type SellerActionableOrder,
 } from "@sevo/contracts/orders/v1";
 import { fulfillmentTimelineContract } from "@sevo/contracts/fulfillment/v1";
+import { isSellerPreparationOverdue } from "@sevo/contracts/reporting-analytics/v1";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -50,9 +51,13 @@ export function SellerOrders({ filter }: { filter?: "OVERDUE_PREPARING" }) {
             const preparingAt = fulfillment.data.timeline.findLast(
               ({ status }) => status === "PREPARING",
             )?.occurredAt;
-            return fulfillment.data.status === "PREPARING" &&
-              preparingAt &&
-              Date.parse(preparingAt) <= Date.now() - 24 * 60 * 60 * 1_000
+            return isSellerPreparationOverdue(
+              {
+                fulfillmentStatus: fulfillment.data.status,
+                ...(preparingAt ? { fulfillmentOccurredAt: preparingAt } : {}),
+              },
+              new Date(),
+            )
               ? order
               : undefined;
           }),

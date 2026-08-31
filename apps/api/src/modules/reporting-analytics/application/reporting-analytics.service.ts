@@ -1,6 +1,8 @@
 import {
+  isSellerPreparationOverdue,
   sellerBasicReportContract,
   sellerOperationalSummaryContract,
+  sellerPreparationOverdueAfterHours,
   sellerReportRangeQueryContract,
 } from "@sevo/contracts/reporting-analytics/v1";
 
@@ -14,7 +16,6 @@ import {
 } from "../public";
 
 const REPORTING_RANGE_DAYS = 30;
-const PREPARATION_OVERDUE_AFTER_HOURS = 24;
 
 export class ReportingAnalyticsService {
   constructor(
@@ -28,8 +29,7 @@ export class ReportingAnalyticsService {
   async readOperationalSummary(request: ReportingAnalyticsRequest) {
     const storeId = await this.requireSellerStore(request);
     const orders = await this.repository.readSellerOrderStates({ storeId });
-    const overdueBefore =
-      this.clock().getTime() - PREPARATION_OVERDUE_AFTER_HOURS * 60 * 60 * 1_000;
+    const now = this.clock();
 
     return sellerOperationalSummaryContract.parse({
       storeId,
@@ -45,12 +45,8 @@ export class ReportingAnalyticsService {
         },
         {
           kind: "OVERDUE_PREPARATIONS",
-          count: orders.filter(
-            (order) =>
-              order.fulfillmentStatus === "PREPARING" &&
-              order.fulfillmentOccurredAt !== undefined &&
-              Date.parse(order.fulfillmentOccurredAt) <= overdueBefore,
-          ).length,
+          count: orders.filter((order) => isSellerPreparationOverdue(order, now))
+            .length,
           href: "/seller/orders?status=preparing",
         },
         {
@@ -59,7 +55,7 @@ export class ReportingAnalyticsService {
           href: "/seller/conversations",
         },
       ],
-      preparationOverdueAfterHours: PREPARATION_OVERDUE_AFTER_HOURS,
+      preparationOverdueAfterHours: sellerPreparationOverdueAfterHours,
       projectionUpdatedAt: await this.repository.readProjectionUpdatedAt(storeId),
     });
   }
