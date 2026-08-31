@@ -140,6 +140,33 @@ describe("ProblemFollowUpService", () => {
     );
   });
 
+  it("rejects evidence that is not ready, seller-owned and bound to the dispute", async () => {
+    const respond = vi.fn();
+    const service = new ProblemFollowUpService(
+      { respond } as unknown as ProblemFollowUpRepository,
+      { readActiveIdentitySession: vi.fn().mockResolvedValue({ identityId: buyerId }) },
+      { readOrderSnapshot: vi.fn() },
+      () => new Date("2026-08-30T09:00:00.000Z"),
+      { isActiveSeller: vi.fn().mockResolvedValue(true) },
+      { resolveStore: vi.fn().mockResolvedValue(storeId) },
+      undefined,
+      { isReadySellerEvidence: vi.fn().mockResolvedValue(false) },
+    );
+
+    await expect(
+      service.respond(
+        { sessionToken: "seller-session", correlationId: evidenceId },
+        "00000000-0000-4000-8000-000000000005",
+        {
+          response: "پاسخ فروشگاه همراه با مدرک معتبر ثبت می‌شود.",
+          evidence: [{ evidenceId, kind: "IMAGE" }],
+        },
+        "respond-dispute-evidence-01",
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(respond).not.toHaveBeenCalled();
+  });
+
   it("scopes idempotency hashes to the target dispute", async () => {
     const respond = vi.fn().mockResolvedValue({ status: "UNDER_REVIEW" });
     const service = new ProblemFollowUpService(

@@ -2,6 +2,7 @@
 
 import { sellerDisputeViewContract } from "@sevo/contracts/problem-follow-up/v1";
 import { respondToDisputeInputV2Contract } from "@sevo/contracts/problem-follow-up/v2";
+import { mediaIdContract } from "@sevo/contracts/media/v1";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -27,13 +28,16 @@ export function SellerDisputeResponse({
 }) {
   const [dispute, setDispute] = useState(initialDispute);
   const [response, setResponse] = useState("");
-  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+  const [evidenceFile, setEvidenceFile] = useState<File>();
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [noticeOccurrence, setNoticeOccurrence] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [submissionClosed, setSubmissionClosed] = useState(false);
   const idempotencyKey = useRef(crypto.randomUUID());
+  const uploadedEvidence = useRef<{ file: File; evidenceId: string } | undefined>(
+    undefined,
+  );
   const noticeRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
@@ -44,17 +48,12 @@ export function SellerDisputeResponse({
     dispute.deadline?.kind === "SELLER_FIRST_RESPONSE" &&
     Date.parse(dispute.deadline.dueAt) <= Date.now();
   const canRespond = sellerNeedsToRespond(dispute) && !submissionClosed;
-  const availableEvidence = collectAvailableEvidence(dispute);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const input = respondToDisputeInputV2Contract.safeParse({
-      response,
-      evidence: availableEvidence
-        .filter((item) => selectedEvidenceIds.includes(item.evidenceId))
-        .map(({ evidenceId, kind }) => ({ evidenceId, kind })),
-    });
-    if (!input.success) {
+    if (
+      !respondToDisputeInputV2Contract.safeParse({ response, evidence: [] }).success
+    ) {
       setNotice("پاسخ باید دست‌کم ۱۰ نویسه باشد.");
       setNoticeOccurrence((value) => value + 1);
       return;
@@ -63,6 +62,35 @@ export function SellerDisputeResponse({
     setPending(true);
     setNotice(undefined);
     try {
+      let evidenceId: string | undefined;
+      if (evidenceFile) {
+        if (uploadedEvidence.current?.file === evidenceFile) {
+          evidenceId = uploadedEvidence.current.evidenceId;
+        } else {
+          const form = new FormData();
+          form.set("file", evidenceFile);
+          const upload = await fetch(
+            `/api/seller/disputes/${encodeURIComponent(dispute.disputeId)}/evidence`,
+            { method: "POST", body: form },
+          );
+          const uploadBody: unknown = await upload.json();
+          const parsedId =
+            typeof uploadBody === "object" && uploadBody && "id" in uploadBody
+              ? mediaIdContract.safeParse(uploadBody.id)
+              : undefined;
+          if (!upload.ok || !parsedId?.success) {
+            setNotice("تصویر مدرک بارگذاری نشد. فایل را بررسی و دوباره تلاش کنید.");
+            setNoticeOccurrence((value) => value + 1);
+            return;
+          }
+          evidenceId = parsedId.data;
+          uploadedEvidence.current = { file: evidenceFile, evidenceId };
+        }
+      }
+      const input = respondToDisputeInputV2Contract.parse({
+        response,
+        evidence: evidenceId ? [{ evidenceId, kind: "IMAGE" }] : [],
+      });
       const result = await fetch(
         `/api/seller/disputes/${encodeURIComponent(dispute.disputeId)}/response`,
         {
@@ -71,7 +99,7 @@ export function SellerDisputeResponse({
             "content-type": "application/json",
             "idempotency-key": idempotencyKey.current,
           },
-          body: JSON.stringify(input.data),
+          body: JSON.stringify(input),
         },
       );
       const body: unknown = await result.json();
@@ -199,33 +227,17 @@ export function SellerDisputeResponse({
 
             <fieldset>
               <legend>مدرک مرتبط (اختیاری)</legend>
-              <p>مدرک‌های همین پرونده را که پاسخ شما به آن‌ها مربوط است انتخاب کنید.</p>
-              {availableEvidence.length ? (
-                <div className={styles.evidenceOptions}>
-                  {availableEvidence.map((item) => (
-                    <label className={styles.evidenceOption} key={item.evidenceId}>
-                      <input
-                        type="checkbox"
-                        checked={selectedEvidenceIds.includes(item.evidenceId)}
-                        onChange={(event) =>
-                          setSelectedEvidenceIds((current) =>
-                            event.target.checked
-                              ? [...current, item.evidenceId]
-                              : current.filter((id) => id !== item.evidenceId),
-                          )
-                        }
-                      />
-                      <span>
-                        {evidenceKindTitle(item.kind)}{" "}
-                        {contributionAuthorTitle(item.authorKind)}
-                        <small>{formatDisputeTime(item.submittedAt)}</small>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <p>هنوز مدرکی در این پرونده ثبت نشده است.</p>
-              )}
+              <p>یک تصویر متعلق به فروشگاه و مرتبط با همین پرونده بارگذاری کنید.</p>
+              <label htmlFor="seller-dispute-evidence">انتخاب تصویر مدرک</label>
+              <input
+                id="seller-dispute-evidence"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => {
+                  setEvidenceFile(event.target.files?.[0]);
+                  uploadedEvidence.current = undefined;
+                }}
+              />
             </fieldset>
             <button className={styles.primaryButton} type="submit" disabled={pending}>
               {pending ? "در حال ثبت…" : "ثبت پاسخ فروشگاه"}
@@ -241,29 +253,6 @@ function readErrorCode(body: unknown) {
   return typeof body === "object" && body && "code" in body
     ? String(body.code)
     : "UNKNOWN";
-}
-
-function collectAvailableEvidence(dispute: SellerDispute) {
-  const unique = new Map<
-    string,
-    {
-      evidenceId: string;
-      kind: "IMAGE" | "DOCUMENT" | "MESSAGE_REFERENCE";
-      submittedAt: string;
-      authorKind: "BUYER" | "SELLER" | "PLATFORM_AGENT";
-    }
-  >();
-  for (const contribution of dispute.contributions) {
-    for (const evidence of contribution.evidence) {
-      if (!unique.has(evidence.evidenceId)) {
-        unique.set(evidence.evidenceId, {
-          ...evidence,
-          authorKind: contribution.authorKind,
-        });
-      }
-    }
-  }
-  return [...unique.values()];
 }
 
 async function refreshDispute(

@@ -22,6 +22,7 @@ import { PlatformAgentSessionUnauthorizedError } from "../../identity-access/pub
 import {
   ProblemFollowUpFault,
   type ProblemFollowUpFulfillmentRead,
+  type ProblemFollowUpEvidenceRead,
   type ProblemFollowUpPlatformSessionRead,
   type ProblemFollowUpRepository,
   type ProblemFollowUpRequest,
@@ -43,6 +44,7 @@ export class ProblemFollowUpService {
     private readonly sellers?: ProblemFollowUpSellerAccessRead,
     private readonly stores?: ProblemFollowUpStoreResolver,
     private readonly platformSessions?: ProblemFollowUpPlatformSessionRead,
+    private readonly evidence?: ProblemFollowUpEvidenceRead,
   ) {}
 
   async open(request: ProblemFollowUpRequest, body: unknown, key: unknown) {
@@ -113,6 +115,23 @@ export class ProblemFollowUpService {
     const { actorId, storeId } = await this.requireSeller(request.sessionToken);
     const input = this.parse(respondToDisputeInputV2Contract, body);
     const parsedDisputeId = this.parse(disputeIdContract, disputeId);
+    if (
+      input.evidence.length > 0 &&
+      (!this.evidence ||
+        !(
+          await Promise.all(
+            input.evidence.map(({ evidenceId }) =>
+              this.evidence!.isReadySellerEvidence({
+                identityId: actorId,
+                disputeId: parsedDisputeId,
+                evidenceId,
+              }),
+            ),
+          )
+        ).every(Boolean))
+    ) {
+      throw new ProblemFollowUpFault("VALIDATION_ERROR");
+    }
     return this.repository.respond({
       disputeId: parsedDisputeId,
       actorId,

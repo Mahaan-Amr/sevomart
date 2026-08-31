@@ -17,6 +17,7 @@ export async function createSellerWorkspaceFixture(
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
+  await page.getByRole("heading", { name: "وارد شدید" }).waitFor();
 
   const identities = await sql<Array<{ identityId: string }>>`
     select identity_id as "identityId"

@@ -5,6 +5,8 @@ import { conversationAttachmentInputContract } from "@sevo/contracts/media/v1";
 import {
   CONVERSATION_ATTACHMENT_READER,
   type ConversationAttachmentReader,
+  DISPUTE_EVIDENCE_READER,
+  type DisputeEvidenceReader,
 } from "../../apps/api/src/modules/media/public";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
@@ -91,6 +93,37 @@ it("uploads a private conversation image for its active participant", async () =
   });
   expect(preview.statusCode).toBe(200);
   expect(preview.headers["cache-control"]).toBe("private, no-store");
+});
+
+it("binds seller dispute evidence to its owner and exact case", async () => {
+  const f = await start();
+  const disputeId = randomUUID();
+  const response = await f.server.inject({
+    method: "POST",
+    url: `/v1/seller/disputes/${disputeId}/evidence`,
+    headers: {
+      cookie: f.cookie,
+      "content-type": "multipart/form-data; boundary=attachment",
+    },
+    payload: uploadBody(),
+  });
+  expect(response.statusCode).toBe(201);
+  const reference = response.json();
+  const reader = f.app.get<DisputeEvidenceReader>(DISPUTE_EVIDENCE_READER);
+  expect(
+    await reader.isReadySellerEvidence({
+      identityId: f.identityId,
+      disputeId,
+      evidenceId: reference.id,
+    }),
+  ).toBe(true);
+  expect(
+    await reader.isReadySellerEvidence({
+      identityId: f.identityId,
+      disputeId: randomUUID(),
+      evidenceId: reference.id,
+    }),
+  ).toBe(false);
 });
 
 it("shares only sent attachments with the other active participant and denies direct URLs after revocation", async () => {

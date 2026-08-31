@@ -55,6 +55,28 @@ describe("seller disputes API proxy", () => {
     expect(new Headers(init.headers).get("idempotency-key")).toBe("seller-response-01");
   });
 
+  it("forwards dispute evidence as multipart data to the v1 media owner", async () => {
+    const upstream = vi.fn().mockResolvedValue(Response.json({ id: disputeId }));
+    vi.stubGlobal("fetch", upstream);
+    const form = new FormData();
+    form.set("file", new Blob(["image"], { type: "image/png" }), "proof.png");
+
+    await proxySellerDisputesRequest(
+      new Request(`http://sevo.test/api/seller/disputes/${disputeId}/evidence`, {
+        method: "POST",
+        body: form,
+      }),
+      [disputeId, "evidence"],
+    );
+
+    expect(upstream.mock.calls[0]?.[0]).toBe(
+      `http://127.0.0.1:3001/v1/seller/disputes/${disputeId}/evidence`,
+    );
+    expect(
+      new Headers(upstream.mock.calls[0]?.[1].headers).get("content-type"),
+    ).toMatch(/^multipart\/form-data; boundary=/);
+  });
+
   it("rejects invalid identifiers and non-canonical paths", async () => {
     const upstream = vi.fn();
     vi.stubGlobal("fetch", upstream);

@@ -16,10 +16,15 @@ export function proxySellerDisputesRequest(
     segments.length === 2 &&
     disputeIdContract.safeParse(segments[0]).success &&
     segments[1] === "response";
+  const isEvidenceUpload =
+    request.method === "POST" &&
+    segments.length === 2 &&
+    disputeIdContract.safeParse(segments[0]).success &&
+    segments[1] === "evidence";
 
   return proxyJsonApiRequest(request, segments, {
     basePath: isResponseWrite ? "/v2/seller/disputes" : "/v1/seller/disputes",
-    isAllowed: () => isListRead || isDetailRead || isResponseWrite,
+    isAllowed: () => isListRead || isDetailRead || isResponseWrite || isEvidenceUpload,
     responseHeaders: ["content-type", "retry-after"],
     noStore: true,
     forwardSearch: isListRead,

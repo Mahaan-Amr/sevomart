@@ -31,7 +31,10 @@ export default async function SellerHomePage() {
       <section className={styles.workspace} aria-labelledby="seller-home-title">
         <span className={styles.eyebrow}>فضای کار فروشنده</span>
         <h1 id="seller-home-title">کارهای نزدیک</h1>
-        <p>سفارش، موجودی یا گفت‌وگویی که نیاز به رسیدگی داشته باشد اینجا می‌آید.</p>
+        <p>
+          سفارش، موجودی، گفت‌وگو یا پرونده اختلافی که نیاز به رسیدگی داشته باشد اینجا
+          می‌آید.
+        </p>
         <div className={styles.nextAction}>
           {actionableDispute ? (
             <>
@@ -72,7 +75,10 @@ export default async function SellerHomePage() {
           ) : (
             <>
               <h2>سفارش تازه‌ای برای رسیدگی نیست</h2>
-              <p>برای کارهای دیگر، موجودی و گفت‌وگوها را از مسیر خودشان بررسی کنید.</p>
+              <p>
+                برای کارهای دیگر، موجودی، گفت‌وگوها و پرونده‌های اختلاف را از مسیر
+                خودشان بررسی کنید.
+              </p>
             </>
           )}
         </div>

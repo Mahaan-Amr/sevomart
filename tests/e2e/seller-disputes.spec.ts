@@ -75,20 +75,27 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
     ).toBeVisible();
     await expect(page.getByText(orderId)).toHaveCount(0);
     const textarea = page.getByLabel("توضیح شما");
-    const evidence = page.getByRole("checkbox", { name: /تصویر خریدار/ });
+    const evidence = page.getByLabel("انتخاب تصویر مدرک");
     const submit = page.getByRole("button", { name: "ثبت پاسخ فروشگاه" });
     await textarea.fill(
       "کالا را با دقت بررسی می‌کنیم و امروز نتیجه و راه‌حل روشن را اعلام می‌کنیم. ".repeat(
         8,
       ),
     );
+    await evidence.setInputFiles({
+      name: "seller-proof.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
     await textarea.focus();
     await page.keyboard.press("Tab");
     await expect(evidence).toBeFocused();
     expect(
       await evidence.evaluate((element) => element.matches(":focus-visible")),
     ).toBe(true);
-    await page.keyboard.press("Space");
     await page.keyboard.press("Tab");
     await expect(submit).toBeFocused();
     expect(await submit.evaluate((element) => element.matches(":focus-visible"))).toBe(
@@ -110,6 +117,61 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
     await assertNoHorizontalOverflow(page);
     await assertInteractiveTargets(page, "main a, main button, main textarea");
     await assertMinimumContrast(page.locator("h1, h2, p, a, button, label, span"));
+
+    const retryDisputeId = randomUUID();
+    const retryOpenedAt = new Date();
+    await sql`
+      insert into problem_disputes
+        (id, order_id, buyer_identity_id, store_id, status, category,
+         opened_at, deadline_kind, deadline_at, contributions, outcome,
+         version, updated_at)
+      values
+        (${retryDisputeId}, ${randomUUID()}, ${buyerId}, ${fixture.storeId},
+         'AWAITING_SELLER_RESPONSE', 'WRONG_ITEM', ${retryOpenedAt},
+         'SELLER_FIRST_RESPONSE', ${new Date(retryOpenedAt.getTime() + 86_400_000)},
+         ${sql.json([
+           {
+             authorKind: "BUYER",
+             text: "کالای دیگری به جای سفارش من تحویل شده است.",
+             evidence: [],
+             submittedAt: retryOpenedAt.toISOString(),
+           },
+         ])}, null, 1, ${retryOpenedAt})
+    `;
+    const retryKeys: string[] = [];
+    let returnInProgress = true;
+    await page.route(
+      `**/api/seller/disputes/${retryDisputeId}/response`,
+      async (route) => {
+        retryKeys.push(route.request().headers()["idempotency-key"] ?? "");
+        if (returnInProgress) {
+          returnInProgress = false;
+          await route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              code: "IDEMPOTENCY_IN_PROGRESS",
+              message: "درخواست در حال پردازش است.",
+              correlationId: randomUUID(),
+            }),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+    await page.goto(`/seller/disputes/${retryDisputeId}`);
+    await page
+      .getByLabel("توضیح شما")
+      .fill("همان درخواست را بدون ساخت پاسخ تکراری دوباره بررسی می‌کنیم.");
+    await page.getByRole("button", { name: "ثبت پاسخ فروشگاه" }).click();
+    await expect(page.getByText(/همین پاسخ هنوز در حال ثبت است/)).toBeVisible();
+    await page.getByRole("button", { name: "ثبت پاسخ فروشگاه" }).click();
+    await expect(
+      page.getByText("پاسخ فروشگاه ثبت شد و پرونده برای بررسی سوو فرستاده شد."),
+    ).toBeVisible();
+    expect(retryKeys).toHaveLength(2);
+    expect(retryKeys[1]).toBe(retryKeys[0]);
 
     const expiredDisputeId = randomUUID();
     const expiredOpenedAt = new Date();

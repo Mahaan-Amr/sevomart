@@ -6,6 +6,7 @@ import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media
 import {
   CONVERSATION_MEDIA_ACCESS,
   CONVERSATION_ATTACHMENT_READER,
+  DISPUTE_EVIDENCE_READER,
   type ConversationMediaAccess,
   MEDIA_STORAGE,
   PUBLISHED_MEDIA_ACCESS,
@@ -14,6 +15,7 @@ import {
   type PublishedMediaAccess,
 } from "./public";
 import { MediaAttachmentReader } from "./media-attachment-reader";
+import { MediaDisputeEvidenceReader } from "./media-dispute-evidence-reader";
 import { MediaController } from "./media.controller";
 import { SellerUploadRateLimiter } from "./seller-upload-rate-limiter";
 
@@ -40,6 +42,10 @@ export class MediaModule {
           provide: CONVERSATION_ATTACHMENT_READER,
           useValue: new MediaAttachmentReader(configuredStorage),
         },
+        {
+          provide: DISPUTE_EVIDENCE_READER,
+          useValue: new MediaDisputeEvidenceReader(configuredStorage),
+        },
         { provide: MEDIA_STORAGE, useValue: configuredStorage },
         { provide: PUBLISHED_MEDIA_ACCESS, useValue: publishedMediaAccess },
         {
@@ -47,7 +53,7 @@ export class MediaModule {
           useValue: new SellerUploadRateLimiter(),
         },
       ],
-      exports: [MEDIA_STORAGE, CONVERSATION_ATTACHMENT_READER],
+      exports: [MEDIA_STORAGE, CONVERSATION_ATTACHMENT_READER, DISPUTE_EVIDENCE_READER],
     };
   }
 }

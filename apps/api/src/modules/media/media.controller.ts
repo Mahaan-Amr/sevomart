@@ -99,6 +99,16 @@ export class MediaController {
     return this.uploadOwnedMedia(request, parsed.data, "CONVERSATION_ATTACHMENT");
   }
 
+  @Post("seller/disputes/:disputeId/evidence")
+  async uploadDisputeEvidence(
+    @Param("disputeId") value: string,
+    @Req() request: FastifyRequest,
+  ) {
+    const disputeId = mediaIdContract.safeParse(value);
+    if (!disputeId.success) throw mediaNotFound(request.id);
+    return this.uploadOwnedMedia(request, disputeId.data, "DISPUTE_EVIDENCE");
+  }
+
   private async uploadOwnedMedia(
     request: FastifyRequest,
     ownerReferenceId?: string,
@@ -115,7 +125,7 @@ export class MediaController {
     try {
       for await (const part of request.parts()) {
         if (
-          fixedPurpose === "CONVERSATION_ATTACHMENT" &&
+          fixedPurpose !== undefined &&
           (part.type !== "file" || part.fieldname !== "file")
         )
           throw mediaError(request.id, "REQUIRED");
@@ -241,7 +251,7 @@ async function createVariants(
   bytes: Buffer,
 ): Promise<StoredMediaVariant[]> {
   const definitions =
-    purpose === "CONVERSATION_ATTACHMENT"
+    purpose === "CONVERSATION_ATTACHMENT" || purpose === "DISPUTE_EVIDENCE"
       ? ([["attachment-preview", 1600, 1600, false]] as const)
       : purpose === "STORE_LOGO"
         ? ([

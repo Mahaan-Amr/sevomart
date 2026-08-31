@@ -13,6 +13,7 @@ import {
   type PlatformSensitiveAccess,
   type SellerAccessRead,
 } from "../identity-access/public";
+import { DISPUTE_EVIDENCE_READER, type DisputeEvidenceReader } from "../media/public";
 import { ProblemFollowUpService } from "./application/problem-follow-up.service";
 import { PostgresProblemFollowUpRepository } from "./infrastructure/postgres-problem-follow-up.repository";
 import { ProblemFollowUpController } from "./problem-follow-up.controller";
@@ -46,11 +47,13 @@ export class ProblemFollowUpModule {
             IDENTITY_SESSION_READER,
             SELLER_ACCESS_READ,
             PLATFORM_SENSITIVE_ACCESS,
+            DISPUTE_EVIDENCE_READER,
           ],
           useFactory: (
             sessions: IdentitySessionReader,
             sellerAccess: SellerAccessRead,
             sensitiveAccess: PlatformSensitiveAccess,
+            evidence: DisputeEvidenceReader,
           ) => {
             const repository =
               options.repository ??
@@ -79,6 +82,7 @@ export class ProblemFollowUpModule {
                 },
               },
               options.platformSessions,
+              evidence,
             );
           },
         },
