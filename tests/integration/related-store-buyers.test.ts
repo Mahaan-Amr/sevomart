@@ -189,6 +189,51 @@ describe("related store buyers and contextual delivery reveal", () => {
         latestOrder: { orderId: first.orderId },
       });
 
+      const historyPageOne = await server.inject({
+        method: "GET",
+        url: `/v1/seller/orders/${olderFirstBuyerOrder.orderId}/buyer-orders?limit=1`,
+        headers: { cookie },
+      });
+      expect(historyPageOne.statusCode).toBe(200);
+      expect(historyPageOne.headers["cache-control"]).toBe("no-store");
+      expect(historyPageOne.json()).toMatchObject({
+        items: [
+          {
+            orderId: first.orderId,
+            paymentStatus: "PAID",
+            fulfillmentStatus: "DELIVERED",
+          },
+        ],
+        nextCursor: expect.any(String),
+      });
+      expect(historyPageOne.json().items[0]).not.toHaveProperty("buyerId");
+
+      const historyPageTwo = await server.inject({
+        method: "GET",
+        url: `/v1/seller/orders/${olderFirstBuyerOrder.orderId}/buyer-orders?limit=1&cursor=${encodeURIComponent(historyPageOne.json().nextCursor)}`,
+        headers: { cookie },
+      });
+      expect(historyPageTwo.statusCode).toBe(200);
+      expect(historyPageTwo.json()).toMatchObject({
+        items: [{ orderId: olderFirstBuyerOrder.orderId, paymentStatus: "PAID" }],
+        nextCursor: null,
+      });
+
+      const cursorBoundToContext = await server.inject({
+        method: "GET",
+        url: `/v1/seller/orders/${second.orderId}/buyer-orders?cursor=${encodeURIComponent(historyPageOne.json().nextCursor)}`,
+        headers: { cookie },
+      });
+      expect(cursorBoundToContext.statusCode).toBe(422);
+      expect(cursorBoundToContext.json().code).toBe("INVALID_CURSOR");
+
+      const otherStoreHistory = await server.inject({
+        method: "GET",
+        url: `/v1/seller/orders/${unrelated.orderId}/buyer-orders`,
+        headers: { cookie },
+      });
+      expect(otherStoreHistory.statusCode).toBe(404);
+
       await sql`
         update order_fulfillment_status_projections
         set status = 'SHIPPED', version = 2

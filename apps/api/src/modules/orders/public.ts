@@ -15,7 +15,9 @@ import type {
   OrderStatus,
   SellerActionableOrder,
   ListStoreBuyersQuery,
+  ListStoreBuyerOrdersQuery,
   StoreBuyerPage,
+  StoreBuyerOrderPage,
   RevealedOrderDeliveryDetails,
   PrepareCheckoutInput,
   SavedAddress,
@@ -158,6 +160,11 @@ export interface RelatedStoreBuyerRead {
     storeId: StoreId;
     query: ListStoreBuyersQuery;
   }): Promise<StoreBuyerPage>;
+  listStoreBuyerOrders(input: {
+    storeId: StoreId;
+    contextOrderId: OrderId;
+    query: ListStoreBuyerOrdersQuery;
+  }): Promise<StoreBuyerOrderPage>;
   revealOrderDeliveryDetails(input: {
     actorId: IdentityId;
     storeId: StoreId;

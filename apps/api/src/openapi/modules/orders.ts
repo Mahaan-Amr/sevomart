@@ -104,6 +104,38 @@ const operations = [
     ],
   },
   {
+    ...ordersV1Operations.listStoreBuyerOrders,
+    tag: "orders",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderId",
+      schema: "OrderId",
+      example: ordersV1Examples.StoreBuyerOrderPage.items[0].orderId,
+    },
+    queryParameters: [
+      {
+        name: "cursor",
+        schema: "StoreBuyerCursor",
+        example: ordersV1Examples.StoreBuyerCursor,
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "StoreBuyerLimit",
+        example: ordersV1Examples.StoreBuyerLimit,
+        required: false,
+      },
+    ],
+    responses: [
+      { status: 200, schema: "StoreBuyerOrderPage", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "StoreBuyerError" },
+      { status: 404, schema: "StoreBuyerError" },
+      { status: 422, schema: "StoreBuyerError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...ordersV1Operations.listSellerActionableOrders,
     tag: "orders",
     auth: "identity-session",

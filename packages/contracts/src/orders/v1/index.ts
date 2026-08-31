@@ -73,6 +73,11 @@ export const ordersV1Operations = {
     method: "get",
     path: "/v1/seller/buyers",
   },
+  listStoreBuyerOrders: {
+    operationId: "listStoreBuyerOrders",
+    method: "get",
+    path: "/v1/seller/orders/{orderId}/buyer-orders",
+  },
   revealSellerOrderDeliveryDetails: {
     operationId: "revealSellerOrderDeliveryDetails",
     method: "post",
@@ -602,6 +607,29 @@ export const listStoreBuyersQueryContract = z
   })
   .strict();
 
+export const listStoreBuyerOrdersQueryContract = z
+  .object({
+    cursor: storeBuyerCursorContract.optional(),
+    limit: storeBuyerLimitContract.default(20),
+  })
+  .strict();
+
+export const storeBuyerOrderContract = z
+  .object({
+    orderId: orderIdContract,
+    paymentStatus: orderStatusContract,
+    fulfillmentStatus: fulfillmentStatusContract.optional(),
+    createdAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const storeBuyerOrderPageContract = z
+  .object({
+    items: z.array(storeBuyerOrderContract).max(50),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+
 export const storeBuyerSummaryContract = z
   .object({
     buyerId: identityIdContract,
@@ -811,6 +839,8 @@ export const ordersV1Schemas = {
   StoreBuyerLimit: storeBuyerLimitContract,
   StoreBuyerSummary: storeBuyerSummaryContract,
   StoreBuyerPage: storeBuyerPageContract,
+  StoreBuyerOrder: storeBuyerOrderContract,
+  StoreBuyerOrderPage: storeBuyerOrderPageContract,
   RevealOrderDeliveryDetailsInput: revealOrderDeliveryDetailsInputContract,
   RevealedOrderDeliveryDetails: revealedOrderDeliveryDetailsContract,
   StoreBuyerError: storeBuyerErrorContract,
@@ -882,6 +912,17 @@ export const ordersV1Examples = {
           fulfillmentStatus: "SHIPPED",
           createdAt: "2026-08-25T08:00:00.000Z",
         },
+      },
+    ],
+    nextCursor: null,
+  },
+  StoreBuyerOrderPage: {
+    items: [
+      {
+        orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+        paymentStatus: "PAID",
+        fulfillmentStatus: "SHIPPED",
+        createdAt: "2026-08-25T08:00:00.000Z",
       },
     ],
     nextCursor: null,
@@ -1178,6 +1219,11 @@ export type SellerActionableOrder = z.infer<typeof sellerActionableOrderContract
 export type ListStoreBuyersQuery = z.infer<typeof listStoreBuyersQueryContract>;
 export type StoreBuyerSummary = z.infer<typeof storeBuyerSummaryContract>;
 export type StoreBuyerPage = z.infer<typeof storeBuyerPageContract>;
+export type ListStoreBuyerOrdersQuery = z.infer<
+  typeof listStoreBuyerOrdersQueryContract
+>;
+export type StoreBuyerOrder = z.infer<typeof storeBuyerOrderContract>;
+export type StoreBuyerOrderPage = z.infer<typeof storeBuyerOrderPageContract>;
 export type RevealOrderDeliveryDetailsInput = z.infer<
   typeof revealOrderDeliveryDetailsInputContract
 >;
