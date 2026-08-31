@@ -32,6 +32,20 @@ function createHarness() {
           totalAmount: 9_000_000,
           paidAt: "2026-07-20T08:00:00.000Z",
         },
+        {
+          orderId: "a7a3f408-858c-45d7-a0bd-ab84a28718ef" as OrderId,
+          totalAmount: 4_000_000,
+          paidAt: "2026-07-21T08:00:00.000Z",
+          fulfillmentStatus: "CANCELLATION_PENDING_REFUND" as const,
+          fulfillmentOccurredAt: "2026-08-30T08:00:00.000Z",
+        },
+        {
+          orderId: "b7a3f408-858c-45d7-a0bd-ab84a28718ef" as OrderId,
+          totalAmount: 5_000_000,
+          paidAt: "2026-07-22T08:00:00.000Z",
+          fulfillmentStatus: "CANCELLED" as const,
+          fulfillmentOccurredAt: "2026-08-30T09:00:00.000Z",
+        },
       ];
       return rows.filter(
         ({ paidAt }) =>

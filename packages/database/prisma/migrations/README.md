@@ -184,3 +184,14 @@ references; the only foreign key is internal to fulfillment. Existing orders are
 handed off by the versioned outbox event, so no
 backfill or compatibility window is required. Corrections use a forward migration,
 and Docker and native continue to apply the same `prisma migrate deploy` history.
+
+Issue 135 follows `20260831130000__reporting-analytics__seller-operations` and adds
+direct-settlement refund history, immutable refund audits and request replay records
+under the payments owner. Forward migrations extend only the existing orders,
+fulfillment and inventory status/adjustment constraints needed by the same atomic
+cancellation workflow; the final reporting-owned migration accepts the two new
+fulfillment cancellation states so its private consumer remains compatible. No
+cross-module foreign key is introduced. Existing orders, fulfillment timelines,
+reservations and inventory levels are unchanged. Corrections use another forward
+migration, and both supported startup paths continue to apply the same
+`prisma migrate deploy` history.

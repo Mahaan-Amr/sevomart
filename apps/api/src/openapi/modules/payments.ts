@@ -86,6 +86,85 @@ const operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    ...paymentsV1Operations.requestDirectRefund,
+    tag: "payments",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderId",
+      schema: "OrderId",
+      example: paymentsV1Examples.DirectRefund.orderId,
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: "refund-request-135",
+        required: true,
+      },
+    ],
+    request: {
+      schema: "RequestDirectRefundInput",
+      example: paymentsV1Examples.RequestDirectRefundInput,
+    },
+    responses: [
+      { status: 200, schema: "DirectRefund" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "DirectRefundError" },
+      { status: 404, schema: "DirectRefundError" },
+      { status: 409, schema: "DirectRefundError" },
+      { status: 422, schema: "DirectRefundError" },
+      { status: 428, schema: "DirectRefundError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...paymentsV1Operations.readDirectRefund,
+    tag: "payments",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderId",
+      schema: "OrderId",
+      example: paymentsV1Examples.DirectRefund.orderId,
+    },
+    responses: [
+      { status: 200, schema: "DirectRefund" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "DirectRefundError" },
+      { status: 404, schema: "DirectRefundError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...paymentsV1Operations.recordDirectRefundResult,
+    tag: "payments",
+    auth: "none",
+    pathParameter: {
+      name: "provider",
+      schema: "PaymentProviderKey",
+      example: "DEV",
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "IdempotencyKey",
+        example: "refund-result-135",
+        required: true,
+      },
+    ],
+    request: {
+      schema: "ProviderRefundCallbackInput",
+      example: paymentsV1Examples.ProviderRefundCallbackInput,
+    },
+    responses: [
+      { status: 200, schema: "DirectRefund" },
+      { status: 404, schema: "DirectRefundError" },
+      { status: 409, schema: "DirectRefundError" },
+      { status: 422, schema: "DirectRefundError" },
+      { status: 428, schema: "DirectRefundError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 export const contribute_payments_openApi: OpenApiContributor = (document) =>
@@ -99,10 +178,10 @@ export const contribute_payments_openApi: OpenApiContributor = (document) =>
         200: "Payment state returned",
         201: "Payment attempt dispatched",
         401: "Identity session is missing or invalid",
-        403: "Required platform permission is missing",
-        404: "Payment attempt is unavailable to this identity",
-        409: "Order is not payable",
-        422: "Provider callback is invalid",
+        403: "Required seller or platform permission is missing",
+        404: "Payment attempt or direct refund is unavailable",
+        409: "The idempotency key conflicts with an existing request",
+        422: "The payment or refund transition is invalid",
         428: "Idempotency precondition is missing",
         500: "Unexpected server error",
       },

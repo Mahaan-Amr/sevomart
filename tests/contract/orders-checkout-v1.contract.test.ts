@@ -343,8 +343,10 @@ describe("checkout and CreateOrder.v1 contracts", () => {
       "PAYMENT_REVIEW",
       "PAID",
       "EXPIRED",
+      "CANCELLATION_PENDING_REFUND",
+      "CANCELLED",
     ]);
-    expect(orderTerminalStatuses).toEqual(["PAID"]);
+    expect(orderTerminalStatuses).toEqual(["PAID", "CANCELLED"]);
     expect(orderStateTransitionReasonCodeContract.options).toEqual([
       "PAYMENT_CONFIRMED",
       "PAYMENT_DISPATCH_UNRESOLVED",
@@ -352,6 +354,8 @@ describe("checkout and CreateOrder.v1 contracts", () => {
       "PAYMENT_PROVIDER_CONFLICT",
       "PAYMENT_FAILED",
       "PAID_STOCK_CONFLICT",
+      "REFUND_REQUESTED",
+      "REFUND_CONFIRMED",
     ]);
     const audit = {
       orderId: ids.order,

@@ -116,6 +116,41 @@ export interface OrderPaymentWorkflow {
     },
   ): Promise<void>;
   listActionableByStore(storeId: StoreId): Promise<SellerActionableOrder[]>;
+  sellerCanTrack(storeId: StoreId, orderId: OrderId): Promise<boolean>;
+  lockCancellationOrder(
+    transaction: OrderPaymentTransactionContext,
+    storeId: StoreId,
+    orderId: OrderId,
+  ): Promise<
+    | Readonly<{
+        reservationId: string;
+        status: Extract<
+          OrderStatus,
+          "PAID" | "CANCELLATION_PENDING_REFUND" | "CANCELLED"
+        >;
+      }>
+    | undefined
+  >;
+  markCancellationPendingRefund(
+    transaction: OrderPaymentTransactionContext,
+    command: Readonly<{
+      orderId: OrderId;
+      actorId: IdentityId;
+      occurredAt: Date;
+      correlationId: string;
+      causationId: string;
+    }>,
+  ): Promise<void>;
+  markCancelled(
+    transaction: OrderPaymentTransactionContext,
+    command: Readonly<{
+      orderId: OrderId;
+      actorId: IdentityId;
+      occurredAt: Date;
+      correlationId: string;
+      causationId: string;
+    }>,
+  ): Promise<void>;
 }
 
 export interface RelatedStoreBuyerRead {

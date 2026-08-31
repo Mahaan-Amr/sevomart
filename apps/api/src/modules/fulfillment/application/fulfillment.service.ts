@@ -111,7 +111,7 @@ export class FulfillmentService {
     const storeId = await this.stores.resolveStore(actorId);
     if (!storeId) throw new FulfillmentFault("FORBIDDEN");
     const orderId = this.parseOrderId(orderIdInput);
-    if (!(await this.orders.sellerCanFulfill(actorId, storeId, orderId))) {
+    if (!(await this.orders.sellerCanAccessFulfillment(actorId, storeId, orderId))) {
       throw new FulfillmentFault("FULFILLMENT_NOT_FOUND");
     }
     return { actorId, storeId, orderId };

@@ -74,6 +74,43 @@ describe("fulfillment v1 contract", () => {
     expect(timeline.timeline[1]).toMatchObject({ status: "SHIPPED" });
   });
 
+  it("keeps an order pending until refund confirmation and then cancels it", () => {
+    const pending = fulfillmentTimelineContract.parse({
+      orderId,
+      status: "CANCELLATION_PENDING_REFUND",
+      timeline: [
+        {
+          status: "ACTION_REQUIRED",
+          actor: { type: "SYSTEM" },
+          occurredAt: "2026-08-30T09:00:00.000Z",
+          correlationId: "67a3f408-858c-45d7-a0bd-ab84a28718ef",
+        },
+        {
+          status: "CANCELLATION_PENDING_REFUND",
+          actor: { type: "IDENTITY", id: actorId },
+          occurredAt: "2026-08-31T08:00:00.000Z",
+          correlationId: "77a3f408-858c-45d7-a0bd-ab84a28718ef",
+        },
+      ],
+    });
+    expect(pending).not.toMatchObject({ status: "CANCELLED" });
+    expect(
+      fulfillmentTimelineContract.parse({
+        ...pending,
+        status: "CANCELLED",
+        timeline: [
+          ...pending.timeline,
+          {
+            status: "CANCELLED",
+            actor: { type: "IDENTITY", id: actorId },
+            occurredAt: "2026-08-31T08:10:00.000Z",
+            correlationId: "87a3f408-858c-45d7-a0bd-ab84a28718ef",
+          },
+        ],
+      }).status,
+    ).toBe("CANCELLED");
+  });
+
   it("publishes a PII-free FulfillmentAdvanced event", () => {
     const event = fulfillmentAdvancedV1Contract.parse({
       version: 1,

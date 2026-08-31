@@ -58,6 +58,10 @@ export const sellerInventoryTestMobiles = Array.from({ length: 4 }, (_, index) =
   testMobile(156 + index),
 );
 
+export const sellerRefundTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(170 + index),
+);
+
 export const guestCartTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(60 + index),
 );
@@ -103,6 +107,7 @@ export const allE2eTestMobiles = [
   ...otherSellerConversationTestMobiles,
   ...productTracerTestMobiles,
   ...sellerInventoryTestMobiles,
+  ...sellerRefundTestMobiles,
   ...guestCartTestMobiles,
   ...sameStoreCartConflictTestMobiles,
   ...differentStoreCartConflictTestMobiles,

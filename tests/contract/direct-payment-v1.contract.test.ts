@@ -1,4 +1,10 @@
 import {
+  directRefundContract,
+  directRefundConfirmedV1Contract,
+  directRefundFailedV1Contract,
+  directRefundPendingV1Contract,
+  recordDirectRefundResultInputContract,
+  requestDirectRefundInputContract,
   directPaymentErrorContract,
   createDirectPaymentAttemptInputContract,
   directPaymentAttemptContract,
@@ -19,6 +25,110 @@ import {
 import { describe, expect, it } from "vitest";
 
 describe("direct payment v1 contract", () => {
+  it("publishes the direct-refund lifecycle without promising a guaranteed refund", () => {
+    expect(paymentsV1Operations.requestDirectRefund).toEqual({
+      operationId: "requestDirectRefund",
+      method: "post",
+      path: "/v1/seller/orders/{orderId}/direct-refund",
+    });
+    expect(paymentsV1Operations.readDirectRefund).toEqual({
+      operationId: "readDirectRefund",
+      method: "get",
+      path: "/v1/seller/orders/{orderId}/direct-refund",
+    });
+    expect(paymentsV1Operations.recordDirectRefundResult).toEqual({
+      operationId: "recordDirectRefundResult",
+      method: "post",
+      path: "/internal/v1/payment-providers/{provider}/direct-refunds",
+    });
+    expect(
+      requestDirectRefundInputContract.parse({
+        reason: "کالا پیش از ارسال قابل تأمین نیست.",
+      }),
+    ).toEqual({ reason: "کالا پیش از ارسال قابل تأمین نیست." });
+    expect(
+      recordDirectRefundResultInputContract.parse({
+        paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+        amount: { amount: 12_500_000, currency: "IRR" },
+        result: "FAILED",
+        evidenceReference: "provider-result-135-1",
+      }),
+    ).toEqual({
+      paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      amount: { amount: 12_500_000, currency: "IRR" },
+      result: "FAILED",
+      evidenceReference: "provider-result-135-1",
+    });
+
+    const pending = directRefundContract.parse({
+      orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+      paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      amount: { amount: 12_500_000, currency: "IRR" },
+      status: "PENDING",
+      orderStatus: "CANCELLATION_PENDING_REFUND",
+      nextAction: "WAIT_FOR_VERIFICATION",
+      updatedAt: "2026-08-31T08:00:00.000Z",
+    });
+    const failed = directRefundContract.parse({
+      ...pending,
+      status: "FAILED",
+      nextAction: "RETRY_REFUND",
+    });
+    const confirmed = directRefundContract.parse({
+      ...pending,
+      status: "CONFIRMED",
+      orderStatus: "CANCELLED",
+      nextAction: "NONE",
+    });
+    expect([pending.nextAction, failed.nextAction, confirmed.nextAction]).toEqual([
+      "WAIT_FOR_VERIFICATION",
+      "RETRY_REFUND",
+      "NONE",
+    ]);
+
+    const envelope = {
+      eventId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+      version: 1 as const,
+      aggregateId: pending.orderId,
+      occurredAt: pending.updatedAt,
+      correlationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+      causationId: "61fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+      actor: { type: "IDENTITY" as const, id: "27a3f408-858c-45d7-a0bd-ab84a28718ef" },
+    };
+    expect(
+      directRefundPendingV1Contract.parse({
+        ...envelope,
+        eventType: "DirectRefundPending.v1",
+        aggregateVersion: 1,
+        payload: {
+          status: "PENDING",
+          paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+          amount: { amount: 12_500_000, currency: "IRR" },
+        },
+      }).payload,
+    ).toEqual({
+      status: "PENDING",
+      paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      amount: { amount: 12_500_000, currency: "IRR" },
+    });
+    expect(
+      directRefundFailedV1Contract.parse({
+        ...envelope,
+        eventType: "DirectRefundFailed.v1",
+        aggregateVersion: 2,
+        payload: { status: "FAILED" },
+      }).payload,
+    ).toEqual({ status: "FAILED" });
+    expect(
+      directRefundConfirmedV1Contract.parse({
+        ...envelope,
+        eventType: "DirectRefundConfirmed.v1",
+        aggregateVersion: 3,
+        payload: { status: "CONFIRMED" },
+      }).payload,
+    ).toEqual({ status: "CONFIRMED" });
+  });
+
   it("exposes actionable payment conflicts without leaking internals", () => {
     expect(
       directPaymentErrorContract.parse({
