@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  paymentReconciliationRequestContract,
-  paymentReviewDetailContract,
-  type PaymentReviewDetail as PaymentReviewDetailView,
-} from "@sevo/contracts/payments/v1";
+  paymentReconciliationRequestV2Contract,
+  paymentReviewDetailV2Contract,
+  type PaymentReviewDetailV2 as PaymentReviewDetailView,
+} from "@sevo/contracts/payments/v2";
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
 
@@ -29,7 +29,7 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
         body: JSON.stringify({ grantId, reason }),
       });
       const body: unknown = await response.json();
-      const parsed = paymentReviewDetailContract.safeParse(body);
+      const parsed = paymentReviewDetailV2Contract.safeParse(body);
       if (!response.ok || !parsed.success) throw new Error(readMessage(body));
       setDetail(parsed.data);
       setMessage("مدرک همین پرونده آشکار شد و مشاهده در سابقه دسترسی ثبت شد.");
@@ -49,13 +49,13 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ reason }),
+          body: JSON.stringify({ grantId, reason }),
         },
       );
       const body: unknown = await response.json();
       if (
         !response.ok ||
-        !paymentReconciliationRequestContract.safeParse(body).success
+        !paymentReconciliationRequestV2Contract.safeParse(body).success
       ) {
         throw new Error(readMessage(body));
       }
@@ -116,7 +116,7 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
         ) : (
           <>
             <aside className={styles.expiry} role="status">
-              این مشاهده تا {formatDate(detail.accessExpiresAt!)} مجاز است؛ هر مشاهده
+              این مشاهده تا {formatDate(detail.accessExpiresAt)} مجاز است؛ هر مشاهده
               دوباره ممیزی می‌شود.
             </aside>
             <dl className={styles.facts}>

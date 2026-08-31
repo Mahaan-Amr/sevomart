@@ -72,7 +72,7 @@ describe("platform payment review case access", () => {
            ${transaction.json({
              resourceType: "PAYMENT_REVIEW",
              resourceId: reviewId,
-             allowedActions: ["REVEAL_MINIMUM"],
+             allowedActions: ["REVEAL_MINIMUM", "UPDATE_CASE_STATUS"],
            })},
            'ACTIVE', 'SINGLE_MANAGER_EXCEPTION', true, 1,
            now() + interval '30 minutes', now(), now())
@@ -97,9 +97,16 @@ describe("platform payment review case access", () => {
     const server = app!.getHttpAdapter().getInstance();
     const headers = { cookie: `sevo_platform_session=${sessionToken}` };
 
-    const queue = await server.inject({
+    const retiredQueue = await server.inject({
       method: "GET",
       url: "/v1/platform/payment-reviews",
+      headers,
+    });
+    expect(retiredQueue.statusCode).toBe(404);
+
+    const queue = await server.inject({
+      method: "GET",
+      url: "/v2/platform/payment-reviews",
       headers,
     });
     expect(queue.statusCode).toBe(200);
@@ -113,7 +120,7 @@ describe("platform payment review case access", () => {
 
     const revealed = await server.inject({
       method: "POST",
-      url: `/v1/platform/payment-reviews/${reviewId}/reveal`,
+      url: `/v2/platform/payment-reviews/${reviewId}/reveal`,
       headers,
       payload: {
         grantId,
@@ -146,9 +153,9 @@ describe("platform payment review case access", () => {
     const before = new Date();
     const reconciliation = await server.inject({
       method: "POST",
-      url: `/v1/platform/payment-reviews/${reviewId}/reconciliation`,
+      url: `/v2/platform/payment-reviews/${reviewId}/reconciliation`,
       headers,
-      payload: { reason: "درخواست تطبیق دوباره نتیجه درگاه" },
+      payload: { grantId, reason: "درخواست تطبیق دوباره نتیجه درگاه" },
     });
     expect(reconciliation.statusCode).toBe(202);
     expect(
@@ -163,6 +170,19 @@ describe("platform payment review case access", () => {
         ),
       },
     ]);
+    expect(
+      await sql`
+        select action, outcome, scope ->> 'resourceId' as "resourceId"
+        from identity_platform_access_audit
+        where grant_id = ${grantId} and action = 'SENSITIVE_CHANGE_ATTEMPTED'
+      `,
+    ).toEqual([
+      {
+        action: "SENSITIVE_CHANGE_ATTEMPTED",
+        outcome: "SUCCEEDED",
+        resourceId: reviewId,
+      },
+    ]);
 
     await sql`
       update identity_platform_access_grants
@@ -171,11 +191,11 @@ describe("platform payment review case access", () => {
     `;
     const denied = await server.inject({
       method: "POST",
-      url: `/v1/platform/payment-reviews/${reviewId}/reveal`,
+      url: `/v2/platform/payment-reviews/${reviewId}/reconciliation`,
       headers,
       payload: {
         grantId,
-        reason: "تلاش مشاهده پس از لغو اجازه پرونده پرداخت",
+        reason: "تلاش تطبیق دوباره پس از لغو اجازه پرونده پرداخت",
       },
     });
     expect(denied.statusCode).toBe(403);

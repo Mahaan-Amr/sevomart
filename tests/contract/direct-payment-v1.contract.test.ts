@@ -18,13 +18,17 @@ import {
   paymentAttemptAuditContract,
   paymentsV1Operations,
   paymentReviewErrorContract,
-  paymentReviewDetailContract,
-  paymentReviewRevealInputContract,
-  paymentReconciliationRequestContract,
   paymentReviewQueueContract,
   providerCallbackInputContract,
   providerCallbackResultContract,
 } from "@sevo/contracts/payments/v1";
+import {
+  paymentsV2Operations,
+  paymentReviewDetailV2Contract,
+  paymentReviewRevealInputV2Contract,
+  paymentReconciliationRequestV2Contract,
+  paymentReviewQueueV2Contract,
+} from "@sevo/contracts/payments/v2";
 import { describe, expect, it } from "vitest";
 
 describe("direct payment v1 contract", () => {
@@ -149,20 +153,40 @@ describe("direct payment v1 contract", () => {
     ).toMatchObject({ code: "PLATFORM_PERMISSION_REQUIRED" });
   });
 
-  it("keeps the queue low-detail and reveals provider evidence only through a scoped action", () => {
+  it("keeps the v1 queue compatible while v2 limits detail and scopes evidence", () => {
     const reviewId = "91fe87eb-6c0f-47ca-93ca-9f9a038ca273";
-    expect(paymentsV1Operations.revealPlatformPaymentReview).toEqual({
-      operationId: "revealPlatformPaymentReview",
+    expect(paymentsV2Operations.revealPlatformPaymentReview).toEqual({
+      operationId: "revealPlatformPaymentReviewV2",
       method: "post",
-      path: "/v1/platform/payment-reviews/{reviewId}/reveal",
+      path: "/v2/platform/payment-reviews/{reviewId}/reveal",
     });
-    expect(paymentsV1Operations.requestPlatformPaymentReconciliation).toEqual({
-      operationId: "requestPlatformPaymentReconciliation",
+    expect(paymentsV2Operations.requestPlatformPaymentReconciliation).toEqual({
+      operationId: "requestPlatformPaymentReconciliationV2",
       method: "post",
-      path: "/v1/platform/payment-reviews/{reviewId}/reconciliation",
+      path: "/v2/platform/payment-reviews/{reviewId}/reconciliation",
     });
 
-    const queue = paymentReviewQueueContract.parse({
+    expect(
+      paymentReviewQueueContract.parse({
+        items: [
+          {
+            attempt: {
+              attemptId: reviewId,
+              orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+              status: "REVIEW_REQUIRED",
+              amount: { amount: 4_500_000, currency: "IRR" },
+              provider: "DEV",
+              createdAt: "2026-08-25T08:00:00.000Z",
+            },
+            reviewKind: "RESULT_AMBIGUOUS",
+            alertKinds: [],
+            audits: [],
+          },
+        ],
+      }).items[0],
+    ).toHaveProperty("attempt");
+
+    const queue = paymentReviewQueueV2Contract.parse({
       items: [
         {
           reviewId,
@@ -178,14 +202,14 @@ describe("direct payment v1 contract", () => {
     expect(queue.items[0]).not.toHaveProperty("audits");
     expect(queue.items[0]).not.toHaveProperty("orderId");
 
-    const input = paymentReviewRevealInputContract.parse({
+    const input = paymentReviewRevealInputV2Contract.parse({
       grantId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
       reason: "بررسی مدرک درگاه برای این پرونده پرداخت",
     });
     expect(input.reason).toContain("مدرک");
 
     expect(
-      paymentReviewDetailContract.parse({
+      paymentReviewDetailV2Contract.parse({
         reviewId,
         orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
         status: "REVIEW_REQUIRED",
@@ -212,10 +236,12 @@ describe("direct payment v1 contract", () => {
         ],
         reconciliationCount: 2,
         nextReconciliationAt: "2026-08-25T08:05:00.000Z",
+        revealedAt: "2026-08-25T08:02:00.000Z",
+        accessExpiresAt: "2026-08-25T08:30:00.000Z",
       }).observations,
     ).toHaveLength(1);
     expect(
-      paymentReconciliationRequestContract.parse({
+      paymentReconciliationRequestV2Contract.parse({
         reviewId,
         requestedAt: "2026-08-25T08:02:00.000Z",
       }),

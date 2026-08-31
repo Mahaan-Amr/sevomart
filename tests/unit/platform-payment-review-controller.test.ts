@@ -6,7 +6,7 @@ import type { DirectPaymentService } from "../../apps/api/src/modules/payments/p
 
 describe("platform payment review controller", () => {
   it("shows an authorized agent the read-only review queue with its audit", async () => {
-    const listReviewRequired = vi.fn(async () => [
+    const listReviewRequiredV2 = vi.fn(async () => [
       {
         reviewId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
         reviewKind: "RESULT_AMBIGUOUS" as const,
@@ -22,7 +22,7 @@ describe("platform payment review controller", () => {
       permission: "PAYMENT_REVIEW" as const,
     }));
     const controller = new PlatformPaymentReviewController(
-      { listReviewRequired } as unknown as DirectPaymentService,
+      { listReviewRequiredV2 } as unknown as DirectPaymentService,
       { authorizePaymentReview } as unknown as PlatformAgentSessionAuthorizer,
     );
 
@@ -40,7 +40,7 @@ describe("platform payment review controller", () => {
       ],
     });
     expect(authorizePaymentReview).toHaveBeenCalledWith("agent-token");
-    expect(listReviewRequired).toHaveBeenCalledOnce();
+    expect(listReviewRequiredV2).toHaveBeenCalledOnce();
   });
 
   it("reveals one case with an explicit grant and can only request provider reconciliation", async () => {
@@ -86,7 +86,10 @@ describe("platform payment review controller", () => {
     );
     await controller.reconcile(
       "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
-      { reason: "درخواست تطبیق دوباره نتیجه درگاه" },
+      {
+        grantId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+        reason: "درخواست تطبیق دوباره نتیجه درگاه",
+      },
       request,
     );
 
@@ -100,6 +103,7 @@ describe("platform payment review controller", () => {
     expect(requestReconciliation).toHaveBeenCalledWith({
       reviewId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
       actorIdentityId: "27a3f408-858c-45d7-a0bd-ab84a28718ef",
+      grantId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
       reason: "درخواست تطبیق دوباره نتیجه درگاه",
       correlationId: "request-151",
     });

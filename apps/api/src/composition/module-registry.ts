@@ -20,7 +20,6 @@ import {
 import {
   createOpaquePlatformAccessTransactionContext,
   IdentityAccessModule,
-  createOpaquePlatformAccessTransactionContext,
   PostgresPlatformAgentSessionAuthorizer,
   type IdentityAccessModuleOptions,
 } from "../modules/identity-access/composition";

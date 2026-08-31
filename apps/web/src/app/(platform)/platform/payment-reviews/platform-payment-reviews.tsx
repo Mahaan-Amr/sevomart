@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  paymentReviewQueueContract,
-  type PaymentReviewItem,
-} from "@sevo/contracts/payments/v1";
+  paymentReviewQueueV2Contract,
+  type PaymentReviewItemV2,
+} from "@sevo/contracts/payments/v2";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -11,7 +11,7 @@ import { formatIrrAsToman } from "../../../../lib/format-money";
 import styles from "./platform-payment-reviews.module.css";
 
 export function PlatformPaymentReviews() {
-  const [items, setItems] = useState<readonly PaymentReviewItem[]>([]);
+  const [items, setItems] = useState<readonly PaymentReviewItemV2[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -23,7 +23,7 @@ export function PlatformPaymentReviews() {
         cache: "no-store",
       });
       const body: unknown = await response.json();
-      const parsed = paymentReviewQueueContract.safeParse(body);
+      const parsed = paymentReviewQueueV2Contract.safeParse(body);
       if (!response.ok || !parsed.success) {
         throw new Error("صف بررسی پرداخت در دسترس نیست.");
       }

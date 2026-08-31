@@ -3,6 +3,11 @@ import {
   paymentsV1Examples,
   paymentsV1Operations,
 } from "@sevo/contracts/payments/v1";
+import {
+  createPaymentsV2JsonSchemas,
+  paymentsV2Examples,
+  paymentsV2Operations,
+} from "@sevo/contracts/payments/v2";
 
 import {
   addModuleOpenApiContract,
@@ -76,18 +81,18 @@ const operations = [
     ],
   },
   {
-    ...paymentsV1Operations.listPlatformPaymentReviews,
+    ...paymentsV2Operations.listPlatformPaymentReviews,
     tag: "payments",
     auth: "platform-agent-session",
     responses: [
-      { status: 200, schema: "PaymentReviewQueue" },
+      { status: 200, schema: "PaymentReviewQueueV2" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PaymentReviewError" },
+      { status: 403, schema: "PaymentReviewErrorV2" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
   {
-    ...paymentsV1Operations.revealPlatformPaymentReview,
+    ...paymentsV2Operations.revealPlatformPaymentReview,
     tag: "payments",
     auth: "platform-agent-session",
     pathParameter: {
@@ -96,20 +101,20 @@ const operations = [
       example: paymentsV1Examples.DirectPaymentAttempt.attemptId,
     },
     request: {
-      schema: "PaymentReviewRevealInput",
-      example: paymentsV1Examples.PaymentReviewRevealInput,
+      schema: "PaymentReviewRevealInputV2",
+      example: paymentsV2Examples.PaymentReviewRevealInputV2,
     },
     responses: [
-      { status: 200, schema: "PaymentReviewDetail" },
+      { status: 200, schema: "PaymentReviewDetailV2" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PaymentReviewError" },
-      { status: 404, schema: "PaymentReviewError" },
-      { status: 422, schema: "PaymentReviewError" },
+      { status: 403, schema: "PaymentReviewErrorV2" },
+      { status: 404, schema: "PaymentReviewErrorV2" },
+      { status: 422, schema: "PaymentReviewErrorV2" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
   {
-    ...paymentsV1Operations.requestPlatformPaymentReconciliation,
+    ...paymentsV2Operations.requestPlatformPaymentReconciliation,
     tag: "payments",
     auth: "platform-agent-session",
     pathParameter: {
@@ -118,15 +123,15 @@ const operations = [
       example: paymentsV1Examples.DirectPaymentAttempt.attemptId,
     },
     request: {
-      schema: "PaymentReconciliationRequestInput",
-      example: paymentsV1Examples.PaymentReconciliationRequestInput,
+      schema: "PaymentReconciliationRequestInputV2",
+      example: paymentsV2Examples.PaymentReconciliationRequestInputV2,
     },
     responses: [
-      { status: 202, schema: "PaymentReconciliationRequest" },
+      { status: 202, schema: "PaymentReconciliationRequestV2" },
       { status: 401, schema: "UnauthorizedError" },
-      { status: 403, schema: "PaymentReviewError" },
-      { status: 409, schema: "PaymentReviewError" },
-      { status: 422, schema: "PaymentReviewError" },
+      { status: 403, schema: "PaymentReviewErrorV2" },
+      { status: 409, schema: "PaymentReviewErrorV2" },
+      { status: 422, schema: "PaymentReviewErrorV2" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
@@ -214,8 +219,8 @@ const operations = [
 export const contribute_payments_openApi: OpenApiContributor = (document) =>
   addModuleOpenApiContract(
     document,
-    createPaymentsV1JsonSchemas(),
-    paymentsV1Examples,
+    { ...createPaymentsV1JsonSchemas(), ...createPaymentsV2JsonSchemas() },
+    { ...paymentsV1Examples, ...paymentsV2Examples },
     operations,
     {
       descriptions: {

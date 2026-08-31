@@ -604,7 +604,7 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select count(*)::int as count from payment_attempt_audits where attempt_id = ${attempt.attemptId} and to_status = 'REVIEW_REQUIRED'`,
     ).toEqual([{ count: 1 }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
         reviewId: attempt.attemptId,
         reviewKind: "RESULT_AMBIGUOUS",
@@ -715,7 +715,7 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "PAID_STOCK_CONFLICT", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
         reviewId: attempt.attemptId,
         reviewKind: "PAID_STOCK_CONFLICT",
@@ -784,7 +784,7 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "PROVIDER_AMOUNT_MISMATCH", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
         reviewId: attempt.attemptId,
         reviewKind: "PROVIDER_CONFLICT",
@@ -831,7 +831,7 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "PROVIDER_RESULT_CONTRADICTION", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
         reviewId: attempt.attemptId,
         reviewKind: "PROVIDER_CONFLICT",
@@ -922,7 +922,7 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "RECONCILIATION_OVERDUE", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       { reviewId: attempt.attemptId, needsFollowUp: true },
     ]);
   });

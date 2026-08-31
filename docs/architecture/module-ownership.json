@@ -128,6 +128,7 @@
     "@sevo/contracts/inventory/v1": "inventory",
     "@sevo/contracts/orders/v1": "orders",
     "@sevo/contracts/payments/v1": "payments",
+    "@sevo/contracts/payments/v2": "payments",
     "@sevo/contracts/fulfillment/v1": "fulfillment",
     "@sevo/contracts/conversations/v1": "conversations",
     "@sevo/contracts/problem-follow-up/v1": "problem-follow-up",

@@ -9,9 +9,11 @@ import {
   directPaymentAttemptContract,
   type DirectPaymentAttemptStatus,
   type PaymentAttemptAuditReasonCode,
-  paymentReviewDetailContract,
-  paymentReviewItemContract,
 } from "@sevo/contracts/payments/v1";
+import {
+  paymentReviewDetailV2Contract,
+  paymentReviewItemV2Contract,
+} from "@sevo/contracts/payments/v2";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import { paymentAttemptIdContract } from "@sevo/contracts/platform/v1";
 import postgres, { type Sql } from "postgres";
@@ -834,7 +836,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     });
   }
 
-  async listReviewRequired() {
+  async listReviewRequiredV2() {
     const attempts = await this.#sql<
       Array<AttemptRow & { reviewStartedAt: Date; needsFollowUp: boolean }>
     >`
@@ -860,36 +862,9 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     `;
     return Promise.all(
       attempts.map(async (attempt) => {
-        const audits = await this.#sql<
-          Array<{
-            fromStatus: string | null;
-            toStatus: string;
-            reasonCode: string;
-            correlationId: string;
-            occurredAt: Date;
-          }>
-        >`
-          select from_status as "fromStatus", to_status as "toStatus",
-            reason_code as "reasonCode", correlation_id as "correlationId",
-            occurred_at as "occurredAt"
-          from payment_attempt_audits
-          where attempt_id = ${attempt.attemptId}
-          order by occurred_at, id
-        `;
-        const alerts = await this.#sql<
-          Array<{
-            kind:
-              | "RECONCILIATION_OVERDUE"
-              | "PAID_STOCK_CONFLICT"
-              | "PROVIDER_AMOUNT_MISMATCH"
-              | "PROVIDER_RESULT_CONTRADICTION";
-          }>
-        >`
-          select kind from payment_operational_alerts
-          where attempt_id = ${attempt.attemptId} and status = 'OPEN'
-          order by created_at, id
-        `;
-        return paymentReviewItemContract.parse({
+        const audits = await readPaymentReviewAudits(this.#sql, attempt.attemptId);
+        const alerts = await readPaymentReviewAlerts(this.#sql, attempt.attemptId);
+        return paymentReviewItemV2Contract.parse({
           reviewId: attempt.attemptId,
           reviewKind: paymentReviewKind(audits, alerts),
           amount: { amount: attempt.amount, currency: "IRR" },
@@ -965,7 +940,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         where attempt_id = ${attempt.attemptId}
         order by observed_at, provider_event_id
       `;
-      return paymentReviewDetailContract.parse({
+      return paymentReviewDetailV2Contract.parse({
         reviewId: attempt.attemptId,
         orderId: attempt.orderId,
         status: attempt.status,
@@ -1000,6 +975,22 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     command: Parameters<DirectPaymentRepository["requestReconciliation"]>[0],
   ) {
     return this.#sql.begin(async (sql) => {
+      if (!this.sensitiveAccess || !this.createAccessTransactionContext) {
+        throw new Error("Payment review sensitive access is not configured");
+      }
+      await this.sensitiveAccess.authorizeSensitiveAction(
+        this.createAccessTransactionContext(sql),
+        {
+          grantId: command.grantId,
+          actorIdentityId: command.actorIdentityId,
+          responsibility: "PAYMENT_REVIEW",
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: command.reviewId,
+          action: "UPDATE_CASE_STATUS",
+          reason: command.reason,
+          correlationId: command.correlationId,
+        },
+      );
       const rows = await sql<Array<{ requestedAt: Date }>>`
         update payment_attempts
         set next_reconciliation_at = least(

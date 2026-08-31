@@ -3,9 +3,11 @@ import type {
   DirectRefund,
   RecordDirectRefundResultInput,
   RequestDirectRefundInput,
-  PaymentReviewDetail,
-  PaymentReviewItem,
 } from "@sevo/contracts/payments/v1";
+import type {
+  PaymentReviewDetailV2,
+  PaymentReviewItemV2,
+} from "@sevo/contracts/payments/v2";
 import type {
   IdentityId,
   MoneyV1,
@@ -161,10 +163,10 @@ export interface DirectPaymentService {
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt>;
   reconcileNext(now: Date, correlationId: string): Promise<boolean>;
-  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
-  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetail>;
+  listReviewRequiredV2(): Promise<readonly PaymentReviewItemV2[]>;
+  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetailV2>;
   requestReconciliation(
-    command: Omit<PaymentReviewAccessCommand, "grantId">,
+    command: PaymentReviewAccessCommand,
   ): Promise<{ reviewId: PaymentAttemptId; requestedAt: string }>;
 }
 
@@ -221,10 +223,10 @@ export interface DirectPaymentRepository {
     now: Date,
     correlationId: string,
   ): Promise<DirectPaymentReconciliation | null>;
-  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
-  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetail>;
+  listReviewRequiredV2(): Promise<readonly PaymentReviewItemV2[]>;
+  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetailV2>;
   requestReconciliation(
-    command: Omit<PaymentReviewAccessCommand, "grantId">,
+    command: PaymentReviewAccessCommand,
   ): Promise<{ reviewId: PaymentAttemptId; requestedAt: string }>;
 }
 

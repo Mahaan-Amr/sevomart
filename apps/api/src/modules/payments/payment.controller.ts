@@ -18,12 +18,14 @@ import { ApiExcludeController } from "@nestjs/swagger";
 import {
   providerCallbackResultContract,
   paymentIdempotencyKeyContract,
-  paymentReconciliationRequestContract,
-  paymentReconciliationRequestInputContract,
-  paymentReviewDetailContract,
-  paymentReviewRevealInputContract,
-  paymentReviewQueueContract,
 } from "@sevo/contracts/payments/v1";
+import {
+  paymentReconciliationRequestV2Contract,
+  paymentReconciliationRequestInputV2Contract,
+  paymentReviewDetailV2Contract,
+  paymentReviewQueueV2Contract,
+  paymentReviewRevealInputV2Contract,
+} from "@sevo/contracts/payments/v2";
 import type { RuntimeEnvironment } from "@sevo/config";
 import {
   identityIdContract,
@@ -262,7 +264,7 @@ export class PaymentController {
 }
 
 @ApiExcludeController()
-@Controller("v1/platform/payment-reviews")
+@Controller("v2/platform/payment-reviews")
 export class PlatformPaymentReviewController {
   constructor(
     @Inject(DIRECT_PAYMENT_SERVICE) private readonly payments: DirectPaymentService,
@@ -276,8 +278,8 @@ export class PlatformPaymentReviewController {
       await this.sessions.authorizePaymentReview(
         readPlatformSessionToken(request) ?? "",
       );
-      return paymentReviewQueueContract.parse({
-        items: await this.payments.listReviewRequired(),
+      return paymentReviewQueueV2Contract.parse({
+        items: await this.payments.listReviewRequiredV2(),
       });
     } catch (error) {
       if (error instanceof PlatformAgentSessionUnauthorizedError) {
@@ -312,7 +314,7 @@ export class PlatformPaymentReviewController {
     @Req() request: FastifyRequest,
   ) {
     const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
-    const input = paymentReviewRevealInputContract.safeParse(body);
+    const input = paymentReviewRevealInputV2Contract.safeParse(body);
     if (!reviewId.success || !input.success) {
       throw paymentReviewHttpError(
         "VALIDATION_ERROR",
@@ -323,7 +325,7 @@ export class PlatformPaymentReviewController {
     }
     const actor = await this.authorize(request);
     try {
-      return paymentReviewDetailContract.parse(
+      return paymentReviewDetailV2Contract.parse(
         await this.payments.revealReview({
           reviewId: reviewId.data,
           actorIdentityId: actor.identityId,
@@ -345,7 +347,7 @@ export class PlatformPaymentReviewController {
     @Req() request: FastifyRequest,
   ) {
     const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
-    const input = paymentReconciliationRequestInputContract.safeParse(body);
+    const input = paymentReconciliationRequestInputV2Contract.safeParse(body);
     if (!reviewId.success || !input.success) {
       throw paymentReviewHttpError(
         "VALIDATION_ERROR",
@@ -356,10 +358,11 @@ export class PlatformPaymentReviewController {
     }
     const actor = await this.authorize(request);
     try {
-      return paymentReconciliationRequestContract.parse(
+      return paymentReconciliationRequestV2Contract.parse(
         await this.payments.requestReconciliation({
           reviewId: reviewId.data,
           actorIdentityId: actor.identityId,
+          grantId: input.data.grantId,
           reason: input.data.reason,
           correlationId: request.id,
         }),
