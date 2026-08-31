@@ -3,6 +3,9 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { readNearestSellerConversation } from "../../../../lib/seller-conversation-api";
+import { readSellerDisputes } from "../../../../lib/seller-dispute-api";
+import { formatDisputeTime } from "../disputes/seller-dispute-copy";
+import { nearestSellerResponseDispute } from "../disputes/seller-dispute-model";
 import styles from "./workspace-page.module.css";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
@@ -10,10 +13,15 @@ const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
 export default async function SellerHomePage() {
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
-  const [actionableOrders, actionableConversation] = await Promise.all([
+  const [actionableOrders, actionableConversation, disputePage] = await Promise.all([
     readActionableOrders(cookieHeader),
     readNearestSellerConversation(cookieHeader),
+    readSellerDisputes(cookieHeader, undefined, 100),
   ]);
+  const actionableDispute =
+    disputePage.kind === "OK"
+      ? nearestSellerResponseDispute(disputePage.data.items)
+      : undefined;
   const conversationHref =
     actionableConversation.kind === "ACTIONABLE"
       ? `/seller/conversations/${actionableConversation.conversation.conversationId}`
@@ -25,7 +33,20 @@ export default async function SellerHomePage() {
         <h1 id="seller-home-title">کارهای نزدیک</h1>
         <p>سفارش، موجودی یا گفت‌وگویی که نیاز به رسیدگی داشته باشد اینجا می‌آید.</p>
         <div className={styles.nextAction}>
-          {actionableOrders === undefined && !conversationHref ? (
+          {actionableDispute ? (
+            <>
+              <h2>یک اختلاف منتظر پاسخ فروشگاه است</h2>
+              <p>مهلت پاسخ: {formatDisputeTime(actionableDispute.deadline!.dueAt)}</p>
+              <Link
+                className={styles.primary}
+                href={`/seller/disputes/${actionableDispute.disputeId}`}
+              >
+                پاسخ به اختلاف
+              </Link>
+            </>
+          ) : actionableOrders === undefined &&
+            !conversationHref &&
+            disputePage.kind === "UNAVAILABLE" ? (
             <>
               <h2>کارهای نزدیک دریافت نشد</h2>
               <p>کمی بعد صفحه را دوباره بررسی کنید.</p>
@@ -56,6 +77,11 @@ export default async function SellerHomePage() {
           )}
         </div>
         <nav className={styles.relatedActions} aria-label="کارهای مرتبط">
+          {actionableDispute && (actionableOrders ?? 0) > 0 ? (
+            <Link className={styles.secondary} href="/seller/orders">
+              رسیدگی به سفارش‌ها
+            </Link>
+          ) : null}
           {(actionableOrders ?? 0) > 0 && conversationHref ? (
             <Link className={styles.secondary} href={conversationHref}>
               پاسخ به نزدیک‌ترین گفت‌وگو
@@ -63,6 +89,9 @@ export default async function SellerHomePage() {
           ) : null}
           <Link className={styles.secondary} href="/seller/conversations">
             دیدن همه گفت‌وگوها
+          </Link>
+          <Link className={styles.secondary} href="/seller/disputes">
+            دیدن همه اختلاف‌ها
           </Link>
         </nav>
       </section>

@@ -50,6 +50,7 @@ export async function createSellerWorkspaceFixture(
 
   return {
     identityId,
+    storeId,
     async cleanup() {
       await sql`delete from store_memberships where store_id = ${storeId}`;
       await sql`delete from store_stores where id = ${storeId}`;
