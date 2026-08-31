@@ -34,7 +34,16 @@ export function createMediaDemoSeedAdapter(environment = process.env) {
     },
 
     async converge({ sql, baseline, mediaObjects }) {
+      const obsoleteObjectKeys = [];
       for (const object of mediaObjects) {
+        const previous = await sql`
+          select original_object_key as "originalObjectKey"
+          from media_assets where id = ${object.id}
+        `;
+        const previousVariants = await sql`
+          select object_key as "objectKey" from media_variants
+          where media_id = ${object.id}
+        `;
         await sql`
           insert into media_assets
             (id, owner_seller_id, owner_reference_id, purpose, original_object_key,
@@ -45,6 +54,8 @@ export function createMediaDemoSeedAdapter(environment = process.env) {
             ${object.bytes.length}, ${object.checksum}, ${object.width}, ${object.height},
             'PUBLIC', ${baseline.atDaysAgo(20)})
           on conflict (id) do update set original_object_key = excluded.original_object_key,
+            owner_seller_id = excluded.owner_seller_id,
+            owner_reference_id = excluded.owner_reference_id,
             original_mime_type = excluded.original_mime_type,
             original_size = excluded.original_size,
             original_checksum = excluded.original_checksum, visibility = 'PUBLIC'
@@ -61,24 +72,44 @@ export function createMediaDemoSeedAdapter(environment = process.env) {
               width = excluded.width, height = excluded.height
           `;
         }
+        obsoleteObjectKeys.push(
+          ...previous.map(({ originalObjectKey }) => originalObjectKey),
+          ...previousVariants.map(({ objectKey }) => objectKey),
+        );
       }
+      return obsoleteObjectKeys.filter(
+        (key) =>
+          !mediaObjects.some(
+            (object) =>
+              object.objectKey === key ||
+              Object.values(object.variantKeys).includes(key),
+          ),
+      );
     },
 
     async retire({ sql, retired, id }) {
       const mediaIds = retired
         .filter(({ key }) => key.startsWith("product.") || key.startsWith("content."))
         .map(({ key }) => id(`${key}.media`));
+      const objectKeys =
+        mediaIds.length > 0
+          ? await sql`
+            select original_object_key as "objectKey" from media_assets
+            where id = any(${mediaIds})
+            union all
+            select object_key as "objectKey" from media_variants
+            where media_id = any(${mediaIds})
+          `
+          : [];
       if (mediaIds.length > 0)
         await sql`delete from media_assets where id = any(${mediaIds})`;
-      return mediaIds.flatMap((id) => [
-        `demo/${id}/original`,
-        `demo/${id}/product-card`,
-        `demo/${id}/product-detail`,
-      ]);
+      return objectKeys.map(({ objectKey }) => objectKey);
     },
 
     async removeObjects(objectKeys) {
-      await Promise.all(objectKeys.map((key) => client.removeObject(bucket, key)));
+      await Promise.allSettled(
+        objectKeys.map((key) => client.removeObject(bucket, key)),
+      );
     },
 
     async objectExists(objectKey) {
@@ -99,12 +130,12 @@ async function materializeObjects(manifest, baseline) {
   );
   return Promise.all(
     resources.map(async (resource, index) => {
-      const animated =
-        resource.kind === "salesContent" && resource.mediaKind === "VIDEO";
-      const fileName = animated ? "motion.gif" : assetFiles[index % assetFiles.length];
+      const video = resource.kind === "salesContent" && resource.mediaKind === "VIDEO";
+      const fileName = video ? "motion.webm" : assetFiles[index % assetFiles.length];
       const bytes = await readFile(
         new URL(`../../../../../ops/demo/assets/${fileName}`, import.meta.url),
       );
+      const checksum = createHash("sha256").update(bytes).digest("hex");
       const key = `${resource.key}.media`;
       const ownerStore = baseline.resources.get(resource.store);
       return {
@@ -112,15 +143,15 @@ async function materializeObjects(manifest, baseline) {
         id: baseline.ids.id(key),
         ownerSellerId: baseline.ids.id(baseline.ownerKey(ownerStore)),
         ownerReferenceId: baseline.ids.id(resource.key),
-        objectKey: `demo/${baseline.ids.id(`${resource.key}.media`)}/original`,
+        objectKey: `demo/${baseline.ids.id(`${resource.key}.media`)}/${checksum}/original`,
         variantKeys: {
-          "product-card": `demo/${baseline.ids.id(`${resource.key}.media`)}/product-card`,
-          "product-detail": `demo/${baseline.ids.id(`${resource.key}.media`)}/product-detail`,
+          "product-card": `demo/${baseline.ids.id(`${resource.key}.media`)}/${checksum}/product-card`,
+          "product-detail": `demo/${baseline.ids.id(`${resource.key}.media`)}/${checksum}/product-detail`,
         },
-        mimeType: animated ? "image/gif" : "image/png",
-        width: animated ? 480 : 960,
-        height: animated ? 480 : 720,
-        checksum: createHash("sha256").update(bytes).digest("hex"),
+        mimeType: video ? "video/webm" : "image/png",
+        width: video ? 480 : 960,
+        height: video ? 480 : 720,
+        checksum,
         bytes,
       };
     }),

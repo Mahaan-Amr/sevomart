@@ -6,7 +6,7 @@ export async function convergePaymentsDemoState({ sql, baseline }) {
     const totalAmount = product.price + 850000;
     const status = order.payment ?? "CONFIRMED";
     const attemptId = id(`${order.key}.payment`);
-    const createdAt = baseline.atDaysAgo(order.ageDays);
+    const createdAt = baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0);
     const scenario = status === "REVIEW_REQUIRED" ? "pending" : "success";
     await sql`
       insert into payment_attempts
@@ -52,7 +52,7 @@ async function seedAttemptAudit(sql, baseline, order, attemptId, status, created
 
 async function seedRefund(sql, baseline, order, attemptId, totalAmount) {
   const { id } = baseline.ids;
-  const createdAt = baseline.atDaysAgo(order.ageDays);
+  const createdAt = baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0);
   await sql`
     insert into payment_direct_refunds
       (order_id, store_id, payment_attempt_id, amount, provider, status, version,
@@ -98,7 +98,10 @@ export async function retirePaymentsDemoState({ sql, retired, id, now }) {
     const [attempt] = await sql`
       select id, status from payment_attempts where order_id = ${resource.id}
     `;
-    if (attempt && ["CREATED", "DISPATCHED", "REVIEW_REQUIRED"].includes(attempt.status)) {
+    if (
+      attempt &&
+      ["CREATED", "DISPATCHED", "REVIEW_REQUIRED"].includes(attempt.status)
+    ) {
       await sql`update payment_attempts set status = 'FAILED' where id = ${attempt.id}`;
       await sql`
         insert into payment_attempt_audits

@@ -10,13 +10,12 @@ import { InvalidProviderCallbackError } from "../public";
 
 export class DevDirectPaymentProvider implements DirectPaymentProvider {
   readonly providerKey = "DEV";
-  readonly #scenarios = new Map<string, "CONFIRMED" | "FAILED" | "PENDING">();
 
   constructor(private readonly signingSecret: string) {}
 
   async initiate(command: Parameters<DirectPaymentProvider["initiate"]>[0]) {
     return {
-      providerReference: `dev-${command.attemptId}`,
+      providerReference: scenarioReference(command.attemptId, "PENDING"),
       redirectUrl: `/v1/payment-providers/dev/pay/${command.attemptId}?scenario=success`,
     };
   }
@@ -53,7 +52,6 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
     providerEventId: string;
     result: "CONFIRMED" | "FAILED" | "PENDING";
   }) {
-    this.#scenarios.set(input.attemptId, input.result);
     const unsigned = input;
     return {
       ...unsigned,
@@ -81,14 +79,21 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
       amount: parsed.data.amount,
       result: parsed.data.result,
       providerEventId: parsed.data.providerEventId,
-      providerReference: `dev-${parsed.data.attemptId}`,
+      providerReference: scenarioReference(parsed.data.attemptId, parsed.data.result),
+      acceptedProviderReferences: ["CONFIRMED", "FAILED", "PENDING"].map((result) =>
+        scenarioReference(
+          parsed.data.attemptId,
+          result as "CONFIRMED" | "FAILED" | "PENDING",
+        ),
+      ),
     };
   }
 
   async query(command: Parameters<DirectPaymentProvider["query"]>[0]) {
-    const result =
-      this.#scenarios.get(command.attemptId) ??
-      resultFromScenarioReference(command.attemptId, command.providerReference);
+    const result = resultFromScenarioReference(
+      command.attemptId,
+      command.providerReference,
+    );
     return {
       attemptId: command.attemptId,
       orderId: command.orderId,

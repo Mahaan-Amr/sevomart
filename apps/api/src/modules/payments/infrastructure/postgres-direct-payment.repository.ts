@@ -281,9 +281,17 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
       if (
         !attempt ||
         attempt.orderId !== callback.orderId ||
-        attempt.providerReference !== callback.providerReference
+        !(callback.acceptedProviderReferences ?? [callback.providerReference]).includes(
+          attempt.providerReference ?? "",
+        )
       ) {
         throw new DirectPaymentAttemptNotFoundError();
+      }
+      if (attempt.providerReference !== callback.providerReference) {
+        await sql`
+          update payment_attempts set provider_reference = ${callback.providerReference}
+          where id = ${attempt.attemptId}::uuid
+        `;
       }
       const observation = await sql<Array<{ eventId: string }>>`
         insert into payment_provider_observations

@@ -1,8 +1,14 @@
-export async function convergeContentDemoState({ sql, manifest, baseline }) {
+export async function convergeContentDemoState({
+  sql,
+  manifest,
+  baseline,
+  productStates,
+}) {
   const { id, storeOwnerId } = baseline.ids;
   for (const content of manifest.resources.filter(
     ({ kind }) => kind === "salesContent",
   )) {
+    const product = productStates.get(content.product);
     await sql`
       insert into content_sales_contents
         (id, store_id, actor_identity_id, source, moderation_state, media_id,
@@ -11,21 +17,31 @@ export async function convergeContentDemoState({ sql, manifest, baseline }) {
         'SELLER', 'PUBLISHED', ${id(`${content.key}.media`)}, ${content.mediaKind},
         true, ${baseline.atDaysAgo(content.ageDays)})
       on conflict (id) do update set moderation_state = 'PUBLISHED', active = true,
+        store_id = excluded.store_id, actor_identity_id = excluded.actor_identity_id,
         media_id = excluded.media_id, media_kind = excluded.media_kind
+    `;
+    await sql`
+      update content_sales_content_products set active = false
+      where content_id = ${id(content.key)} and product_id <> ${id(content.product)}
     `;
     await sql`
       insert into content_sales_content_products
         (content_id, product_id, publication_version, active)
-      values (${id(content.key)}, ${id(content.product)}, 1, true)
-      on conflict (content_id, product_id) do update set active = true
+      values (${id(content.key)}, ${id(content.product)}, ${product.publicationVersion}, true)
+      on conflict (content_id, product_id) do update set active = true,
+        publication_version = excluded.publication_version
     `;
   }
   for (const product of baseline.products.filter(({ state }) => state !== "DRAFT")) {
+    const current = productStates.get(product.key);
     await sql`
       insert into content_product_states
         (product_id, aggregate_version, publication_version, active, updated_at)
-      values (${id(product.key)}, 1, 1, ${product.state === "PUBLISHED"}, ${baseline.now})
+      values (${id(product.key)}, ${current.revision}, ${current.publicationVersion},
+        ${product.state === "PUBLISHED"}, ${baseline.now})
       on conflict (product_id) do update set active = excluded.active,
+        aggregate_version = excluded.aggregate_version,
+        publication_version = excluded.publication_version,
         updated_at = excluded.updated_at
     `;
   }

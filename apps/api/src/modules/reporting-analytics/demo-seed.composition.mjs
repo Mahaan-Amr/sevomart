@@ -1,11 +1,17 @@
-export async function convergeReportingDemoState({ sql, baseline, fulfillmentStates }) {
+export async function convergeReportingDemoState({
+  sql,
+  baseline,
+  fulfillmentStates,
+  storeStates,
+}) {
   const { id } = baseline.ids;
   for (const store of baseline.stores.filter(({ status }) => status === "PUBLISHED")) {
+    const current = storeStates.get(store.key);
     await sql`
       insert into reporting_store_publications
         (store_id, last_event_id, publication_version, published_at, projected_at)
       values (${id(store.key)}, ${id(`${store.key}.reporting-publication-event`)},
-        1, ${baseline.atDaysAgo(30)}, ${baseline.now})
+        ${current.publicationVersion}, ${baseline.atDaysAgo(30)}, ${baseline.now})
       on conflict (store_id) do update set publication_version = excluded.publication_version,
         projected_at = excluded.projected_at
     `;
@@ -18,7 +24,7 @@ export async function convergeReportingDemoState({ sql, baseline, fulfillmentSta
           (order_id, store_id, total_amount, currency, paid_at, aggregate_version,
            last_event_id, projected_at)
         values (${id(order.key)}, ${id("store.aban")}, ${totalAmount}, 'IRR',
-          ${baseline.atDaysAgo(order.ageDays)}, 1,
+          ${baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0)}, 1,
           ${id(`${order.key}.reporting-order-event`)}, ${baseline.now})
         on conflict (order_id) do update set total_amount = excluded.total_amount,
           projected_at = excluded.projected_at
@@ -33,13 +39,15 @@ export async function convergeReportingDemoState({ sql, baseline, fulfillmentSta
           (order_id, status, aggregate_version, last_event_id, occurred_at, projected_at)
         values (${id(order.key)}, ${fulfillment.status}, ${fulfillment.version},
           ${id(`${order.key}.reporting-fulfillment-event`)},
-          ${baseline.atDaysAgo(order.ageDays)}, ${baseline.now})
+          ${baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0)}, ${baseline.now})
         on conflict (order_id) do update set status = excluded.status,
           aggregate_version = excluded.aggregate_version, projected_at = excluded.projected_at
       `;
     }
   }
-  await sql`
+  const dispute = baseline.resources.get("dispute.open");
+  if (dispute)
+    await sql`
     insert into reporting_seller_dispute_states
       (dispute_id, store_id, order_id, status, deadline_at, aggregate_version,
        last_event_id, occurred_at, projected_at)

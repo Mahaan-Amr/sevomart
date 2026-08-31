@@ -5,37 +5,70 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
   const buyerId = id("identity.buyer");
   const storeId = id("store.aban");
   const address = manifest.resources.find(({ kind }) => kind === "address");
+  const historicalAddressKey = address?.key ?? "address.buyer-home";
   const activeCart = manifest.resources.find(({ kind }) => kind === "cart");
+  if (activeCart) {
+    const desiredCartId = id(activeCart.key);
+    const desiredCartVariantId = firstVariant(activeCart.product);
+    const [currentCart] = await sql`
+    select cart.store_id as "storeId", cart.identity_id as "identityId",
+      cart.status, cart.revision,
+      count(item.*)::int as "itemCount",
+      bool_and(item.variant_id = ${desiredCartVariantId}
+        and item.product_id = ${id(activeCart.product)}
+        and item.quantity = ${activeCart.quantity}) as "itemsMatch"
+    from order_carts cart
+    left join order_cart_items item on item.cart_id = cart.id
+    where cart.id = ${desiredCartId}
+    group by cart.id
+  `;
+    const cartChanged =
+      !currentCart ||
+      currentCart.storeId !== id(activeCart.store) ||
+      currentCart.identityId !== id(activeCart.identity) ||
+      currentCart.status !== "ACTIVE" ||
+      currentCart.itemCount !== 1 ||
+      !currentCart.itemsMatch;
+    const cartRevision = currentCart ? currentCart.revision + (cartChanged ? 1 : 0) : 1;
 
-  await sql`
+    await sql`
     insert into order_carts
       (id, store_id, identity_id, status, revision, expires_at, created_at,
        updated_at, reviewed_policy_revision, reviewed_shipping_hash)
-    values (${id(activeCart.key)}, ${id(activeCart.store)}, ${id(activeCart.identity)},
-      'ACTIVE', 1, ${new Date(baseline.now.getTime() + 7 * 86_400_000)},
+    values (${desiredCartId}, ${id(activeCart.store)}, ${id(activeCart.identity)},
+      'ACTIVE', ${cartRevision}, ${new Date(baseline.now.getTime() + 7 * 86_400_000)},
       ${baseline.atDaysAgo(1)}, ${baseline.now}, 0, '')
-    on conflict (id) do update set status = 'ACTIVE', revision = 1,
+    on conflict (id) do update set store_id = excluded.store_id,
+      identity_id = excluded.identity_id, status = 'ACTIVE', revision = excluded.revision,
       expires_at = excluded.expires_at, updated_at = excluded.updated_at
   `;
-  await sql`
+    await sql`
     insert into order_cart_items
       (cart_id, variant_id, product_id, quantity, created_at, updated_at,
        reviewed_publication_version, reviewed_unit_price_amount)
-    values (${id(activeCart.key)}, ${firstVariant(activeCart.product)},
+    values (${desiredCartId}, ${desiredCartVariantId},
       ${id(activeCart.product)}, ${activeCart.quantity}, ${baseline.atDaysAgo(1)},
       ${baseline.now}, 0, 0)
     on conflict (cart_id, variant_id) do update set quantity = excluded.quantity,
       updated_at = excluded.updated_at
   `;
+    await sql`
+    delete from order_cart_items
+    where cart_id = ${desiredCartId}
+      and variant_id <> ${desiredCartVariantId}
+  `;
+  }
 
-  await sql`
+  if (address) {
+    await sql`
     insert into order_saved_addresses
       (id, identity_id, current_revision, status, created_at, updated_at)
     values (${id(address.key)}, ${id(address.identity)}, 1, 'ACTIVE',
       ${baseline.atDaysAgo(20)}, ${baseline.now})
-    on conflict (id) do update set status = 'ACTIVE', updated_at = excluded.updated_at
+    on conflict (id) do update set identity_id = excluded.identity_id,
+      current_revision = 1, status = 'ACTIVE', updated_at = excluded.updated_at
   `;
-  await sql`
+    await sql`
     insert into order_saved_address_revisions
       (address_id, revision, recipient_name, recipient_mobile, province_text,
        city_text, address_line, postal_code, created_at)
@@ -44,10 +77,11 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
       ${baseline.atDaysAgo(20)})
     on conflict (address_id, revision) do nothing
   `;
+  }
 
   for (const order of baseline.orders) {
     const product = baseline.resources.get(order.product);
-    const createdAt = baseline.atDaysAgo(order.ageDays);
+    const createdAt = baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0);
     const cartId = id(`${order.key}.cart`);
     const checkoutId = id(`${order.key}.checkout`);
     const orderId = id(order.key);
@@ -69,7 +103,7 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
         (checkout_revision, identity_id, cart_id, cart_revision, address_id,
          address_revision, shipping_method_id, shipping_revision, policy_revision,
          snapshot, expires_at, consumed_order_id, created_at)
-      values (${checkoutId}, ${buyerId}, ${cartId}, 1, ${id(address.key)}, 1,
+      values (${checkoutId}, ${buyerId}, ${cartId}, 1, ${id(historicalAddressKey)}, 1,
         ${id("store.aban.shipping")}, 1, 1, ${sql.json({ product: product.name })},
         ${new Date(createdAt.getTime() + 15 * 60_000)}, null, ${createdAt})
       on conflict (checkout_revision) do nothing
@@ -119,7 +153,7 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
         ${id(order.product)}, ${product.name}, 1, ${product.price}, 1)
       on conflict (order_id, variant_id) do nothing
     `;
-    await seedSnapshots(sql, baseline, orderId, id(address.key));
+    await seedSnapshots(sql, baseline, orderId, id(historicalAddressKey));
     await seedOrderHistory(sql, baseline, order, paidAt);
   }
 }
@@ -151,7 +185,7 @@ async function seedSnapshots(sql, baseline, orderId, addressId) {
 
 async function seedOrderHistory(sql, baseline, order, paidAt) {
   const { id } = baseline.ids;
-  const createdAt = baseline.atDaysAgo(order.ageDays);
+  const createdAt = baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0);
   const transitions = [{ from: null, to: "PENDING_PAYMENT", at: createdAt }];
   if (order.state === "PAYMENT_REVIEW") {
     transitions.push({
@@ -184,10 +218,10 @@ async function seedOrderHistory(sql, baseline, order, paidAt) {
 export async function retireOrdersDemoState({ sql, retired, id, now }) {
   for (const resource of retired) {
     if (resource.key.startsWith("cart.")) {
-      await sql`update order_carts set status = 'ABANDONED', updated_at = ${now} where id = ${resource.id}`;
+      await sql`update order_carts set status = 'EXPIRED', updated_at = ${now} where id = ${resource.id}`;
     }
     if (resource.key.startsWith("address.")) {
-      await sql`update order_saved_addresses set status = 'ARCHIVED', updated_at = ${now} where id = ${resource.id}`;
+      await sql`update order_saved_addresses set status = 'DELETED', updated_at = ${now} where id = ${resource.id}`;
     }
     if (resource.key.startsWith("order.")) {
       const [order] = await sql`

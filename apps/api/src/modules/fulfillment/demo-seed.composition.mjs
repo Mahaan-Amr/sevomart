@@ -21,7 +21,7 @@ export async function convergeFulfillmentDemoState({ sql, baseline }) {
   const projectionStates = [];
   for (const order of baseline.orders.filter(({ fulfillment }) => fulfillment)) {
     const path = PATHS[order.fulfillment];
-    const createdAt = baseline.atDaysAgo(order.ageDays);
+    const createdAt = baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0);
     const [existing] = await sql`
       select status, version from fulfillment_orders where order_id = ${id(order.key)}
     `;

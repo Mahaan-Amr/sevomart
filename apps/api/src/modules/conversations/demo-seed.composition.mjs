@@ -14,6 +14,7 @@ export async function convergeConversationsDemoState({ sql, manifest, baseline }
         ${baseline.atDaysAgo(1)})
       on conflict (id) do update set context = excluded.context,
         version = conversation_threads.version + 1, updated_at = excluded.updated_at
+      where conversation_threads.context is distinct from excluded.context
     `;
     await sql`
       insert into conversation_messages

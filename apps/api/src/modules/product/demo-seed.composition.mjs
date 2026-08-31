@@ -1,45 +1,102 @@
 export async function convergeProductDemoState({ sql, baseline }) {
   const { id } = baseline.ids;
+  const states = new Map();
+  const retiredVariants = [];
   for (const product of baseline.products) {
     const publishedBefore = product.state !== "DRAFT";
-    const publicationVersion = publishedBefore ? 1 : 0;
+    const [current] = await sql`
+      select product.revision, product.publication_version as "publicationVersion",
+        product.state, product.store_id as "storeId", working.name,
+        working.description, working.definition
+      from product_products product
+      left join product_working_copies working on working.product_id = product.id
+      where product.id = ${id(product.key)}
+    `;
     const variants = baseline.variantsFor(product);
+    const description = `نمونه نمایشی ${product.name}`;
     const definition = {
       name: product.name,
-      description: `نمونه نمایشی ${product.name}`,
+      description,
       axes: product.variants ? ["رنگ و اندازه"] : [],
       variants: variants.map((variant) => ({
         clientKey: variant.key,
         label: variant.label,
       })),
     };
+    const currentVariants = current?.definition?.variants ?? [];
+    const variantStructureChanged =
+      currentVariants.length !== definition.variants.length ||
+      currentVariants.some(
+        (variant, index) =>
+          variant.clientKey !== definition.variants[index]?.clientKey ||
+          variant.label !== definition.variants[index]?.label,
+      ) ||
+      (current?.definition?.axes ?? []).join("\0") !== definition.axes.join("\0");
+    const publicationChanged =
+      !current ||
+      current.state !== product.state ||
+      current.storeId !== id(product.store) ||
+      current.name !== product.name ||
+      current.description !== description ||
+      variantStructureChanged;
+    const revision = current ? current.revision + (publicationChanged ? 1 : 0) : 1;
+    const publicationVersion = publishedBefore
+      ? current && publicationChanged
+        ? current.publicationVersion + 1
+        : (current?.publicationVersion ?? 1)
+      : (current?.publicationVersion ?? 0);
+    const desiredVariantIds = new Set(
+      variants.map((variant) => id(`${product.key}.variant.${variant.key}`)),
+    );
+    const existingVariants = await sql`
+      select id, client_key as "clientKey" from product_variants
+      where product_id = ${id(product.key)}
+    `;
+    const obsoleteVariantIds = existingVariants
+      .filter(
+        ({ id: variantId, clientKey }) =>
+          variantId === id(`${product.key}.variant.${clientKey}`) &&
+          !desiredVariantIds.has(variantId),
+      )
+      .map(({ id: variantId }) => variantId);
+    if (obsoleteVariantIds.length > 0) {
+      await sql`update product_variants set retired = true where id = any(${obsoleteVariantIds})`;
+      retiredVariants.push(
+        ...obsoleteVariantIds.map((variantId) => ({
+          variantId,
+          storeId: id(product.store),
+          resourceKey: product.key,
+        })),
+      );
+    }
     await sql`
       insert into product_products
         (id, store_id, state, revision, publication_version, published_at,
          created_at, updated_at)
-      values (${id(product.key)}, ${id(product.store)}, ${product.state}, 1,
+      values (${id(product.key)}, ${id(product.store)}, ${product.state}, ${revision},
         ${publicationVersion}, ${publishedBefore ? baseline.atDaysAgo(20) : null},
         ${baseline.atDaysAgo(25)}, ${baseline.now})
       on conflict (id) do update set state = excluded.state, revision = excluded.revision,
+        store_id = excluded.store_id,
         publication_version = excluded.publication_version,
         published_at = excluded.published_at, updated_at = excluded.updated_at
     `;
     await sql`
       insert into product_working_copies
         (product_id, name, description, media_id, variant_id, definition)
-      values (${id(product.key)}, ${product.name}, ${`نمونه نمایشی ${product.name}`},
+      values (${id(product.key)}, ${product.name}, ${description},
         ${id(`${product.key}.media`)}, null, ${sql.json(definition)})
       on conflict (product_id) do update set name = excluded.name,
         description = excluded.description, media_id = excluded.media_id,
         definition = excluded.definition
     `;
-    if (publishedBefore) {
+    if (publishedBefore && publicationChanged) {
       await sql`
         insert into product_publications
           (product_id, publication_version, name, description, media_id, variant_id,
            snapshot, created_at)
-        values (${id(product.key)}, 1, ${product.name},
-          ${`نمونه نمایشی ${product.name}`}, ${id(`${product.key}.media`)},
+        values (${id(product.key)}, ${publicationVersion}, ${product.name},
+          ${description}, ${id(`${product.key}.media`)},
           ${id(`${product.key}.variant.${variants[0].key}`)}, ${sql.json(definition)},
           ${baseline.atDaysAgo(20)})
         on conflict (product_id, publication_version) do nothing
@@ -54,6 +111,7 @@ export async function convergeProductDemoState({ sql, baseline }) {
         values (${variantId}, ${id(product.key)}, ${id(product.store)}, ${variant.key},
           ${variant.label}, false, ${publishedBefore}, ${baseline.atDaysAgo(25)})
         on conflict (id) do update set retired = false,
+          store_id = excluded.store_id,
           ever_published = product_variants.ever_published or excluded.ever_published
       `;
       await sql`
@@ -66,7 +124,18 @@ export async function convergeProductDemoState({ sql, baseline }) {
         where product_offers.amount <> excluded.amount or product_offers.sku <> excluded.sku
       `;
     }
+    const [offer] = await sql`
+      select coalesce(max(revision), 1)::int as revision
+      from product_offers where product_id = ${id(product.key)}
+    `;
+    states.set(product.key, {
+      revision,
+      publicationVersion,
+      state: product.state,
+      offerVersion: offer.revision,
+    });
   }
+  return { states, retiredVariants };
 }
 
 export async function retireProductDemoState({ sql, retired, now }) {

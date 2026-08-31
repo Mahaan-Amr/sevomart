@@ -11,6 +11,11 @@ receipts. This owner does not introduce another product-domain module.
 Every pull request that adds a migration must state the owning module, rollback or
 forward-fix plan, and whether a compatibility window is required.
 
+Issue 163 additively creates the platform-owned demo resource registry used to
+track checksums, retirement, and restoration for the versioned showcase baseline.
+It does not own domain records or introduce cross-module relationships. No
+compatibility window is required; deployed corrections use a forward migration.
+
 The same `prisma migrate deploy` command applies migrations in both supported local
 paths. A migration change must be verified once with `docker compose up --build
 --wait` and once with `pnpm dev`; record those checks in the pull request. The seller

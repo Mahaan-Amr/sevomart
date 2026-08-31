@@ -1,13 +1,18 @@
 export async function convergeInventoryDemoState({ sql, baseline }) {
   const { id } = baseline.ids;
+  const states = new Map();
   for (const product of baseline.products) {
     for (const variant of baseline.variantsFor(product)) {
       const variantId = id(`${product.key}.variant.${variant.key}`);
       const [current] = await sql`
-        select on_hand as "onHand", revision from inventory_levels
+        select on_hand as "onHand", revision, store_id as "storeId" from inventory_levels
         where variant_id = ${variantId}
       `;
-      if (current?.onHand === (variant.onHand ?? 0)) continue;
+      if (
+        current?.onHand === (variant.onHand ?? 0) &&
+        current?.storeId === id(product.store)
+      )
+        continue;
       const previousOnHand = current?.onHand ?? 0;
       const previousRevision = current?.revision ?? 0;
       const nextRevision = previousRevision + 1;
@@ -16,7 +21,8 @@ export async function convergeInventoryDemoState({ sql, baseline }) {
         values (${variantId}, ${id(product.store)}, ${variant.onHand ?? 0},
           ${nextRevision}, ${baseline.now})
         on conflict (variant_id) do update set on_hand = excluded.on_hand,
-          revision = excluded.revision, updated_at = excluded.updated_at
+          store_id = excluded.store_id, revision = excluded.revision,
+          updated_at = excluded.updated_at
       `;
       await sql`
         insert into inventory_adjustments
@@ -33,7 +39,16 @@ export async function convergeInventoryDemoState({ sql, baseline }) {
         on conflict (id) do nothing
       `;
     }
+    const variantIds = baseline
+      .variantsFor(product)
+      .map((variant) => id(`${product.key}.variant.${variant.key}`));
+    const [state] = await sql`
+      select coalesce(max(revision), 1)::int as revision from inventory_levels
+      where variant_id = any(${variantIds})
+    `;
+    states.set(product.key, state.revision);
   }
+  return states;
 }
 
 export async function retireInventoryDemoState({ sql, targets, id, now }) {

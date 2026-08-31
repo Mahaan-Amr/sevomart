@@ -84,14 +84,15 @@
         "PAYMENT_REVIEW",
         "PAYMENT_OUTCOME_CHANGE",
         "DISPUTE_REVIEW",
-        "VIOLATION_REVIEW"
+        "VIOLATION_REVIEW",
+        "ACCESS_AUDIT_REVIEW"
       ]
     },
     {
       "kind": "platformGrant",
       "key": "platform-grant.access-manager",
       "identity": "identity.access-manager",
-      "permissions": ["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]
+      "permissions": ["ACCESS_ADMINISTRATION"]
     },
     {
       "kind": "store",
@@ -347,6 +348,7 @@
       "key": "order.pending-payment",
       "state": "PENDING_PAYMENT",
       "ageDays": 0,
+      "ageMinutes": 5,
       "product": "product.tote"
     },
     {
@@ -355,6 +357,7 @@
       "state": "PAYMENT_REVIEW",
       "payment": "REVIEW_REQUIRED",
       "ageDays": 0,
+      "ageMinutes": 120,
       "product": "product.tshirt"
     },
     {

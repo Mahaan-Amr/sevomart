@@ -1,8 +1,29 @@
 export async function convergeStoreDemoState({ sql, baseline }) {
   const { id } = baseline.ids;
+  const states = new Map();
   for (const store of baseline.stores) {
     const published = store.status === "PUBLISHED";
     const owner = baseline.ownerKey(store);
+    const [current] = await sql`
+      select revision, publication_version as "publicationVersion",
+        return_policy_revision as "returnPolicyRevision", name, slug, bio,
+        theme_color as "themeColor", status
+      from store_stores where id = ${id(store.key)}
+    `;
+    const definitionChanged =
+      !current ||
+      current.name !== store.name ||
+      current.slug !== store.slug ||
+      current.bio !== store.bio ||
+      current.themeColor !== store.themeColor ||
+      current.status !== store.status;
+    const revision = current ? current.revision + (definitionChanged ? 1 : 0) : 1;
+    const publicationVersion = published
+      ? current && definitionChanged
+        ? current.publicationVersion + 1
+        : (current?.publicationVersion ?? 1)
+      : (current?.publicationVersion ?? 0);
+    const returnPolicyRevision = current?.returnPolicyRevision ?? 1;
     await sql`
       insert into store_stores
         (id, name, slug, bio, return_policy, settlement_kind, settlement_status,
@@ -12,7 +33,7 @@ export async function convergeStoreDemoState({ sql, baseline }) {
         'تا ۷ روز پس از تحویل، درخواست مرجوعی را با فروشنده هماهنگ کنید.',
         'DIRECT', 'ACTIVE', ${store.themeColor}, ${store.status},
         ${published ? baseline.atDaysAgo(30) : null}, ${baseline.now},
-        ${published ? 1 : 0}, 1, 1)
+        ${publicationVersion}, ${revision}, ${returnPolicyRevision})
       on conflict (id) do update set name = excluded.name, slug = excluded.slug,
         bio = excluded.bio, return_policy = excluded.return_policy,
         settlement_kind = excluded.settlement_kind,
@@ -37,13 +58,16 @@ export async function convergeStoreDemoState({ sql, baseline }) {
         fixed_fee_amount = excluded.fixed_fee_amount,
         estimated_delivery_text = excluded.estimated_delivery_text, enabled = true
     `;
+    states.set(store.key, { revision, publicationVersion });
   }
+  return states;
 }
 
 export async function retireStoreDemoState({ sql, retired, now }) {
   for (const resource of retired.filter(({ key }) => key.startsWith("store."))) {
     await sql`
-      update store_stores set status = 'UNPUBLISHED', publication_version = 0,
+      update store_stores set status = 'UNPUBLISHED',
+        publication_version = publication_version + 1, revision = revision + 1,
         published_at = null, updated_at = ${now}
       where id = ${resource.id}
     `;
