@@ -8,6 +8,7 @@ import {
   orderContract,
   orderCreatedV1Contract,
   orderBecameActionableV1Contract,
+  orderReportingSnapshotV1Contract,
   orderPaymentReviewRequiredV1Contract,
   orderExpiredV1Contract,
   sellerActionableOrderContract,
@@ -466,7 +467,7 @@ export class PostgresCheckoutRepository
       }>
     >`
       select id as "orderId", reservation_id as "reservationId",
-        total_amount::int as "totalAmount",
+        total_amount::float8 as "totalAmount",
         reservation_expires_at as "reservationExpiresAt", status
       from order_orders
       where id = ${orderId} and identity_id = ${identityId}
@@ -491,7 +492,7 @@ export class PostgresCheckoutRepository
       }>
     >`
       select id as "orderId", reservation_id as "reservationId",
-        total_amount::int as "totalAmount",
+        total_amount::float8 as "totalAmount",
         reservation_expires_at as "reservationExpiresAt", status
       from order_orders
       where id = ${orderId} and identity_id = ${identityId}
@@ -533,8 +534,17 @@ export class PostgresCheckoutRepository
     command: Parameters<OrderPaymentWorkflow["markPaid"]>[1],
   ) {
     const sql = transaction as unknown as Sql;
-    const current = await sql<Array<{ status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" }>>`
-      select status from order_orders
+    const current = await sql<
+      Array<{
+        status: "PENDING_PAYMENT" | "PAYMENT_REVIEW";
+        storeId: string;
+        totalAmount: number;
+        currency: "IRR";
+      }>
+    >`
+      select status, store_id as "storeId", total_amount::float8 as "totalAmount",
+        currency
+      from order_orders
       where id = ${command.orderId}
         and status in ('PENDING_PAYMENT', 'PAYMENT_REVIEW')
       for update
@@ -571,6 +581,29 @@ export class PostgresCheckoutRepository
         payload: { status: "PAID" },
       }),
     );
+    await enqueueOutboxEvent(
+      sql,
+      orderReportingSnapshotV1Contract.parse({
+        eventId: randomUUID(),
+        version: 1,
+        eventType: "OrderReportingSnapshot.v1",
+        aggregateId: command.orderId,
+        aggregateVersion: 2,
+        occurredAt: command.paidAt.toISOString(),
+        correlationId: eventCorrelationId(command.correlationId),
+        causationId: command.attemptId,
+        actor: { type: "SYSTEM" },
+        payload: {
+          storeId: current[0].storeId,
+          status: "PAID",
+          total: {
+            amount: current[0].totalAmount,
+            currency: current[0].currency,
+          },
+          paidAt: command.paidAt.toISOString(),
+        },
+      }),
+    );
   }
 
   async listActionableByStore(storeId: StoreId) {
@@ -583,7 +616,7 @@ export class PostgresCheckoutRepository
         itemCount: number;
       }>
     >`
-      select orders.id as "orderId", orders.total_amount::int as "totalAmount",
+      select orders.id as "orderId", orders.total_amount::float8 as "totalAmount",
         orders.paid_at as "paidAt", orders.created_at as "createdAt",
         count(items.variant_id)::int as "itemCount"
       from order_orders orders
