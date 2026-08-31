@@ -10,13 +10,23 @@ import {
   type PlatformAccessScope,
   type Responsibility,
 } from "@sevo/contracts/identity-access/v1";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import styles from "./platform-access-workspace.module.css";
 
 type Section = "responsibility" | "sensitive" | "emergency" | "audit";
 type ResourceType = PlatformAccessScope["resourceType"];
 type AllowedAction = PlatformAccessScope["allowedActions"][number];
+type ReviewFinding =
+  "CONTROLS_FOLLOWED" | "SCOPE_EXCEEDED" | "AUDIT_INCOMPLETE" | "FOLLOW_UP_REQUIRED";
 
 const sections: readonly { id: Section; label: string }[] = [
   { id: "responsibility", label: "مجوزها" },
@@ -55,6 +65,22 @@ const actionLabels: Record<AllowedAction, string> = {
   CONTAIN_INCIDENT: "مهار حادثه",
   REVOKE_ACCESS: "لغو دسترسی",
 };
+
+const reviewFindingLabels: Record<ReviewFinding, string> = {
+  CONTROLS_FOLLOWED: "کنترل‌ها رعایت شده‌اند",
+  SCOPE_EXCEEDED: "دامنه دسترسی بیشتر از نیاز بوده است",
+  AUDIT_INCOMPLETE: "سابقه ممیزی کامل نیست",
+  FOLLOW_UP_REQUIRED: "پیگیری اصلاحی لازم است",
+};
+
+const reviewStatusLabels = {
+  NOT_DUE: "پس از پایان دسترسی لازم می‌شود",
+  PENDING: "در انتظار بازبینی",
+  OVERDUE: "بازبینی عقب افتاده است",
+  COMPLETED: "بازبینی مستقل ثبت شده است",
+  COMPLETED_WITHOUT_INDEPENDENT_REVIEW:
+    "بدون بازبینی مستقل ثبت شده؛ جایگزینی مستقل لازم است",
+} as const;
 
 const statusLabels: Record<PlatformAccessGrant["status"], string> = {
   PENDING_APPROVAL: "در انتظار اقدام",
@@ -100,10 +126,12 @@ export function PlatformAccessWorkspace({
   );
   const [grants, setGrants] = useState<PlatformAccessGrant[]>([]);
   const [audit, setAudit] = useState<PlatformAccessAuditEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const tabRefs = useRef(new Map<Section, HTMLButtonElement>());
 
   const selected = useMemo(
     () => grants.find((grant) => grant.grantId === selectedId) ?? grants[0],
@@ -115,23 +143,26 @@ export function PlatformAccessWorkspace({
       nextSection: Section,
       preferredId?: string,
       clearMessage = true,
+      cursor?: string,
     ): Promise<boolean> => {
       setLoading(true);
       if (clearMessage) setMessage("");
       try {
         const path =
           nextSection === "audit"
-            ? "/api/platform/access/audit?limit=50"
-            : `/api/platform/access/${sectionPath(nextSection)}?limit=20`;
+            ? `/api/platform/access/audit?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+            : `/api/platform/access/${sectionPath(nextSection)}?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
         const response = await fetch(path, { cache: "no-store" });
         const body: unknown = await response.json();
         if (!response.ok) throw new Error(humanError(body));
         if (nextSection === "audit") {
           const page = platformAccessAuditPageContract.parse(body);
-          setAudit(page.items);
+          setAudit((current) => (cursor ? [...current, ...page.items] : page.items));
+          setNextCursor(page.nextCursor);
         } else {
           const page = platformAccessGrantPageContract.parse(body);
-          setGrants(page.items);
+          setGrants((current) => (cursor ? [...current, ...page.items] : page.items));
+          setNextCursor(page.nextCursor);
           setSelectedId((current) =>
             preferredId && page.items.some((item) => item.grantId === preferredId)
               ? preferredId
@@ -154,6 +185,24 @@ export function PlatformAccessWorkspace({
   useEffect(() => {
     void readSection(section);
   }, [readSection, section]);
+
+  function moveTab(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const last = availableSections.length - 1;
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? last
+          : event.key === "ArrowLeft"
+            ? (index + 1) % availableSections.length
+            : (index - 1 + availableSections.length) % availableSections.length;
+    const next = availableSections[nextIndex];
+    if (!next) return;
+    setSection(next.id);
+    tabRefs.current.get(next.id)?.focus();
+  }
 
   async function mutate(path: string, payload: unknown, successMessage: string) {
     setPending(true);
@@ -197,13 +246,21 @@ export function PlatformAccessWorkspace({
         </header>
 
         <div className={styles.tabs} role="tablist" aria-label="بخش‌های دسترسی">
-          {availableSections.map((item) => (
+          {availableSections.map((item, index) => (
             <button
               key={item.id}
+              ref={(node) => {
+                if (node) tabRefs.current.set(item.id, node);
+                else tabRefs.current.delete(item.id);
+              }}
               type="button"
               role="tab"
               aria-selected={section === item.id}
+              aria-controls={`access-panel-${item.id}`}
+              id={`access-tab-${item.id}`}
+              tabIndex={section === item.id ? 0 : -1}
               onClick={() => setSection(item.id)}
+              onKeyDown={(event) => moveTab(event, index)}
             >
               {item.label}
             </button>
@@ -216,26 +273,58 @@ export function PlatformAccessWorkspace({
           </p>
         ) : null}
 
-        {section === "audit" ? (
-          <AuditHistory entries={audit} loading={loading} />
-        ) : (
-          <>
-            <CreateRequest section={section} pending={pending} mutate={mutate} />
-            <div className={styles.split} aria-busy={loading}>
-              <GrantQueue
-                grants={grants}
-                selectedId={selected?.grantId}
-                onSelect={setSelectedId}
-              />
-              <GrantDetails
-                actorIdentityId={actorIdentityId}
-                grant={selected}
-                pending={pending}
-                mutate={mutate}
-              />
+        {availableSections.map((item) => {
+          const active = section === item.id;
+          return (
+            <div
+              key={item.id}
+              id={`access-panel-${item.id}`}
+              role="tabpanel"
+              aria-labelledby={`access-tab-${item.id}`}
+              tabIndex={active ? 0 : -1}
+              hidden={!active}
+            >
+              {active ? (
+                item.id === "audit" ? (
+                  <AuditHistory entries={audit} loading={loading} />
+                ) : (
+                  <>
+                    <CreateRequest
+                      key={item.id}
+                      section={item.id}
+                      pending={pending}
+                      mutate={mutate}
+                    />
+                    <div className={styles.split} aria-busy={loading}>
+                      <GrantQueue
+                        grants={grants}
+                        selectedId={selected?.grantId}
+                        onSelect={setSelectedId}
+                      />
+                      <GrantDetails
+                        actorIdentityId={actorIdentityId}
+                        canReviewAudit={canReviewAudit}
+                        grant={selected}
+                        pending={pending}
+                        mutate={mutate}
+                      />
+                    </div>
+                  </>
+                )
+              ) : null}
+              {active && nextCursor ? (
+                <button
+                  className={styles.loadMore}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void readSection(section, undefined, true, nextCursor)}
+                >
+                  نمایش موارد بیشتر
+                </button>
+              ) : null}
             </div>
-          </>
-        )}
+          );
+        })}
       </section>
     </main>
   );
@@ -258,7 +347,14 @@ function CreateRequest({
   const [incidentId, setIncidentId] = useState("");
   const [reason, setReason] = useState("");
   const [ttlMinutes, setTtlMinutes] = useState(30);
-  const [actions, setActions] = useState<AllowedAction[]>(["READ_MASKED"]);
+  const [action, setAction] = useState<AllowedAction>("READ_MASKED");
+  const [showScope, setShowScope] = useState(false);
+  const [showJustification, setShowJustification] = useState(false);
+
+  useEffect(() => {
+    setShowScope(false);
+    setShowJustification(false);
+  }, [section]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -277,7 +373,7 @@ function CreateRequest({
           responsibility,
           purposeCode: "VERIFY_CASE_EVIDENCE",
           reason,
-          scope: { resourceType, resourceId, allowedActions: actions },
+          scope: { resourceType, resourceId, allowedActions: [action] },
           ttlMinutes,
         },
         "درخواست دسترسی حساس ثبت شد؛ داده تا اقدام صریح پوشانده می‌ماند.",
@@ -288,7 +384,7 @@ function CreateRequest({
         {
           incidentId,
           reason,
-          scope: { resourceType, resourceId, allowedActions: actions },
+          scope: { resourceType, resourceId, allowedActions: [action] },
           ttlMinutes,
         },
         "درخواست اضطراری ثبت شد؛ پیش از استفاده باید فعال شود.",
@@ -341,7 +437,16 @@ function CreateRequest({
             </select>
           </label>
         ) : null}
-        {section !== "responsibility" ? (
+        {section !== "responsibility" && !showScope ? (
+          <button
+            className={styles.primary}
+            type="button"
+            onClick={() => setShowScope(true)}
+          >
+            ادامه: تعیین دامنه دسترسی
+          </button>
+        ) : null}
+        {section !== "responsibility" && showScope && !showJustification ? (
           <>
             <label>
               نوع پرونده
@@ -368,25 +473,19 @@ function CreateRequest({
                 placeholder="00000000-0000-0000-0000-000000000000"
               />
             </label>
-            <fieldset>
-              <legend>اقدام‌های لازم</legend>
-              {allowedActions.map((action) => (
-                <label className={styles.check} key={action}>
-                  <input
-                    type="checkbox"
-                    checked={actions.includes(action)}
-                    onChange={() =>
-                      setActions((current) =>
-                        current.includes(action)
-                          ? current.filter((item) => item !== action)
-                          : [...current, action],
-                      )
-                    }
-                  />
-                  {actionLabels[action]}
-                </label>
-              ))}
-            </fieldset>
+            <label>
+              اقدام لازم
+              <select
+                value={action}
+                onChange={(event) => setAction(event.target.value as AllowedAction)}
+              >
+                {allowedActions.map((value) => (
+                  <option key={value} value={value}>
+                    {actionLabels[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label>
               مهلت (دقیقه)
               <input
@@ -399,19 +498,48 @@ function CreateRequest({
             </label>
           </>
         ) : null}
-        <label className={styles.wide}>
-          دلیل داخلی بدون اطلاعات شخصی یا بانکی
-          <textarea
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            minLength={10}
-            maxLength={1000}
-            required
-          />
-        </label>
-        <button className={styles.primary} type="submit" disabled={pending}>
-          {pending ? "در حال ثبت…" : createLabel(section)}
-        </button>
+        {(section === "responsibility" || showScope) && !showJustification ? (
+          <button
+            className={styles.primary}
+            type="button"
+            onClick={() => setShowJustification(true)}
+          >
+            ادامه: ثبت دلیل و تأیید
+          </button>
+        ) : null}
+        {showJustification ? (
+          <>
+            <div className={styles.stepSummary}>
+              <p>
+                {section === "responsibility"
+                  ? responsibilityLabels[responsibility]
+                  : `${resourceLabels[resourceType]} · ${actionLabels[action]} · ${ttlMinutes} دقیقه`}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowJustification(false);
+                  if (section !== "responsibility") setShowScope(true);
+                }}
+              >
+                بازگشت و اصلاح
+              </button>
+            </div>
+            <label className={styles.wide}>
+              دلیل داخلی بدون اطلاعات شخصی یا بانکی
+              <textarea
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                minLength={10}
+                maxLength={1000}
+                required
+              />
+            </label>
+            <button className={styles.primary} type="submit" disabled={pending}>
+              {pending ? "در حال ثبت…" : createLabel(section)}
+            </button>
+          </>
+        ) : null}
       </form>
     </details>
   );
@@ -450,16 +578,20 @@ function GrantQueue({
 
 function GrantDetails({
   actorIdentityId,
+  canReviewAudit,
   grant,
   pending,
   mutate,
 }: {
   actorIdentityId: string;
+  canReviewAudit: boolean;
   grant?: PlatformAccessGrant;
   pending: boolean;
   mutate: (path: string, payload: unknown, successMessage: string) => Promise<void>;
 }) {
   const [reason, setReason] = useState("");
+  const [reviewFinding, setReviewFinding] =
+    useState<ReviewFinding>("CONTROLS_FOLLOWED");
   if (!grant) {
     return (
       <section className={styles.details}>
@@ -480,6 +612,13 @@ function GrantDetails({
     actorIdentityId === grant.requestedByIdentityId &&
     (grant.singleManagerException || grant.approvedByIdentityId !== null);
   const canRevoke = grant.status === "PENDING_APPROVAL" || grant.status === "ACTIVE";
+  const canReject = canApprove;
+  const canReview =
+    canReviewAudit &&
+    grant.grantKind === "EMERGENCY_ACCESS" &&
+    ["EXPIRED", "REVOKED", "CLOSED"].includes(grant.status) &&
+    grant.reviewEligibility !== undefined &&
+    grant.reviewEligibility !== "NOT_ELIGIBLE";
 
   return (
     <section className={styles.details} aria-labelledby="grant-detail-title">
@@ -509,6 +648,15 @@ function GrantDetails({
                 .join("، ")}
             />
             <Fact label="پایان مهلت" value={formatDate(grant.expiresAt)} />
+            {grant.grantKind === "EMERGENCY_ACCESS" ? (
+              <>
+                <Fact label="مهلت بازبینی" value={formatDate(grant.reviewDueAt)} />
+                <Fact
+                  label="وضعیت بازبینی"
+                  value={reviewStatusLabels[grant.reviewStatus]}
+                />
+              </>
+            ) : null}
           </>
         ) : null}
       </dl>
@@ -531,6 +679,21 @@ function GrantDetails({
             }
           >
             تأیید مستقل
+          </button>
+        ) : null}
+        {canReject ? (
+          <button
+            type="button"
+            disabled={pending || reason.trim().length < 10}
+            onClick={() =>
+              void mutate(
+                `${basePath}/rejection`,
+                { expectedRevision: grant.revision, reason },
+                "درخواست رد شد و از صف اقدام خارج شد.",
+              )
+            }
+          >
+            رد درخواست
           </button>
         ) : null}
         {canActivateEmergency ? (
@@ -579,8 +742,42 @@ function GrantDetails({
             لغو دسترسی
           </button>
         ) : null}
+        {canReview ? (
+          <>
+            <label className={styles.reviewFinding}>
+              نتیجه بازبینی
+              <select
+                value={reviewFinding}
+                onChange={(event) =>
+                  setReviewFinding(event.target.value as ReviewFinding)
+                }
+              >
+                {Object.entries(reviewFindingLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className={styles.primary}
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                void mutate(
+                  `${basePath}/review`,
+                  { expectedRevision: grant.revision, findingCode: reviewFinding },
+                  "بازبینی پس از حادثه ثبت شد.",
+                )
+              }
+            >
+              ثبت بازبینی پس از حادثه
+            </button>
+          </>
+        ) : null}
       </div>
       {canRevoke ||
+      canReject ||
       (grant.grantKind === "EMERGENCY_ACCESS" && grant.status === "ACTIVE") ? (
         <label className={styles.reason}>
           دلیل اقدام بدون اطلاعات شخصی یا بانکی
@@ -696,6 +893,28 @@ function nextStep(grant: PlatformAccessGrant) {
       return "تأیید مستقل ثبت شده است؛ درخواست‌کننده باید دسترسی را فعال کند.";
     }
     return "این درخواست منتظر تأیید یک مدیر دسترسی مستقل است.";
+  }
+  if (
+    grant.grantKind === "EMERGENCY_ACCESS" &&
+    ["EXPIRED", "REVOKED", "CLOSED"].includes(grant.status)
+  ) {
+    if (grant.reviewStatus === "COMPLETED") {
+      return "دسترسی پایان یافته و بازبینی مستقل آن ثبت شده است.";
+    }
+    if (grant.reviewStatus === "COMPLETED_WITHOUT_INDEPENDENT_REVIEW") {
+      return grant.reviewEligibility === "INDEPENDENT"
+        ? "بازبینی تک‌انسانی ثبت شده است؛ اکنون آن را مستقل بازبینی کنید."
+        : "بازبینی تک‌انسانی ثبت شده است؛ بازبین مستقل باید آن را جایگزین کند.";
+    }
+    if (grant.reviewEligibility === "WITHOUT_INDEPENDENT_REVIEW") {
+      return "فقط یک انسان فعال است؛ نتیجه را با نشان «بدون بازبینی مستقل» ثبت کنید.";
+    }
+    if (grant.reviewEligibility === "INDEPENDENT") {
+      return "دسترسی پایان یافته است؛ نتیجه بازبینی مستقل را اکنون ثبت کنید.";
+    }
+    return grant.reviewStatus === "OVERDUE"
+      ? "بازبینی عقب افتاده و درخواست تازه را مسدود کرده است؛ بازبین مستقل باید اقدام کند."
+      : "دسترسی پایان یافته است؛ بازبین مستقل باید تا مهلت نمایش‌داده‌شده اقدام کند.";
   }
   if (grant.status === "EXPIRED")
     return "مهلت پایان یافته است؛ ادامه کار درخواست تازه می‌خواهد.";

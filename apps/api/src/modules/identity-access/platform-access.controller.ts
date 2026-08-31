@@ -115,6 +115,25 @@ export class PlatformAccessController {
     );
   }
 
+  @Post("responsibility-grants/:grantId/rejection")
+  @HttpCode(200)
+  async rejectResponsibility(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = platformAccessRejectionInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.rejectResponsibility(context, grantId.data, input.data),
+    );
+  }
+
   @Post("sensitive-grants")
   @HttpCode(202)
   async requestSensitiveAccess(
@@ -182,6 +201,25 @@ export class PlatformAccessController {
     }
     return this.handle(request, commandKey.data, (context) =>
       this.access.revokeSensitiveAccess(context, grantId.data, input.data),
+    );
+  }
+
+  @Post("sensitive-grants/:grantId/rejection")
+  @HttpCode(200)
+  async rejectSensitiveAccess(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = platformAccessRejectionInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.rejectSensitiveAccess(context, grantId.data, input.data),
     );
   }
 

@@ -15,6 +15,7 @@ import {
   emergencyAccessRejectedV1Contract,
   emergencyAccessRevokedV1Contract,
   platformPermissionGrantedV1Contract,
+  platformPermissionGrantRejectedV1Contract,
   platformPermissionGrantRequestedV1Contract,
   platformPermissionRevokedV1Contract,
   responsibilityGrantViewContract,
@@ -26,6 +27,7 @@ import {
   sensitiveAccessAuthorizationReceiptContract,
   sensitiveAccessGrantViewContract,
   sensitiveAccessRequestedV1Contract,
+  sensitiveAccessRejectedV1Contract,
   sensitiveAccessRevokedV1Contract,
   unresolvedSensitiveAccessAuditEntryContract,
   sensitiveAccessExpiredV1Contract,
@@ -556,6 +558,14 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
     });
   }
 
+  async rejectResponsibility(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection> {
+    return this.#rejectAccessRequest("RESPONSIBILITY", context, grantId, input);
+  }
+
   async requestSensitiveAccess(
     context: PlatformAccessCommandContext,
     input: {
@@ -940,6 +950,14 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
     });
   }
 
+  async rejectSensitiveAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection> {
+    return this.#rejectAccessRequest("SENSITIVE_ACCESS", context, grantId, input);
+  }
+
   async requestEmergencyAccess(
     context: PlatformAccessCommandContext,
     input: {
@@ -1057,7 +1075,19 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
   ): Promise<{ items: PlatformAccessGrant[]; nextCursor: string | null }> {
     const cursor = query.cursor ? decodeAccessCursor(query.cursor) : undefined;
     return this.#sql.begin(async (sql) => {
-      await authorizeAccessAdministrator(sql, context.sessionToken, false);
+      const session = await authorizeAccessAdministrator(
+        sql,
+        context.sessionToken,
+        false,
+      );
+      const canReviewAudit = await hasResponsibility(
+        sql,
+        session.identityId,
+        "ACCESS_AUDIT_REVIEW",
+      );
+      const activeHumanCount = canReviewAudit
+        ? await countActivePlatformHumans(sql)
+        : 0;
       await expireDueEmergencyGrants(sql, context.correlationId);
       const subjectFilter = query.subjectIdentityId
         ? sql`and subject_identity_id = ${query.subjectIdentityId}`
@@ -1085,7 +1115,17 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       const pageRows = rows.slice(0, query.limit);
       const last = pageRows.at(-1);
       return {
-        items: pageRows.map(emergencyView),
+        items: pageRows.map((grant) =>
+          emergencyView(
+            grant,
+            emergencyReviewEligibility(
+              grant,
+              session.identityId,
+              activeHumanCount,
+              canReviewAudit,
+            ),
+          ),
+        ),
         nextCursor:
           rows.length > query.limit && last
             ? encodeAccessCursor(last.createdAt, last.grantId)
@@ -1393,6 +1433,146 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
       await completeIdempotentRejectionCommand(
         sql,
         "reject-emergency",
+        session.identityId,
+        context,
+        response,
+      );
+      return response;
+    });
+  }
+
+  async #rejectAccessRequest(
+    grantKind: "RESPONSIBILITY" | "SENSITIVE_ACCESS",
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection> {
+    const operation =
+      grantKind === "RESPONSIBILITY" ? "reject-responsibility" : "reject-sensitive";
+    return this.#sql.begin(async (sql) => {
+      const session = await authorizeAccessAdministrator(
+        sql,
+        context.sessionToken,
+        true,
+      );
+      const replay = await beginIdempotentRejectionCommand(
+        sql,
+        operation,
+        session.identityId,
+        context,
+        { grantId, ...input },
+      );
+      if (replay) return replay;
+      const rows = await sql<
+        Array<{
+          grantId: string;
+          subjectIdentityId: string;
+          requestedByIdentityId: string;
+          status: string;
+          revision: number;
+          singleManagerException: boolean;
+          scope: PlatformAccessScope | null;
+          rejectedAt: Date | null;
+        }>
+      >`
+        select id as "grantId", subject_identity_id as "subjectIdentityId",
+          requested_by_identity_id as "requestedByIdentityId", status, revision,
+          single_manager_exception as "singleManagerException", scope,
+          rejected_at as "rejectedAt"
+        from identity_platform_access_grants
+        where id = ${grantId} and grant_kind = ${grantKind}
+        for update
+      `;
+      const grant = rows[0];
+      if (!grant) throw new PlatformAccessError("ACCESS_GRANT_NOT_FOUND");
+      if (grant.revision !== input.expectedRevision) {
+        throw new PlatformAccessError("ACCESS_GRANT_REVISION_CONFLICT");
+      }
+      if (grant.status !== "PENDING_APPROVAL" || grant.rejectedAt) {
+        throw new PlatformAccessError("INVALID_ACCESS_TRANSITION");
+      }
+      if (
+        session.identityId === grant.requestedByIdentityId ||
+        session.identityId === grant.subjectIdentityId
+      ) {
+        throw new PlatformAccessError("SELF_APPROVAL_FORBIDDEN");
+      }
+      rejectPlatformAccessCommandContract.parse({
+        grantId,
+        requesterIdentityId: grant.requestedByIdentityId,
+        recipientIdentityId: grant.subjectIdentityId,
+        reviewerIdentityId: session.identityId,
+        reason: input.reason,
+        expectedRevision: input.expectedRevision,
+      });
+      const occurredAt = new Date();
+      const revision = grant.revision + 1;
+      await sql`
+        update identity_platform_access_grants
+        set rejected_at = ${occurredAt}, revision = ${revision}
+        where id = ${grantId}
+      `;
+      await insertAudit(sql, {
+        grantId,
+        action: "GRANT_REJECTED",
+        actorIdentityId: session.identityId,
+        subjectIdentityId: grant.subjectIdentityId,
+        ...(grant.scope ? { scope: grant.scope } : {}),
+        reasonCode: "ACCESS_REQUEST_REJECTED",
+        reason: input.reason,
+        singleManagerException: grant.singleManagerException,
+        correlationId: context.correlationId,
+        occurredAt,
+      });
+      const event = {
+        version: 1 as const,
+        eventId: randomUUID(),
+        aggregateId: grantId,
+        aggregateVersion: revision,
+        occurredAt: occurredAt.toISOString(),
+        correlationId: context.correlationId,
+        causationId: context.correlationId,
+        actor: {
+          type: "IDENTITY" as const,
+          id: identityIdContract.parse(session.identityId),
+        },
+        payload: {
+          grantKind,
+          grantId,
+          subjectIdentityId: identityIdContract.parse(grant.subjectIdentityId),
+          requestStatus: "REJECTED" as const,
+          auditRequired: true as const,
+        },
+      };
+      if (grantKind === "RESPONSIBILITY") {
+        await enqueueOutboxEvent(
+          sql,
+          platformPermissionGrantRejectedV1Contract.parse({
+            ...event,
+            eventType: "PlatformPermissionGrantRejected.v1",
+            payload: { ...event.payload, grantKind: "RESPONSIBILITY" },
+          }),
+        );
+      } else {
+        await enqueueOutboxEvent(
+          sql,
+          sensitiveAccessRejectedV1Contract.parse({
+            ...event,
+            eventType: "SensitiveAccessRejected.v1",
+            payload: { ...event.payload, grantKind: "SENSITIVE_ACCESS" },
+          }),
+        );
+      }
+      const response = platformAccessRejectionContract.parse({
+        grantId,
+        grantKind,
+        requestStatus: "REJECTED",
+        revision,
+        rejectedAt: occurredAt.toISOString(),
+      });
+      await completeIdempotentRejectionCommand(
+        sql,
+        operation,
         session.identityId,
         context,
         response,
@@ -2126,7 +2306,10 @@ function sensitiveView(grant: SensitiveGrantRow): PlatformAccessGrant {
   });
 }
 
-function emergencyView(grant: EmergencyGrantRow): PlatformAccessGrant {
+function emergencyView(
+  grant: EmergencyGrantRow,
+  reviewEligibility?: "INDEPENDENT" | "WITHOUT_INDEPENDENT_REVIEW" | "NOT_ELIGIBLE",
+): PlatformAccessGrant {
   const reviewStatus = grant.reviewedAt
     ? grant.reviewMode === "WITHOUT_INDEPENDENT_REVIEW"
       ? "COMPLETED_WITHOUT_INDEPENDENT_REVIEW"
@@ -2153,7 +2336,37 @@ function emergencyView(grant: EmergencyGrantRow): PlatformAccessGrant {
     expiresAt: grant.expiresAt.toISOString(),
     reviewDueAt: grant.reviewDueAt.toISOString(),
     reviewStatus,
+    ...(reviewEligibility ? { reviewEligibility } : {}),
   });
+}
+
+function emergencyReviewEligibility(
+  grant: EmergencyGrantRow,
+  actorIdentityId: string,
+  activeHumanCount: number,
+  canReviewAudit: boolean,
+): "INDEPENDENT" | "WITHOUT_INDEPENDENT_REVIEW" | "NOT_ELIGIBLE" {
+  if (
+    !canReviewAudit ||
+    !grant.activatedAt ||
+    !["EXPIRED", "REVOKED", "CLOSED"].includes(grant.status)
+  ) {
+    return "NOT_ELIGIBLE";
+  }
+  const independent =
+    actorIdentityId !== grant.requestedByIdentityId &&
+    actorIdentityId !== grant.approvedByIdentityId;
+  if (grant.reviewedAt) {
+    return grant.reviewMode === "WITHOUT_INDEPENDENT_REVIEW" && independent
+      ? "INDEPENDENT"
+      : "NOT_ELIGIBLE";
+  }
+  if (independent) return "INDEPENDENT";
+  return activeHumanCount === 1 &&
+    actorIdentityId === grant.requestedByIdentityId &&
+    grant.approvedByIdentityId === null
+    ? "WITHOUT_INDEPENDENT_REVIEW"
+    : "NOT_ELIGIBLE";
 }
 
 async function enqueueSensitiveEvent(

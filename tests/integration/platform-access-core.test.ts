@@ -126,6 +126,84 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     });
   });
 
+  it.each([
+    {
+      kind: "responsibility",
+      requestPath: "/v1/platform/access/responsibility-grants",
+      requestPayload: (recipientIdentityId: string) => ({
+        recipientIdentityId,
+        responsibility: "PAYMENT_OUTCOME_CHANGE",
+        reason: "درخواست مسئولیت پرخطر برای بررسی مستقل",
+      }),
+    },
+    {
+      kind: "sensitive",
+      requestPath: "/v1/platform/access/sensitive-grants",
+      requestPayload: () => ({
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "VERIFY_CASE_EVIDENCE",
+        reason: "درخواست دسترسی حساس برای بررسی مستقل",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: randomUUID(),
+          allowedActions: ["READ_MASKED"],
+        },
+        ttlMinutes: 30,
+      }),
+    },
+  ])(
+    "removes a rejected $kind request from its queue and records evidence",
+    async (scenario) => {
+      const app = await createApiApp(apiTestEnvironment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      const requester = await seedAgent([
+        "ACCESS_ADMINISTRATION",
+        ...(scenario.kind === "sensitive" ? (["PAYMENT_REVIEW"] as const) : []),
+      ]);
+      const reviewer = await seedAgent(["ACCESS_ADMINISTRATION"]);
+      const recipient = await seedAgent([]);
+
+      const requested = await server.inject({
+        method: "POST",
+        url: scenario.requestPath,
+        headers: accessHeaders(requester.token),
+        payload: scenario.requestPayload(recipient.identityId),
+      });
+      expect(requested.statusCode).toBe(202);
+      const grantId = requested.json<{ grantId: string }>().grantId;
+      const rejected = await server.inject({
+        method: "POST",
+        url: `${scenario.requestPath}/${grantId}/rejection`,
+        headers: accessHeaders(reviewer.token),
+        payload: {
+          expectedRevision: 1,
+          reason: "رد مستقل درخواست به دلیل دامنه بیشتر از نیاز ثبت‌شده",
+        },
+      });
+      expect(rejected.statusCode).toBe(200);
+      expect(rejected.json()).toMatchObject({ grantId, requestStatus: "REJECTED" });
+
+      const queue = await server.inject({
+        method: "GET",
+        url: `${scenario.requestPath}?limit=20`,
+        headers: { cookie: `sevo_platform_session=${reviewer.token}` },
+      });
+      expect(queue.json()).toMatchObject({ items: [] });
+      const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const evidence = await sql<Array<{ action: string; eventType: string }>>`
+      select a.action, e.event_type as "eventType"
+      from identity_platform_access_audit a
+      join platform_outbox_events e on e.aggregate_id = a.grant_id
+        and e.aggregate_version = 2
+      where a.grant_id = ${grantId} and a.action = 'GRANT_REJECTED'
+    `;
+      await sql.end();
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]?.eventType).toMatch(/Rejected\.v1$/);
+    },
+  );
+
   it("activates a high-risk responsibility only through the explicit single-manager exception and rejects self-grant", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -1711,6 +1789,19 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     const server = app.getHttpAdapter().getInstance();
     const requester = await seedAgent(["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]);
     const grantId = await createClosedSingleManagerEmergency(server, requester.token);
+    const selfQueue = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?limit=20",
+      headers: { cookie: `sevo_platform_session=${requester.token}` },
+    });
+    expect(selfQueue.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          grantId,
+          reviewEligibility: "WITHOUT_INDEPENDENT_REVIEW",
+        }),
+      ],
+    });
 
     const selfReviewed = await server.inject({
       method: "POST",
@@ -1724,7 +1815,18 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       reviewStatus: "COMPLETED_WITHOUT_INDEPENDENT_REVIEW",
     });
 
-    const independentReviewer = await seedAgent(["ACCESS_AUDIT_REVIEW"]);
+    const independentReviewer = await seedAgent([
+      "ACCESS_ADMINISTRATION",
+      "ACCESS_AUDIT_REVIEW",
+    ]);
+    const replacementQueue = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?limit=20",
+      headers: { cookie: `sevo_platform_session=${independentReviewer.token}` },
+    });
+    expect(replacementQueue.json()).toMatchObject({
+      items: [expect.objectContaining({ grantId, reviewEligibility: "INDEPENDENT" })],
+    });
     const independentReview = await server.inject({
       method: "POST",
       url: `/v1/platform/access/emergency-grants/${grantId}/review`,
@@ -1769,6 +1871,15 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     const requester = await seedAgent(["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]);
     const grantId = await createClosedSingleManagerEmergency(server, requester.token);
     await seedAgent([]);
+
+    const queue = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?limit=20",
+      headers: { cookie: `sevo_platform_session=${requester.token}` },
+    });
+    expect(queue.json()).toMatchObject({
+      items: [expect.objectContaining({ grantId, reviewEligibility: "NOT_ELIGIBLE" })],
+    });
 
     const forbiddenSelfReview = await server.inject({
       method: "POST",

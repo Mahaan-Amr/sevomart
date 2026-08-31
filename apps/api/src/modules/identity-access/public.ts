@@ -239,6 +239,11 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
     grantId: string,
     input: { expectedRevision: number; reason: string },
   ): Promise<PlatformAccessGrant>;
+  rejectResponsibility(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection>;
   requestSensitiveAccess(
     context: PlatformAccessCommandContext,
     input: {
@@ -265,6 +270,11 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
     grantId: string,
     input: { expectedRevision: number; reason: string },
   ): Promise<PlatformAccessGrant>;
+  rejectSensitiveAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection>;
   requestEmergencyAccess(
     context: PlatformAccessCommandContext,
     input: {
