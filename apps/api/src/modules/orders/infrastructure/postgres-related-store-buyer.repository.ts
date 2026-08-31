@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   revealedOrderDeliveryDetailsContract,
+  storeBuyerOrderPageContract,
   storeBuyerPageContract,
   type OrderStatus,
 } from "@sevo/contracts/orders/v1";
@@ -14,7 +15,8 @@ import postgres, { type Sql } from "postgres";
 
 import {
   StoreBuyerCursorCodec,
-  InvalidStoreBuyerCursorError,
+  StoreBuyerOrderCursorCodec,
+  InvalidRelatedBuyerCursorError,
 } from "../application/store-buyer-cursor";
 import { StoreBuyerFault, type RelatedStoreBuyerRead } from "../public";
 
@@ -39,13 +41,75 @@ type DeliveryRow = {
   postalCode: string | null;
 };
 
+type BuyerOrderRow = {
+  orderId: string;
+  paymentStatus: OrderStatus;
+  fulfillmentStatus: BuyerRow["fulfillmentStatus"];
+  createdAt: Date;
+};
+
 export class PostgresRelatedStoreBuyerRepository implements RelatedStoreBuyerRead {
   readonly #sql: Sql;
   readonly #cursor: StoreBuyerCursorCodec;
+  readonly #orderCursor: StoreBuyerOrderCursorCodec;
 
   constructor(databaseUrl: string, cursorSecret: string) {
     this.#sql = postgres(databaseUrl, { max: 5 });
     this.#cursor = new StoreBuyerCursorCodec(cursorSecret);
+    this.#orderCursor = new StoreBuyerOrderCursorCodec(cursorSecret);
+  }
+
+  async listStoreBuyerOrders(
+    input: Parameters<RelatedStoreBuyerRead["listStoreBuyerOrders"]>[0],
+  ) {
+    const contextOrders = await this.#sql<Array<{ buyerId: string }>>`
+      select identity_id as "buyerId" from order_orders
+      where id = ${input.contextOrderId} and store_id = ${input.storeId}
+    `;
+    const contextOrder = contextOrders[0];
+    if (!contextOrder) throw new StoreBuyerFault("ORDER_NOT_FOUND");
+    const cursor = input.query.cursor
+      ? this.#decodeOrderCursor(input.storeId, input.contextOrderId, input.query.cursor)
+      : undefined;
+    const rows = await this.#sql<BuyerOrderRow[]>`
+      select orders.id as "orderId", orders.status as "paymentStatus",
+        fulfillment.status as "fulfillmentStatus", orders.created_at as "createdAt"
+      from order_orders orders
+      left join order_fulfillment_status_projections fulfillment
+        on fulfillment.order_id = orders.id
+      where orders.store_id = ${input.storeId}
+        and orders.identity_id = ${contextOrder.buyerId}
+        ${
+          cursor
+            ? this.#sql`
+                and (orders.created_at, orders.id)
+                  < (${new Date(cursor.createdAt)}, ${cursor.orderId}::uuid)
+              `
+            : this.#sql``
+        }
+      order by orders.created_at desc, orders.id desc
+      limit ${input.query.limit + 1}
+    `;
+    const pageRows = rows.slice(0, input.query.limit);
+    const last = pageRows.at(-1);
+    return storeBuyerOrderPageContract.parse({
+      items: pageRows.map((row) => ({
+        orderId: orderIdContract.parse(row.orderId),
+        paymentStatus: row.paymentStatus,
+        ...(row.fulfillmentStatus ? { fulfillmentStatus: row.fulfillmentStatus } : {}),
+        createdAt: row.createdAt.toISOString(),
+      })),
+      nextCursor:
+        rows.length > input.query.limit && last
+          ? this.#orderCursor.encode(
+              { storeId: input.storeId, contextOrderId: input.contextOrderId },
+              {
+                orderId: orderIdContract.parse(last.orderId),
+                createdAt: last.createdAt.toISOString(),
+              },
+            )
+          : null,
+    });
   }
 
   async listStoreBuyers(
@@ -249,7 +313,24 @@ export class PostgresRelatedStoreBuyerRepository implements RelatedStoreBuyerRea
         cursor,
       );
     } catch (error) {
-      if (error instanceof InvalidStoreBuyerCursorError) {
+      if (error instanceof InvalidRelatedBuyerCursorError) {
+        throw new StoreBuyerFault("INVALID_CURSOR");
+      }
+      throw error;
+    }
+  }
+
+  #decodeOrderCursor(storeId: string, contextOrderId: string, cursor: string) {
+    try {
+      return this.#orderCursor.decode(
+        {
+          storeId: storeIdContract.parse(storeId),
+          contextOrderId: orderIdContract.parse(contextOrderId),
+        },
+        cursor,
+      );
+    } catch (error) {
+      if (error instanceof InvalidRelatedBuyerCursorError) {
         throw new StoreBuyerFault("INVALID_CURSOR");
       }
       throw error;

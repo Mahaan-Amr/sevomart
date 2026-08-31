@@ -18,6 +18,8 @@ import {
   ordersV1Operations,
   prepareCheckoutInputContract,
   listStoreBuyersQueryContract,
+  listStoreBuyerOrdersQueryContract,
+  storeBuyerOrderPageContract,
   storeBuyerPageContract,
   revealOrderDeliveryDetailsInputContract,
   revealedOrderDeliveryDetailsContract,
@@ -108,6 +110,25 @@ describe("checkout and CreateOrder.v1 contracts", () => {
         nextCursor: "opaque.cursor",
       }).items[0],
     ).not.toHaveProperty("recipientMobile");
+  });
+
+  it("publishes a minimal, cursor-paged same-store buyer order history contract", () => {
+    expect(listStoreBuyerOrdersQueryContract.parse({ limit: 10 })).toEqual({
+      limit: 10,
+    });
+    expect(
+      storeBuyerOrderPageContract.parse({
+        items: [
+          {
+            orderId: ids.order,
+            paymentStatus: "PAID",
+            fulfillmentStatus: "SHIPPED",
+            createdAt: "2026-08-24T20:00:00.000Z",
+          },
+        ],
+        nextCursor: "opaque.cursor",
+      }),
+    ).toEqual(expect.objectContaining({ nextCursor: "opaque.cursor" }));
   });
 
   it("requires a human reason for delivery-detail reveal when requested", () => {
