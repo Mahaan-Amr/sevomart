@@ -1,0 +1,175 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.panel {
+  width: min(100%, 560px);
+  margin: 0 auto;
+  padding: 24px;
+  border-radius: 22px;
+  background: var(--color-background);
+  box-shadow: var(--elevation-raised);
+}
+
+.back,
+.cancel {
+  color: var(--color-primary-dark);
+}
+
+.eyebrow {
+  margin: 28px 0 6px;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.panel h1 {
+  margin: 0 0 24px;
+  font-size: 24px;
+}
+
+.panel p {
+  line-height: 1.9;
+}
+
+.error {
+  color: var(--color-primary-dark);
+}
+
+.result {
+  margin: 20px 0;
+  font-size: 20px;
+}
+
+.current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-block: 1px solid var(--color-divider);
+}
+
+.current span,
+.history time,
+.history li > span,
+.form small {
+  color: var(--color-muted);
+}
+
+.form {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.form label {
+  font-weight: 700;
+}
+
+.form input {
+  min-height: 44px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.form small {
+  line-height: 1.8;
+}
+
+.form button {
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
+}
+
+.form button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.form button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.cancel {
+  display: inline-block;
+  margin-top: 20px;
+}
+
+.history {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.history h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.history ol {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding-inline-start: 24px;
+}
+
+.history li {
+  padding-inline-start: 6px;
+}
+
+.history li > * {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.back:focus-visible,
+.cancel:focus-visible,
+.form input:focus-visible,
+.form button:focus-visible,
+.result:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 16px 8px;
+  }
+
+  .panel {
+    padding: 18px 14px;
+  }
+
+  .current {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form button {
+    transition: none;
+  }
+
+  .form button:hover:not(:disabled) {
+    transform: none;
+  }
+}
