@@ -3,20 +3,33 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { readNearestSellerConversation } from "../../../../lib/seller-conversation-api";
+import { readAllSellerDisputes } from "../../../../lib/seller-dispute-api";
 import { readSellerOutOfStockCount } from "../../../../lib/seller-inventory-summary-api";
 import { readSellerOperationalSummary } from "../../../../lib/seller-reporting-api";
+import { formatDisputeTime } from "../disputes/seller-dispute-copy";
+import { nearestSellerResponseDispute } from "../disputes/seller-dispute-model";
 import styles from "./workspace-page.module.css";
 
 export default async function SellerHomePage() {
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
-  const [summary, actionableConversation, outOfStock] = await Promise.all([
+  const [summary, actionableConversation, outOfStock, disputePage] = await Promise.all([
     readSellerOperationalSummary(cookieHeader),
     readNearestSellerConversation(cookieHeader),
     readSellerOutOfStockCount(cookieHeader),
+    readAllSellerDisputes(cookieHeader),
   ]);
+  const actionableDispute =
+    disputePage.kind === "OK"
+      ? nearestSellerResponseDispute(disputePage.data)
+      : undefined;
   const tasks =
-    summary.kind === "OK" ? summary.data.tasks.filter(({ count }) => count > 0) : [];
+    summary.kind === "OK"
+      ? summary.data.tasks.filter(
+          ({ count, kind }) =>
+            count > 0 && !(actionableDispute && kind === "AWAITING_DISPUTE_RESPONSES"),
+        )
+      : [];
   const preparationOverdueAfterHours =
     summary.kind === "OK" ? summary.data.preparationOverdueAfterHours : undefined;
   const conversationHref =
@@ -35,13 +48,35 @@ export default async function SellerHomePage() {
           می‌آید.
         </p>
         <div className={styles.nextAction}>
-          {summary.kind === "UNAVAILABLE" && !conversationHref && !hasOutOfStock ? (
+          {summary.kind === "UNAVAILABLE" &&
+          !conversationHref &&
+          !hasOutOfStock &&
+          !actionableDispute ? (
             <>
-              <h2>کارهای نزدیک دریافت نشد</h2>
+              <h2>فهرست کارها دریافت نشد</h2>
               <p>کمی بعد صفحه را دوباره بررسی کنید.</p>
             </>
-          ) : tasks.length > 0 || conversationHref || hasOutOfStock ? (
+          ) : tasks.length > 0 ||
+            conversationHref ||
+            hasOutOfStock ||
+            actionableDispute ? (
             <ul className={styles.taskList}>
+              {actionableDispute ? (
+                <li>
+                  <div>
+                    <h2>یک پرونده اختلاف منتظر پاسخ فروشگاه است</h2>
+                    <p>
+                      مهلت پاسخ: {formatDisputeTime(actionableDispute.deadline!.dueAt)}
+                    </p>
+                  </div>
+                  <Link
+                    className={styles.secondary}
+                    href={`/seller/disputes/${actionableDispute.disputeId}`}
+                  >
+                    پاسخ به پرونده اختلاف
+                  </Link>
+                </li>
+              ) : null}
               {tasks.map((task) => (
                 <OperationalTask
                   key={task.kind}
