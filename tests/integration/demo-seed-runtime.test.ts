@@ -1,8 +1,16 @@
+import { readFileSync } from "node:fs";
+
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDemoSeedRequest, executeDemoSeed } from "../../scripts/demo/runtime.mjs";
 import { createPostgresDemoSeedDatabase } from "../../scripts/demo/postgres.mjs";
+import { stableDemoId } from "../../scripts/demo/baseline.mjs";
+import { createMediaDemoSeedAdapter } from "../../apps/api/src/modules/media/demo-seed.adapter.mjs";
+
+const baselineManifest = JSON.parse(
+  readFileSync(new URL("../../ops/demo/manifest.v1.json", import.meta.url), "utf8"),
+);
 
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
@@ -51,6 +59,11 @@ describe("demo seed PostgreSQL runtime", () => {
   it("matches the registered target and records only an applied manifest", async () => {
     const database = createPostgresDemoSeedDatabase(databaseUrl);
     try {
+      const humanIdentityId = "4d92ba57-2b63-4bbb-86ba-2cf8e68eb3fe";
+      await sql`
+        insert into identity_identities (id, status, created_at)
+        values (${humanIdentityId}, 'ACTIVE', now()) on conflict (id) do nothing
+      `;
       await executeDemoSeed(request("--dry-run"), database);
       expect(await receiptCount()).toBe(0);
 
@@ -73,6 +86,19 @@ describe("demo seed PostgreSQL runtime", () => {
         conversations: 3,
         orders: 10,
       });
+      expect(await seedEvidence()).toMatchObject({
+        humanIdentityStatus: "ACTIVE",
+        missingMediaReferences: 0,
+        mediaAssets: 17,
+        orderTransitions: 19,
+        paymentAudits: 24,
+        refundAudits: 3,
+        fulfillmentTimelineEntries: 21,
+      });
+      const media = createMediaDemoSeedAdapter();
+      await expect(
+        media.objectExists(`demo/${stableDemoId("product.tshirt.media")}/original`),
+      ).resolves.toBe(true);
 
       const repeated = await executeDemoSeed(request(), database);
       expect(repeated.counts).toEqual({
@@ -85,6 +111,72 @@ describe("demo seed PostgreSQL runtime", () => {
       const dryRun = await executeDemoSeed(request("--dry-run"), database);
       expect(dryRun.counts).toEqual(repeated.counts);
       expect(await receiptCount()).toBe(1);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("retires removed canonical resources and projections, then restores them", async () => {
+    const database = createPostgresDemoSeedDatabase(databaseUrl);
+    const media = createMediaDemoSeedAdapter();
+    const removedKey = "content.paper-poster";
+    const removedOrderKey = "order.action-required";
+    const removedId = stableDemoId(removedKey);
+    const objectKey = `demo/${stableDemoId(`${removedKey}.media`)}/original`;
+    try {
+      const reduced = {
+        ...baselineManifest,
+        manifestVersion: 3,
+        resources: baselineManifest.resources.filter(
+          ({ key }) => ![removedKey, removedOrderKey].includes(key),
+        ),
+      };
+      const report = await executeDemoSeed(request(), database, { manifest: reduced });
+      expect(report.counts.retired).toBe(2);
+      const [retired] = await sql`
+        select seed.status, content.active,
+          exists(select 1 from media_assets where id = ${stableDemoId(`${removedKey}.media`)}) as "mediaExists"
+        from platform_seed_resources seed
+        join content_sales_contents content on content.id = ${removedId}
+        where seed.namespace = 'sevo.demo' and seed.resource_key = ${removedKey}
+      `;
+      expect(retired).toEqual({ status: "RETIRED", active: false, mediaExists: false });
+      await expect(media.objectExists(objectKey)).resolves.toBe(false);
+      const [retiredOrder] = await sql`
+        select orders.status, fulfillment.status as "fulfillmentStatus",
+          not exists(
+            select 1 from reporting_seller_order_facts fact
+            where fact.order_id = orders.id
+          ) as "reportingRetired"
+        from order_orders orders
+        join fulfillment_orders fulfillment on fulfillment.order_id = orders.id
+        where orders.id = ${stableDemoId(removedOrderKey)}
+      `;
+      expect(retiredOrder).toEqual({
+        status: "CANCELLED",
+        fulfillmentStatus: "CANCELLED",
+        reportingRetired: true,
+      });
+
+      await executeDemoSeed(request(), database, {
+        manifest: { ...baselineManifest, manifestVersion: 4 },
+      });
+      await expect(media.objectExists(objectKey)).resolves.toBe(true);
+      const [restoredOrder] = await sql`
+        select orders.status, fulfillment.status as "fulfillmentStatus",
+          fulfillment.version, projection.version as "projectionVersion"
+        from order_orders orders
+        join fulfillment_orders fulfillment on fulfillment.order_id = orders.id
+        join order_fulfillment_status_projections projection
+          on projection.order_id = orders.id
+        where orders.id = ${stableDemoId(removedOrderKey)}
+      `;
+      expect(restoredOrder).toEqual({
+        status: "PAID",
+        fulfillmentStatus: "ACTION_REQUIRED",
+        version: 3,
+        projectionVersion: 3,
+      });
     } finally {
       await database.close();
     }
@@ -145,4 +237,42 @@ async function seededEntityCounts() {
         where login.mobile = '09000000001') as orders
   `;
   return rows[0];
+}
+
+async function seedEvidence() {
+  const humanIdentityId = "4d92ba57-2b63-4bbb-86ba-2cf8e68eb3fe";
+  const [row] = await sql`
+    select
+      (select status from identity_identities where id = ${humanIdentityId}) as "humanIdentityStatus",
+      (select count(*)::int from media_assets where original_object_key like 'demo/%') as "mediaAssets",
+      (select count(*)::int from order_state_transitions where reason_code = 'DEMO_BASELINE') as "orderTransitions",
+      (select count(*)::int from payment_attempt_audits where reason_code in
+        ('ATTEMPT_CREATED', 'PROVIDER_DISPATCHED', 'PROVIDER_CONFIRMED', 'PROVIDER_PENDING')) as "paymentAudits",
+      (select count(*)::int from payment_direct_refund_audits where actor_reference in
+        (${stableDemoId("identity.seller")}, 'DEV')) as "refundAudits",
+      (select count(*)::int from fulfillment_timeline_entries
+        where correlation_id = any(
+          ${baselineManifest.resources
+            .filter(({ kind, fulfillment }) => kind === "order" && fulfillment)
+            .flatMap((order) =>
+              [1, 2, 3, 4].map((version) =>
+                stableDemoId(`${order.key}.fulfillment-correlation.${version}`),
+              ),
+            )}
+        )) as "fulfillmentTimelineEntries",
+      (select count(*)::int
+        from (
+          select working.media_id from product_working_copies working
+          left join media_assets media on media.id = working.media_id
+          join product_products product on product.id = working.product_id
+          where product.store_id in (${stableDemoId("store.aban")}, ${stableDemoId("store.narvan")},
+            ${stableDemoId("store.paper")}, ${stableDemoId("store.roshan")}) and media.id is null
+          union all
+          select content.media_id from content_sales_contents content
+          left join media_assets media on media.id = content.media_id
+          where content.active = true and content.store_id in (${stableDemoId("store.aban")},
+            ${stableDemoId("store.narvan")}, ${stableDemoId("store.paper")}) and media.id is null
+        ) missing) as "missingMediaReferences"
+  `;
+  return row;
 }

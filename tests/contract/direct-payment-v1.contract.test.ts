@@ -258,7 +258,7 @@ describe("direct payment v1 contract", () => {
         amount: { amount: 4_500_000, currency: "IRR" },
         provider: "DEV",
         redirectUrl:
-          "/v1/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+          "/v1/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273?scenario=success",
         createdAt: "2026-08-25T08:00:00.000Z",
       }),
     ).not.toHaveProperty("token");

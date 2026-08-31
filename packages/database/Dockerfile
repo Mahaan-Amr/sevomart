@@ -24,6 +24,19 @@ COPY --chown=node:node packages/database/prisma ./prisma
 COPY --chown=node:node packages/database/prisma.config.ts ./prisma.config.ts
 COPY --chown=node:node scripts/demo ./scripts/demo
 COPY --chown=node:node ops/demo ./ops/demo
+COPY --chown=node:node apps/api/src/modules/content/demo-seed.adapter.mjs ./apps/api/src/modules/content/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/conversations/demo-seed.adapter.mjs ./apps/api/src/modules/conversations/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/discovery/demo-seed.adapter.mjs ./apps/api/src/modules/discovery/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/fulfillment/demo-seed.adapter.mjs ./apps/api/src/modules/fulfillment/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/identity-access/demo-seed.adapter.mjs ./apps/api/src/modules/identity-access/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/inventory/demo-seed.adapter.mjs ./apps/api/src/modules/inventory/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/media/demo-seed.adapter.mjs ./apps/api/src/modules/media/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/orders/demo-seed.adapter.mjs ./apps/api/src/modules/orders/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/payments/demo-seed.adapter.mjs ./apps/api/src/modules/payments/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/problem-follow-up/demo-seed.adapter.mjs ./apps/api/src/modules/problem-follow-up/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/product/demo-seed.adapter.mjs ./apps/api/src/modules/product/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/reporting-analytics/demo-seed.adapter.mjs ./apps/api/src/modules/reporting-analytics/demo-seed.adapter.mjs
+COPY --chown=node:node apps/api/src/modules/store/demo-seed.adapter.mjs ./apps/api/src/modules/store/demo-seed.adapter.mjs
 USER node
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["./node_modules/.bin/prisma", "migrate", "deploy"]

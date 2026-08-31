@@ -140,7 +140,7 @@ describe("demo seed runtime", () => {
         orders: 10,
       },
       signIn: [
-        { mobile: "09000000001", name: "نیلوفر مرادی", startPath: "/discover" },
+        { mobile: "09000000001", name: "نیلوفر مرادی", startPath: "/" },
         { mobile: "09000000002", name: "سارا نیک‌پی", startPath: "/seller" },
         {
           mobile: "09000000003",

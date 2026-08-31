@@ -133,26 +133,29 @@ function assertKnownTarget(request, target) {
 }
 
 export async function executeDemoSeed(request, database, options = {}) {
+  const selectedManifest = options.manifest ?? manifest;
   const target = await database.inspectTarget();
   assertKnownTarget(request, target);
 
   return database.withNamespaceLock(request.namespace, async () => {
     const now = options.now ?? new Date();
-    const plan = await database.planManifest(manifest, now);
+    const plan = await database.planManifest(selectedManifest, now);
     const report = {
-      manifestVersion: manifest.manifestVersion,
+      manifestVersion: selectedManifest.manifestVersion,
       namespace: request.namespace,
       target: request.target,
       dryRun: request.dryRun,
       counts: plan.counts,
-      entities: plan.entities ?? manifestSummary(manifest),
-      signIn: manifest.signIn.map(({ mobile, name, startPath }) => ({
+      entities: plan.entities ?? manifestSummary(selectedManifest),
+      signIn: selectedManifest.signIn.map(({ mobile, name, startPath }) => ({
         mobile,
         name,
         startPath,
       })),
     };
-    if (!request.dryRun) await database.applyManifest(manifest, now, report);
+    if (!request.dryRun) {
+      await database.applyManifest(selectedManifest, now, report);
+    }
     return report;
   });
 }

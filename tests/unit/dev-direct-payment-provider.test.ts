@@ -13,7 +13,8 @@ describe("DevDirectPaymentProvider", () => {
 
     expect(initiated).toEqual({
       providerReference: "dev-91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
-      redirectUrl: "/v1/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      redirectUrl:
+        "/v1/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273?scenario=success",
     });
     const callback = provider.successCallback({
       attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",

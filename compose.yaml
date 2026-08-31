@@ -74,6 +74,11 @@ services:
       SEVO_RUNTIME_ENV: development
       OTP_PROVIDER: dev
       MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-sevo_local}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sevo_local_password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sevo-media}
     command:
       [
         "node",
@@ -90,6 +95,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     restart: "no"
 
   api:

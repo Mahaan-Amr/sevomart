@@ -25,7 +25,11 @@ describe("versioned demo runtime contract", () => {
       manifestVersion: 2,
       namespace: "sevo.demo",
     });
-    const resources = manifest.resources as Array<{ kind: string; key: string }>;
+    const resources = manifest.resources as Array<{
+      kind: string;
+      key: string;
+      mediaKind?: string;
+    }>;
     expect(resources).toHaveLength(48);
     expect(new Set(resources.map(({ key }) => key)).size).toBe(48);
     expect(resources.filter(({ kind }) => kind === "loginIdentity")).toHaveLength(5);
@@ -34,6 +38,25 @@ describe("versioned demo runtime contract", () => {
     expect(resources.filter(({ kind }) => kind === "salesContent")).toHaveLength(6);
     expect(resources.filter(({ kind }) => kind === "conversation")).toHaveLength(3);
     expect(resources.filter(({ kind }) => kind === "order")).toHaveLength(10);
+    expect(
+      (manifest.signIn as Array<{ startPath: string }>).map(
+        ({ startPath }) => startPath,
+      ),
+    ).toEqual([
+      "/",
+      "/seller",
+      "/seller/application",
+      "/platform/seller-applications",
+      "/platform/access",
+    ]);
+    expect(
+      resources.filter(({ kind }) => kind === "salesContent").map((item) => item),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mediaKind: "IMAGE" }),
+        expect.objectContaining({ mediaKind: "VIDEO" }),
+      ]),
+    );
   });
 
   it("uses the same guarded command after migration in native and Compose paths", () => {
@@ -73,6 +96,7 @@ describe("versioned demo runtime contract", () => {
     const seed = services["demo-seed"];
 
     expect(seed?.depends_on).toHaveProperty("migrate");
+    expect(seed?.depends_on).toHaveProperty("minio");
     expect(seed?.environment).not.toHaveProperty("DATABASE_URL");
     expect(seed?.command).toContain("scripts/demo/seed.mjs");
     expect(seed?.command).not.toContain("--skip-migrate");

@@ -17,7 +17,7 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
   async initiate(command: Parameters<DirectPaymentProvider["initiate"]>[0]) {
     return {
       providerReference: `dev-${command.attemptId}`,
-      redirectUrl: `/v1/payment-providers/dev/pay/${command.attemptId}`,
+      redirectUrl: `/v1/payment-providers/dev/pay/${command.attemptId}?scenario=success`,
     };
   }
 
@@ -28,6 +28,22 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
     providerEventId: string;
   }) {
     return this.callback({ ...input, result: "CONFIRMED" });
+  }
+
+  scenarioCallback(input: {
+    attemptId: string;
+    orderId: string;
+    amount: number;
+    providerEventId: string;
+    scenario: "success" | "failure" | "pending";
+  }) {
+    const { scenario, ...callback } = input;
+    return this.callback({
+      ...callback,
+      result: { success: "CONFIRMED", failure: "FAILED", pending: "PENDING" }[
+        scenario
+      ] as "CONFIRMED" | "FAILED" | "PENDING",
+    });
   }
 
   callback(input: {
