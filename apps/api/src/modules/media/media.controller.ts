@@ -125,7 +125,8 @@ export class MediaController {
     try {
       for await (const part of request.parts()) {
         if (
-          fixedPurpose !== undefined &&
+          (fixedPurpose === "CONVERSATION_ATTACHMENT" ||
+            fixedPurpose === "DISPUTE_EVIDENCE") &&
           (part.type !== "file" || part.fieldname !== "file")
         )
           throw mediaError(request.id, "REQUIRED");
