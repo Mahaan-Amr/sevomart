@@ -62,6 +62,8 @@ describe("platform workspace access", () => {
       "/platform/seller-applications",
     );
     expect(platformEntryPath(["PAYMENT_REVIEW"])).toBe("/platform/payment-reviews");
+    expect(platformEntryPath(["ACCESS_ADMINISTRATION"])).toBe("/platform/access");
+    expect(platformEntryPath(["ACCESS_AUDIT_REVIEW"])).toBe("/platform/access");
     expect(
       platformEntryPath(["PAYMENT_REVIEW", "SELLER_APPLICATION_REVIEW"]),
     ).toBeNull();
@@ -78,5 +80,18 @@ describe("platform workspace access", () => {
       },
     ]);
     expect(platformDestinationsFor([])).toEqual([]);
+  });
+
+  it("shows one access destination when administration and audit review coexist", () => {
+    expect(
+      platformDestinationsFor(["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]),
+    ).toEqual([
+      {
+        permission: "ACCESS_ADMINISTRATION",
+        href: "/platform/access",
+        label: "مدیریت دسترسی پلتفرم",
+        shortLabel: "دسترسی‌ها",
+      },
+    ]);
   });
 });

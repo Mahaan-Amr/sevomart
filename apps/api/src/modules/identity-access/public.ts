@@ -18,6 +18,7 @@ import type {
   SellerApplicationView,
   WithdrawSellerApplication,
   PlatformAccessGrant,
+  PlatformAccessAuditEntry,
   PlatformAccessRejection,
   PlatformAccessScope,
   SensitiveAccessAuthorizationReceipt,
@@ -224,6 +225,10 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
       reason: string;
     },
   ): Promise<PlatformAccessGrant>;
+  listResponsibilityAccess(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: PlatformAccessListQuery,
+  ): Promise<PlatformAccessGrantPage>;
   approveResponsibility(
     context: PlatformAccessCommandContext,
     grantId: string,
@@ -234,6 +239,11 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
     grantId: string,
     input: { expectedRevision: number; reason: string },
   ): Promise<PlatformAccessGrant>;
+  rejectResponsibility(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection>;
   requestSensitiveAccess(
     context: PlatformAccessCommandContext,
     input: {
@@ -246,6 +256,10 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
       ttlMinutes: number;
     },
   ): Promise<PlatformAccessGrant>;
+  listSensitiveAccess(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: PlatformAccessListQuery,
+  ): Promise<PlatformAccessGrantPage>;
   approveSensitiveAccess(
     context: PlatformAccessCommandContext,
     grantId: string,
@@ -256,6 +270,11 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
     grantId: string,
     input: { expectedRevision: number; reason: string },
   ): Promise<PlatformAccessGrant>;
+  rejectSensitiveAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection>;
   requestEmergencyAccess(
     context: PlatformAccessCommandContext,
     input: {
@@ -311,7 +330,28 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
         | "FOLLOW_UP_REQUIRED";
     },
   ): Promise<PlatformAccessGrant>;
+  listAudit(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: {
+      grantId?: string;
+      actorIdentityId?: string;
+      cursor?: string;
+      limit: number;
+    },
+  ): Promise<{ items: PlatformAccessAuditEntry[]; nextCursor: string | null }>;
 }
+
+type PlatformAccessListQuery = {
+  subjectIdentityId?: string;
+  status?: "PENDING_APPROVAL" | "ACTIVE" | "EXPIRED" | "REVOKED" | "CLOSED";
+  cursor?: string;
+  limit: number;
+};
+
+type PlatformAccessGrantPage = {
+  items: PlatformAccessGrant[];
+  nextCursor: string | null;
+};
 
 export type SellerApplicationReviewContext = SellerApplicationCommandContext & {
   audience: "PLATFORM_AGENT";
