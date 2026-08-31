@@ -8,6 +8,7 @@ import {
   createOrderInputContract,
   orderContract,
   orderBecameActionableV1Contract,
+  orderReportingSnapshotV1Contract,
   orderCreatedV1Contract,
   orderExpiredV1Contract,
   orderStateTransitionAuditContract,
@@ -293,6 +294,25 @@ describe("checkout and CreateOrder.v1 contracts", () => {
         payload: { status: "PAID" },
       }).payload,
     ).toEqual({ status: "PAID" });
+    expect(
+      orderReportingSnapshotV1Contract.parse({
+        ...base,
+        eventType: "OrderReportingSnapshot.v1",
+        aggregateVersion: 2,
+        actor: { type: "SYSTEM" },
+        payload: {
+          storeId: ids.store,
+          status: "PAID",
+          total: preparation.total,
+          paidAt: base.occurredAt,
+        },
+      }).payload,
+    ).toEqual({
+      storeId: ids.store,
+      status: "PAID",
+      total: preparation.total,
+      paidAt: base.occurredAt,
+    });
   });
 
   it("keeps expired orders open to late-result review in the versioned contract", () => {

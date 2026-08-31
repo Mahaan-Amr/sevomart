@@ -8,6 +8,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
 import { PostgresCheckoutRepository } from "../../apps/api/src/modules/orders/composition";
+import { createOrderPaymentTransactionContext } from "../../apps/api/src/modules/orders/public";
 import { DirectPaymentApplicationService } from "../../apps/api/src/modules/payments/application/direct-payment.service";
 import { PostgresDirectPaymentRepository } from "../../apps/api/src/modules/payments/infrastructure/postgres-direct-payment.repository";
 import {
@@ -222,6 +223,37 @@ describe("successful direct payment transaction seam", () => {
     ).toEqual([]);
   });
 
+  it("publishes a reporting snapshot for totals above the 32-bit range", async () => {
+    const paidAt = new Date("2026-08-31T08:00:00.000Z");
+    await sql`update order_orders set total_amount = 3000000000 where id = ${ids.order}`;
+
+    await sql.begin(async (transaction) => {
+      await orders.markPaid(createOrderPaymentTransactionContext(transaction), {
+        orderId: ids.order as never,
+        attemptId: "a1000000-0000-4000-8000-000000000011" as never,
+        paidAt,
+        correlationId: "b1000000-0000-4000-8000-000000000012",
+      });
+    });
+
+    expect(
+      await sql`
+        select payload from platform_outbox_events
+        where aggregate_id = ${ids.order}
+          and event_type = 'OrderReportingSnapshot.v1'
+      `,
+    ).toEqual([
+      {
+        payload: {
+          storeId: ids.store,
+          status: "PAID",
+          total: { amount: 3_000_000_000, currency: "IRR" },
+          paidAt: paidAt.toISOString(),
+        },
+      },
+    ]);
+  });
+
   it("dispatches before callback and confirms inventory/order only once", async () => {
     expect(await orders.listActionableByStore(ids.store as never)).toEqual([]);
     const createCommand = {
@@ -288,6 +320,15 @@ describe("successful direct payment transaction seam", () => {
         payload: { status: "DISPATCHED" },
       },
       { eventType: "OrderBecameActionable.v1", payload: { status: "PAID" } },
+      {
+        eventType: "OrderReportingSnapshot.v1",
+        payload: {
+          storeId: ids.store,
+          status: "PAID",
+          total: { amount: 4_500_000, currency: "IRR" },
+          paidAt: expect.any(String),
+        },
+      },
     ]);
     expect(
       await sql`select from_status as "fromStatus", to_status as "toStatus", correlation_id as "correlationId" from payment_attempt_audits where attempt_id = ${attempt.attemptId} order by occurred_at`,
