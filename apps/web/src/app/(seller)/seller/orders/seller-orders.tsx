@@ -34,7 +34,7 @@ export function SellerOrders() {
         <h1 id="orders-title">سفارش‌های آماده اقدام</h1>
         {failed ? <p role="alert">سفارش‌ها دریافت نشدند. دوباره تلاش کنید.</p> : null}
         {orders?.length === 0 ? <p>فعلاً سفارش پرداخت‌شده‌ای ندارید.</p> : null}
-        <ul>
+        <ul className={styles.orders}>
           {orders?.map((order) => (
             <li key={order.orderId}>
               <span>
@@ -50,6 +50,9 @@ export function SellerOrders() {
             </li>
           ))}
         </ul>
+        <Link className={styles.buyerSearchLink} href="/seller/orders/buyers">
+          پیدا کردن خریدار یک سفارش
+        </Link>
       </section>
     </main>
   );
