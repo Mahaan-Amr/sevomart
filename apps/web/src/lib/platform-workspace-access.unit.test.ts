@@ -62,6 +62,7 @@ describe("platform workspace access", () => {
       "/platform/seller-applications",
     );
     expect(platformEntryPath(["PAYMENT_REVIEW"])).toBe("/platform/payment-reviews");
+    expect(platformEntryPath(["VIOLATION_REVIEW"])).toBe("/platform/violations");
     expect(platformEntryPath(["ACCESS_ADMINISTRATION"])).toBe("/platform/access");
     expect(platformEntryPath(["ACCESS_AUDIT_REVIEW"])).toBe("/platform/access");
     expect(
@@ -80,6 +81,18 @@ describe("platform workspace access", () => {
       },
     ]);
     expect(platformDestinationsFor([])).toEqual([]);
+  });
+
+  it("publishes the violation queue only for its live responsibility", () => {
+    expect(platformDestinationsFor(["VIOLATION_REVIEW"])).toEqual([
+      {
+        permission: "VIOLATION_REVIEW",
+        href: "/platform/violations",
+        label: "بررسی پرونده‌های تخلف",
+        shortLabel: "تخلف‌ها",
+      },
+    ]);
+    expect(platformDestinationsFor(["DISPUTE_REVIEW"])).toEqual([]);
   });
 
   it("shows one access destination when administration and audit review coexist", () => {

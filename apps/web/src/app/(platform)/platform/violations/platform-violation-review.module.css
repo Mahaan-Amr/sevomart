@@ -1,0 +1,215 @@
+.page {
+  min-height: 100dvh;
+  padding: 32px 24px;
+}
+
+.workspace {
+  width: min(100%, 1060px);
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.header h1 {
+  margin: 4px 0;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.header button,
+.more,
+.revealPanel button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-primary-dark);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.header button:focus-visible,
+.queue button:focus-visible,
+.more:focus-visible,
+.revealPanel input:focus-visible,
+.revealPanel textarea:focus-visible,
+.revealPanel button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+.message {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-inline-start: 4px solid var(--color-primary);
+  border-radius: 12px;
+  background: var(--color-cover-start);
+}
+
+.reviewArea {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.reviewArea h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.queue,
+.evidence {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.queue button {
+  display: grid;
+  width: 100%;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+}
+
+.queue button.active {
+  border-color: var(--color-primary);
+  background: var(--color-cover-start);
+  box-shadow: var(--elevation-pressed);
+}
+
+.queue button > span:last-child {
+  margin-top: 8px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.queue small,
+.revealPanel > p,
+.evidence span {
+  color: var(--color-muted);
+}
+
+.more {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.detail {
+  min-height: 320px;
+  padding: 20px;
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+  background: var(--color-surface);
+}
+
+.empty {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--color-cover-start);
+}
+
+.revealPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.revealPanel label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.revealPanel input,
+.revealPanel textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.revealPanel button {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
+}
+
+.receipt {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.revealed dl {
+  margin: 16px 0 24px;
+}
+
+.revealed dl div,
+.evidence li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.revealed dd {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.revealed h3 {
+  font-size: 15px;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 24px 16px;
+  }
+
+  .header,
+  .reviewArea {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .header button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header button,
+  .queue button,
+  .more,
+  .revealPanel button {
+    transition: none;
+  }
+}

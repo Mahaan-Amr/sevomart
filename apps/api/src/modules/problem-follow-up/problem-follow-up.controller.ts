@@ -117,7 +117,7 @@ export class ProblemFollowUpController {
     return this.respond(request, response, () =>
       this.service.readPlatformDispute(this.platformContext(request), disputeId, {
         grantId: grantId ?? "",
-        reason: reason ?? "",
+        reason: decodeAccessReason(reason),
       }),
     );
   }
@@ -136,7 +136,7 @@ export class ProblemFollowUpController {
     return this.respond(request, response, () =>
       this.service.resolve(this.platformContext(request), disputeId, body, key, {
         grantId: grantId ?? "",
-        reason: reason ?? "",
+        reason: decodeAccessReason(reason),
       }),
     );
   }
@@ -155,7 +155,7 @@ export class ProblemFollowUpController {
     return this.respond(request, response, () =>
       this.service.reopen(this.platformContext(request), disputeId, body, key, {
         grantId: grantId ?? "",
-        reason: reason ?? "",
+        reason: decodeAccessReason(reason),
       }),
     );
   }
@@ -184,7 +184,7 @@ export class ProblemFollowUpController {
       this.service.readPlatformViolation(
         this.platformContext(request),
         violationCaseId,
-        { grantId: grantId ?? "", reason: reason ?? "" },
+        { grantId: grantId ?? "", reason: decodeAccessReason(reason) },
       ),
     );
   }
@@ -243,6 +243,15 @@ export class ProblemFollowUpController {
               : HttpStatus.CONFLICT;
       throw problemHttpError(request.id, error.code, status);
     }
+  }
+}
+
+function decodeAccessReason(reason: string | undefined) {
+  if (!reason) return "";
+  try {
+    return decodeURIComponent(reason);
+  } catch {
+    return reason;
   }
 }
 

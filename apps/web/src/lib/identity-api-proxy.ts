@@ -25,6 +25,20 @@ export async function proxyIdentityRequest(
         ...(request.headers.get("idempotency-key")
           ? { "idempotency-key": request.headers.get("idempotency-key")! }
           : {}),
+        ...(request.headers.get("x-platform-access-grant-id")
+          ? {
+              "x-platform-access-grant-id": request.headers.get(
+                "x-platform-access-grant-id",
+              )!,
+            }
+          : {}),
+        ...(request.headers.get("x-platform-access-reason")
+          ? {
+              "x-platform-access-reason": request.headers.get(
+                "x-platform-access-reason",
+              )!,
+            }
+          : {}),
         "x-correlation-id":
           request.headers.get("x-correlation-id") ?? crypto.randomUUID(),
       },
