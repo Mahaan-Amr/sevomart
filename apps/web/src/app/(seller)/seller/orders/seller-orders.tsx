@@ -4,6 +4,7 @@ import {
   sellerActionableOrderListContract,
   type SellerActionableOrder,
 } from "@sevo/contracts/orders/v1";
+import { fulfillmentTimelineContract } from "@sevo/contracts/fulfillment/v1";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -24,7 +25,26 @@ export function SellerOrders() {
           await response.json(),
         );
         if (!response.ok || !parsed.success) throw new Error("orders unavailable");
-        setOrders(parsed.data.orders);
+        const actionable = await Promise.all(
+          parsed.data.orders.map(async (order) => {
+            if (order.status === "CANCELLATION_PENDING_REFUND") return order;
+            const fulfillmentResponse = await fetch(
+              `/api/seller/orders/${encodeURIComponent(order.orderId)}/fulfillment`,
+              { cache: "no-store" },
+            );
+            // IDs come from the store-scoped actionable list. Here, 404 means the
+            // fulfillment projection has not caught up with a newly paid order yet.
+            if (fulfillmentResponse.status === 404) return order;
+            const fulfillment = fulfillmentTimelineContract.safeParse(
+              await fulfillmentResponse.json(),
+            );
+            if (!fulfillmentResponse.ok || !fulfillment.success) {
+              throw new Error("fulfillment unavailable");
+            }
+            return fulfillment.data.nextStatus ? order : undefined;
+          }),
+        );
+        setOrders(actionable.filter((order) => order !== undefined));
       })
       .catch(() => setFailed(true));
   }, []);
@@ -42,10 +62,14 @@ export function SellerOrders() {
                 <small>{order.itemCount.toLocaleString("fa-IR")} کالا</small>
               </span>
               <strong>{formatIrrAsToman(order.total.amount)}</strong>
-              <Link href={`/seller/orders/${order.orderId}/refund`}>
-                {order.status === "PAID"
-                  ? "لغو و پیگیری بازپرداخت"
-                  : "دیدن وضعیت بازپرداخت"}
+              <Link
+                href={
+                  order.status === "PAID"
+                    ? `/seller/orders/${order.orderId}`
+                    : `/seller/orders/${order.orderId}/refund`
+                }
+              >
+                {order.status === "PAID" ? "انجام سفارش" : "دیدن وضعیت بازپرداخت"}
               </Link>
             </li>
           ))}
