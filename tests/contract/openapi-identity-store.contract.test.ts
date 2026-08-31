@@ -202,7 +202,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "fd51af4447a244c1c71ffa80440ea647e4c6a4bcf5ea20ba9cf14c3d11c3bcd3",
+      "0dbc05dc3b7bb6fc937c018d2db6bfdac4aeebd1c17584ccedd6d44a6a4b27da",
     );
   });
 
