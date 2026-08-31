@@ -16,7 +16,7 @@ import postgres, { type Sql } from "postgres";
 import {
   StoreBuyerCursorCodec,
   StoreBuyerOrderCursorCodec,
-  InvalidStoreBuyerCursorError,
+  InvalidRelatedBuyerCursorError,
 } from "../application/store-buyer-cursor";
 import { StoreBuyerFault, type RelatedStoreBuyerRead } from "../public";
 
@@ -313,7 +313,7 @@ export class PostgresRelatedStoreBuyerRepository implements RelatedStoreBuyerRea
         cursor,
       );
     } catch (error) {
-      if (error instanceof InvalidStoreBuyerCursorError) {
+      if (error instanceof InvalidRelatedBuyerCursorError) {
         throw new StoreBuyerFault("INVALID_CURSOR");
       }
       throw error;
@@ -330,7 +330,7 @@ export class PostgresRelatedStoreBuyerRepository implements RelatedStoreBuyerRea
         cursor,
       );
     } catch (error) {
-      if (error instanceof InvalidStoreBuyerCursorError) {
+      if (error instanceof InvalidRelatedBuyerCursorError) {
         throw new StoreBuyerFault("INVALID_CURSOR");
       }
       throw error;
