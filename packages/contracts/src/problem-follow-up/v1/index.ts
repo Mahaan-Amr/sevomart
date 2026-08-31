@@ -45,13 +45,6 @@ export const disputeCategoryContract = z.enum([
   "WRONG_ITEM",
   "REFUND_NOT_COMPLETED",
 ]);
-export const violationTypeContract = z.enum([
-  "FULFILLMENT_NONCOMPLIANCE",
-  "MISREPRESENTATION",
-  "REFUND_NONCOMPLIANCE",
-  "REPEATED_DISPUTES",
-  "PLATFORM_POLICY_BREACH",
-]);
 export const disputeDeadlineKindContract = z.enum([
   "SELLER_FIRST_RESPONSE",
   "PLATFORM_REVIEW",
@@ -86,9 +79,6 @@ export const disputeEvidenceReferenceContract = z
     kind: disputeEvidenceKindContract,
     submittedAt: timestampV1Contract,
   })
-  .strict();
-export const disputeEvidenceInputContract = disputeEvidenceReferenceContract
-  .pick({ evidenceId: true, kind: true })
   .strict();
 export const disputeContributionContract = z
   .object({
@@ -220,7 +210,7 @@ const disputeRespondedPayloadContract = z
 const disputeResolvedPayloadContract = z
   .object({
     disputeId: disputeIdContract,
-    fromStatus: z.enum(["AWAITING_SELLER_RESPONSE", "UNDER_REVIEW"]),
+    fromStatus: z.literal("UNDER_REVIEW"),
     toStatus: z.enum(["RESOLVED", "CLOSED"]),
     nextDeadlineAt: timestampV1Contract,
     reasonCode: z.enum(["PLATFORM_RESOLVED_CASE", "PLATFORM_CLOSED_CASE"]),
@@ -327,70 +317,35 @@ export const problemFollowUpV1Operations = {
 export const problemFollowUpIdempotencyKeyContract = z.string().min(1).max(200);
 export const problemFollowUpCursorContract = z.string().min(1).max(500);
 export const problemFollowUpPageLimitContract = z.int().min(1).max(100);
-export const problemFollowUpAccessReasonContract = z.string().trim().min(10).max(1_000);
-
-const disputeEvidenceInputFields = {
-  evidenceIds: z.array(disputeEvidenceIdContract).max(10).optional().default([]),
-  evidence: z.array(disputeEvidenceInputContract).max(10).optional().default([]),
-} as const;
-
-function requireEvidenceCount(
-  input: { evidenceIds: readonly unknown[]; evidence: readonly unknown[] },
-  context: z.RefinementCtx,
-  minimum: number,
-) {
-  const count = input.evidenceIds.length + input.evidence.length;
-  if (count < minimum || count > 10) {
-    context.addIssue({
-      code: "custom",
-      path: ["evidence"],
-      message: `evidence count must be between ${minimum} and 10`,
-    });
-  }
-}
 
 export const openDisputeInputContract = z
   .object({
     orderId: orderIdContract,
     category: disputeCategoryContract,
     description: z.string().trim().min(10).max(2_000),
-    ...disputeEvidenceInputFields,
+    evidenceIds: z.array(disputeEvidenceIdContract).min(1).max(10),
   })
-  .strict()
-  .superRefine((input, context) => requireEvidenceCount(input, context, 1));
+  .strict();
 export const respondToDisputeInputContract = z
   .object({
     response: z.string().trim().min(10).max(2_000),
-    ...disputeEvidenceInputFields,
+    evidenceIds: z.array(disputeEvidenceIdContract).max(10),
   })
-  .strict()
-  .superRefine((input, context) => requireEvidenceCount(input, context, 0));
+  .strict();
 export const resolveDisputeInputContract = z
   .object({
     status: z.enum(["RESOLVED", "CLOSED"]),
     outcomeCode: disputeOutcomeCodeContract,
     explanation: z.string().trim().min(10).max(2_000),
-    ...disputeEvidenceInputFields,
-    violationType: violationTypeContract.optional(),
+    evidenceIds: z.array(disputeEvidenceIdContract).max(10),
   })
-  .strict()
-  .superRefine((input, context) => {
-    if (input.outcomeCode !== "VIOLATION_RECORDED" && input.violationType) {
-      context.addIssue({
-        code: "custom",
-        path: ["violationType"],
-        message: "violation type is only allowed for a recorded violation",
-      });
-    }
-    requireEvidenceCount(input, context, 0);
-  });
+  .strict();
 export const reopenDisputeInputContract = z
   .object({
     reason: z.string().trim().min(10).max(2_000),
-    ...disputeEvidenceInputFields,
+    evidenceIds: z.array(disputeEvidenceIdContract).min(1).max(10),
   })
-  .strict()
-  .superRefine((input, context) => requireEvidenceCount(input, context, 1));
+  .strict();
 
 const problemFollowUpCommandContext = {
   actorIdentityId: identityIdContract,
@@ -465,6 +420,13 @@ export const platformDisputeViewContract = relatedPartyDisputeViewContract
     }
   });
 
+export const violationTypeContract = z.enum([
+  "FULFILLMENT_NONCOMPLIANCE",
+  "MISREPRESENTATION",
+  "REFUND_NONCOMPLIANCE",
+  "REPEATED_DISPUTES",
+  "PLATFORM_POLICY_BREACH",
+]);
 export const violationSourceContract = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("DISPUTE"), disputeId: disputeIdContract }).strict(),
   z.object({ kind: z.literal("ORDER"), orderId: orderIdContract }).strict(),
@@ -567,8 +529,6 @@ export const problemFollowUpErrorContract = z
       "NOT_FOUND",
       "SENSITIVE_ACCESS_REQUIRED",
       "IDEMPOTENCY_CONFLICT",
-      "IDEMPOTENCY_IN_PROGRESS",
-      "PRECONDITION_REQUIRED",
     ]),
     message: z.string().min(1),
     correlationId: z.string().min(1),
@@ -581,7 +541,6 @@ export const problemFollowUpV1Schemas = {
   ProblemFollowUpIdempotencyKey: problemFollowUpIdempotencyKeyContract,
   ProblemFollowUpCursor: problemFollowUpCursorContract,
   ProblemFollowUpPageLimit: problemFollowUpPageLimitContract,
-  ProblemFollowUpAccessReason: problemFollowUpAccessReasonContract,
   DisputeStatus: disputeStatusContract,
   ViolationCaseStatus: violationCaseStatusContract,
   OpenDisputeInput: openDisputeInputContract,
@@ -653,38 +612,27 @@ export const problemFollowUpV1Examples = {
   ProblemFollowUpIdempotencyKey: "dispute-action-01",
   ProblemFollowUpCursor: "next-page-token",
   ProblemFollowUpPageLimit: 25,
-  ProblemFollowUpAccessReason: "بررسی مدارک همین پرونده برای تصمیم ثبت‌شده",
   DisputeStatus: "AWAITING_SELLER_RESPONSE",
   ViolationCaseStatus: "OPEN",
   OpenDisputeInput: {
     orderId: exampleDispute.orderId,
     category: "DAMAGED",
     description: "کالا هنگام تحویل آسیب‌دیده بود.",
-    evidence: [
-      {
-        evidenceId: exampleDispute.contributions[0].evidence[0].evidenceId,
-        kind: "IMAGE",
-      },
-    ],
+    evidenceIds: [exampleDispute.contributions[0].evidence[0].evidenceId],
   },
   RespondToDisputeInput: {
     response: "پاسخ فروشگاه همراه با مدرک ارسال ثبت شد.",
-    evidence: [],
+    evidenceIds: [],
   },
   ResolveDisputeInput: {
     status: "RESOLVED",
     outcomeCode: "SELLER_ACTION_AGREED",
     explanation: "فروشگاه اقدام توافق‌شده را ثبت کرده است.",
-    evidence: [],
+    evidenceIds: [],
   },
   ReopenDisputeInput: {
     reason: "مدرک تازه‌ای پس از اعلام نتیجه دریافت شد.",
-    evidence: [
-      {
-        evidenceId: exampleDispute.contributions[0].evidence[0].evidenceId,
-        kind: "IMAGE",
-      },
-    ],
+    evidenceIds: [exampleDispute.contributions[0].evidence[0].evidenceId],
   },
   BuyerDisputeView: exampleDispute,
   BuyerDisputePage: { items: [exampleDispute], nextCursor: null },
@@ -757,18 +705,6 @@ const allowedDisputeTransitions = [
   {
     action: "RESOLVE",
     actorKind: "PLATFORM_AGENT",
-    fromStatus: "AWAITING_SELLER_RESPONSE",
-    toStatus: "RESOLVED",
-  },
-  {
-    action: "RESOLVE",
-    actorKind: "PLATFORM_AGENT",
-    fromStatus: "AWAITING_SELLER_RESPONSE",
-    toStatus: "CLOSED",
-  },
-  {
-    action: "RESOLVE",
-    actorKind: "PLATFORM_AGENT",
     fromStatus: "UNDER_REVIEW",
     toStatus: "RESOLVED",
   },
@@ -819,6 +755,3 @@ export const disputeTransitionContract = z
 
 export type DisputeStatus = z.infer<typeof disputeStatusContract>;
 export type DisputeTransition = z.infer<typeof disputeTransitionContract>;
-export type DisputeId = z.infer<typeof disputeIdContract>;
-export type ViolationCaseId = z.infer<typeof violationCaseIdContract>;
-export type DisputeEvidenceInput = z.infer<typeof disputeEvidenceInputContract>;

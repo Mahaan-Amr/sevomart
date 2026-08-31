@@ -1,19 +1,21 @@
 import type { FulfillmentOrderSnapshot } from "@sevo/contracts/fulfillment/v1";
 import type {
   buyerDisputeViewContract,
-  DisputeId,
   platformDisputeQueueContract,
   platformDisputeViewContract,
   platformViolationCaseViewContract,
   platformViolationQueueContract,
-  openDisputeInputContract,
-  reopenDisputeInputContract,
-  resolveDisputeInputContract,
-  respondToDisputeInputContract,
   sellerDisputePageContract,
   sellerDisputeViewContract,
-  ViolationCaseId,
 } from "@sevo/contracts/problem-follow-up/v1";
+import type {
+  DisputeId,
+  OpenDisputeInputV2,
+  ReopenDisputeInputV2,
+  ResolveDisputeInputV2,
+  RespondToDisputeInputV2,
+  ViolationCaseId,
+} from "@sevo/contracts/problem-follow-up/v2";
 import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
 import type {
   OpaquePlatformAccessTransactionContext,
@@ -39,7 +41,7 @@ export interface ProblemFollowUpFulfillmentRead {
   }): Promise<FulfillmentOrderSnapshot | undefined>;
 }
 
-export type OpenDisputeInput = ReturnType<typeof openDisputeInputContract.parse>;
+export type OpenDisputeInput = OpenDisputeInputV2;
 export type BuyerDisputeView = ReturnType<typeof buyerDisputeViewContract.parse>;
 export type SellerDisputeView = ReturnType<typeof sellerDisputeViewContract.parse>;
 export type SellerDisputePage = ReturnType<typeof sellerDisputePageContract.parse>;
@@ -53,11 +55,9 @@ export type PlatformViolationQueue = ReturnType<
 export type PlatformViolationCaseView = ReturnType<
   typeof platformViolationCaseViewContract.parse
 >;
-export type RespondToDisputeInput = ReturnType<
-  typeof respondToDisputeInputContract.parse
->;
-export type ResolveDisputeInput = ReturnType<typeof resolveDisputeInputContract.parse>;
-export type ReopenDisputeInput = ReturnType<typeof reopenDisputeInputContract.parse>;
+export type RespondToDisputeInput = RespondToDisputeInputV2;
+export type ResolveDisputeInput = ResolveDisputeInputV2;
+export type ReopenDisputeInput = ReopenDisputeInputV2;
 
 export type OpenDisputeCommand = Readonly<{
   actorId: IdentityId;

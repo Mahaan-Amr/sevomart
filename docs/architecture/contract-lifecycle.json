@@ -132,6 +132,18 @@
         "events": ["disputeOpenedV1Contract"]
       }
     },
+    "@sevo/contracts/problem-follow-up/v2": {
+      "owner": "problem-follow-up",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["openDisputeInputV2Contract", "resolveDisputeInputV2Contract"],
+        "operations": ["problemFollowUpV2Operations"],
+        "events": []
+      }
+    },
     "@sevo/contracts/content/v1": {
       "owner": "content",
       "approved": true,

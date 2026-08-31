@@ -5,15 +5,17 @@ import {
   DISPUTE_SELLER_FIRST_RESPONSE_HOURS,
   DISPUTE_SHIPPED_OPEN_WINDOW_DAYS,
   disputeIdContract,
-  openDisputeInputContract,
   problemFollowUpCursorContract,
   problemFollowUpIdempotencyKeyContract,
   problemFollowUpPageLimitContract,
-  reopenDisputeInputContract,
-  resolveDisputeInputContract,
-  respondToDisputeInputContract,
   violationCaseIdContract,
 } from "@sevo/contracts/problem-follow-up/v1";
+import {
+  openDisputeInputV2Contract,
+  reopenDisputeInputV2Contract,
+  resolveDisputeInputV2Contract,
+  respondToDisputeInputV2Contract,
+} from "@sevo/contracts/problem-follow-up/v2";
 import { identityIdContract } from "@sevo/contracts/platform/v1";
 import { PlatformAgentSessionUnauthorizedError } from "../../identity-access/public";
 
@@ -45,7 +47,7 @@ export class ProblemFollowUpService {
 
   async open(request: ProblemFollowUpRequest, body: unknown, key: unknown) {
     const actorId = await this.requireIdentity(request.sessionToken);
-    const input = this.parse(openDisputeInputContract, body);
+    const input = this.parse(openDisputeInputV2Contract, body);
     const idempotencyKey = this.parseKey(key);
     const requestHash = hash(input);
     const replay = await this.repository.replayOpen({
@@ -109,7 +111,7 @@ export class ProblemFollowUpService {
     key: unknown,
   ) {
     const { actorId, storeId } = await this.requireSeller(request.sessionToken);
-    const input = this.parse(respondToDisputeInputContract, body);
+    const input = this.parse(respondToDisputeInputV2Contract, body);
     const parsedDisputeId = this.parse(disputeIdContract, disputeId);
     return this.repository.respond({
       disputeId: parsedDisputeId,
@@ -158,7 +160,7 @@ export class ProblemFollowUpService {
     access: SensitiveAccessInput,
   ) {
     const actorId = await this.requirePlatform(request.sessionToken, "DISPUTE_REVIEW");
-    const input = this.parse(resolveDisputeInputContract, body);
+    const input = this.parse(resolveDisputeInputV2Contract, body);
     const parsedDisputeId = this.parse(disputeIdContract, disputeId);
     return this.repository.resolve({
       disputeId: parsedDisputeId,
@@ -182,7 +184,7 @@ export class ProblemFollowUpService {
     access: SensitiveAccessInput,
   ) {
     const actorId = await this.requirePlatform(request.sessionToken, "DISPUTE_REVIEW");
-    const input = this.parse(reopenDisputeInputContract, body);
+    const input = this.parse(reopenDisputeInputV2Contract, body);
     const parsedDisputeId = this.parse(disputeIdContract, disputeId);
     return this.repository.reopen({
       disputeId: parsedDisputeId,

@@ -11,10 +11,8 @@ import {
   disputeRespondedV1Contract,
   disputeTransitionContract,
   openDisputeCommandContract,
-  openDisputeInputContract,
   platformDisputeQueueItemContract,
   platformDisputeViewContract,
-  resolveDisputeInputContract,
   sellerDisputeViewContract,
   violationCaseAuditEntryContract,
   violationRecordedV1Contract,
@@ -52,20 +50,6 @@ describe("problem follow-up v1 transitions", () => {
         actorIdentityId: sellerId,
         fromStatus: "AWAITING_SELLER_RESPONSE",
         toStatus: "UNDER_REVIEW",
-      },
-      {
-        action: "RESOLVE",
-        actorKind: "PLATFORM_AGENT",
-        actorIdentityId: agentId,
-        fromStatus: "AWAITING_SELLER_RESPONSE",
-        toStatus: "RESOLVED",
-      },
-      {
-        action: "RESOLVE",
-        actorKind: "PLATFORM_AGENT",
-        actorIdentityId: agentId,
-        fromStatus: "AWAITING_SELLER_RESPONSE",
-        toStatus: "CLOSED",
       },
       {
         action: "RESOLVE",
@@ -110,44 +94,8 @@ describe("problem follow-up v1 transitions", () => {
     ).toThrow();
     expect(() =>
       disputeTransitionContract.parse({
-        ...legalTransitions[5],
-        fromStatus: "SUBMITTED",
-      }),
-    ).toThrow();
-  });
-
-  it("keeps typed evidence while preserving the v1 image-id request shape", () => {
-    expect(
-      openDisputeInputContract.parse({
-        orderId,
-        category: "DAMAGED",
-        description: "کالا هنگام تحویل آسیب‌دیده بود.",
-        evidence: [{ evidenceId, kind: "DOCUMENT" }],
-      }).evidence[0]?.kind,
-    ).toBe("DOCUMENT");
-    expect(
-      openDisputeInputContract.parse({
-        orderId,
-        category: "DAMAGED",
-        description: "کالا هنگام تحویل آسیب‌دیده بود.",
-        evidenceIds: [evidenceId],
-      }).evidenceIds,
-    ).toEqual([evidenceId]);
-    expect(
-      resolveDisputeInputContract.parse({
-        status: "RESOLVED",
-        outcomeCode: "VIOLATION_RECORDED",
-        explanation: "تخلف ثبت‌شده به پیگیری جدا نیاز دارد.",
-        evidenceIds: [],
-      }).outcomeCode,
-    ).toBe("VIOLATION_RECORDED");
-    expect(() =>
-      resolveDisputeInputContract.parse({
-        status: "RESOLVED",
-        outcomeCode: "POLICY_EXPLAINED",
-        explanation: "سیاست ثبت‌شده برای دو طرف توضیح داده شد.",
-        evidence: [],
-        violationType: "MISREPRESENTATION",
+        ...legalTransitions[3],
+        fromStatus: "AWAITING_SELLER_RESPONSE",
       }),
     ).toThrow();
   });
@@ -394,9 +342,9 @@ describe("problem follow-up v1 audit and events", () => {
       orderId,
       category: "DAMAGED",
       description: "کالا هنگام تحویل آسیب‌دیده بود.",
-      evidence: [{ evidenceId, kind: "IMAGE" }],
+      evidenceIds: [evidenceId],
     } as const;
-    expect(openDisputeCommandContract.parse(command)).toMatchObject(command);
+    expect(openDisputeCommandContract.parse(command)).toEqual(command);
     expect(() =>
       openDisputeCommandContract.parse({ ...command, actorKind: "SELLER" }),
     ).toThrow();

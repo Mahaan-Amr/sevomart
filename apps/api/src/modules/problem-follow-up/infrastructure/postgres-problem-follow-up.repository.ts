@@ -35,7 +35,6 @@ import {
 import type { OpaquePlatformAccessTransactionContext } from "../../identity-access/public";
 import {
   appendContribution,
-  commandEvidence,
   contribution,
   decodeCursor,
   page,
@@ -87,7 +86,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       const contributions = contribution(
         "BUYER",
         command.input.description,
-        commandEvidence(command.input),
+        command.input.evidence,
         occurredAt,
       );
       try {
@@ -116,7 +115,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: null,
         toStatus: "AWAITING_SELLER_RESPONSE",
         reasonCode: "BUYER_OPENED_CASE",
-        evidenceCount: commandEvidence(command.input).length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.openedAt,
         correlationId: command.correlationId,
       });
@@ -198,7 +197,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "SELLER",
         command.input.response,
-        commandEvidence(command.input),
+        command.input.evidence,
         command.occurredAt,
       );
       await updateDispute(sql, row, {
@@ -217,7 +216,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: "UNDER_REVIEW",
         reasonCode: "SELLER_SUBMITTED_RESPONSE",
-        evidenceCount: commandEvidence(command.input).length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });
@@ -288,21 +287,51 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
           access: { ...access, mode: "REVEALED_MINIMUM" },
         });
       }
-      const row = await lockDispute(sql, command.disputeId);
-      if (!row) throw new ProblemFollowUpFault("NOT_FOUND");
+      const lockedRow = await lockDispute(sql, command.disputeId);
+      if (!lockedRow) throw new ProblemFollowUpFault("NOT_FOUND");
       const resolvingExpiredSellerCase =
-        row.status === "AWAITING_SELLER_RESPONSE" &&
-        row.deadlineAt !== null &&
-        command.occurredAt > row.deadlineAt;
-      if (row.status !== "UNDER_REVIEW" && !resolvingExpiredSellerCase) {
+        lockedRow.status === "AWAITING_SELLER_RESPONSE" &&
+        lockedRow.deadlineAt !== null &&
+        command.occurredAt > lockedRow.deadlineAt;
+      if (lockedRow.status !== "UNDER_REVIEW" && !resolvingExpiredSellerCase) {
         throw new ProblemFollowUpFault("INVALID_TRANSITION");
+      }
+      let row = lockedRow;
+      if (resolvingExpiredSellerCase) {
+        await updateDispute(sql, lockedRow, {
+          status: "UNDER_REVIEW",
+          deadlineKind: null,
+          deadlineAt: null,
+          contributions: lockedRow.contributions,
+          outcome: lockedRow.outcome,
+          occurredAt: command.occurredAt,
+        });
+        await auditDispute(sql, {
+          disputeId: lockedRow.disputeId,
+          action: "ESCALATE",
+          actorKind: "PLATFORM_AGENT",
+          actorIdentityId: command.actorId,
+          fromStatus: "AWAITING_SELLER_RESPONSE",
+          toStatus: "UNDER_REVIEW",
+          reasonCode: "SELLER_RESPONSE_DEADLINE_EXPIRED",
+          evidenceCount: 0,
+          occurredAt: command.occurredAt,
+          correlationId: command.correlationId,
+        });
+        row = {
+          ...lockedRow,
+          status: "UNDER_REVIEW",
+          deadlineKind: null,
+          deadlineAt: null,
+          version: lockedRow.version + 1,
+        };
       }
       const deadlineAt = new Date(command.occurredAt.getTime() + REOPEN_WINDOW_MS);
       const contributions = appendContribution(
         row,
         "PLATFORM_AGENT",
         command.input.explanation,
-        commandEvidence(command.input),
+        command.input.evidence,
         command.occurredAt,
       );
       const outcome = {
@@ -330,7 +359,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: command.input.status,
         reasonCode,
-        evidenceCount: commandEvidence(command.input).length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });
@@ -354,7 +383,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
           sql,
           row,
           command,
-          command.input.violationType ?? "PLATFORM_POLICY_BREACH",
+          command.input.violationType,
           contributions.at(-1)?.evidence ?? [],
         );
       }
@@ -402,7 +431,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "PLATFORM_AGENT",
         command.input.reason,
-        commandEvidence(command.input),
+        command.input.evidence,
         command.occurredAt,
       );
       await updateDispute(sql, row, {
@@ -421,7 +450,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: "UNDER_REVIEW",
         reasonCode: "NEW_EVIDENCE_RECEIVED",
-        evidenceCount: commandEvidence(command.input).length,
+        evidenceCount: command.input.evidence.length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });

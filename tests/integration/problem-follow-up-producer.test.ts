@@ -267,5 +267,40 @@ describe("problem follow-up producer persistence", () => {
         action: "UPDATE_CASE_STATUS",
       }),
     ).resolves.toMatchObject({ status: "CLOSED" });
+
+    const audits = await sql<
+      Array<{
+        action: string;
+        fromStatus: string;
+        toStatus: string;
+        reasonCode: string;
+      }>
+    >`
+      select action, from_status as "fromStatus", to_status as "toStatus",
+        reason_code as "reasonCode"
+      from problem_dispute_audits where dispute_id = ${opened.disputeId}
+      order by occurred_at,
+        case when action = 'ESCALATE' then 0 else 1 end
+    `;
+    expect(audits.slice(-2)).toEqual([
+      {
+        action: "ESCALATE",
+        fromStatus: "AWAITING_SELLER_RESPONSE",
+        toStatus: "UNDER_REVIEW",
+        reasonCode: "SELLER_RESPONSE_DEADLINE_EXPIRED",
+      },
+      {
+        action: "RESOLVE",
+        fromStatus: "UNDER_REVIEW",
+        toStatus: "CLOSED",
+        reasonCode: "PLATFORM_CLOSED_CASE",
+      },
+    ]);
+    const [resolvedEvent] = await sql<Array<{ payload: { fromStatus: string } }>>`
+      select payload from platform_outbox_events
+      where correlation_id = ${expiredCorrelationId}
+        and event_type = 'DisputeResolved.v1'
+    `;
+    expect(resolvedEvent?.payload.fromStatus).toBe("UNDER_REVIEW");
   });
 });

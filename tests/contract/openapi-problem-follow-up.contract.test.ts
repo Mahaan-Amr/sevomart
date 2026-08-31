@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { problemFollowUpV1Operations } from "@sevo/contracts/problem-follow-up/v1";
 import {
-  problemFollowUpErrorContract,
-  problemFollowUpV1Operations,
-} from "@sevo/contracts/problem-follow-up/v1";
+  problemFollowUpErrorV2Contract,
+  problemFollowUpV2Operations,
+} from "@sevo/contracts/problem-follow-up/v2";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
-describe("OpenAPI problem follow-up v1", () => {
+describe("OpenAPI problem follow-up v1 reads and v2 mutations", () => {
   let close: (() => Promise<void>) | undefined;
 
   afterEach(async () => close?.());
@@ -21,15 +22,15 @@ describe("OpenAPI problem follow-up v1", () => {
     });
     const document = response.json();
     const expected = [
-      ["post", problemFollowUpV1Operations.openDispute, "identitySession"],
+      ["post", problemFollowUpV2Operations.openDispute, "identitySession"],
       ["get", problemFollowUpV1Operations.readBuyerDispute, "identitySession"],
       ["get", problemFollowUpV1Operations.listSellerDisputes, "identitySession"],
       ["get", problemFollowUpV1Operations.readSellerDispute, "identitySession"],
-      ["post", problemFollowUpV1Operations.respondToDispute, "identitySession"],
+      ["post", problemFollowUpV2Operations.respondToDispute, "identitySession"],
       ["get", problemFollowUpV1Operations.listPlatformDisputes, "platformAgentSession"],
       ["get", problemFollowUpV1Operations.readPlatformDispute, "platformAgentSession"],
-      ["post", problemFollowUpV1Operations.resolveDispute, "platformAgentSession"],
-      ["post", problemFollowUpV1Operations.reopenDispute, "platformAgentSession"],
+      ["post", problemFollowUpV2Operations.resolveDispute, "platformAgentSession"],
+      ["post", problemFollowUpV2Operations.reopenDispute, "platformAgentSession"],
       [
         "get",
         problemFollowUpV1Operations.listPlatformViolationCases,
@@ -48,6 +49,15 @@ describe("OpenAPI problem follow-up v1", () => {
       expect(operation?.security).toEqual([{ [securityScheme]: [] }]);
     }
 
+    for (const contract of [
+      problemFollowUpV1Operations.openDispute,
+      problemFollowUpV1Operations.respondToDispute,
+      problemFollowUpV1Operations.resolveDispute,
+      problemFollowUpV1Operations.reopenDispute,
+    ]) {
+      expect(document.paths[contract.path]?.[contract.method]).toBeUndefined();
+    }
+
     for (const [method, contract] of expected.filter(([method]) => method === "post")) {
       const operation = document.paths[contract.path][method];
       expect(operation.parameters).toEqual(
@@ -61,14 +71,14 @@ describe("OpenAPI problem follow-up v1", () => {
         .split("/")
         .at(-1);
       const requestSchema = document.components.schemas[requestSchemaName];
-      expect(requestSchema.properties).not.toHaveProperty("actorIdentityId");
-      expect(requestSchema.properties).not.toHaveProperty("actorKind");
+      expect(JSON.stringify(requestSchema)).not.toContain("actorIdentityId");
+      expect(JSON.stringify(requestSchema)).not.toContain("actorKind");
     }
 
     for (const contract of [
       problemFollowUpV1Operations.readPlatformDispute,
-      problemFollowUpV1Operations.resolveDispute,
-      problemFollowUpV1Operations.reopenDispute,
+      problemFollowUpV2Operations.resolveDispute,
+      problemFollowUpV2Operations.reopenDispute,
       problemFollowUpV1Operations.readPlatformViolationCase,
     ]) {
       const operation = document.paths[contract.path][contract.method];
@@ -90,7 +100,7 @@ describe("OpenAPI problem follow-up v1", () => {
   it("publishes the runtime idempotency precondition and concurrency faults", () => {
     for (const code of ["PRECONDITION_REQUIRED", "IDEMPOTENCY_IN_PROGRESS"] as const) {
       expect(
-        problemFollowUpErrorContract.safeParse({
+        problemFollowUpErrorV2Contract.safeParse({
           code,
           message: "درخواست قابل انجام نیست.",
           correlationId: "70000000-0000-4000-8000-000000000140",
@@ -107,7 +117,7 @@ describe("OpenAPI problem follow-up v1", () => {
       .getInstance()
       .inject({
         method: "POST",
-        url: problemFollowUpV1Operations.openDispute.path,
+        url: problemFollowUpV2Operations.openDispute.path,
         headers: { "idempotency-key": "unauthorized-open" },
         payload: {},
       });

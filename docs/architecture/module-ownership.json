@@ -123,6 +123,7 @@
     "@sevo/contracts/fulfillment/v1": "fulfillment",
     "@sevo/contracts/conversations/v1": "conversations",
     "@sevo/contracts/problem-follow-up/v1": "problem-follow-up",
+    "@sevo/contracts/problem-follow-up/v2": "problem-follow-up",
     "@sevo/contracts/content/v1": "content",
     "@sevo/contracts/content/v2": "content",
     "@sevo/contracts/discovery/v1": "discovery",

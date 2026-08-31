@@ -26,14 +26,14 @@ import { ProblemFollowUpService } from "./application/problem-follow-up.service"
 import { PROBLEM_FOLLOW_UP_SERVICE, ProblemFollowUpFault } from "./public";
 
 @ApiExcludeController()
-@Controller("v1")
+@Controller()
 export class ProblemFollowUpController {
   constructor(
     @Inject(PROBLEM_FOLLOW_UP_SERVICE)
     private readonly service: ProblemFollowUpService,
   ) {}
 
-  @Post("buyer/disputes")
+  @Post("v2/buyer/disputes")
   @HttpCode(HttpStatus.CREATED)
   open(
     @Body() body: unknown,
@@ -46,7 +46,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Get("buyer/disputes/:disputeId")
+  @Get("v1/buyer/disputes/:disputeId")
   readBuyer(
     @Param("disputeId") disputeId: string,
     @Req() request: FastifyRequest,
@@ -57,7 +57,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Get("seller/disputes")
+  @Get("v1/seller/disputes")
   listSeller(
     @Query("cursor") cursor: string | undefined,
     @Query("limit") limit: string | undefined,
@@ -69,7 +69,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Get("seller/disputes/:disputeId")
+  @Get("v1/seller/disputes/:disputeId")
   readSeller(
     @Param("disputeId") disputeId: string,
     @Req() request: FastifyRequest,
@@ -80,7 +80,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Post("seller/disputes/:disputeId/response")
+  @Post("v2/seller/disputes/:disputeId/response")
   @HttpCode(HttpStatus.OK)
   respondAsSeller(
     @Param("disputeId") disputeId: string,
@@ -94,7 +94,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Get("platform/disputes")
+  @Get("v1/platform/disputes")
   listPlatformDisputes(
     @Query("cursor") cursor: string | undefined,
     @Query("limit") limit: string | undefined,
@@ -106,7 +106,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Get("platform/disputes/:disputeId")
+  @Get("v1/platform/disputes/:disputeId")
   readPlatformDispute(
     @Param("disputeId") disputeId: string,
     @Headers("x-platform-access-grant-id") grantId: string | undefined,
@@ -122,7 +122,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Post("platform/disputes/:disputeId/resolution")
+  @Post("v2/platform/disputes/:disputeId/resolution")
   @HttpCode(HttpStatus.OK)
   resolve(
     @Param("disputeId") disputeId: string,
@@ -141,7 +141,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Post("platform/disputes/:disputeId/reopening")
+  @Post("v2/platform/disputes/:disputeId/reopening")
   @HttpCode(HttpStatus.OK)
   reopen(
     @Param("disputeId") disputeId: string,
@@ -160,7 +160,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Get("platform/violations")
+  @Get("v1/platform/violations")
   listPlatformViolations(
     @Query("cursor") cursor: string | undefined,
     @Query("limit") limit: string | undefined,
@@ -172,7 +172,7 @@ export class ProblemFollowUpController {
     );
   }
 
-  @Get("platform/violations/:violationCaseId")
+  @Get("v1/platform/violations/:violationCaseId")
   readPlatformViolation(
     @Param("violationCaseId") violationCaseId: string,
     @Headers("x-platform-access-grant-id") grantId: string | undefined,
