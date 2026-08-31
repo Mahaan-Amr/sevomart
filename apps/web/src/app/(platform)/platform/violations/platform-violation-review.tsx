@@ -239,6 +239,12 @@ function RevealedDetail({ detail }: { detail: PlatformViolationCaseView }) {
           ))}
         </ul>
       )}
+      <h3>پیگیری ثبت‌شده</h3>
+      <ul className={styles.followUp}>
+        {detail.actionReasonCodes.map((reasonCode, index) => (
+          <li key={`${reasonCode}-${index}`}>{followUpLabel(reasonCode)}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -285,6 +291,16 @@ function evidenceLabel(kind: PlatformViolationCaseView["evidence"][number]["kind
     DOCUMENT: "سند",
     MESSAGE_REFERENCE: "ارجاع گفت‌وگو",
   }[kind];
+}
+
+function followUpLabel(
+  reasonCode: PlatformViolationCaseView["actionReasonCodes"][number],
+) {
+  return {
+    VIOLATION_RECORDED: "تخلف ثبت شد",
+    CASE_NOTE_ADDED: "یادداشت پرونده افزوده شد",
+    FOLLOW_UP_UPDATED: "پیگیری پرونده به‌روز شد",
+  }[reasonCode];
 }
 
 function formatDate(value: string) {

@@ -71,7 +71,8 @@
 }
 
 .queue,
-.evidence {
+.evidence,
+.followUp {
   display: grid;
   gap: 10px;
   margin: 0;
@@ -171,7 +172,8 @@
 }
 
 .revealed dl div,
-.evidence li {
+.evidence li,
+.followUp li {
   display: flex;
   align-items: center;
   justify-content: space-between;

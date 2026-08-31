@@ -8,6 +8,10 @@ import { establishPlatformAgentSession } from "../helpers/platform-agent-session
 
 const violationCaseId = "5df3e69a-4d9c-4c5b-9bf2-75af372e18e4";
 const grantId = "555c67ad-b996-4165-b639-ce080f7a0225";
+const longReason =
+  "برای تعیین اقدام بعدی، مدارک این پرونده تخلف را در محدوده همین مسئولیت و بدون کپی‌کردن داده شخصی بررسی می‌کنم. ".repeat(
+    3,
+  );
 
 test.beforeEach(async ({ context }) => {
   await establishPlatformAgentSession(context, ["VIOLATION_REVIEW"]);
@@ -42,21 +46,38 @@ test("keeps violation evidence masked until an audited case-scoped reveal", asyn
   await expect(page.getByText("مدرک تصویری")).toHaveCount(0);
   await expect(page.getByText(grantId)).toHaveCount(0);
 
-  await page.getByRole("button", { name: /بررسی پرونده/ }).click();
+  const queueItem = page.getByRole("button", { name: /بررسی پرونده/ });
+  await queueItem.focus();
+  await expect(queueItem).toHaveCSS("outline-style", "solid");
+  await assertReducedMotion(page, queueItem);
+  await assertMinimumContrast(queueItem);
+  await queueItem.press("Enter");
   await expect(page.getByText("جزئیات حساس هنوز آشکار نشده‌اند.")).toBeVisible();
-  await page.getByLabel("شناسه اجازه دسترسی فعال").fill(grantId);
-  await page
-    .getByLabel("دلیل مشاهده")
-    .fill("بررسی مدرک پرونده تخلف برای تعیین اقدام بعدی");
+  const grant = page.getByLabel("شناسه اجازه دسترسی فعال");
+  await page.keyboard.press("Tab");
+  await expect(grant).toBeFocused();
+  await page.keyboard.insertText(grantId);
+  const reason = page.getByLabel("دلیل مشاهده");
+  await page.keyboard.press("Tab");
+  await expect(reason).toBeFocused();
+  await page.keyboard.insertText(longReason);
+  await expect(reason).toHaveValue(longReason);
   const reveal = page.getByRole("button", { name: "آشکارسازی حداقل لازم" });
+  await page.keyboard.press("Tab");
+  await expect(reveal).toBeFocused();
+  await assertReducedMotion(page, reveal);
   await assertMinimumContrast(reveal);
-  await reveal.click();
+  await page.keyboard.press("Enter");
 
   await expect(page.getByText("مدرک تصویری")).toBeVisible();
+  await expect(page.getByText("تخلف ثبت شد")).toBeVisible();
   await expect(page.getByText("مشاهده ثبت و ممیزی شد.")).toBeVisible();
   expect(revealHeaders["x-platform-access-grant-id"]).toBe(grantId);
   expect(decodeURIComponent(revealHeaders["x-platform-access-reason"]!)).toBe(
-    "بررسی مدرک پرونده تخلف برای تعیین اقدام بعدی",
+    longReason.trim(),
+  );
+  await assertMinimumContrast(
+    page.getByRole("heading", { name: "پرونده‌های تخلف نیازمند بررسی" }),
   );
   await assertNoHorizontalOverflow(page);
 });
@@ -114,4 +135,18 @@ function violationDetail() {
       expiresAt: "2026-08-31T08:40:00.000Z",
     },
   };
+}
+
+async function assertReducedMotion(
+  page: import("@playwright/test").Page,
+  target: import("@playwright/test").Locator,
+) {
+  expect(
+    await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches),
+  ).toBe(true);
+  const durationMs = await target.evaluate(
+    (element) =>
+      Number.parseFloat(getComputedStyle(element).transitionDuration) * 1_000,
+  );
+  expect(durationMs).toBeLessThanOrEqual(0.01);
 }

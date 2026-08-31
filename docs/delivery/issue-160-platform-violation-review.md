@@ -25,8 +25,10 @@ migration، dependency، متغیر محیطی، پورت یا قرارداد pr
 - unit برابر `219/219`، contract برابر `177/177`، integration برابر `226/226` و
   QA scenario برابر `2/2` سبز است.
 - E2E متمرکز Issue در عرض‌های `360`، `390`، `768` و `1440` برابر `8/8` سبز است و
-  RTL، focus، کنتراست، نبود overflow، reduced motion، نبود route/navigation بدون
-  مجوز، masking پیش‌فرض و reveal ممیزی‌شده را پوشش می‌دهد.
+  RTL، حرکت کامل مسیر reveal با keyboard و focus نمایان، کنتراست کنترل و تیتر،
+  دلیل فارسی بلند، نبود overflow، خاموش‌بودن transition در reduced motion، نبود
+  route/navigation بدون مجوز، masking پیش‌فرض، تاریخچه پیگیری و reveal ممیزی‌شده را
+  پوشش می‌دهد.
 - اجرای کامل E2E برابر `281/284` بود. سه failure خارج از این diff و مربوط به fixture
   مشترک بودند: دو مورد store-following در اجرای مستقل و تک‌worker `4/4` سبز شدند؛
   seller-conversations در نخستین viewport بدون identity seed شکست خورد و همان تست
