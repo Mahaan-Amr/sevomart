@@ -5,6 +5,13 @@ import {
 } from "@sevo/contracts/identity-access/v1";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
+const forwardedRequestHeaderNames = [
+  "content-type",
+  "cookie",
+  "idempotency-key",
+  "x-platform-access-grant-id",
+  "x-platform-access-reason",
+] as const;
 
 export async function proxyIdentityRequest(
   request: Request,
@@ -16,15 +23,7 @@ export async function proxyIdentityRequest(
     const upstream = await fetch(`${API_BASE_URL}${path}${search}`, {
       method: request.method,
       headers: {
-        ...(request.headers.get("content-type")
-          ? { "content-type": request.headers.get("content-type")! }
-          : {}),
-        ...(request.headers.get("cookie")
-          ? { cookie: request.headers.get("cookie")! }
-          : {}),
-        ...(request.headers.get("idempotency-key")
-          ? { "idempotency-key": request.headers.get("idempotency-key")! }
-          : {}),
+        ...forwardedRequestHeaders(request),
         "x-correlation-id":
           request.headers.get("x-correlation-id") ?? crypto.randomUUID(),
       },
@@ -56,6 +55,15 @@ export async function proxyIdentityRequest(
       { status: 503 },
     );
   }
+}
+
+function forwardedRequestHeaders(request: Request) {
+  const headers: Record<string, string> = {};
+  for (const name of forwardedRequestHeaderNames) {
+    const value = request.headers.get(name);
+    if (value) headers[name] = value;
+  }
+  return headers;
 }
 
 export async function readIdentitySession(
