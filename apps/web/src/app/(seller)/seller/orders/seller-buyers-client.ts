@@ -1,7 +1,9 @@
 import {
   revealedOrderDeliveryDetailsContract,
+  storeBuyerOrderPageContract,
   storeBuyerPageContract,
   type RevealedOrderDeliveryDetails,
+  type StoreBuyerOrderPage,
   type StoreBuyerPage,
 } from "@sevo/contracts/orders/v1";
 
@@ -16,10 +18,25 @@ export async function readRelatedBuyers(
   const response = await fetch(`/api/seller/buyers?${parameters}`, {
     cache: "no-store",
   });
-  const body: unknown = await response.json();
-  if (response.status === 401) throw new SellerSessionExpired();
+  const body = await readSellerBody(response);
   const parsed = storeBuyerPageContract.safeParse(body);
-  if (!response.ok || !parsed.success) throw new Error(readMessage(body));
+  if (!parsed.success) throw new Error(readMessage(body));
+  return parsed.data;
+}
+
+export async function readStoreBuyerOrders(
+  orderId: string,
+  cursor?: string,
+): Promise<StoreBuyerOrderPage> {
+  const parameters = new URLSearchParams({ limit: "20" });
+  if (cursor) parameters.set("cursor", cursor);
+  const response = await fetch(
+    `/api/seller/orders/${encodeURIComponent(orderId)}/buyer-orders?${parameters}`,
+    { cache: "no-store" },
+  );
+  const body = await readSellerBody(response);
+  const parsed = storeBuyerOrderPageContract.safeParse(body);
+  if (!parsed.success) throw new Error(readMessage(body));
   return parsed.data;
 }
 
@@ -36,11 +53,17 @@ export async function revealOrderDeliveryDetails(
       cache: "no-store",
     },
   );
+  const body = await readSellerBody(response);
+  const parsed = revealedOrderDeliveryDetailsContract.safeParse(body);
+  if (!parsed.success) throw new Error(readMessage(body));
+  return parsed.data;
+}
+
+async function readSellerBody(response: Response): Promise<unknown> {
   const body: unknown = await response.json();
   if (response.status === 401) throw new SellerSessionExpired();
-  const parsed = revealedOrderDeliveryDetailsContract.safeParse(body);
-  if (!response.ok || !parsed.success) throw new Error(readMessage(body));
-  return parsed.data;
+  if (!response.ok) throw new Error(readMessage(body));
+  return body;
 }
 
 function readMessage(body: unknown) {

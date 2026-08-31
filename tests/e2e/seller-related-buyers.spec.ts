@@ -20,6 +20,8 @@ test("seller finds an order buyer and reveals delivery details with a reason", a
   const sql = postgres(databaseUrl, { max: 1 });
   const storeId = randomUUID();
   const orderId = randomUUID();
+  const olderOrderId = randomUUID();
+  const pendingOrderId = randomUUID();
   const buyerId = randomUUID();
   let revealReason: string | undefined;
 
@@ -79,9 +81,71 @@ test("seller finds an order buyer and reveals delivery details with a reason", a
   await page.route("**/api/seller/orders", (route) =>
     route.fulfill({ status: 200, json: { orders: [] } }),
   );
-  await page.route("**/api/seller/buyers**", (route) =>
-    route.fulfill({ status: 200, json: buyerPage }),
-  );
+  await page.route("**/api/seller/buyers**", (route) => {
+    const search = new URL(route.request().url()).searchParams.get("search");
+    const matchedOrderId = search === olderOrderId ? olderOrderId : orderId;
+    return route.fulfill({
+      status: 200,
+      json: {
+        ...buyerPage,
+        items: [{ ...buyerPage.items[0], matchedOrderId }],
+      },
+    });
+  });
+  await page.route("**/api/seller/orders/*/buyer-orders**", (route) => {
+    const contextualOrderId = route
+      .request()
+      .url()
+      .split("/buyer-orders")[0]
+      ?.split("/")
+      .at(-1);
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({
+      status: 200,
+      headers: { "cache-control": "no-store" },
+      json:
+        contextualOrderId === olderOrderId
+          ? {
+              items: [
+                {
+                  orderId: olderOrderId,
+                  paymentStatus: "CANCELLED",
+                  fulfillmentStatus: "CANCELLED",
+                  createdAt: "2026-08-20T07:30:00.000Z",
+                },
+              ],
+              nextCursor: null,
+            }
+          : cursor === "history-next"
+            ? {
+                items: [
+                  {
+                    orderId: olderOrderId,
+                    paymentStatus: "CANCELLED",
+                    fulfillmentStatus: "CANCELLED",
+                    createdAt: "2026-08-20T07:30:00.000Z",
+                  },
+                  {
+                    orderId: pendingOrderId,
+                    paymentStatus: "PENDING_PAYMENT",
+                    createdAt: "2026-08-19T07:30:00.000Z",
+                  },
+                ],
+                nextCursor: null,
+              }
+            : {
+                items: [
+                  {
+                    orderId,
+                    paymentStatus: "PAID",
+                    fulfillmentStatus: "DELIVERED",
+                    createdAt: "2026-08-31T08:00:00.000Z",
+                  },
+                ],
+                nextCursor: "history-next",
+              },
+    });
+  });
   await page.route(
     `**/api/seller/orders/${orderId}/delivery-details/reveal`,
     async (route) => {
@@ -139,6 +203,29 @@ test("seller finds an order buyer and reveals delivery details with a reason", a
     await expect(page.getByRole("heading", { name: "خریدار این سفارش" })).toBeVisible();
     await expect(page.getByText("شماره تماس و نشانی فعلاً ماسک‌اند")).toBeVisible();
     await expect(page.getByText("0912••••789")).toBeVisible();
+    const historySection = page
+      .getByRole("heading", { name: "تاریخچه سفارش‌های همین فروشگاه" })
+      .locator("../..");
+    await expect(historySection).toBeVisible();
+    await expect(historySection.getByText("سفارش فعلی")).toBeVisible();
+    await expect(historySection.getByText(orderId, { exact: true })).toBeVisible();
+    const moreHistory = historySection.getByRole("button", {
+      name: "نمایش سفارش‌های بیشتر",
+    });
+    await assertInteractiveTargets(moreHistory);
+    await moreHistory.focus();
+    await expect(moreHistory).toHaveCSS("outline-style", "solid");
+    await page.keyboard.press("Enter");
+    const olderOrder = historySection.getByRole("link", {
+      name: new RegExp(olderOrderId),
+    });
+    await expect(olderOrder).toBeVisible();
+    await expect(historySection.getByText("لغوشده").first()).toBeVisible();
+    const pendingOrder = historySection.getByRole("listitem").filter({
+      hasText: pendingOrderId,
+    });
+    await expect(pendingOrder.getByText("در انتظار پرداخت")).toBeVisible();
+    await expect(pendingOrder.getByText("هنوز شروع نشده")).toBeVisible();
     const reason = page.getByLabel("دلیل مشاهده شماره و نشانی");
     await reason.fill("پیگیری ارسال سفارش و هماهنگی زمان تحویل");
     const reveal = page.getByRole("button", { name: "نمایش اطلاعات تحویل" });
@@ -160,6 +247,15 @@ test("seller finds an order buyer and reveals delivery details with a reason", a
     await expect(page.getByText(/خیابان آزادی/)).toBeVisible();
     expect(revealReason).toBe("پیگیری ارسال سفارش و هماهنگی زمان تحویل");
     await assertNoHorizontalOverflow(page);
+    await olderOrder.click();
+    await expect(page).toHaveURL(`/seller/orders/${olderOrderId}/buyer`);
+    await expect(page.getByRole("heading", { name: "خریدار این سفارش" })).toBeVisible();
+    await expect(page.getByText("0912••••789")).toBeVisible();
+    await expect(page.getByText("خریدار این سفارش پیدا نشد.")).toHaveCount(0);
+    const destinationHistory = page
+      .getByRole("heading", { name: "تاریخچه سفارش‌های همین فروشگاه" })
+      .locator("../..");
+    await expect(destinationHistory.getByText("سفارش فعلی")).toBeVisible();
   } finally {
     await sql`delete from store_memberships where store_id = ${storeId}`;
     await sql`delete from store_stores where id = ${storeId}`;

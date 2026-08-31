@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   proxySellerBuyersRequest,
+  proxySellerBuyerOrderHistoryRequest,
   proxySellerOrderDeliveryRevealRequest,
 } from "./seller-buyers-api-proxy";
 
@@ -62,5 +63,25 @@ describe("seller buyers API proxy", () => {
     expect(JSON.parse(new TextDecoder().decode(options.body as ArrayBuffer))).toEqual({
       reason: "پیگیری ارسال سفارش خریدار",
     });
+  });
+
+  it("forwards only the contextual buyer order history and its cursor", async () => {
+    const orderId = "47a3f408-858c-45d7-a0bd-ab84a28718ef";
+    const upstream = vi
+      .fn()
+      .mockResolvedValue(Response.json({ items: [], nextCursor: null }));
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await proxySellerBuyerOrderHistoryRequest(
+      new Request(
+        `http://sevo.test/api/seller/orders/${orderId}/buyer-orders?limit=20&cursor=next`,
+      ),
+      orderId,
+    );
+
+    expect(upstream.mock.calls[0]?.[0]).toBe(
+      `http://127.0.0.1:3001/v1/seller/orders/${orderId}/buyer-orders?limit=20&cursor=next`,
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 });

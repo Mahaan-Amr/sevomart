@@ -28,3 +28,19 @@ export function proxySellerOrderDeliveryRevealRequest(
     noStore: true,
   });
 }
+
+export function proxySellerBuyerOrderHistoryRequest(
+  request: Request,
+  orderId: string,
+): Promise<Response> {
+  return proxyJsonApiRequest(request, [orderId, "buyer-orders"], {
+    basePath: "/v1/seller/orders",
+    isAllowed: (segments) =>
+      segments.length === 2 &&
+      segments[0] === orderId &&
+      segments[1] === "buyer-orders",
+    responseHeaders: ["content-type", "x-correlation-id"],
+    noStore: true,
+    forwardSearch: true,
+  });
+}

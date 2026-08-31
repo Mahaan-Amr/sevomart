@@ -50,6 +50,7 @@
 }
 
 .summary h2,
+.history h2,
 .revealForm h2,
 .revealed h2 {
   margin: 0;
@@ -99,12 +100,100 @@
 }
 
 .revealForm,
-.revealed {
+.revealed,
+.history {
   display: grid;
   gap: 12px;
   margin-block-start: 24px;
   padding-block-start: 24px;
   border-block-start: 1px solid var(--color-divider);
+}
+
+.history > div > p,
+.history > p {
+  margin: 4px 0 0;
+  color: var(--color-muted);
+  line-height: 1.9;
+}
+
+.history ul {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history li {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.history li:last-child {
+  border-block-end: 0;
+}
+
+.historyHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.historyHeading a {
+  min-width: 0;
+  color: var(--color-primary);
+  overflow-wrap: anywhere;
+}
+
+.historyHeading > span {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-size: 12px;
+}
+
+.history dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.history dl div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.history dt {
+  color: var(--color-muted);
+}
+
+.history dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.history button {
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.history button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .revealForm label {
@@ -153,6 +242,8 @@
 
 .revealForm textarea:focus-visible,
 .revealForm button:focus-visible,
+.history a:focus-visible,
+.history button:focus-visible,
 .back:focus-visible,
 .revealed h2:focus-visible {
   outline: 3px solid var(--color-primary-light);
@@ -179,9 +270,19 @@
   }
 
   .summary dl div,
-  .revealed dl div {
+  .revealed dl div,
+  .history dl div {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .historyHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .historyHeading > span {
+    align-self: start;
   }
 }
 

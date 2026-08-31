@@ -2,14 +2,16 @@
 
 import {
   type RevealedOrderDeliveryDetails,
+  type StoreBuyerOrder,
   type StoreBuyerSummary,
 } from "@sevo/contracts/orders/v1";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { fulfillmentLabel } from "./seller-buyer-presentation";
+import { fulfillmentLabel, paymentLabel } from "./seller-buyer-presentation";
 import {
   readRelatedBuyers,
+  readStoreBuyerOrders,
   revealOrderDeliveryDetails,
   SellerSessionExpired,
 } from "./seller-buyers-client";
@@ -18,6 +20,11 @@ import styles from "./seller-order-buyer.module.css";
 export function SellerOrderBuyer({ orderId }: { orderId: string }) {
   const [buyer, setBuyer] = useState<StoreBuyerSummary>();
   const [ready, setReady] = useState(false);
+  const [history, setHistory] = useState<StoreBuyerOrder[]>([]);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [historyPending, setHistoryPending] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState<RevealedOrderDeliveryDetails>();
   const [pending, setPending] = useState(false);
@@ -50,6 +57,26 @@ export function SellerOrderBuyer({ orderId }: { orderId: string }) {
   }, [orderId]);
 
   useEffect(() => {
+    void readStoreBuyerOrders(orderId)
+      .then((page) => {
+        setHistory(page.items);
+        setHistoryCursor(page.nextCursor);
+      })
+      .catch((caught) => {
+        if (caught instanceof SellerSessionExpired) {
+          window.location.assign("/seller/login");
+          return;
+        }
+        setHistoryError(
+          caught instanceof Error
+            ? caught.message
+            : "تاریخچه سفارش‌های این خریدار دریافت نشد.",
+        );
+      })
+      .finally(() => setHistoryReady(true));
+  }, [orderId]);
+
+  useEffect(() => {
     if (details) revealedHeadingRef.current?.focus();
   }, [details]);
 
@@ -76,6 +103,29 @@ export function SellerOrderBuyer({ orderId }: { orderId: string }) {
       );
     } finally {
       setPending(false);
+    }
+  }
+
+  async function loadMoreHistory() {
+    if (!historyCursor || historyPending) return;
+    setHistoryPending(true);
+    setHistoryError(undefined);
+    try {
+      const page = await readStoreBuyerOrders(orderId, historyCursor);
+      setHistory((current) => [...current, ...page.items]);
+      setHistoryCursor(page.nextCursor);
+    } catch (caught) {
+      if (caught instanceof SellerSessionExpired) {
+        window.location.assign("/seller/login");
+        return;
+      }
+      setHistoryError(
+        caught instanceof Error
+          ? caught.message
+          : "ادامه تاریخچه سفارش‌ها دریافت نشد. دوباره تلاش کنید.",
+      );
+    } finally {
+      setHistoryPending(false);
     }
   }
 
@@ -131,6 +181,16 @@ export function SellerOrderBuyer({ orderId }: { orderId: string }) {
               </p>
             </div>
 
+            <BuyerOrderHistory
+              currentOrderId={orderId}
+              orders={history}
+              ready={historyReady}
+              pending={historyPending}
+              hasMore={Boolean(historyCursor)}
+              error={historyError}
+              onLoadMore={loadMoreHistory}
+            />
+
             {!details ? (
               <form className={styles.revealForm} onSubmit={reveal}>
                 <div>
@@ -168,6 +228,82 @@ export function SellerOrderBuyer({ orderId }: { orderId: string }) {
       </section>
     </main>
   );
+}
+
+function BuyerOrderHistory({
+  currentOrderId,
+  orders,
+  ready,
+  pending,
+  hasMore,
+  error,
+  onLoadMore,
+}: {
+  currentOrderId: string;
+  orders: StoreBuyerOrder[];
+  ready: boolean;
+  pending: boolean;
+  hasMore: boolean;
+  error?: string;
+  onLoadMore: () => Promise<void>;
+}) {
+  return (
+    <section className={styles.history} aria-labelledby="buyer-history-title">
+      <div>
+        <h2 id="buyer-history-title">تاریخچه سفارش‌های همین فروشگاه</h2>
+        <p>فقط سفارش‌های این خریدار در فروشگاه شما نمایش داده می‌شوند.</p>
+      </div>
+      {!ready ? <p role="status">در حال دریافت تاریخچه سفارش‌ها…</p> : null}
+      {error ? (
+        <p role="alert" className={styles.error}>
+          {error}
+        </p>
+      ) : null}
+      {ready && orders.length === 0 && !error ? (
+        <p>سفارش دیگری برای این خریدار پیدا نشد.</p>
+      ) : null}
+      {orders.length > 0 ? (
+        <ul>
+          {orders.map((order) => (
+            <li key={order.orderId}>
+              <div className={styles.historyHeading}>
+                <Link href={`/seller/orders/${order.orderId}/buyer`}>
+                  سفارش <span className={styles.orderId}>{order.orderId}</span>
+                </Link>
+                {order.orderId === currentOrderId ? <span>سفارش فعلی</span> : null}
+              </div>
+              <dl>
+                <div>
+                  <dt>زمان ثبت</dt>
+                  <dd>{formatDate(order.createdAt)}</dd>
+                </div>
+                <div>
+                  <dt>پرداخت</dt>
+                  <dd>{paymentLabel(order.paymentStatus)}</dd>
+                </div>
+                <div>
+                  <dt>انجام سفارش</dt>
+                  <dd>{fulfillmentLabel(order.fulfillmentStatus)}</dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {hasMore ? (
+        <button type="button" disabled={pending} onClick={() => void onLoadMore()}>
+          {pending ? "در حال دریافت…" : "نمایش سفارش‌های بیشتر"}
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function RevealedDetails({
