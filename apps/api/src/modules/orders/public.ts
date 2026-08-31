@@ -14,6 +14,9 @@ import type {
   OrderPaymentReviewReasonCode,
   OrderStatus,
   SellerActionableOrder,
+  ListStoreBuyersQuery,
+  StoreBuyerPage,
+  RevealedOrderDeliveryDetails,
   PrepareCheckoutInput,
   SavedAddress,
   SavedAddressId,
@@ -113,6 +116,33 @@ export interface OrderPaymentWorkflow {
     },
   ): Promise<void>;
   listActionableByStore(storeId: StoreId): Promise<SellerActionableOrder[]>;
+}
+
+export interface RelatedStoreBuyerRead {
+  listStoreBuyers(input: {
+    storeId: StoreId;
+    query: ListStoreBuyersQuery;
+  }): Promise<StoreBuyerPage>;
+  revealOrderDeliveryDetails(input: {
+    actorId: IdentityId;
+    storeId: StoreId;
+    orderId: OrderId;
+    reason?: string;
+    correlationId: string;
+    occurredAt: Date;
+  }): Promise<RevealedOrderDeliveryDetails>;
+}
+
+export type StoreBuyerFaultCode =
+  | "ORDER_NOT_FOUND"
+  | "DELIVERY_DETAILS_NOT_AVAILABLE"
+  | "REVEAL_REASON_REQUIRED"
+  | "INVALID_CURSOR";
+
+export class StoreBuyerFault extends Error {
+  constructor(readonly code: StoreBuyerFaultCode) {
+    super(code);
+  }
 }
 
 export function createOrderPaymentTransactionContext(

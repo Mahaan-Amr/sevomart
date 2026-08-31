@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { createJsonSchemaMap } from "../../json-schema";
+import { fulfillmentStatusContract } from "../../fulfillment/v1/index";
 import { mediaIdContract } from "../../media-v1";
 import {
   identityIdContract,
@@ -66,6 +67,16 @@ export const ordersV1Operations = {
     operationId: "listSellerActionableOrders",
     method: "get",
     path: "/v1/seller/orders",
+  },
+  listStoreBuyers: {
+    operationId: "listStoreBuyers",
+    method: "get",
+    path: "/v1/seller/buyers",
+  },
+  revealSellerOrderDeliveryDetails: {
+    operationId: "revealSellerOrderDeliveryDetails",
+    method: "post",
+    path: "/v1/seller/orders/{orderId}/delivery-details/reveal",
   },
   readCart: { operationId: "readCart", method: "get", path: "/v1/cart" },
   upsertCartItem: {
@@ -561,6 +572,86 @@ export const sellerActionableOrderListContract = z
   .object({ orders: z.array(sellerActionableOrderContract) })
   .strict();
 
+export const storeBuyerSearchContract = z.string().trim().min(1).max(120);
+export const storeBuyerCursorContract = z.string().min(1).max(2048);
+export const storeBuyerLimitContract = z.coerce.number().int().min(1).max(50);
+
+export const listStoreBuyersQueryContract = z
+  .object({
+    search: storeBuyerSearchContract.optional(),
+    cursor: storeBuyerCursorContract.optional(),
+    limit: storeBuyerLimitContract.default(20),
+  })
+  .strict();
+
+export const storeBuyerSummaryContract = z
+  .object({
+    buyerId: identityIdContract,
+    displayName: z.string().min(1).max(120),
+    maskedMobile: z
+      .string()
+      .regex(/^09\d{2}••••\d{3}$/)
+      .optional(),
+    orderCount: z.int().positive(),
+    matchedOrderId: orderIdContract.optional(),
+    latestOrder: z
+      .object({
+        orderId: orderIdContract,
+        paymentStatus: orderStatusContract,
+        fulfillmentStatus: fulfillmentStatusContract.optional(),
+        createdAt: z.iso.datetime({ offset: true }),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const storeBuyerPageContract = z
+  .object({
+    items: z.array(storeBuyerSummaryContract).max(50),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+
+export const revealOrderDeliveryDetailsInputContract = z
+  .object({ reason: z.string().trim().min(10).max(500) })
+  .strict();
+
+export const revealedOrderDeliveryDetailsContract = z
+  .object({
+    orderId: orderIdContract,
+    recipientName: z.string().min(2).max(120),
+    recipientMobile: z.string().regex(/^09\d{9}$/),
+    address: z
+      .object({
+        provinceText: z.string().min(2).max(80),
+        cityText: z.string().min(2).max(80),
+        addressLine: z.string().min(5).max(500),
+        postalCode: z
+          .string()
+          .regex(/^\d{10}$/)
+          .optional(),
+      })
+      .strict(),
+    fulfillmentStatus: fulfillmentStatusContract.optional(),
+    revealedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const storeBuyerErrorContract = z
+  .object({
+    code: z.enum([
+      "FORBIDDEN",
+      "ORDER_NOT_FOUND",
+      "DELIVERY_DETAILS_NOT_AVAILABLE",
+      "REVEAL_REASON_REQUIRED",
+      "INVALID_CURSOR",
+      "VALIDATION_ERROR",
+    ]),
+    message: z.string().min(1),
+    correlationId: z.string().min(1),
+  })
+  .strict();
+
 export const orderBecameActionableV1Contract = eventEnvelopeV1Contract.extend({
   eventType: z.literal("OrderBecameActionable.v1"),
   causationId: z.uuid(),
@@ -683,6 +774,14 @@ export const ordersV1Schemas = {
   Order: orderContract,
   SellerActionableOrder: sellerActionableOrderContract,
   SellerActionableOrderList: sellerActionableOrderListContract,
+  StoreBuyerSearch: storeBuyerSearchContract,
+  StoreBuyerCursor: storeBuyerCursorContract,
+  StoreBuyerLimit: storeBuyerLimitContract,
+  StoreBuyerSummary: storeBuyerSummaryContract,
+  StoreBuyerPage: storeBuyerPageContract,
+  RevealOrderDeliveryDetailsInput: revealOrderDeliveryDetailsInputContract,
+  RevealedOrderDeliveryDetails: revealedOrderDeliveryDetailsContract,
+  StoreBuyerError: storeBuyerErrorContract,
   CartAttachConflict: cartAttachConflictContract,
   SavedAddressId: savedAddressIdContract,
   CreateSavedAddressInput: createSavedAddressInputContract,
@@ -730,6 +829,43 @@ export const ordersV1Examples = {
         itemCount: 1,
       },
     ],
+  },
+  StoreBuyerSearch: "سارا",
+  StoreBuyerCursor: "opaque.cursor",
+  StoreBuyerLimit: 20,
+  StoreBuyerPage: {
+    items: [
+      {
+        buyerId: "10000000-0000-4000-8000-000000000001",
+        displayName: "سارا ا.",
+        maskedMobile: "0912••••789",
+        orderCount: 2,
+        matchedOrderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+        latestOrder: {
+          orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+          paymentStatus: "PAID",
+          fulfillmentStatus: "SHIPPED",
+          createdAt: "2026-08-25T08:00:00.000Z",
+        },
+      },
+    ],
+    nextCursor: null,
+  },
+  RevealOrderDeliveryDetailsInput: {
+    reason: "پیگیری مشکل اعلام‌شده در تحویل",
+  },
+  RevealedOrderDeliveryDetails: {
+    orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+    recipientName: "سارا احمدی",
+    recipientMobile: "09123456789",
+    address: {
+      provinceText: "تهران",
+      cityText: "تهران",
+      addressLine: "خیابان آزادی، کوچه بهار، پلاک ۱۲",
+      postalCode: "1234567890",
+    },
+    fulfillmentStatus: "SHIPPED",
+    revealedAt: "2026-08-31T08:00:00.000Z",
   },
   CartId: "15e66295-eecd-4a7d-b06c-1d0909ab89c7",
   CartVariantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
@@ -1004,6 +1140,15 @@ export type OrderPaymentReviewReasonCode = z.infer<
   typeof orderPaymentReviewReasonCodeContract
 >;
 export type SellerActionableOrder = z.infer<typeof sellerActionableOrderContract>;
+export type ListStoreBuyersQuery = z.infer<typeof listStoreBuyersQueryContract>;
+export type StoreBuyerSummary = z.infer<typeof storeBuyerSummaryContract>;
+export type StoreBuyerPage = z.infer<typeof storeBuyerPageContract>;
+export type RevealOrderDeliveryDetailsInput = z.infer<
+  typeof revealOrderDeliveryDetailsInputContract
+>;
+export type RevealedOrderDeliveryDetails = z.infer<
+  typeof revealedOrderDeliveryDetailsContract
+>;
 export type CartReviewChange = z.infer<typeof cartReviewChangeContract>;
 export type CartItemRemovalInput = z.infer<typeof cartItemRemovalInputContract>;
 export type CartReviewInput = z.infer<typeof cartReviewInputContract>;
