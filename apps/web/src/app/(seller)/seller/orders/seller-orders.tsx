@@ -24,7 +24,7 @@ export function SellerOrders({
   useEffect(() => {
     if (overdueOnly && overdueAfterHours === undefined) {
       setFailed(true);
-      setOrders([]);
+      setOrders(undefined);
       return;
     }
     void fetch("/api/seller/orders", { cache: "no-store" })
@@ -76,13 +76,17 @@ export function SellerOrders({
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="orders-title">
         <h1 id="orders-title">
-          {overdueOnly ? "سفارش‌های در حال آماده‌سازی" : "سفارش‌های آماده اقدام"}
+          {overdueOnly && overdueAfterHours !== undefined
+            ? `آماده‌سازی‌های بیشتر از ${overdueAfterHours.toLocaleString("fa-IR")} ساعت`
+            : overdueOnly
+              ? "آماده‌سازی‌های معوق"
+              : "سفارش‌های آماده اقدام"}
         </h1>
         {failed ? <p role="alert">سفارش‌ها دریافت نشدند. دوباره تلاش کنید.</p> : null}
         {orders?.length === 0 ? (
           <p>
-            {overdueOnly
-              ? "فعلاً سفارشی در حال آماده‌سازی نیست."
+            {overdueOnly && overdueAfterHours !== undefined
+              ? `فعلاً سفارشی با آماده‌سازی بیشتر از ${overdueAfterHours.toLocaleString("fa-IR")} ساعت نیست.`
               : "فعلاً سفارش پرداخت‌شده‌ای ندارید."}
           </p>
         ) : null}

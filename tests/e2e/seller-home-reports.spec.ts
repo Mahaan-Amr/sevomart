@@ -156,7 +156,7 @@ test("seller acts from the operational home and reads a private basic report", a
     await page.getByRole("link", { name: "بررسی آماده‌سازی‌ها" }).click();
     await expect(page).toHaveURL(/\/seller\/orders\?status=preparing$/);
     await expect(
-      page.getByRole("heading", { name: "سفارش‌های در حال آماده‌سازی" }),
+      page.getByRole("heading", { name: "آماده‌سازی‌های بیشتر از ۲۴ ساعت" }),
     ).toBeVisible();
     await expect(page.getByText(`سفارش ${preparingOrderId}`)).toBeVisible();
     await expect(page.getByText(`سفارش ${freshOrderId}`)).toHaveCount(0);
