@@ -86,7 +86,7 @@ describe("ReportingAnalyticsService", () => {
         {
           kind: "AWAITING_DISPUTE_RESPONSES",
           count: 2,
-          href: "/seller/disputes?status=awaiting-response",
+          href: "/seller/conversations",
         },
       ],
       preparationOverdueAfterHours: 24,

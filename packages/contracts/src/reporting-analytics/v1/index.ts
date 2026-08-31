@@ -56,7 +56,7 @@ export const sellerOperationalTaskContract = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("AWAITING_DISPUTE_RESPONSES"),
       count: z.int().nonnegative(),
-      href: z.literal("/seller/disputes?status=awaiting-response"),
+      href: z.literal("/seller/conversations"),
     })
     .strict(),
 ]);
@@ -124,7 +124,7 @@ export const reportingAnalyticsV1Examples = {
       {
         kind: "AWAITING_DISPUTE_RESPONSES",
         count: 1,
-        href: "/seller/disputes?status=awaiting-response",
+        href: "/seller/conversations",
       },
     ],
     preparationOverdueAfterHours: 24,

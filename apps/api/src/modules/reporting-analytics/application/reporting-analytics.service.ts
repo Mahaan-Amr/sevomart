@@ -56,7 +56,7 @@ export class ReportingAnalyticsService {
         {
           kind: "AWAITING_DISPUTE_RESPONSES",
           count: await this.repository.countAwaitingDisputeResponses(storeId),
-          href: "/seller/disputes?status=awaiting-response",
+          href: "/seller/conversations",
         },
       ],
       preparationOverdueAfterHours: PREPARATION_OVERDUE_AFTER_HOURS,
