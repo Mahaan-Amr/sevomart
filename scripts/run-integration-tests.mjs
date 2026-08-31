@@ -58,11 +58,25 @@ try {
     if (migrationStatus !== 0) {
       testStatus = migrationStatus;
     } else {
-      testStatus = run(
+      const sharedTestStatus = run(
         "pnpm",
         ["exec", "vitest", "run", "--config", "vitest.integration.config.ts"],
         integrationEnvironment,
       );
+      testStatus =
+        sharedTestStatus === 0
+          ? run(
+              "pnpm",
+              [
+                "exec",
+                "vitest",
+                "run",
+                "--config",
+                "vitest.demo-seed.integration.config.ts",
+              ],
+              integrationEnvironment,
+            )
+          : sharedTestStatus;
     }
   }
 } finally {

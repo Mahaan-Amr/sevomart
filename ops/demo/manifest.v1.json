@@ -1,6 +1,441 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "namespace": "sevo.demo",
-  "resources": []
+  "signIn": [
+    {
+      "identity": "identity.buyer",
+      "mobile": "09000000001",
+      "name": "نیلوفر مرادی",
+      "startPath": "/discover"
+    },
+    {
+      "identity": "identity.seller",
+      "mobile": "09000000002",
+      "name": "سارا نیک‌پی",
+      "startPath": "/seller"
+    },
+    {
+      "identity": "identity.applicant",
+      "mobile": "09000000003",
+      "name": "مهسا کریمی",
+      "startPath": "/seller/application"
+    },
+    {
+      "identity": "identity.reviewer",
+      "mobile": "09000000004",
+      "name": "آرمان رضایی",
+      "startPath": "/platform/seller-applications"
+    },
+    {
+      "identity": "identity.access-manager",
+      "mobile": "09000000005",
+      "name": "لیلا نادری",
+      "startPath": "/platform/access"
+    }
+  ],
+  "resources": [
+    {
+      "kind": "loginIdentity",
+      "key": "identity.buyer",
+      "name": "نیلوفر مرادی",
+      "mobile": "09000000001"
+    },
+    {
+      "kind": "loginIdentity",
+      "key": "identity.seller",
+      "name": "سارا نیک‌پی",
+      "mobile": "09000000002",
+      "seller": true
+    },
+    {
+      "kind": "loginIdentity",
+      "key": "identity.applicant",
+      "name": "مهسا کریمی",
+      "mobile": "09000000003"
+    },
+    {
+      "kind": "loginIdentity",
+      "key": "identity.reviewer",
+      "name": "آرمان رضایی",
+      "mobile": "09000000004"
+    },
+    {
+      "kind": "loginIdentity",
+      "key": "identity.access-manager",
+      "name": "لیلا نادری",
+      "mobile": "09000000005"
+    },
+    {
+      "kind": "sellerApplication",
+      "key": "seller-application.pending",
+      "identity": "identity.applicant",
+      "applicantName": "مهسا کریمی",
+      "storeName": "نقش مهسا",
+      "goodsArea": "اکسسوری دست‌ساز",
+      "salesMethod": "فروش مستقیم در شبکه‌های اجتماعی"
+    },
+    {
+      "kind": "platformGrant",
+      "key": "platform-grant.reviewer",
+      "identity": "identity.reviewer",
+      "permissions": [
+        "SELLER_APPLICATION_REVIEW",
+        "PAYMENT_REVIEW",
+        "PAYMENT_OUTCOME_CHANGE",
+        "DISPUTE_REVIEW",
+        "VIOLATION_REVIEW"
+      ]
+    },
+    {
+      "kind": "platformGrant",
+      "key": "platform-grant.access-manager",
+      "identity": "identity.access-manager",
+      "permissions": ["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]
+    },
+    {
+      "kind": "store",
+      "key": "store.aban",
+      "owner": "identity.seller",
+      "name": "آبان‌پوش",
+      "slug": "aban-poosh",
+      "status": "PUBLISHED",
+      "bio": "پوشاک ساده برای روزهای معمولی",
+      "themeColor": "#A41439"
+    },
+    {
+      "kind": "store",
+      "key": "store.narvan",
+      "owner": { "key": "identity.narvan-owner", "name": "الهام توکلی" },
+      "name": "خانه نارون",
+      "slug": "khane-narvan",
+      "status": "PUBLISHED",
+      "bio": "چیزهای کوچک و گرم برای خانه",
+      "themeColor": "#A41439"
+    },
+    {
+      "kind": "store",
+      "key": "store.paper",
+      "owner": { "key": "identity.paper-owner", "name": "پریسا راد" },
+      "name": "کاغذ و رنگ",
+      "slug": "kaghaz-o-rang",
+      "status": "PUBLISHED",
+      "bio": "نوشت‌افزار برای کار و خیال",
+      "themeColor": "#A41439"
+    },
+    {
+      "kind": "store",
+      "key": "store.roshan",
+      "owner": { "key": "identity.roshan-owner", "name": "سحر روشن" },
+      "name": "کارگاه روشن",
+      "slug": "kargah-roshan",
+      "status": "UNPUBLISHED",
+      "bio": "دوخت کاربردی و بادوام",
+      "themeColor": "#A41439"
+    },
+    {
+      "kind": "product",
+      "key": "product.tshirt",
+      "store": "store.aban",
+      "name": "تی‌شرت نخی",
+      "state": "PUBLISHED",
+      "price": 1890000,
+      "variants": [
+        { "key": "white-small", "label": "سفید / کوچک", "onHand": 8 },
+        { "key": "white-medium", "label": "سفید / متوسط", "onHand": 5 },
+        { "key": "black-medium", "label": "مشکی / متوسط", "onHand": 0 }
+      ]
+    },
+    {
+      "kind": "product",
+      "key": "product.tote",
+      "store": "store.aban",
+      "name": "کیف پارچه‌ای",
+      "state": "PUBLISHED",
+      "price": 1240000,
+      "onHand": 12
+    },
+    {
+      "kind": "product",
+      "key": "product.scarf",
+      "store": "store.aban",
+      "name": "شال نخی",
+      "state": "PUBLISHED",
+      "price": 2150000,
+      "onHand": 0
+    },
+    {
+      "kind": "product",
+      "key": "product.socks",
+      "store": "store.aban",
+      "name": "جوراب روزمره",
+      "state": "DRAFT",
+      "price": 490000,
+      "onHand": 20
+    },
+    {
+      "kind": "product",
+      "key": "product.raincoat",
+      "store": "store.aban",
+      "name": "بارانی سبک",
+      "state": "UNPUBLISHED",
+      "price": 4980000,
+      "onHand": 2
+    },
+    {
+      "kind": "product",
+      "key": "product.mug",
+      "store": "store.narvan",
+      "name": "ماگ سرامیکی",
+      "state": "PUBLISHED",
+      "price": 1390000,
+      "onHand": 7
+    },
+    {
+      "kind": "product",
+      "key": "product.candle",
+      "store": "store.narvan",
+      "name": "شمع دست‌ساز",
+      "state": "PUBLISHED",
+      "price": 980000,
+      "onHand": 10
+    },
+    {
+      "kind": "product",
+      "key": "product.tray",
+      "store": "store.narvan",
+      "name": "سینی چوبی",
+      "state": "PUBLISHED",
+      "price": 2790000,
+      "onHand": 3
+    },
+    {
+      "kind": "product",
+      "key": "product.notebook",
+      "store": "store.paper",
+      "name": "دفتر نقطه‌ای",
+      "state": "PUBLISHED",
+      "price": 760000,
+      "onHand": 16
+    },
+    {
+      "kind": "product",
+      "key": "product.pencil-case",
+      "store": "store.paper",
+      "name": "جامدادی پارچه‌ای",
+      "state": "PUBLISHED",
+      "price": 920000,
+      "onHand": 9
+    },
+    {
+      "kind": "product",
+      "key": "product.poster",
+      "store": "store.paper",
+      "name": "پوستر باغ ایرانی",
+      "state": "PUBLISHED",
+      "price": 640000,
+      "onHand": 14
+    },
+    {
+      "kind": "follow",
+      "key": "follow.buyer-aban",
+      "identity": "identity.buyer",
+      "store": "store.aban"
+    },
+    {
+      "kind": "follow",
+      "key": "follow.buyer-paper",
+      "identity": "identity.buyer",
+      "store": "store.paper"
+    },
+    {
+      "kind": "cart",
+      "key": "cart.buyer-active",
+      "identity": "identity.buyer",
+      "store": "store.aban",
+      "product": "product.tote",
+      "quantity": 1
+    },
+    {
+      "kind": "address",
+      "key": "address.buyer-home",
+      "identity": "identity.buyer",
+      "recipient": "نیلوفر مرادی",
+      "mobile": "09000000001",
+      "province": "تهران",
+      "city": "تهران",
+      "line": "خیابان نمونه، کوچه آزمایش، پلاک ۱۲",
+      "postalCode": "1234567890"
+    },
+    {
+      "kind": "salesContent",
+      "key": "content.aban-look",
+      "store": "store.aban",
+      "product": "product.tshirt",
+      "mediaKind": "IMAGE",
+      "ageDays": 1
+    },
+    {
+      "kind": "salesContent",
+      "key": "content.aban-tote",
+      "store": "store.aban",
+      "product": "product.tote",
+      "mediaKind": "VIDEO",
+      "ageDays": 4
+    },
+    {
+      "kind": "salesContent",
+      "key": "content.narvan-mug",
+      "store": "store.narvan",
+      "product": "product.mug",
+      "mediaKind": "IMAGE",
+      "ageDays": 2
+    },
+    {
+      "kind": "salesContent",
+      "key": "content.narvan-candle",
+      "store": "store.narvan",
+      "product": "product.candle",
+      "mediaKind": "IMAGE",
+      "ageDays": 7
+    },
+    {
+      "kind": "salesContent",
+      "key": "content.paper-notebook",
+      "store": "store.paper",
+      "product": "product.notebook",
+      "mediaKind": "IMAGE",
+      "ageDays": 3
+    },
+    {
+      "kind": "salesContent",
+      "key": "content.paper-poster",
+      "store": "store.paper",
+      "product": "product.poster",
+      "mediaKind": "IMAGE",
+      "ageDays": 9
+    },
+    {
+      "kind": "conversation",
+      "key": "conversation.store",
+      "buyer": "identity.buyer",
+      "store": "store.aban",
+      "contextKind": "STORE",
+      "context": "store.aban",
+      "message": "سلام، زمان آماده‌سازی معمولاً چقدر است؟"
+    },
+    {
+      "kind": "conversation",
+      "key": "conversation.product",
+      "buyer": "identity.buyer",
+      "store": "store.aban",
+      "contextKind": "PRODUCT",
+      "context": "product.tshirt",
+      "message": "سلام، جنس این تی‌شرت برای تابستان مناسب است؟"
+    },
+    {
+      "kind": "conversation",
+      "key": "conversation.order",
+      "buyer": "identity.buyer",
+      "store": "store.aban",
+      "contextKind": "ORDER",
+      "context": "order.shipped",
+      "message": "سلام، ممنون می‌شوم وضعیت ارسال را بگویید."
+    },
+    {
+      "kind": "order",
+      "key": "order.pending-payment",
+      "state": "PENDING_PAYMENT",
+      "ageDays": 0,
+      "product": "product.tote"
+    },
+    {
+      "kind": "order",
+      "key": "order.payment-review",
+      "state": "PAYMENT_REVIEW",
+      "payment": "REVIEW_REQUIRED",
+      "ageDays": 0,
+      "product": "product.tshirt"
+    },
+    {
+      "kind": "order",
+      "key": "order.action-required",
+      "state": "PAID",
+      "fulfillment": "ACTION_REQUIRED",
+      "ageDays": 0,
+      "product": "product.tshirt"
+    },
+    {
+      "kind": "order",
+      "key": "order.preparing",
+      "state": "PAID",
+      "fulfillment": "PREPARING",
+      "ageDays": 1,
+      "product": "product.tote"
+    },
+    {
+      "kind": "order",
+      "key": "order.shipped",
+      "state": "PAID",
+      "fulfillment": "SHIPPED",
+      "ageDays": 3,
+      "product": "product.tshirt"
+    },
+    {
+      "kind": "order",
+      "key": "order.delivered",
+      "state": "PAID",
+      "fulfillment": "DELIVERED",
+      "ageDays": 14,
+      "product": "product.tote"
+    },
+    {
+      "kind": "order",
+      "key": "order.expired",
+      "state": "EXPIRED",
+      "ageDays": 2,
+      "product": "product.scarf"
+    },
+    {
+      "kind": "order",
+      "key": "order.refund-pending",
+      "state": "CANCELLATION_PENDING_REFUND",
+      "fulfillment": "CANCELLATION_PENDING_REFUND",
+      "refund": "PENDING",
+      "ageDays": 4,
+      "product": "product.tshirt"
+    },
+    {
+      "kind": "order",
+      "key": "order.refunded",
+      "state": "CANCELLED",
+      "fulfillment": "CANCELLED",
+      "refund": "CONFIRMED",
+      "ageDays": 10,
+      "product": "product.tote"
+    },
+    {
+      "kind": "order",
+      "key": "order.disputed",
+      "state": "PAID",
+      "fulfillment": "DELIVERED",
+      "ageDays": 22,
+      "product": "product.raincoat"
+    },
+    {
+      "kind": "purchaseExperience",
+      "key": "experience.delivered",
+      "order": "order.delivered",
+      "product": "product.tote",
+      "rating": 5,
+      "text": "دوخت تمیز بود و بسته‌بندی با دقت انجام شده بود."
+    },
+    {
+      "kind": "dispute",
+      "key": "dispute.open",
+      "order": "order.disputed",
+      "category": "NOT_AS_DESCRIBED",
+      "status": "UNDER_REVIEW"
+    }
+  ]
 }

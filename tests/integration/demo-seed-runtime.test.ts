@@ -39,9 +39,11 @@ describe("demo seed PostgreSQL runtime", () => {
     `;
     fingerprint = targets[0]?.fingerprint ?? "";
     await sql`delete from platform_seed_manifest_receipts where namespace = 'sevo.demo'`;
+    await sql`delete from platform_seed_resources where namespace = 'sevo.demo'`;
   });
 
   afterAll(async () => {
+    await sql`delete from platform_seed_resources where namespace = 'sevo.demo'`;
     await sql`delete from platform_seed_manifest_receipts where namespace = 'sevo.demo'`;
     await sql.end();
   });
@@ -53,7 +55,35 @@ describe("demo seed PostgreSQL runtime", () => {
       expect(await receiptCount()).toBe(0);
 
       const report = await executeDemoSeed(request(), database);
-      expect(report.manifestVersion).toBe(1);
+      expect(report.manifestVersion).toBe(2);
+      expect(report.entities).toMatchObject({
+        loginIdentities: 5,
+        stores: 4,
+        products: 11,
+        salesContents: 6,
+        conversations: 3,
+        orders: 10,
+      });
+      expect(await receiptCount()).toBe(1);
+      expect(await seededEntityCounts()).toEqual({
+        loginIdentities: 5,
+        stores: 4,
+        products: 11,
+        salesContents: 6,
+        conversations: 3,
+        orders: 10,
+      });
+
+      const repeated = await executeDemoSeed(request(), database);
+      expect(repeated.counts).toEqual({
+        created: 0,
+        updated: 0,
+        retired: 0,
+        unchanged: 48,
+      });
+
+      const dryRun = await executeDemoSeed(request("--dry-run"), database);
+      expect(dryRun.counts).toEqual(repeated.counts);
       expect(await receiptCount()).toBe(1);
     } finally {
       await database.close();
@@ -83,4 +113,36 @@ async function receiptCount() {
     where namespace = 'sevo.demo'
   `;
   return rows[0]?.count ?? 0;
+}
+
+async function seededEntityCounts() {
+  const rows = await sql<
+    Array<{
+      loginIdentities: number;
+      stores: number;
+      products: number;
+      salesContents: number;
+      conversations: number;
+      orders: number;
+    }>
+  >`
+    select
+      (select count(*)::int from identity_login_methods
+        where mobile between '09000000001' and '09000000005') as "loginIdentities",
+      (select count(*)::int from store_stores
+        where slug in ('aban-poosh', 'khane-narvan', 'kaghaz-o-rang', 'kargah-roshan')) as stores,
+      (select count(*)::int from product_products product
+        join store_stores store on store.id = product.store_id
+        where store.slug in ('aban-poosh', 'khane-narvan', 'kaghaz-o-rang', 'kargah-roshan')) as products,
+      (select count(*)::int from content_sales_contents content
+        join store_stores store on store.id = content.store_id
+        where store.slug in ('aban-poosh', 'khane-narvan', 'kaghaz-o-rang', 'kargah-roshan')) as "salesContents",
+      (select count(*)::int from conversation_threads conversation
+        join identity_login_methods login on login.identity_id = conversation.buyer_identity_id
+        where login.mobile = '09000000001') as conversations,
+      (select count(*)::int from order_orders orders
+        join identity_login_methods login on login.identity_id = orders.identity_id
+        where login.mobile = '09000000001') as orders
+  `;
+  return rows[0];
 }

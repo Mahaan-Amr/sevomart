@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const iranianTestMobileList = z
   .string()
-  .default("09123456789")
+  .default("09000000001,09000000002,09000000003,09000000004,09000000005")
   .transform((value) => value.split(",").map((mobile) => mobile.trim()))
   .pipe(
     z

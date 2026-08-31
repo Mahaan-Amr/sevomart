@@ -10,6 +10,7 @@ import { InvalidProviderCallbackError } from "../public";
 
 export class DevDirectPaymentProvider implements DirectPaymentProvider {
   readonly providerKey = "DEV";
+  readonly #scenarios = new Map<string, "CONFIRMED" | "FAILED" | "PENDING">();
 
   constructor(private readonly signingSecret: string) {}
 
@@ -36,6 +37,7 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
     providerEventId: string;
     result: "CONFIRMED" | "FAILED" | "PENDING";
   }) {
+    this.#scenarios.set(input.attemptId, input.result);
     const unsigned = input;
     return {
       ...unsigned,
@@ -68,8 +70,9 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
   }
 
   async query(command: Parameters<DirectPaymentProvider["query"]>[0]) {
-    const lastHex = command.attemptId.replaceAll("-", "").at(-1) ?? "0";
-    const result = Number.parseInt(lastHex, 16) % 2 === 0 ? "CONFIRMED" : "FAILED";
+    const result =
+      this.#scenarios.get(command.attemptId) ??
+      resultFromScenarioReference(command.attemptId, command.providerReference);
     return {
       attemptId: command.attemptId,
       orderId: command.orderId,
@@ -143,6 +146,32 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
       )
       .digest("hex");
   }
+}
+
+const scenarioNames = {
+  CONFIRMED: "success",
+  FAILED: "failure",
+  PENDING: "pending",
+} as const;
+
+function scenarioReference(
+  attemptId: string,
+  result: "CONFIRMED" | "FAILED" | "PENDING",
+) {
+  return `dev-scenario-${scenarioNames[result]}-${attemptId}`;
+}
+
+function resultFromScenarioReference(attemptId: string, providerReference: string) {
+  const scenarios = ["CONFIRMED", "FAILED", "PENDING"] as const;
+  const result = scenarios.find(
+    (candidate) => scenarioReference(attemptId, candidate) === providerReference,
+  );
+  if (!result) {
+    throw new Error(
+      "Dev payment reconciliation requires an explicit demo payment scenario",
+    );
+  }
+  return result;
 }
 
 function safeEqual(left: string, right: string) {

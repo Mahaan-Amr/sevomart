@@ -60,7 +60,7 @@ describe("DevDirectPaymentProvider", () => {
         amount: { amount: verified.amount, currency: "IRR" },
         providerReference: verified.providerReference,
       }),
-    ).resolves.toMatchObject({ result: "CONFIRMED" });
+    ).resolves.toMatchObject({ result: "PENDING" });
 
     await expect(
       provider.verifyAndMapCallback(
@@ -73,5 +73,17 @@ describe("DevDirectPaymentProvider", () => {
         }),
       ),
     ).resolves.toMatchObject({ result: "FAILED" });
+  });
+
+  it("rejects reconciliation without an explicit named demo scenario", async () => {
+    const provider = new DevDirectPaymentProvider("test-signing-secret");
+    await expect(
+      provider.query({
+        attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+        orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+        amount: { amount: 4_500_000, currency: "IRR" },
+        providerReference: "dev-91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      }),
+    ).rejects.toThrow("explicit demo payment scenario");
   });
 });
