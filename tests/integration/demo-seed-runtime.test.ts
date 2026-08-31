@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import postgres from "postgres";
+import { publicProductContract } from "@sevo/contracts/product/v1";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDemoSeedRequest, executeDemoSeed } from "../../scripts/demo/runtime.mjs";
@@ -86,6 +87,21 @@ describe("demo seed PostgreSQL runtime", () => {
         conversations: 3,
         orders: 10,
       });
+      const publicationSnapshots = await sql<Array<{ snapshot: unknown }>>`
+        select snapshot from product_publications
+        where snapshot is not null and product_id in (
+          select id from product_products where id in ${sql(
+            baselineManifest.resources
+              .filter(({ kind }) => kind === "product")
+              .map(({ key }) => stableDemoId(key)),
+          )}
+        )
+      `;
+      expect(() => {
+        for (const { snapshot } of publicationSnapshots) {
+          publicProductContract.parse(snapshot);
+        }
+      }).not.toThrow();
       expect(await seedEvidence()).toMatchObject({
         humanIdentityStatus: "ACTIVE",
         missingMediaReferences: 0,

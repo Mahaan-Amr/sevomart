@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 export async function convergeProductDemoState({ sql, baseline }) {
   const { id } = baseline.ids;
   const states = new Map();
@@ -14,24 +16,34 @@ export async function convergeProductDemoState({ sql, baseline }) {
     `;
     const variants = baseline.variantsFor(product);
     const description = `نمونه نمایشی ${product.name}`;
+    const hasNamedVariants = Array.isArray(product.variants);
+    const axis = hasNamedVariants
+      ? {
+          clientKey: "option",
+          name: "گزینه",
+          values: variants.map((variant) => ({
+            clientKey: variant.key,
+            name: variant.label,
+          })),
+        }
+      : undefined;
     const definition = {
       name: product.name,
       description,
-      axes: product.variants ? ["رنگ و اندازه"] : [],
+      orderedMediaIds: [id(`${product.key}.media`)],
+      axes: axis ? [axis] : [],
       variants: variants.map((variant) => ({
         clientKey: variant.key,
-        label: variant.label,
+        variantId: id(`${product.key}.variant.${variant.key}`),
+        combination: axis
+          ? [{ axisClientKey: axis.clientKey, valueClientKey: variant.key }]
+          : [],
       })),
     };
-    const currentVariants = current?.definition?.variants ?? [];
-    const variantStructureChanged =
-      currentVariants.length !== definition.variants.length ||
-      currentVariants.some(
-        (variant, index) =>
-          variant.clientKey !== definition.variants[index]?.clientKey ||
-          variant.label !== definition.variants[index]?.label,
-      ) ||
-      (current?.definition?.axes ?? []).join("\0") !== definition.axes.join("\0");
+    const variantStructureChanged = !isDeepStrictEqual(
+      current?.definition ?? null,
+      definition,
+    );
     const publicationChanged =
       !current ||
       current.state !== product.state ||
@@ -91,13 +103,45 @@ export async function convergeProductDemoState({ sql, baseline }) {
         definition = excluded.definition
     `;
     if (publishedBefore && publicationChanged) {
+      const publicVariants = variants.map((variant) => ({
+        variantId: id(`${product.key}.variant.${variant.key}`),
+        combination: axis ? [{ axis: axis.name, value: variant.label }] : [],
+        price: { amount: product.price, currency: "IRR" },
+        availability: variant.onHand > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
+      }));
+      const publicSnapshot = {
+        productId: id(product.key),
+        name: product.name,
+        description,
+        images: [
+          {
+            id: id(`${product.key}.media`),
+            url: `/v1/media/${id(`${product.key}.media`)}`,
+          },
+        ],
+        axes: axis
+          ? [{ name: axis.name, values: variants.map((variant) => variant.label) }]
+          : [],
+        variants: publicVariants,
+        priceRange: {
+          minimum: { amount: product.price, currency: "IRR" },
+          maximum: { amount: product.price, currency: "IRR" },
+        },
+        availability: publicVariants.some(
+          (variant) => variant.availability === "AVAILABLE",
+        )
+          ? "AVAILABLE"
+          : "OUT_OF_STOCK",
+        publicationVersion,
+      };
       await sql`
         insert into product_publications
           (product_id, publication_version, name, description, media_id, variant_id,
            snapshot, created_at)
         values (${id(product.key)}, ${publicationVersion}, ${product.name},
           ${description}, ${id(`${product.key}.media`)},
-          ${id(`${product.key}.variant.${variants[0].key}`)}, ${sql.json(definition)},
+          ${id(`${product.key}.variant.${variants[0].key}`)},
+          ${sql.json(publicSnapshot)},
           ${baseline.atDaysAgo(20)})
         on conflict (product_id, publication_version) do nothing
       `;
