@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import styles from "./seller-orders.module.css";
 
-export function SellerOrders({ status }: { status?: "PREPARING" }) {
+export function SellerOrders({ filter }: { filter?: "OVERDUE_PREPARING" }) {
   const [orders, setOrders] = useState<SellerActionableOrder[]>();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -28,7 +28,7 @@ export function SellerOrders({ status }: { status?: "PREPARING" }) {
         const actionable = await Promise.all(
           parsed.data.orders.map(async (order) => {
             if (order.status === "CANCELLATION_PENDING_REFUND") {
-              return status ? undefined : order;
+              return filter ? undefined : order;
             }
             const fulfillmentResponse = await fetch(
               `/api/seller/orders/${encodeURIComponent(order.orderId)}/fulfillment`,
@@ -37,7 +37,7 @@ export function SellerOrders({ status }: { status?: "PREPARING" }) {
             // IDs come from the store-scoped actionable list. Here, 404 means the
             // fulfillment projection has not caught up with a newly paid order yet.
             if (fulfillmentResponse.status === 404) {
-              return status ? undefined : order;
+              return filter ? undefined : order;
             }
             const fulfillment = fulfillmentTimelineContract.safeParse(
               await fulfillmentResponse.json(),
@@ -46,25 +46,33 @@ export function SellerOrders({ status }: { status?: "PREPARING" }) {
               throw new Error("fulfillment unavailable");
             }
             if (!fulfillment.data.nextStatus) return undefined;
-            return status && fulfillment.data.status !== status ? undefined : order;
+            if (!filter) return order;
+            const preparingAt = fulfillment.data.timeline.findLast(
+              ({ status }) => status === "PREPARING",
+            )?.occurredAt;
+            return fulfillment.data.status === "PREPARING" &&
+              preparingAt &&
+              Date.parse(preparingAt) <= Date.now() - 24 * 60 * 60 * 1_000
+              ? order
+              : undefined;
           }),
         );
         setOrders(actionable.filter((order) => order !== undefined));
       })
       .catch(() => setFailed(true));
-  }, [status]);
+  }, [filter]);
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="orders-title">
         <h1 id="orders-title">
-          {status === "PREPARING"
+          {filter === "OVERDUE_PREPARING"
             ? "سفارش‌های در حال آماده‌سازی"
             : "سفارش‌های آماده اقدام"}
         </h1>
         {failed ? <p role="alert">سفارش‌ها دریافت نشدند. دوباره تلاش کنید.</p> : null}
         {orders?.length === 0 ? (
           <p>
-            {status === "PREPARING"
+            {filter === "OVERDUE_PREPARING"
               ? "فعلاً سفارشی در حال آماده‌سازی نیست."
               : "فعلاً سفارش پرداخت‌شده‌ای ندارید."}
           </p>

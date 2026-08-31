@@ -3,10 +3,8 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { readNearestSellerConversation } from "../../../../lib/seller-conversation-api";
-import {
-  readSellerOperationalSummary,
-  readSellerOutOfStockCount,
-} from "../../../../lib/seller-reporting-api";
+import { readSellerOutOfStockCount } from "../../../../lib/seller-inventory-summary-api";
+import { readSellerOperationalSummary } from "../../../../lib/seller-reporting-api";
 import styles from "./workspace-page.module.css";
 
 export default async function SellerHomePage() {
@@ -105,7 +103,8 @@ function OperationalTask({ task }: { task: SellerOperationalTask }) {
     },
     OVERDUE_PREPARATIONS: {
       title: `${task.count.toLocaleString("fa-IR")} سفارش بیش از ۲۴ ساعت در حال آماده‌سازی است`,
-      description: "وضعیت آماده‌سازی را بررسی و قدم بعدی سفارش را ثبت کنید.",
+      description:
+        "وضعیت آماده‌سازی این سفارش‌ها را بررسی کنید؛ اگر بسته آماده است، قدم بعدی و اطلاعات ارسال را ثبت کنید تا خریدار بداند سفارش در چه مرحله‌ای است.",
       action: "بررسی آماده‌سازی‌ها",
       href: "/seller/orders?status=preparing",
     },

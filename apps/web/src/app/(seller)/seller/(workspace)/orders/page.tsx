@@ -4,5 +4,7 @@ type Props = { searchParams: Promise<{ status?: string | string[] }> };
 
 export default async function SellerOrdersPage({ searchParams }: Props) {
   const { status } = await searchParams;
-  return <SellerOrders status={status === "preparing" ? "PREPARING" : undefined} />;
+  return (
+    <SellerOrders filter={status === "preparing" ? "OVERDUE_PREPARING" : undefined} />
+  );
 }

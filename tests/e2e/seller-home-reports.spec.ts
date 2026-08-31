@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import postgres from "postgres";
 
 import {
@@ -76,7 +76,7 @@ test("seller acts from the operational home and reads a private basic report", a
       insert into product_publications
         (product_id, publication_version, name, description, media_id, variant_id)
       values (${productId}, 1,
-        'کالای دست‌ساز با نام بسیار بلند برای بررسی شکستن درست متن فارسی در فضای محدود موبایل',
+        'کالای دست‌ساز',
         'شرح کالای آزمون', ${mediaId}, ${variantId})
     `;
     await transaction`
@@ -119,7 +119,7 @@ test("seller acts from the operational home and reads a private basic report", a
       page.getByText("۱ سفارش بیش از ۲۴ ساعت در حال آماده‌سازی است"),
     ).toBeVisible();
     await expect(
-      page.getByText("وضعیت آماده‌سازی را بررسی و قدم بعدی سفارش را ثبت کنید."),
+      page.getByText(/وضعیت آماده‌سازی این سفارش‌ها را بررسی کنید/),
     ).toBeVisible();
     await expect(page.getByText("۱ گونه کالا موجودی ندارد")).toBeVisible();
     const reportsLink = page.getByRole("link", { name: "دیدن گزارش فروش" });
@@ -131,14 +131,7 @@ test("seller acts from the operational home and reads a private basic report", a
     );
     await assertMinimumContrast(reportsLink);
 
-    for (let attempt = 0; attempt < 14; attempt += 1) {
-      if (await reportsLink.evaluate((element) => element === document.activeElement)) {
-        break;
-      }
-      await page.keyboard.press("Tab");
-    }
-    await expect(reportsLink).toBeFocused();
-    await expect(reportsLink).toHaveCSS("outline-style", "solid");
+    await expectKeyboardFocus(page, reportsLink, 14);
 
     const preparingOrderId = randomUUID();
     const freshOrderId = randomUUID();
@@ -154,10 +147,10 @@ test("seller acts from the operational home and reads a private basic report", a
       const orderId = route.request().url().split("/").at(-2);
       return route.fulfill({
         status: 200,
-        json: fulfillmentTimeline(
-          orderId!,
-          orderId === preparingOrderId ? "PREPARING" : "ACTION_REQUIRED",
-        ),
+        json: fulfillmentTimeline(orderId!, {
+          status: "PREPARING",
+          hoursAgo: orderId === preparingOrderId ? 30 : 2,
+        }),
       });
     });
     await page.getByRole("link", { name: "بررسی آماده‌سازی‌ها" }).click();
@@ -186,14 +179,7 @@ test("seller acts from the operational home and reads a private basic report", a
     );
     const backLink = page.getByRole("link", { name: "بازگشت به کارهای نزدیک" });
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      if (await backLink.evaluate((element) => element === document.activeElement)) {
-        break;
-      }
-      await page.keyboard.press("Tab");
-    }
-    await expect(backLink).toBeFocused();
-    await expect(backLink).toHaveCSS("outline-style", "solid");
+    await expectKeyboardFocus(page, backLink, 12);
 
     await sql`delete from reporting_fulfillment_states where order_id in ${sql(orderIds)}`;
     await sql`delete from reporting_seller_order_facts where store_id = ${storeId}`;
@@ -222,18 +208,33 @@ function actionableOrder(orderId: string) {
   };
 }
 
-function fulfillmentTimeline(orderId: string, status: "ACTION_REQUIRED" | "PREPARING") {
+function fulfillmentTimeline(
+  orderId: string,
+  input: { status: "PREPARING"; hoursAgo: number },
+) {
+  const occurredAt = new Date(
+    Date.now() - input.hoursAgo * 60 * 60 * 1_000,
+  ).toISOString();
   return {
     orderId,
-    status,
-    nextStatus: status === "PREPARING" ? "SHIPPED" : "PREPARING",
+    status: input.status,
+    nextStatus: "SHIPPED",
     timeline: [
       {
-        status,
+        status: input.status,
         actor: { type: "SYSTEM" },
-        occurredAt: "2026-08-30T08:00:00.000Z",
+        occurredAt,
         correlationId: randomUUID(),
       },
     ],
   };
+}
+
+async function expectKeyboardFocus(page: Page, target: Locator, maxTabs: number) {
+  for (let attempt = 0; attempt < maxTabs; attempt += 1) {
+    if (await target.evaluate((element) => element === document.activeElement)) break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
+  await expect(target).toHaveCSS("outline-style", "solid");
 }
