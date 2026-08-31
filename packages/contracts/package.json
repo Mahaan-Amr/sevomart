@@ -53,6 +53,10 @@
       "types": "./dist/problem-follow-up/v1/index.d.ts",
       "default": "./dist/problem-follow-up/v1/index.js"
     },
+    "./problem-follow-up/v2": {
+      "types": "./dist/problem-follow-up/v2/index.d.ts",
+      "default": "./dist/problem-follow-up/v2/index.js"
+    },
     "./content/v1": {
       "types": "./dist/content/v1/index.d.ts",
       "default": "./dist/content/v1/index.js"

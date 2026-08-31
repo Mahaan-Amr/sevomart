@@ -1,4 +1,90 @@
-import { Module } from "@nestjs/common";
+import { type DynamicModule, Module } from "@nestjs/common";
+import type { RuntimeEnvironment } from "@sevo/config";
+import { identityIdContract, storeIdContract } from "@sevo/contracts/platform/v1";
+import type { Sql } from "postgres";
+
+import {
+  IDENTITY_SESSION_READER,
+  PLATFORM_SENSITIVE_ACCESS,
+  SELLER_ACCESS_READ,
+  type IdentitySessionReader,
+  type OpaquePlatformAccessTransactionContext,
+  type PlatformAgentSessionAuthorizer,
+  type PlatformSensitiveAccess,
+  type SellerAccessRead,
+} from "../identity-access/public";
+import { ProblemFollowUpService } from "./application/problem-follow-up.service";
+import { PostgresProblemFollowUpRepository } from "./infrastructure/postgres-problem-follow-up.repository";
+import { ProblemFollowUpController } from "./problem-follow-up.controller";
+import {
+  PROBLEM_FOLLOW_UP_SERVICE,
+  type ProblemFollowUpFulfillmentRead,
+  type ProblemFollowUpRepository,
+} from "./public";
 
 @Module({})
-export class ProblemFollowUpModule {}
+export class ProblemFollowUpModule {
+  static register(
+    environment: RuntimeEnvironment,
+    options: {
+      fulfillment: ProblemFollowUpFulfillmentRead;
+      platformSessions: PlatformAgentSessionAuthorizer;
+      resolveSellerStore: (identityId: string) => Promise<string | undefined>;
+      createAccessTransactionContext: (
+        transaction: Sql,
+      ) => OpaquePlatformAccessTransactionContext;
+      repository?: ProblemFollowUpRepository;
+    },
+  ): DynamicModule {
+    return {
+      module: ProblemFollowUpModule,
+      controllers: [ProblemFollowUpController],
+      providers: [
+        {
+          provide: PROBLEM_FOLLOW_UP_SERVICE,
+          inject: [
+            IDENTITY_SESSION_READER,
+            SELLER_ACCESS_READ,
+            PLATFORM_SENSITIVE_ACCESS,
+          ],
+          useFactory: (
+            sessions: IdentitySessionReader,
+            sellerAccess: SellerAccessRead,
+            sensitiveAccess: PlatformSensitiveAccess,
+          ) => {
+            const repository =
+              options.repository ??
+              new PostgresProblemFollowUpRepository(
+                environment.DATABASE_URL,
+                sensitiveAccess,
+                options.createAccessTransactionContext,
+              );
+            return new ProblemFollowUpService(
+              repository,
+              {
+                async readActiveIdentitySession(token) {
+                  const session = await sessions.readActiveIdentitySession(token);
+                  return session
+                    ? { identityId: identityIdContract.parse(session.actor.identityId) }
+                    : undefined;
+                },
+              },
+              options.fulfillment,
+              () => new Date(),
+              sellerAccess,
+              {
+                async resolveStore(identityId) {
+                  const storeId = await options.resolveSellerStore(identityId);
+                  return storeId ? storeIdContract.parse(storeId) : undefined;
+                },
+              },
+              options.platformSessions,
+            );
+          },
+        },
+      ],
+    };
+  }
+}
+
+export { PostgresProblemFollowUpRepository };
