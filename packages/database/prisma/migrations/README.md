@@ -169,3 +169,12 @@ references; the only foreign key is internal to fulfillment. Existing orders are
 handed off by the versioned outbox event, so no
 backfill or compatibility window is required. Corrections use a forward migration,
 and Docker and native continue to apply the same `prisma migrate deploy` history.
+
+[Build: implement the dispute and violation producer](https://github.com/Mahaan-Amr/sevomart/issues/140)
+additively creates problem-follow-up-owned disputes, violation cases, idempotency
+records and append-only audit histories. Order, buyer, store and case identifiers are
+scalar references across module boundaries; the producer authorizes them through the
+published fulfillment and identity-access interfaces instead of cross-module foreign
+keys or private reads. Existing orders are not backfilled, no compatibility window is
+required, and deployment corrections use a forward migration. Docker Compose and
+native startup both apply this same `prisma migrate deploy` history.

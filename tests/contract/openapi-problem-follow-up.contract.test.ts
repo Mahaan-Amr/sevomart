@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { problemFollowUpV1Operations } from "@sevo/contracts/problem-follow-up/v1";
+import {
+  problemFollowUpErrorContract,
+  problemFollowUpV1Operations,
+} from "@sevo/contracts/problem-follow-up/v1";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
@@ -61,5 +64,56 @@ describe("OpenAPI problem follow-up v1", () => {
       expect(requestSchema.properties).not.toHaveProperty("actorIdentityId");
       expect(requestSchema.properties).not.toHaveProperty("actorKind");
     }
+
+    for (const contract of [
+      problemFollowUpV1Operations.readPlatformDispute,
+      problemFollowUpV1Operations.resolveDispute,
+      problemFollowUpV1Operations.reopenDispute,
+      problemFollowUpV1Operations.readPlatformViolationCase,
+    ]) {
+      const operation = document.paths[contract.path][contract.method];
+      expect(operation.parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "X-Platform-Access-Grant-Id",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "X-Platform-Access-Reason",
+            required: true,
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("publishes the runtime idempotency precondition and concurrency faults", () => {
+    for (const code of ["PRECONDITION_REQUIRED", "IDEMPOTENCY_IN_PROGRESS"] as const) {
+      expect(
+        problemFollowUpErrorContract.safeParse({
+          code,
+          message: "درخواست قابل انجام نیست.",
+          correlationId: "70000000-0000-4000-8000-000000000140",
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("mounts the buyer producer route with the shared unauthorized envelope", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    close = () => app.close();
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: problemFollowUpV1Operations.openDispute.path,
+        headers: { "idempotency-key": "unauthorized-open" },
+        payload: {},
+      });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toMatchObject({ code: "UNAUTHORIZED" });
   });
 });

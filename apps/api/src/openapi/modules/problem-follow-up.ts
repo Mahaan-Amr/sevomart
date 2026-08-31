@@ -19,6 +19,21 @@ const idempotencyHeader = [
   },
 ] as const;
 
+const sensitiveAccessHeaders = [
+  {
+    name: "X-Platform-Access-Grant-Id",
+    schema: "PlatformAccessGrantId",
+    example: "6df3e69a-4d9c-4c5b-9bf2-75af372e18e5",
+    required: true,
+  },
+  {
+    name: "X-Platform-Access-Reason",
+    schema: "ProblemFollowUpAccessReason",
+    example: problemFollowUpV1Examples.ProblemFollowUpAccessReason,
+    required: true,
+  },
+] as const;
+
 const paginationQuery = [
   {
     name: "cursor",
@@ -55,6 +70,7 @@ const operations = [
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProblemFollowUpError" },
       { status: 409, schema: "ProblemFollowUpError" },
+      { status: 428, schema: "ProblemFollowUpError" },
       { status: 422, schema: "ValidationError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -110,6 +126,7 @@ const operations = [
       { status: 401, schema: "UnauthorizedError" },
       { status: 404, schema: "ProblemFollowUpError" },
       { status: 409, schema: "ProblemFollowUpError" },
+      { status: 428, schema: "ProblemFollowUpError" },
       { status: 422, schema: "ValidationError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -131,6 +148,7 @@ const operations = [
     tag: "problem-follow-up",
     auth: "platform-agent-session",
     pathParameter: disputePathParameter,
+    headerParameters: sensitiveAccessHeaders,
     responses: [
       { status: 200, schema: "PlatformDisputeView" },
       { status: 401, schema: "UnauthorizedError" },
@@ -144,7 +162,7 @@ const operations = [
     tag: "problem-follow-up",
     auth: "platform-agent-session",
     pathParameter: disputePathParameter,
-    headerParameters: idempotencyHeader,
+    headerParameters: [...idempotencyHeader, ...sensitiveAccessHeaders],
     request: {
       schema: "ResolveDisputeInput",
       example: problemFollowUpV1Examples.ResolveDisputeInput,
@@ -155,6 +173,7 @@ const operations = [
       { status: 403, schema: "ProblemFollowUpError" },
       { status: 404, schema: "ProblemFollowUpError" },
       { status: 409, schema: "ProblemFollowUpError" },
+      { status: 428, schema: "ProblemFollowUpError" },
       { status: 422, schema: "ValidationError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -164,7 +183,7 @@ const operations = [
     tag: "problem-follow-up",
     auth: "platform-agent-session",
     pathParameter: disputePathParameter,
-    headerParameters: idempotencyHeader,
+    headerParameters: [...idempotencyHeader, ...sensitiveAccessHeaders],
     request: {
       schema: "ReopenDisputeInput",
       example: problemFollowUpV1Examples.ReopenDisputeInput,
@@ -175,6 +194,7 @@ const operations = [
       { status: 403, schema: "ProblemFollowUpError" },
       { status: 404, schema: "ProblemFollowUpError" },
       { status: 409, schema: "ProblemFollowUpError" },
+      { status: 428, schema: "ProblemFollowUpError" },
       { status: 422, schema: "ValidationError" },
       { status: 500, schema: "InternalServerError" },
     ],
@@ -200,6 +220,7 @@ const operations = [
       schema: "ViolationCaseId",
       example: problemFollowUpV1Examples.ViolationCaseId,
     },
+    headerParameters: sensitiveAccessHeaders,
     responses: [
       { status: 200, schema: "PlatformViolationCaseView" },
       { status: 401, schema: "UnauthorizedError" },
@@ -225,6 +246,7 @@ export const contribute_problem_follow_up_openApi: OpenApiContributor = (documen
         404: "Case is unavailable to this identity",
         409: "Deadline, transition, or idempotency conflict",
         422: "Input is invalid",
+        428: "Idempotency key is missing or invalid",
         500: "Unexpected server error",
       },
     },

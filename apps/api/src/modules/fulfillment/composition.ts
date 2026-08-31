@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
+import { fulfillmentOrderSnapshotContract } from "@sevo/contracts/fulfillment/v1";
 import { identityIdContract, storeIdContract } from "@sevo/contracts/platform/v1";
 
 import {
@@ -16,6 +17,7 @@ import {
   FULFILLMENT_SERVICE,
   FULFILLMENT_AUTHORITATIVE_READ,
   type FulfillmentOrderAccess,
+  type FulfillmentAuthoritativeRead,
   type FulfillmentRepository,
 } from "./public";
 
@@ -86,6 +88,25 @@ export function createFulfillmentOrderAccess(
         orderId,
       );
       return state?.status === "PAID";
+    },
+  };
+}
+
+export function createFulfillmentAuthoritativeRead(
+  repository: FulfillmentRepository,
+  orders: OrderPaymentWorkflow,
+): FulfillmentAuthoritativeRead {
+  const access = createFulfillmentOrderAccess(orders);
+  return {
+    async readOrderSnapshot(input) {
+      if (!(await access.buyerCanTrack(input.buyerId, input.orderId))) return undefined;
+      const snapshot = await repository.readOrderSnapshot(input.orderId);
+      if (!snapshot) return undefined;
+      return fulfillmentOrderSnapshotContract.parse({
+        version: 1,
+        ...input,
+        ...snapshot,
+      });
     },
   };
 }

@@ -317,6 +317,7 @@ export const problemFollowUpV1Operations = {
 export const problemFollowUpIdempotencyKeyContract = z.string().min(1).max(200);
 export const problemFollowUpCursorContract = z.string().min(1).max(500);
 export const problemFollowUpPageLimitContract = z.int().min(1).max(100);
+export const problemFollowUpAccessReasonContract = z.string().trim().min(10).max(1_000);
 
 export const openDisputeInputContract = z
   .object({
@@ -529,6 +530,8 @@ export const problemFollowUpErrorContract = z
       "NOT_FOUND",
       "SENSITIVE_ACCESS_REQUIRED",
       "IDEMPOTENCY_CONFLICT",
+      "IDEMPOTENCY_IN_PROGRESS",
+      "PRECONDITION_REQUIRED",
     ]),
     message: z.string().min(1),
     correlationId: z.string().min(1),
@@ -541,6 +544,7 @@ export const problemFollowUpV1Schemas = {
   ProblemFollowUpIdempotencyKey: problemFollowUpIdempotencyKeyContract,
   ProblemFollowUpCursor: problemFollowUpCursorContract,
   ProblemFollowUpPageLimit: problemFollowUpPageLimitContract,
+  ProblemFollowUpAccessReason: problemFollowUpAccessReasonContract,
   DisputeStatus: disputeStatusContract,
   ViolationCaseStatus: violationCaseStatusContract,
   OpenDisputeInput: openDisputeInputContract,
@@ -612,6 +616,7 @@ export const problemFollowUpV1Examples = {
   ProblemFollowUpIdempotencyKey: "dispute-action-01",
   ProblemFollowUpCursor: "next-page-token",
   ProblemFollowUpPageLimit: 25,
+  ProblemFollowUpAccessReason: "بررسی مدارک همین پرونده برای تصمیم ثبت‌شده",
   DisputeStatus: "AWAITING_SELLER_RESPONSE",
   ViolationCaseStatus: "OPEN",
   OpenDisputeInput: {

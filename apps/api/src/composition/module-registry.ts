@@ -11,8 +11,13 @@ import {
   DiscoveryModule,
   PostgresStoreFollowingRepository,
 } from "../modules/discovery/composition";
-import { FulfillmentModule } from "../modules/fulfillment/composition";
 import {
+  createFulfillmentAuthoritativeRead,
+  FulfillmentModule,
+  PostgresFulfillmentRepository,
+} from "../modules/fulfillment/composition";
+import {
+  createOpaquePlatformAccessTransactionContext,
   IdentityAccessModule,
   PostgresPlatformAgentSessionAuthorizer,
   type IdentityAccessModuleOptions,
@@ -76,6 +81,9 @@ function createApiCompositionContext(
   const platformAgentSessions = new PostgresPlatformAgentSessionAuthorizer(
     environment.DATABASE_URL,
   );
+  const fulfillmentRepository = new PostgresFulfillmentRepository(
+    environment.DATABASE_URL,
+  );
 
   let conversationMediaAccess: ConversationMediaAccess = async () => false;
   return {
@@ -87,6 +95,7 @@ function createApiCompositionContext(
     checkoutRepository,
     contentRepository,
     environment,
+    fulfillmentRepository,
     identityOptions,
     inventoryAuthoring,
     otpProvider,
@@ -221,9 +230,15 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "fulfillment",
     artifact: FulfillmentModule,
-    compose: ({ checkoutRepository, environment, storeRepository }) =>
+    compose: ({
+      checkoutRepository,
+      environment,
+      fulfillmentRepository,
+      storeRepository,
+    }) =>
       FulfillmentModule.register(environment, {
         orders: checkoutRepository,
+        repository: fulfillmentRepository,
         resolveSellerStore: async (identityId) =>
           (await storeRepository.findBySellerId(identityId))?.id,
       }),
@@ -246,7 +261,25 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "problem-follow-up",
     artifact: ProblemFollowUpModule,
-    compose: () => ProblemFollowUpModule,
+    compose: ({
+      checkoutRepository,
+      environment,
+      fulfillmentRepository,
+      identityOptions,
+      platformAgentSessions,
+      storeRepository,
+    }) =>
+      ProblemFollowUpModule.register(environment, {
+        fulfillment: createFulfillmentAuthoritativeRead(
+          fulfillmentRepository,
+          checkoutRepository,
+        ),
+        platformSessions:
+          identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
+        createAccessTransactionContext: createOpaquePlatformAccessTransactionContext,
+      }),
   },
   {
     owner: "content",
