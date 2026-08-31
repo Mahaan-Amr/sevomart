@@ -19,7 +19,11 @@ export type PlatformDestination = {
   shortLabel: string;
 };
 
-const platformDestinations: readonly PlatformDestination[] = [
+type PlatformDestinationRule = PlatformDestination & {
+  acceptedPermissions?: readonly PlatformPermission[];
+};
+
+const platformDestinations: readonly PlatformDestinationRule[] = [
   {
     permission: "SELLER_APPLICATION_REVIEW",
     href: "/platform/seller-applications",
@@ -31,6 +35,13 @@ const platformDestinations: readonly PlatformDestination[] = [
     href: "/platform/payment-reviews",
     label: "بررسی پرداخت‌ها",
     shortLabel: "پرداخت‌ها",
+  },
+  {
+    permission: "ACCESS_ADMINISTRATION",
+    acceptedPermissions: ["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"],
+    href: "/platform/access",
+    label: "مدیریت دسترسی پلتفرم",
+    shortLabel: "دسترسی‌ها",
   },
 ];
 
@@ -62,14 +73,23 @@ export function platformDestinationsFor(
   permissions: readonly PlatformPermission[],
 ): PlatformDestination[] {
   const livePermissions = new Set(permissions);
-  return platformDestinations.filter(({ permission }) =>
-    livePermissions.has(permission),
-  );
+  return platformDestinations
+    .filter(({ permission, acceptedPermissions }) =>
+      (acceptedPermissions ?? [permission]).some((candidate) =>
+        livePermissions.has(candidate),
+      ),
+    )
+    .map(({ permission, href, label, shortLabel }) => ({
+      permission,
+      href,
+      label,
+      shortLabel,
+    }));
 }
 
 export function platformEntryPath(
   permissions: readonly PlatformPermission[],
 ): string | null {
-  if (permissions.length !== 1) return null;
-  return platformDestinationsFor(permissions)[0]?.href ?? null;
+  const destinations = platformDestinationsFor(permissions);
+  return destinations.length === 1 ? destinations[0]!.href : null;
 }
