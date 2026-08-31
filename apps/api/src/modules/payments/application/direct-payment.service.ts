@@ -100,7 +100,17 @@ export class DirectPaymentApplicationService implements DirectPaymentService {
     return true;
   }
 
-  listReviewRequired() {
-    return this.repository.listReviewRequired();
+  listReviewRequiredV2() {
+    return this.repository.listReviewRequiredV2();
+  }
+
+  revealReview(command: Parameters<DirectPaymentService["revealReview"]>[0]) {
+    return this.repository.revealReview(command);
+  }
+
+  requestReconciliation(
+    command: Parameters<DirectPaymentService["requestReconciliation"]>[0],
+  ) {
+    return this.repository.requestReconciliation(command);
   }
 }

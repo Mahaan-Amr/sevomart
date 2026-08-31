@@ -228,6 +228,8 @@ export const canonicalApiModuleRegistry: readonly {
         orders: checkoutRepository,
         platformAgentSessions:
           identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        createPlatformAccessTransactionContext:
+          createOpaquePlatformAccessTransactionContext,
         fulfillment: fulfillmentRepository,
         resolveSellerStore: async (identityId) =>
           (await storeRepository.findBySellerId(identityId))?.id,

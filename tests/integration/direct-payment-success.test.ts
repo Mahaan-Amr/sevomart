@@ -604,16 +604,11 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select count(*)::int as count from payment_attempt_audits where attempt_id = ${attempt.attemptId} and to_status = 'REVIEW_REQUIRED'`,
     ).toEqual([{ count: 1 }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
-        attempt: { attemptId: attempt.attemptId, status: "REVIEW_REQUIRED" },
+        reviewId: attempt.attemptId,
         reviewKind: "RESULT_AMBIGUOUS",
-        alertKinds: [],
-        audits: [
-          { toStatus: "CREATED", reasonCode: "PAYMENT_ATTEMPT_CREATED" },
-          { toStatus: "DISPATCHED", reasonCode: "PROVIDER_DISPATCH_CLAIMED" },
-          { toStatus: "REVIEW_REQUIRED", reasonCode: "PROVIDER_RESULT_PENDING" },
-        ],
+        needsFollowUp: false,
       },
     ]);
 
@@ -720,11 +715,11 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "PAID_STOCK_CONFLICT", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
-        attempt: { attemptId: attempt.attemptId, status: "CONFIRMED" },
+        reviewId: attempt.attemptId,
         reviewKind: "PAID_STOCK_CONFLICT",
-        alertKinds: ["PAID_STOCK_CONFLICT"],
+        needsFollowUp: true,
       },
     ]);
   });
@@ -789,11 +784,11 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "PROVIDER_AMOUNT_MISMATCH", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
-        attempt: { attemptId: attempt.attemptId, status: "CONFIRMED" },
+        reviewId: attempt.attemptId,
         reviewKind: "PROVIDER_CONFLICT",
-        alertKinds: ["PROVIDER_AMOUNT_MISMATCH"],
+        needsFollowUp: true,
       },
     ]);
   });
@@ -836,11 +831,11 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "PROVIDER_RESULT_CONTRADICTION", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
+    expect(await service.listReviewRequiredV2()).toMatchObject([
       {
-        attempt: { status: "FAILED" },
+        reviewId: attempt.attemptId,
         reviewKind: "PROVIDER_CONFLICT",
-        alertKinds: ["PROVIDER_RESULT_CONTRADICTION"],
+        needsFollowUp: true,
       },
     ]);
     await expect(
@@ -927,8 +922,8 @@ describe("successful direct payment transaction seam", () => {
     expect(
       await sql`select kind, status from payment_operational_alerts where attempt_id = ${attempt.attemptId}`,
     ).toEqual([{ kind: "RECONCILIATION_OVERDUE", status: "OPEN" }]);
-    expect(await service.listReviewRequired()).toMatchObject([
-      { alertKinds: ["RECONCILIATION_OVERDUE"] },
+    expect(await service.listReviewRequiredV2()).toMatchObject([
+      { reviewId: attempt.attemptId, needsFollowUp: true },
     ]);
   });
 });
