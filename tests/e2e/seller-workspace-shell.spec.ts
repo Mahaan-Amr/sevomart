@@ -73,12 +73,18 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   const sellerNavigation = page.getByRole("navigation", {
     name: "ناوبری فضای کار فروشنده",
   });
-  await expect(sellerNavigation.first().getByRole("link")).toHaveCount(5);
+  const isDesktopNavigation = (testInfo.project.use.viewport?.width ?? 0) >= 768;
+  await expect(sellerNavigation.first().getByRole("link")).toHaveCount(
+    isDesktopNavigation ? 6 : 5,
+  );
   for (const label of ["خانه", "سفارش‌ها", "کالاها", "موجودی", "فروشگاه"]) {
     await expect(
       sellerNavigation.first().getByRole("link", { name: label }),
     ).toBeVisible();
   }
+  await expect(
+    sellerNavigation.first().getByRole("link", { name: "پرونده‌های اختلاف" }),
+  ).toHaveCount(isDesktopNavigation ? 1 : 0);
   await assertNoHorizontalOverflow(page);
   await page.keyboard.press("Tab");
   const focused = page.locator(":focus");
