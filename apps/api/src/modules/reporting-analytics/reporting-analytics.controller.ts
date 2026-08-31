@@ -72,6 +72,9 @@ export class ReportingAnalyticsController {
       NOT_FOUND: "فروشگاه پیدا نشد.",
       VALIDATION_ERROR: "بازه گزارش معتبر نیست.",
     }[error.code];
-    return new HttpException({ code: error.code, message, correlationId }, status);
+    return new HttpException(
+      { version: 1, code: error.code, message, correlationId },
+      status,
+    );
   }
 }
