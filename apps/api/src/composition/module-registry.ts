@@ -13,10 +13,12 @@ import {
   PostgresStoreFollowingRepository,
 } from "../modules/discovery/composition";
 import {
+  createFulfillmentAuthoritativeRead,
   FulfillmentModule,
   PostgresFulfillmentRepository,
 } from "../modules/fulfillment/composition";
 import {
+  createOpaquePlatformAccessTransactionContext,
   IdentityAccessModule,
   PostgresPlatformAgentSessionAuthorizer,
   type IdentityAccessModuleOptions,
@@ -226,6 +228,8 @@ export const canonicalApiModuleRegistry: readonly {
         orders: checkoutRepository,
         platformAgentSessions:
           identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        createPlatformAccessTransactionContext:
+          createOpaquePlatformAccessTransactionContext,
         fulfillment: fulfillmentRepository,
         resolveSellerStore: async (identityId) =>
           (await storeRepository.findBySellerId(identityId))?.id,
@@ -265,7 +269,25 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "problem-follow-up",
     artifact: ProblemFollowUpModule,
-    compose: () => ProblemFollowUpModule,
+    compose: ({
+      checkoutRepository,
+      environment,
+      fulfillmentRepository,
+      identityOptions,
+      platformAgentSessions,
+      storeRepository,
+    }) =>
+      ProblemFollowUpModule.register(environment, {
+        fulfillment: createFulfillmentAuthoritativeRead(
+          fulfillmentRepository,
+          checkoutRepository,
+        ),
+        platformSessions:
+          identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
+        createAccessTransactionContext: createOpaquePlatformAccessTransactionContext,
+      }),
   },
   {
     owner: "content",

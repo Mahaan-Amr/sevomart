@@ -15,6 +15,7 @@ import {
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
   listStoreBuyersQueryContract,
+  listStoreBuyerOrdersQueryContract,
   revealOrderDeliveryDetailsInputContract,
 } from "@sevo/contracts/orders/v1";
 import {
@@ -62,6 +63,31 @@ export class SellerBuyerController {
     if (!query.success) throw buyerHttpError(request.id, "VALIDATION_ERROR", 422);
     try {
       return await this.buyers.listStoreBuyers({ storeId, query: query.data });
+    } catch (error) {
+      throw mapBuyerFault(request.id, error);
+    }
+  }
+
+  @Get("orders/:orderId/buyer-orders")
+  async listOrders(
+    @Param("orderId") rawOrderId: string,
+    @Query() rawQuery: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    const { storeId } = await this.#requireSeller(request);
+    const orderId = orderIdContract.safeParse(rawOrderId);
+    const query = listStoreBuyerOrdersQueryContract.safeParse(rawQuery);
+    if (!orderId.success || !query.success) {
+      throw buyerHttpError(request.id, "VALIDATION_ERROR", 422);
+    }
+    try {
+      return await this.buyers.listStoreBuyerOrders({
+        storeId,
+        contextOrderId: orderId.data,
+        query: query.data,
+      });
     } catch (error) {
       throw mapBuyerFault(request.id, error);
     }

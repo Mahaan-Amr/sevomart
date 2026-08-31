@@ -30,6 +30,7 @@ describe("OpenAPI guest cart and login attachment", () => {
       ["post", "/v1/checkout/prepare", "prepareCheckout", true],
       ["post", "/v1/orders", "createOrder", true],
       ["get", "/v1/seller/buyers", "listStoreBuyers", true],
+      ["get", "/v1/seller/orders/{orderId}/buyer-orders", "listStoreBuyerOrders", true],
       [
         "post",
         "/v1/seller/orders/{orderId}/delivery-details/reveal",

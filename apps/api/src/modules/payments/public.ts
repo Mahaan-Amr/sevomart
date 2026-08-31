@@ -3,8 +3,11 @@ import type {
   DirectRefund,
   RecordDirectRefundResultInput,
   RequestDirectRefundInput,
-  PaymentReviewItem,
 } from "@sevo/contracts/payments/v1";
+import type {
+  PaymentReviewDetailV2,
+  PaymentReviewItemV2,
+} from "@sevo/contracts/payments/v2";
 import type {
   IdentityId,
   MoneyV1,
@@ -160,8 +163,20 @@ export interface DirectPaymentService {
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt>;
   reconcileNext(now: Date, correlationId: string): Promise<boolean>;
-  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
+  listReviewRequiredV2(): Promise<readonly PaymentReviewItemV2[]>;
+  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetailV2>;
+  requestReconciliation(
+    command: PaymentReviewAccessCommand,
+  ): Promise<{ reviewId: PaymentAttemptId; requestedAt: string }>;
 }
+
+export type PaymentReviewAccessCommand = Readonly<{
+  reviewId: PaymentAttemptId;
+  actorIdentityId: string;
+  grantId: string;
+  reason: string;
+  correlationId: string;
+}>;
 
 export type DirectPaymentReconciliation = Readonly<{
   attemptId: PaymentAttemptId;
@@ -208,7 +223,11 @@ export interface DirectPaymentRepository {
     now: Date,
     correlationId: string,
   ): Promise<DirectPaymentReconciliation | null>;
-  listReviewRequired(): Promise<readonly PaymentReviewItem[]>;
+  listReviewRequiredV2(): Promise<readonly PaymentReviewItemV2[]>;
+  revealReview(command: PaymentReviewAccessCommand): Promise<PaymentReviewDetailV2>;
+  requestReconciliation(
+    command: PaymentReviewAccessCommand,
+  ): Promise<{ reviewId: PaymentAttemptId; requestedAt: string }>;
 }
 
 export class InvalidProviderCallbackError extends Error {}
@@ -217,3 +236,5 @@ export class DirectPaymentAmountMismatchError extends Error {}
 export class DirectPaymentIdempotencyConflictError extends Error {}
 export class DirectPaymentAttemptNotFoundError extends Error {}
 export class DirectPaymentDispatchInProgressError extends Error {}
+export class PaymentReviewNotFoundError extends Error {}
+export class PaymentReconciliationNotAvailableError extends Error {}

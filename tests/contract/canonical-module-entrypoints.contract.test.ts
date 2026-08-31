@@ -10,12 +10,14 @@ import * as mediaV1 from "@sevo/contracts/media/v1";
 import * as notificationsV1 from "@sevo/contracts/notifications/v1";
 import * as ordersV1 from "@sevo/contracts/orders/v1";
 import * as paymentsV1 from "@sevo/contracts/payments/v1";
+import * as paymentsV2 from "@sevo/contracts/payments/v2";
 import {
   errorEnvelopeV1Contract,
   eventEnvelopeV1Contract,
   moneyV1Contract,
 } from "@sevo/contracts/platform/v1";
 import * as problemFollowUpV1 from "@sevo/contracts/problem-follow-up/v1";
+import * as problemFollowUpV2 from "@sevo/contracts/problem-follow-up/v2";
 import * as productV1 from "@sevo/contracts/product/v1";
 import * as reportingAnalyticsV1 from "@sevo/contracts/reporting-analytics/v1";
 import * as storeV1 from "@sevo/contracts/store/v1";
@@ -49,9 +51,11 @@ const canonicalDomainEntrypoints: Record<string, Record<string, unknown>> = {
   "@sevo/contracts/inventory/v1": inventoryV1,
   "@sevo/contracts/orders/v1": ordersV1,
   "@sevo/contracts/payments/v1": paymentsV1,
+  "@sevo/contracts/payments/v2": paymentsV2,
   "@sevo/contracts/fulfillment/v1": fulfillmentV1,
   "@sevo/contracts/conversations/v1": conversationsV1,
   "@sevo/contracts/problem-follow-up/v1": problemFollowUpV1,
+  "@sevo/contracts/problem-follow-up/v2": problemFollowUpV2,
   "@sevo/contracts/content/v1": contentV1,
   "@sevo/contracts/content/v2": contentV2,
   "@sevo/contracts/discovery/v1": discoveryV1,

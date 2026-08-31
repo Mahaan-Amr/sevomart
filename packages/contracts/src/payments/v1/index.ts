@@ -26,11 +26,6 @@ export const paymentsV1Operations = {
     method: "post",
     path: "/internal/v1/payment-providers/{provider}/callbacks",
   },
-  listPlatformPaymentReviews: {
-    operationId: "listPlatformPaymentReviews",
-    method: "get",
-    path: "/v1/platform/payment-reviews",
-  },
   requestDirectRefund: {
     operationId: "requestDirectRefund",
     method: "post",
