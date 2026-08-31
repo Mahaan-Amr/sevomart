@@ -7,7 +7,9 @@ import {
   CONVERSATION_MEDIA_ACCESS,
   CONVERSATION_ATTACHMENT_READER,
   DISPUTE_EVIDENCE_READER,
+  DISPUTE_MEDIA_ACCESS,
   type ConversationMediaAccess,
+  type DisputeMediaAccess,
   MEDIA_STORAGE,
   PUBLISHED_MEDIA_ACCESS,
   SELLER_UPLOAD_RATE_LIMITER,
@@ -26,6 +28,7 @@ export class MediaModule {
     storage?: MediaStorage,
     publishedMediaAccess: PublishedMediaAccess = async () => false,
     conversationMediaAccess: ConversationMediaAccess = async () => false,
+    disputeMediaAccess: DisputeMediaAccess = async () => false,
   ): DynamicModule {
     const configuredStorage =
       storage ??
@@ -38,6 +41,7 @@ export class MediaModule {
       controllers: [MediaController],
       providers: [
         { provide: CONVERSATION_MEDIA_ACCESS, useValue: conversationMediaAccess },
+        { provide: DISPUTE_MEDIA_ACCESS, useValue: disputeMediaAccess },
         {
           provide: CONVERSATION_ATTACHMENT_READER,
           useValue: new MediaAttachmentReader(configuredStorage),

@@ -22,6 +22,7 @@ import {
   type MediaReference,
 } from "@sevo/contracts/media/v1";
 import { productIdContract } from "@sevo/contracts/platform/v1";
+import { disputeIdContract } from "@sevo/contracts/problem-follow-up/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
 
@@ -33,6 +34,8 @@ import {
 import {
   CONVERSATION_MEDIA_ACCESS,
   type ConversationMediaAccess,
+  DISPUTE_MEDIA_ACCESS,
+  type DisputeMediaAccess,
   type StoredMediaPurpose,
   MEDIA_STORAGE,
   PUBLISHED_MEDIA_ACCESS,
@@ -60,6 +63,8 @@ export class MediaController {
   constructor(
     @Inject(CONVERSATION_MEDIA_ACCESS)
     private readonly conversationAccess: ConversationMediaAccess,
+    @Inject(DISPUTE_MEDIA_ACCESS)
+    private readonly disputeAccess: DisputeMediaAccess,
     @Inject(MEDIA_STORAGE) private readonly storage: MediaStorage,
     @Inject(IDENTITY_SESSION_READER)
     private readonly sessions: IdentitySessionReader,
@@ -104,8 +109,13 @@ export class MediaController {
     @Param("disputeId") value: string,
     @Req() request: FastifyRequest,
   ) {
-    const disputeId = mediaIdContract.safeParse(value);
-    if (!disputeId.success) throw mediaNotFound(request.id);
+    const identityId = await requireIdentity(request, this.sessions);
+    const disputeId = disputeIdContract.safeParse(value);
+    if (
+      !disputeId.success ||
+      !(await this.disputeAccess({ identityId, disputeId: disputeId.data }))
+    )
+      throw mediaNotFound(request.id);
     return this.uploadOwnedMedia(request, disputeId.data, "DISPUTE_EVIDENCE");
   }
 

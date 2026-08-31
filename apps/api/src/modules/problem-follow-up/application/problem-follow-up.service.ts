@@ -120,11 +120,12 @@ export class ProblemFollowUpService {
       (!this.evidence ||
         !(
           await Promise.all(
-            input.evidence.map(({ evidenceId }) =>
+            input.evidence.map(({ evidenceId, kind }) =>
               this.evidence!.isReadySellerEvidence({
                 identityId: actorId,
                 disputeId: parsedDisputeId,
                 evidenceId,
+                kind,
               }),
             ),
           )

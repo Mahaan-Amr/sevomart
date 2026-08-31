@@ -29,14 +29,18 @@ function uploadBody() {
 }
 async function start() {
   const conversationId = randomUUID();
+  const disputeId = randomUUID();
   const members = new Set<string>();
   const sent = new Set<string>();
+  let identityIdForDisputeAccess = "";
   const fixture = await createMediaTestApp(
     { ...apiTestEnvironment, DEV_OTP_TEST_MOBILES: undefined },
     async (input) =>
       input.conversationId === conversationId &&
       members.has(input.identityId) &&
       (!input.mediaId || sent.has(input.mediaId)),
+    async (input) =>
+      input.identityId === identityIdForDisputeAccess && input.disputeId === disputeId,
   );
   apps.push(fixture);
   const server = fixture.app.getHttpAdapter().getInstance();
@@ -60,6 +64,7 @@ async function start() {
     return { cookie, identityId: session.json().actor.identityId as string };
   }
   const { cookie, identityId } = await signIn("09123456789");
+  identityIdForDisputeAccess = identityId;
   members.add(identityId);
   const upload = () =>
     server.inject({
@@ -73,6 +78,7 @@ async function start() {
     signIn,
     server,
     conversationId,
+    disputeId,
     members,
     sent,
     cookie,
@@ -97,10 +103,9 @@ it("uploads a private conversation image for its active participant", async () =
 
 it("binds seller dispute evidence to its owner and exact case", async () => {
   const f = await start();
-  const disputeId = randomUUID();
   const response = await f.server.inject({
     method: "POST",
-    url: `/v1/seller/disputes/${disputeId}/evidence`,
+    url: `/v1/seller/disputes/${f.disputeId}/evidence`,
     headers: {
       cookie: f.cookie,
       "content-type": "multipart/form-data; boundary=attachment",
@@ -108,13 +113,24 @@ it("binds seller dispute evidence to its owner and exact case", async () => {
     payload: uploadBody(),
   });
   expect(response.statusCode).toBe(201);
+  const denied = await f.server.inject({
+    method: "POST",
+    url: `/v1/seller/disputes/${randomUUID()}/evidence`,
+    headers: {
+      cookie: f.cookie,
+      "content-type": "multipart/form-data; boundary=attachment",
+    },
+    payload: uploadBody(),
+  });
+  expect(denied.statusCode).toBe(404);
   const reference = response.json();
   const reader = f.app.get<DisputeEvidenceReader>(DISPUTE_EVIDENCE_READER);
   expect(
     await reader.isReadySellerEvidence({
       identityId: f.identityId,
-      disputeId,
+      disputeId: f.disputeId,
       evidenceId: reference.id,
+      kind: "IMAGE",
     }),
   ).toBe(true);
   expect(
@@ -122,6 +138,7 @@ it("binds seller dispute evidence to its owner and exact case", async () => {
       identityId: f.identityId,
       disputeId: randomUUID(),
       evidenceId: reference.id,
+      kind: "IMAGE",
     }),
   ).toBe(false);
 });

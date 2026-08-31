@@ -27,7 +27,10 @@ import {
   InventoryModule,
   PostgresInventoryAuthoring,
 } from "../modules/inventory/composition";
-import type { ConversationMediaAccess } from "../modules/media/public";
+import type {
+  ConversationMediaAccess,
+  DisputeMediaAccess,
+} from "../modules/media/public";
 import { MediaModule } from "../modules/media/composition";
 import { NotificationsModule } from "../modules/notifications/composition";
 import {
@@ -87,11 +90,17 @@ function createApiCompositionContext(
   );
 
   let conversationMediaAccess: ConversationMediaAccess = async () => false;
+  let disputeMediaAccess: DisputeMediaAccess = async () => false;
   return {
     authorizeConversationMedia: (input: Parameters<ConversationMediaAccess>[0]) =>
       conversationMediaAccess(input),
     setConversationMediaAccess: (access: ConversationMediaAccess) => {
       conversationMediaAccess = access;
+    },
+    authorizeDisputeMedia: (input: Parameters<DisputeMediaAccess>[0]) =>
+      disputeMediaAccess(input),
+    setDisputeMediaAccess: (access: DisputeMediaAccess) => {
+      disputeMediaAccess = access;
     },
     checkoutRepository,
     contentRepository,
@@ -145,6 +154,7 @@ export const canonicalApiModuleRegistry: readonly {
       storeRepository,
       contentRepository,
       authorizeConversationMedia,
+      authorizeDisputeMedia,
     }) =>
       MediaModule.register(
         environment,
@@ -157,6 +167,7 @@ export const canonicalApiModuleRegistry: readonly {
           return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
         },
         authorizeConversationMedia,
+        authorizeDisputeMedia,
       ),
   },
   {
@@ -273,6 +284,7 @@ export const canonicalApiModuleRegistry: readonly {
       fulfillmentRepository,
       identityOptions,
       platformAgentSessions,
+      setDisputeMediaAccess,
       storeRepository,
     }) =>
       ProblemFollowUpModule.register(environment, {
@@ -285,6 +297,7 @@ export const canonicalApiModuleRegistry: readonly {
         resolveSellerStore: async (identityId) =>
           (await storeRepository.findBySellerId(identityId))?.id,
         createAccessTransactionContext: createOpaquePlatformAccessTransactionContext,
+        onMediaAccessReady: setDisputeMediaAccess,
       }),
   },
   {

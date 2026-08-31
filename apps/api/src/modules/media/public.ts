@@ -58,6 +58,7 @@ export type StoredMediaPurpose =
 export const CONVERSATION_MEDIA_ACCESS = Symbol("CONVERSATION_MEDIA_ACCESS");
 export const CONVERSATION_ATTACHMENT_READER = Symbol("CONVERSATION_ATTACHMENT_READER");
 export const DISPUTE_EVIDENCE_READER = Symbol("DISPUTE_EVIDENCE_READER");
+export const DISPUTE_MEDIA_ACCESS = Symbol("DISPUTE_MEDIA_ACCESS");
 /** No mediaId: active membership for upload/owner preview. With mediaId: membership AND a sent message in that thread. */
 export type ConversationMediaAccess = (input: {
   identityId: string;
@@ -74,5 +75,10 @@ export interface DisputeEvidenceReader {
     identityId: string;
     disputeId: string;
     evidenceId: string;
+    kind: "IMAGE" | "DOCUMENT" | "MESSAGE_REFERENCE";
   }): Promise<boolean>;
 }
+export type DisputeMediaAccess = (input: {
+  identityId: string;
+  disputeId: string;
+}) => Promise<boolean>;

@@ -7,6 +7,7 @@ export class MediaDisputeEvidenceReader implements DisputeEvidenceReader {
     identityId: string;
     disputeId: string;
     evidenceId: string;
+    kind: "IMAGE" | "DOCUMENT" | "MESSAGE_REFERENCE";
   }) {
     const media = await this.storage.inspect(input.evidenceId);
     if (
@@ -17,6 +18,7 @@ export class MediaDisputeEvidenceReader implements DisputeEvidenceReader {
       media.visibility !== "PRIVATE"
     )
       return false;
+    if (input.kind !== "IMAGE") return false;
     return Boolean(await this.storage.get(media.key, "attachment-preview"));
   }
 }

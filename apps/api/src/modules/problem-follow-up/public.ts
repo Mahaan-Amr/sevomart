@@ -157,6 +157,7 @@ export interface ProblemFollowUpEvidenceRead {
     identityId: string;
     disputeId: string;
     evidenceId: string;
+    kind: "IMAGE" | "DOCUMENT" | "MESSAGE_REFERENCE";
   }): Promise<boolean>;
 }
 

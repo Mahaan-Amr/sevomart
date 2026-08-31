@@ -22,6 +22,7 @@ describe("seller dispute evidence reader", () => {
         identityId: "seller-id",
         disputeId: "dispute-id",
         evidenceId: "evidence-id",
+        kind: "IMAGE",
       }),
     ).resolves.toBe(true);
     await expect(
@@ -29,6 +30,15 @@ describe("seller dispute evidence reader", () => {
         identityId: "another-seller",
         disputeId: "dispute-id",
         evidenceId: "evidence-id",
+        kind: "IMAGE",
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      reader.isReadySellerEvidence({
+        identityId: "seller-id",
+        disputeId: "dispute-id",
+        evidenceId: "evidence-id",
+        kind: "DOCUMENT",
       }),
     ).resolves.toBe(false);
   });
