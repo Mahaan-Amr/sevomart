@@ -4,13 +4,26 @@ import { createJsonSchemaMap } from "../../json-schema";
 import { identityIdContract, orderIdContract } from "../../platform/v1/index";
 import {
   disputeCategoryContract,
+  disputeAuditEntryContract,
+  disputeAuditIdContract,
   disputeEvidenceIdContract,
   disputeEvidenceKindContract,
   disputeIdContract,
   problemFollowUpIdempotencyKeyContract,
+  problemFollowUpV1Operations,
   violationCaseIdContract,
   violationTypeContract,
 } from "../v1/index";
+
+export const problemFollowUpV1ReadOperations = {
+  readBuyerDispute: problemFollowUpV1Operations.readBuyerDispute,
+  listSellerDisputes: problemFollowUpV1Operations.listSellerDisputes,
+  readSellerDispute: problemFollowUpV1Operations.readSellerDispute,
+  listPlatformDisputes: problemFollowUpV1Operations.listPlatformDisputes,
+  readPlatformDispute: problemFollowUpV1Operations.readPlatformDispute,
+  listPlatformViolationCases: problemFollowUpV1Operations.listPlatformViolationCases,
+  readPlatformViolationCase: problemFollowUpV1Operations.readPlatformViolationCase,
+} as const;
 
 export const problemFollowUpV2Operations = {
   openDispute: {
@@ -137,6 +150,27 @@ export const reopenDisputeCommandV2Contract = reopenDisputeInputV2Contract.exten
   disputeId: disputeIdContract,
 });
 
+export const disputeEscalationAuditV2Contract = z
+  .object({
+    auditId: disputeAuditIdContract,
+    disputeId: disputeIdContract,
+    action: z.literal("ESCALATE"),
+    actorKind: z.literal("PLATFORM_AGENT"),
+    actorIdentityId: identityIdContract,
+    fromStatus: z.literal("AWAITING_SELLER_RESPONSE"),
+    toStatus: z.literal("UNDER_REVIEW"),
+    reasonCode: z.literal("SELLER_RESPONSE_DEADLINE_EXPIRED"),
+    evidenceCount: z.literal(0),
+    occurredAt: z.iso.datetime({ offset: true }),
+    correlationId: z.uuid(),
+  })
+  .strict();
+
+export const disputeAuditEntryV2Contract = z.union([
+  disputeAuditEntryContract,
+  disputeEscalationAuditV2Contract,
+]);
+
 export const problemFollowUpErrorV2Contract = z
   .object({
     code: z.enum([
@@ -162,6 +196,7 @@ export const problemFollowUpV2Schemas = {
   RespondToDisputeInputV2: respondToDisputeInputV2Contract,
   ResolveDisputeInputV2: resolveDisputeInputV2Contract,
   ReopenDisputeInputV2: reopenDisputeInputV2Contract,
+  DisputeAuditEntryV2: disputeAuditEntryV2Contract,
   ProblemFollowUpErrorV2: problemFollowUpErrorV2Contract,
 } as const;
 
@@ -203,3 +238,4 @@ export type OpenDisputeInputV2 = z.infer<typeof openDisputeInputV2Contract>;
 export type RespondToDisputeInputV2 = z.infer<typeof respondToDisputeInputV2Contract>;
 export type ResolveDisputeInputV2 = z.infer<typeof resolveDisputeInputV2Contract>;
 export type ReopenDisputeInputV2 = z.infer<typeof reopenDisputeInputV2Contract>;
+export type DisputeAuditEntryV2 = z.infer<typeof disputeAuditEntryV2Contract>;

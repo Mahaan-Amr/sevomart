@@ -1,4 +1,5 @@
 import {
+  disputeAuditEntryV2Contract,
   openDisputeCommandV2Contract,
   openDisputeInputV2Contract,
   resolveDisputeInputV2Contract,
@@ -10,6 +11,27 @@ const orderId = "00000000-0000-4000-8000-000000000005";
 const evidenceId = "00000000-0000-4000-8000-000000000007";
 
 describe("problem follow-up v2 mutations", () => {
+  it("versions the expired-seller escalation audit without weakening v1", () => {
+    const audit = {
+      auditId: "00000000-0000-4000-8000-000000000010",
+      disputeId: "00000000-0000-4000-8000-000000000011",
+      action: "ESCALATE",
+      actorKind: "PLATFORM_AGENT",
+      actorIdentityId: "00000000-0000-4000-8000-000000000012",
+      fromStatus: "AWAITING_SELLER_RESPONSE",
+      toStatus: "UNDER_REVIEW",
+      reasonCode: "SELLER_RESPONSE_DEADLINE_EXPIRED",
+      evidenceCount: 0,
+      occurredAt: "2026-08-31T09:00:00.000Z",
+      correlationId: "00000000-0000-4000-8000-000000000013",
+    } as const;
+
+    expect(disputeAuditEntryV2Contract.parse(audit)).toEqual(audit);
+    expect(() =>
+      disputeAuditEntryV2Contract.parse({ ...audit, evidenceCount: 1 }),
+    ).toThrow();
+  });
+
   it("requires the caller to declare every evidence kind", () => {
     const input = {
       orderId,

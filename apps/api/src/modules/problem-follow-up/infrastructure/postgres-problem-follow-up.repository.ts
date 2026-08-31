@@ -15,6 +15,7 @@ import {
   sellerDisputeViewContract,
   violationRecordedV1Contract,
 } from "@sevo/contracts/problem-follow-up/v1";
+import { disputeAuditEntryV2Contract } from "@sevo/contracts/problem-follow-up/v2";
 import { identityIdContract } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
@@ -669,14 +670,19 @@ async function auditDispute(
     correlationId: string;
   },
 ) {
+  const entry = disputeAuditEntryV2Contract.parse({
+    auditId: randomUUID(),
+    ...audit,
+    occurredAt: audit.occurredAt.toISOString(),
+  });
   await sql`
     insert into problem_dispute_audits
       (id, dispute_id, action, actor_kind, actor_identity_id, from_status,
        to_status, reason_code, evidence_count, correlation_id, occurred_at)
-    values (${randomUUID()}, ${audit.disputeId}, ${audit.action}, ${audit.actorKind},
-      ${audit.actorIdentityId}, ${audit.fromStatus}, ${audit.toStatus},
-      ${audit.reasonCode}, ${audit.evidenceCount}, ${audit.correlationId},
-      ${audit.occurredAt})
+    values (${entry.auditId}, ${entry.disputeId}, ${entry.action}, ${entry.actorKind},
+      ${entry.actorIdentityId}, ${entry.fromStatus}, ${entry.toStatus},
+      ${entry.reasonCode}, ${entry.evidenceCount}, ${entry.correlationId},
+      ${entry.occurredAt})
   `;
 }
 

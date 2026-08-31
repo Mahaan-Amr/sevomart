@@ -1,10 +1,10 @@
 import {
   createProblemFollowUpV1JsonSchemas,
   problemFollowUpV1Examples,
-  problemFollowUpV1Operations,
 } from "@sevo/contracts/problem-follow-up/v1";
 import {
   createProblemFollowUpV2JsonSchemas,
+  problemFollowUpV1ReadOperations,
   problemFollowUpV2Examples,
   problemFollowUpV2Operations,
 } from "@sevo/contracts/problem-follow-up/v2";
@@ -81,7 +81,7 @@ const operations = [
     ],
   },
   {
-    ...problemFollowUpV1Operations.readBuyerDispute,
+    ...problemFollowUpV1ReadOperations.readBuyerDispute,
     tag: "problem-follow-up",
     auth: "identity-session",
     pathParameter: disputePathParameter,
@@ -93,7 +93,7 @@ const operations = [
     ],
   },
   {
-    ...problemFollowUpV1Operations.listSellerDisputes,
+    ...problemFollowUpV1ReadOperations.listSellerDisputes,
     tag: "problem-follow-up",
     auth: "identity-session",
     queryParameters: paginationQuery,
@@ -105,7 +105,7 @@ const operations = [
     ],
   },
   {
-    ...problemFollowUpV1Operations.readSellerDispute,
+    ...problemFollowUpV1ReadOperations.readSellerDispute,
     tag: "problem-follow-up",
     auth: "identity-session",
     pathParameter: disputePathParameter,
@@ -137,7 +137,7 @@ const operations = [
     ],
   },
   {
-    ...problemFollowUpV1Operations.listPlatformDisputes,
+    ...problemFollowUpV1ReadOperations.listPlatformDisputes,
     tag: "problem-follow-up",
     auth: "platform-agent-session",
     queryParameters: paginationQuery,
@@ -149,7 +149,7 @@ const operations = [
     ],
   },
   {
-    ...problemFollowUpV1Operations.readPlatformDispute,
+    ...problemFollowUpV1ReadOperations.readPlatformDispute,
     tag: "problem-follow-up",
     auth: "platform-agent-session",
     pathParameter: disputePathParameter,
@@ -205,7 +205,7 @@ const operations = [
     ],
   },
   {
-    ...problemFollowUpV1Operations.listPlatformViolationCases,
+    ...problemFollowUpV1ReadOperations.listPlatformViolationCases,
     tag: "problem-follow-up",
     auth: "platform-agent-session",
     queryParameters: paginationQuery,
@@ -217,7 +217,7 @@ const operations = [
     ],
   },
   {
-    ...problemFollowUpV1Operations.readPlatformViolationCase,
+    ...problemFollowUpV1ReadOperations.readPlatformViolationCase,
     tag: "problem-follow-up",
     auth: "platform-agent-session",
     pathParameter: {

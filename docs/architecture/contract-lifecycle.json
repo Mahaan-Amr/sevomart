@@ -128,7 +128,7 @@
       "removable": false,
       "evidence": {
         "schemas": ["buyerDisputeViewContract"],
-        "operations": ["problemFollowUpV1Operations"],
+        "operations": [],
         "events": ["disputeOpenedV1Contract"]
       }
     },
@@ -139,8 +139,15 @@
       "consumersMigrated": "complete",
       "removable": false,
       "evidence": {
-        "schemas": ["openDisputeInputV2Contract", "resolveDisputeInputV2Contract"],
-        "operations": ["problemFollowUpV2Operations"],
+        "schemas": [
+          "openDisputeInputV2Contract",
+          "resolveDisputeInputV2Contract",
+          "disputeAuditEntryV2Contract"
+        ],
+        "operations": [
+          "problemFollowUpV1ReadOperations",
+          "problemFollowUpV2Operations"
+        ],
         "events": []
       }
     },

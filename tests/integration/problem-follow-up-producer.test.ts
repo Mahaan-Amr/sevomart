@@ -5,6 +5,7 @@ import {
   orderIdContract,
   storeIdContract,
 } from "@sevo/contracts/platform/v1";
+import { disputeAuditEntryV2Contract } from "@sevo/contracts/problem-follow-up/v2";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -296,6 +297,38 @@ describe("problem follow-up producer persistence", () => {
         reasonCode: "PLATFORM_CLOSED_CASE",
       },
     ]);
+    const [escalationAudit] = await sql<
+      Array<{
+        auditId: string;
+        disputeId: string;
+        action: string;
+        actorKind: string;
+        actorIdentityId: string;
+        fromStatus: string;
+        toStatus: string;
+        reasonCode: string;
+        evidenceCount: number;
+        occurredAt: Date;
+        correlationId: string;
+      }>
+    >`
+      select id as "auditId", dispute_id as "disputeId", action,
+        actor_kind as "actorKind", actor_identity_id as "actorIdentityId",
+        from_status as "fromStatus", to_status as "toStatus",
+        reason_code as "reasonCode", evidence_count as "evidenceCount",
+        occurred_at as "occurredAt", correlation_id as "correlationId"
+      from problem_dispute_audits
+      where dispute_id = ${opened.disputeId} and action = 'ESCALATE'
+    `;
+    expect(
+      disputeAuditEntryV2Contract.parse({
+        ...escalationAudit,
+        occurredAt: escalationAudit?.occurredAt.toISOString(),
+      }),
+    ).toMatchObject({
+      action: "ESCALATE",
+      reasonCode: "SELLER_RESPONSE_DEADLINE_EXPIRED",
+    });
     const [resolvedEvent] = await sql<Array<{ payload: { fromStatus: string } }>>`
       select payload from platform_outbox_events
       where correlation_id = ${expiredCorrelationId}
