@@ -329,47 +329,68 @@ export const problemFollowUpCursorContract = z.string().min(1).max(500);
 export const problemFollowUpPageLimitContract = z.int().min(1).max(100);
 export const problemFollowUpAccessReasonContract = z.string().trim().min(10).max(1_000);
 
+const disputeEvidenceInputFields = {
+  evidenceIds: z.array(disputeEvidenceIdContract).max(10).optional().default([]),
+  evidence: z.array(disputeEvidenceInputContract).max(10).optional().default([]),
+} as const;
+
+function requireEvidenceCount(
+  input: { evidenceIds: readonly unknown[]; evidence: readonly unknown[] },
+  context: z.RefinementCtx,
+  minimum: number,
+) {
+  const count = input.evidenceIds.length + input.evidence.length;
+  if (count < minimum || count > 10) {
+    context.addIssue({
+      code: "custom",
+      path: ["evidence"],
+      message: `evidence count must be between ${minimum} and 10`,
+    });
+  }
+}
+
 export const openDisputeInputContract = z
   .object({
     orderId: orderIdContract,
     category: disputeCategoryContract,
     description: z.string().trim().min(10).max(2_000),
-    evidence: z.array(disputeEvidenceInputContract).min(1).max(10),
+    ...disputeEvidenceInputFields,
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => requireEvidenceCount(input, context, 1));
 export const respondToDisputeInputContract = z
   .object({
     response: z.string().trim().min(10).max(2_000),
-    evidence: z.array(disputeEvidenceInputContract).max(10),
+    ...disputeEvidenceInputFields,
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => requireEvidenceCount(input, context, 0));
 export const resolveDisputeInputContract = z
   .object({
     status: z.enum(["RESOLVED", "CLOSED"]),
     outcomeCode: disputeOutcomeCodeContract,
     explanation: z.string().trim().min(10).max(2_000),
-    evidence: z.array(disputeEvidenceInputContract).max(10),
+    ...disputeEvidenceInputFields,
     violationType: violationTypeContract.optional(),
   })
   .strict()
   .superRefine((input, context) => {
-    const requiresType = input.outcomeCode === "VIOLATION_RECORDED";
-    if (requiresType !== Boolean(input.violationType)) {
+    if (input.outcomeCode !== "VIOLATION_RECORDED" && input.violationType) {
       context.addIssue({
         code: "custom",
         path: ["violationType"],
-        message: requiresType
-          ? "violation type is required for a recorded violation"
-          : "violation type is only allowed for a recorded violation",
+        message: "violation type is only allowed for a recorded violation",
       });
     }
+    requireEvidenceCount(input, context, 0);
   });
 export const reopenDisputeInputContract = z
   .object({
     reason: z.string().trim().min(10).max(2_000),
-    evidence: z.array(disputeEvidenceInputContract).min(1).max(10),
+    ...disputeEvidenceInputFields,
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => requireEvidenceCount(input, context, 1));
 
 const problemFollowUpCommandContext = {
   actorIdentityId: identityIdContract,

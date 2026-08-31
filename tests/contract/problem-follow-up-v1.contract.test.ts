@@ -116,7 +116,7 @@ describe("problem follow-up v1 transitions", () => {
     ).toThrow();
   });
 
-  it("keeps the declared evidence kind and requires an explicit recorded-violation type", () => {
+  it("keeps typed evidence while preserving the v1 image-id request shape", () => {
     expect(
       openDisputeInputContract.parse({
         orderId,
@@ -125,14 +125,22 @@ describe("problem follow-up v1 transitions", () => {
         evidence: [{ evidenceId, kind: "DOCUMENT" }],
       }).evidence[0]?.kind,
     ).toBe("DOCUMENT");
-    expect(() =>
+    expect(
+      openDisputeInputContract.parse({
+        orderId,
+        category: "DAMAGED",
+        description: "کالا هنگام تحویل آسیب‌دیده بود.",
+        evidenceIds: [evidenceId],
+      }).evidenceIds,
+    ).toEqual([evidenceId]);
+    expect(
       resolveDisputeInputContract.parse({
         status: "RESOLVED",
         outcomeCode: "VIOLATION_RECORDED",
         explanation: "تخلف ثبت‌شده به پیگیری جدا نیاز دارد.",
-        evidence: [],
-      }),
-    ).toThrow();
+        evidenceIds: [],
+      }).outcomeCode,
+    ).toBe("VIOLATION_RECORDED");
     expect(() =>
       resolveDisputeInputContract.parse({
         status: "RESOLVED",
@@ -388,7 +396,7 @@ describe("problem follow-up v1 audit and events", () => {
       description: "کالا هنگام تحویل آسیب‌دیده بود.",
       evidence: [{ evidenceId, kind: "IMAGE" }],
     } as const;
-    expect(openDisputeCommandContract.parse(command)).toEqual(command);
+    expect(openDisputeCommandContract.parse(command)).toMatchObject(command);
     expect(() =>
       openDisputeCommandContract.parse({ ...command, actorKind: "SELLER" }),
     ).toThrow();

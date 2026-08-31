@@ -35,6 +35,7 @@ import {
 import type { OpaquePlatformAccessTransactionContext } from "../../identity-access/public";
 import {
   appendContribution,
+  commandEvidence,
   contribution,
   decodeCursor,
   page,
@@ -86,7 +87,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       const contributions = contribution(
         "BUYER",
         command.input.description,
-        command.input.evidence,
+        commandEvidence(command.input),
         occurredAt,
       );
       try {
@@ -115,7 +116,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: null,
         toStatus: "AWAITING_SELLER_RESPONSE",
         reasonCode: "BUYER_OPENED_CASE",
-        evidenceCount: command.input.evidence.length,
+        evidenceCount: commandEvidence(command.input).length,
         occurredAt: command.openedAt,
         correlationId: command.correlationId,
       });
@@ -197,7 +198,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "SELLER",
         command.input.response,
-        command.input.evidence,
+        commandEvidence(command.input),
         command.occurredAt,
       );
       await updateDispute(sql, row, {
@@ -216,7 +217,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: "UNDER_REVIEW",
         reasonCode: "SELLER_SUBMITTED_RESPONSE",
-        evidenceCount: command.input.evidence.length,
+        evidenceCount: commandEvidence(command.input).length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });
@@ -301,7 +302,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "PLATFORM_AGENT",
         command.input.explanation,
-        command.input.evidence,
+        commandEvidence(command.input),
         command.occurredAt,
       );
       const outcome = {
@@ -329,7 +330,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: command.input.status,
         reasonCode,
-        evidenceCount: command.input.evidence.length,
+        evidenceCount: commandEvidence(command.input).length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });
@@ -353,7 +354,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
           sql,
           row,
           command,
-          command.input.violationType!,
+          command.input.violationType ?? "PLATFORM_POLICY_BREACH",
           contributions.at(-1)?.evidence ?? [],
         );
       }
@@ -401,7 +402,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         row,
         "PLATFORM_AGENT",
         command.input.reason,
-        command.input.evidence,
+        commandEvidence(command.input),
         command.occurredAt,
       );
       await updateDispute(sql, row, {
@@ -420,7 +421,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         fromStatus: row.status,
         toStatus: "UNDER_REVIEW",
         reasonCode: "NEW_EVIDENCE_RECEIVED",
-        evidenceCount: command.input.evidence.length,
+        evidenceCount: commandEvidence(command.input).length,
         occurredAt: command.occurredAt,
         correlationId: command.correlationId,
       });

@@ -33,6 +33,19 @@ export type ViolationRow = {
   actionReasonCodes: string[];
 };
 
+export function commandEvidence(input: {
+  evidenceIds?: readonly string[];
+  evidence?: readonly { evidenceId: string; kind: string }[];
+}) {
+  return [
+    ...(input.evidenceIds ?? []).map((evidenceId) => ({
+      evidenceId,
+      kind: "IMAGE" as const,
+    })),
+    ...(input.evidence ?? []),
+  ];
+}
+
 export function contribution(
   authorKind: "BUYER" | "SELLER" | "PLATFORM_AGENT",
   text: string,
