@@ -9,7 +9,10 @@ import { IdentityAccessModule } from "../src/modules/identity-access/composition
 import { DevOtpProvider } from "../src/modules/notifications/composition";
 import { MediaModule } from "../src/modules/media/composition";
 import { PostgresMinioMediaStorage } from "../src/modules/media/infrastructure/postgres-minio-media-storage";
-import type { ConversationMediaAccess } from "../src/modules/media/public";
+import type {
+  ConversationMediaAccess,
+  DisputeMediaAccess,
+} from "../src/modules/media/public";
 
 class MediaTestModule {}
 Module({})(MediaTestModule);
@@ -17,6 +20,7 @@ Module({})(MediaTestModule);
 export async function createMediaTestApp(
   environment: RuntimeEnvironment,
   access: ConversationMediaAccess,
+  disputeAccess: DisputeMediaAccess = async () => false,
 ) {
   const storage = new PostgresMinioMediaStorage(environment);
   const adapter = new FastifyAdapter({ logger: false });
@@ -31,7 +35,13 @@ export async function createMediaTestApp(
         IdentityAccessModule.register(environment, {
           otpProvider: new DevOtpProvider(),
         }),
-        MediaModule.register(environment, storage, async () => false, access),
+        MediaModule.register(
+          environment,
+          storage,
+          async () => false,
+          access,
+          disputeAccess,
+        ),
       ],
     },
     adapter,

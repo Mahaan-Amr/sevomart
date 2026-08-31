@@ -6,10 +6,10 @@ export class FakeObjectStorage implements ObjectStoragePort {
 
   async put(object: StoredMedia): Promise<void> {
     if (
-      object.purpose === "CONVERSATION_ATTACHMENT" &&
+      ["CONVERSATION_ATTACHMENT", "DISPUTE_EVIDENCE"].includes(object.purpose) &&
       (object.visibility !== "PRIVATE" || !object.ownerReferenceId)
     )
-      throw new Error("Conversation attachments must be private and bound to a thread");
+      throw new Error("Private media must be bound to its owning context");
     this.#objects.set(object.key, {
       ...object,
       bytes: object.bytes.slice(),
@@ -23,14 +23,15 @@ export class FakeObjectStorage implements ObjectStoragePort {
   async get(key: string, requestedVariant?: MediaVariant) {
     const object = this.#objects.get(key);
     if (!object) return undefined;
-    const canonical =
-      object.purpose === "CONVERSATION_ATTACHMENT"
-        ? "attachment-preview"
-        : object.purpose === "STORE_LOGO"
-          ? "logo-large"
-          : object.purpose === "STORE_COVER"
-            ? "cover-desktop"
-            : "product-detail";
+    const canonical = ["CONVERSATION_ATTACHMENT", "DISPUTE_EVIDENCE"].includes(
+      object.purpose,
+    )
+      ? "attachment-preview"
+      : object.purpose === "STORE_LOGO"
+        ? "logo-large"
+        : object.purpose === "STORE_COVER"
+          ? "cover-desktop"
+          : "product-detail";
     const variant = object.variants.find(
       (candidate) => candidate.name === (requestedVariant ?? canonical),
     );
@@ -65,7 +66,7 @@ export class FakeObjectStorage implements ObjectStoragePort {
     if (
       !object ||
       object.ownerSellerId !== ownerSellerId ||
-      object.purpose === "CONVERSATION_ATTACHMENT"
+      ["CONVERSATION_ATTACHMENT", "DISPUTE_EVIDENCE"].includes(object.purpose)
     ) {
       throw new Error("Media is not owned by the publishing seller");
     }

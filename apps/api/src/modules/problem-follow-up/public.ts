@@ -152,6 +152,15 @@ export interface ProblemFollowUpStoreResolver {
   resolveStore(identityId: IdentityId): Promise<StoreId | undefined>;
 }
 
+export interface ProblemFollowUpEvidenceRead {
+  isReadySellerEvidence(input: {
+    identityId: string;
+    disputeId: string;
+    evidenceId: string;
+    kind: "IMAGE" | "DOCUMENT" | "MESSAGE_REFERENCE";
+  }): Promise<boolean>;
+}
+
 export type ProblemFollowUpFaultCode =
   | "UNAUTHENTICATED"
   | "FORBIDDEN"

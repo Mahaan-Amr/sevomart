@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
+import { disputeIdContract } from "@sevo/contracts/problem-follow-up/v1";
 import { identityIdContract, storeIdContract } from "@sevo/contracts/platform/v1";
 import type { Sql } from "postgres";
 
@@ -13,6 +14,11 @@ import {
   type PlatformSensitiveAccess,
   type SellerAccessRead,
 } from "../identity-access/public";
+import {
+  DISPUTE_EVIDENCE_READER,
+  type DisputeEvidenceReader,
+  type DisputeMediaAccess,
+} from "../media/public";
 import { ProblemFollowUpService } from "./application/problem-follow-up.service";
 import { PostgresProblemFollowUpRepository } from "./infrastructure/postgres-problem-follow-up.repository";
 import { ProblemFollowUpController } from "./problem-follow-up.controller";
@@ -34,6 +40,7 @@ export class ProblemFollowUpModule {
         transaction: Sql,
       ) => OpaquePlatformAccessTransactionContext;
       repository?: ProblemFollowUpRepository;
+      onMediaAccessReady?: (access: DisputeMediaAccess) => void;
     },
   ): DynamicModule {
     return {
@@ -46,11 +53,13 @@ export class ProblemFollowUpModule {
             IDENTITY_SESSION_READER,
             SELLER_ACCESS_READ,
             PLATFORM_SENSITIVE_ACCESS,
+            DISPUTE_EVIDENCE_READER,
           ],
           useFactory: (
             sessions: IdentitySessionReader,
             sellerAccess: SellerAccessRead,
             sensitiveAccess: PlatformSensitiveAccess,
+            evidence: DisputeEvidenceReader,
           ) => {
             const repository =
               options.repository ??
@@ -59,6 +68,21 @@ export class ProblemFollowUpModule {
                 sensitiveAccess,
                 options.createAccessTransactionContext,
               );
+            options.onMediaAccessReady?.(async ({ identityId, disputeId }) => {
+              const parsedIdentityId = identityIdContract.parse(identityId);
+              if (!(await sellerAccess.isActiveSeller(parsedIdentityId))) return false;
+              const rawStoreId = await options.resolveSellerStore(parsedIdentityId);
+              if (!rawStoreId) return false;
+              try {
+                await repository.readSeller(
+                  storeIdContract.parse(rawStoreId),
+                  disputeIdContract.parse(disputeId),
+                );
+                return true;
+              } catch {
+                return false;
+              }
+            });
             return new ProblemFollowUpService(
               repository,
               {
@@ -79,6 +103,7 @@ export class ProblemFollowUpModule {
                 },
               },
               options.platformSessions,
+              evidence,
             );
           },
         },
