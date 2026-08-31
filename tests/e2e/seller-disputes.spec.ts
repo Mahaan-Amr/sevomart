@@ -18,6 +18,7 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
   page,
 }, testInfo) => {
   const index = visualProjectIndex(testInfo.project.name);
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const fixture = await createSellerWorkspaceFixture(page, {
     mobile: sellerDisputeTestMobiles[index]!,
     slug: `seller-dispute-${index}`,
@@ -30,6 +31,7 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
   const disputeId = randomUUID();
   const orderId = randomUUID();
   const buyerId = randomUUID();
+  const evidenceId = randomUUID();
   const openedAt = new Date();
   const deadline = new Date(openedAt.getTime() + 24 * 60 * 60 * 1_000);
 
@@ -48,7 +50,7 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
              text: "بسته سالم بود اما کالا هنگام تحویل شکستگی داشت.",
              evidence: [
                {
-                 evidenceId: randomUUID(),
+                 evidenceId,
                  kind: "IMAGE",
                  submittedAt: openedAt.toISOString(),
                },
@@ -60,21 +62,44 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
 
     await page.goto("/seller");
     await expect(
-      page.getByRole("heading", { name: "یک اختلاف منتظر پاسخ فروشگاه است" }),
+      page.getByRole("heading", {
+        name: "یک پرونده اختلاف منتظر پاسخ فروشگاه است",
+      }),
     ).toBeVisible();
     await expect(page.getByText("مهلت پاسخ:")).toBeVisible();
-    await page.getByRole("link", { name: "پاسخ به اختلاف" }).click();
+    await page.getByRole("link", { name: "پاسخ به پرونده اختلاف" }).click();
 
     await expect(page).toHaveURL(new RegExp(`/seller/disputes/${disputeId}$`));
     await expect(
       page.getByRole("heading", { name: "کالا آسیب‌دیده است" }),
     ).toBeVisible();
-    await expect(page.getByText("فروشگاه پاسخ‌گو")).toHaveCount(0);
-    await expect(page.getByText("تصویر")).toBeVisible();
-    await page
-      .getByLabel("توضیح شما")
-      .fill("کالا را بررسی می‌کنیم و امروز نتیجه و راه‌حل را اعلام می‌کنیم.");
-    await page.getByRole("button", { name: "ثبت پاسخ فروشگاه" }).click();
+    await expect(page.getByText(orderId)).toHaveCount(0);
+    const textarea = page.getByLabel("توضیح شما");
+    const evidence = page.getByRole("checkbox", { name: /تصویر خریدار/ });
+    const submit = page.getByRole("button", { name: "ثبت پاسخ فروشگاه" });
+    await textarea.fill(
+      "کالا را با دقت بررسی می‌کنیم و امروز نتیجه و راه‌حل روشن را اعلام می‌کنیم. ".repeat(
+        8,
+      ),
+    );
+    await textarea.focus();
+    await page.keyboard.press("Tab");
+    await expect(evidence).toBeFocused();
+    expect(
+      await evidence.evaluate((element) => element.matches(":focus-visible")),
+    ).toBe(true);
+    await page.keyboard.press("Space");
+    await page.keyboard.press("Tab");
+    await expect(submit).toBeFocused();
+    expect(await submit.evaluate((element) => element.matches(":focus-visible"))).toBe(
+      true,
+    );
+    expect(
+      await submit.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).transitionDuration),
+      ),
+    ).toBeLessThanOrEqual(0.001);
+    await page.keyboard.press("Enter");
 
     await expect(
       page.getByText("پاسخ فروشگاه ثبت شد و پرونده برای بررسی سوو فرستاده شد."),
@@ -83,13 +108,54 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
     await expect(page.getByRole("button", { name: "ثبت پاسخ فروشگاه" })).toHaveCount(0);
 
     await assertNoHorizontalOverflow(page);
-    await assertInteractiveTargets(
-      page,
-      "main a, main button, main input, main select, main textarea",
-    );
+    await assertInteractiveTargets(page, "main a, main button, main textarea");
     await assertMinimumContrast(page.locator("h1, h2, p, a, button, label, span"));
 
-    await page.goto(`/seller/disputes/${randomUUID()}`);
+    const expiredDisputeId = randomUUID();
+    const expiredOpenedAt = new Date();
+    await sql`
+      insert into problem_disputes
+        (id, order_id, buyer_identity_id, store_id, status, category,
+         opened_at, deadline_kind, deadline_at, contributions, outcome,
+         version, updated_at)
+      values
+        (${expiredDisputeId}, ${randomUUID()}, ${buyerId}, ${fixture.storeId},
+         'AWAITING_SELLER_RESPONSE', 'REFUND_NOT_COMPLETED', ${expiredOpenedAt},
+         'SELLER_FIRST_RESPONSE', ${new Date(expiredOpenedAt.getTime() - 86_400_000)},
+         ${sql.json([
+           {
+             authorKind: "BUYER",
+             text: "بازپرداخت اعلام‌شده هنوز به حساب من نرسیده است.",
+             evidence: [],
+             submittedAt: expiredOpenedAt.toISOString(),
+           },
+         ])}, null, 1, ${expiredOpenedAt})
+    `;
+    await page.goto(`/seller/disputes/${expiredDisputeId}`);
+    await expect(page.getByText(/پرونده اکنون در نوبت بررسی سوو است/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "ثبت پاسخ فروشگاه" })).toHaveCount(0);
+
+    const foreignDisputeId = randomUUID();
+    const foreignOpenedAt = new Date();
+    await sql`
+      insert into problem_disputes
+        (id, order_id, buyer_identity_id, store_id, status, category,
+         opened_at, deadline_kind, deadline_at, contributions, outcome,
+         version, updated_at)
+      values
+        (${foreignDisputeId}, ${randomUUID()}, ${randomUUID()}, ${randomUUID()},
+         'AWAITING_SELLER_RESPONSE', 'WRONG_ITEM', ${foreignOpenedAt},
+         'SELLER_FIRST_RESPONSE', ${new Date(foreignOpenedAt.getTime() + 86_400_000)},
+         ${sql.json([
+           {
+             authorKind: "BUYER",
+             text: "کالای دیگری به جای سفارش من تحویل شده است.",
+             evidence: [],
+             submittedAt: foreignOpenedAt.toISOString(),
+           },
+         ])}, null, 1, ${foreignOpenedAt})
+    `;
+    await page.goto(`/seller/disputes/${foreignDisputeId}`);
     await expect(
       page.getByRole("heading", { name: "این پرونده در دسترس نیست" }),
     ).toBeVisible();

@@ -24,6 +24,21 @@ export async function readSellerDisputes(
   );
 }
 
+export async function readAllSellerDisputes(cookieHeader: string) {
+  const disputes = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await readSellerDisputes(cookieHeader, cursor, 100);
+    if (page.kind !== "OK") return page;
+    disputes.push(...page.data.items);
+    cursor = page.data.nextCursor ?? undefined;
+    if (cursor && seenCursors.has(cursor)) return { kind: "UNAVAILABLE" } as const;
+    if (cursor) seenCursors.add(cursor);
+  } while (cursor);
+  return { kind: "OK", data: disputes } as const;
+}
+
 export async function readSellerDispute(cookieHeader: string, disputeId: string) {
   return readJson(
     `/v1/seller/disputes/${encodeURIComponent(disputeId)}`,

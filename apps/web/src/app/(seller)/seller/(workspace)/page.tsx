@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { readNearestSellerConversation } from "../../../../lib/seller-conversation-api";
-import { readSellerDisputes } from "../../../../lib/seller-dispute-api";
+import { readAllSellerDisputes } from "../../../../lib/seller-dispute-api";
 import { formatDisputeTime } from "../disputes/seller-dispute-copy";
 import { nearestSellerResponseDispute } from "../disputes/seller-dispute-model";
 import styles from "./workspace-page.module.css";
@@ -16,11 +16,11 @@ export default async function SellerHomePage() {
   const [actionableOrders, actionableConversation, disputePage] = await Promise.all([
     readActionableOrders(cookieHeader),
     readNearestSellerConversation(cookieHeader),
-    readSellerDisputes(cookieHeader, undefined, 100),
+    readAllSellerDisputes(cookieHeader),
   ]);
   const actionableDispute =
     disputePage.kind === "OK"
-      ? nearestSellerResponseDispute(disputePage.data.items)
+      ? nearestSellerResponseDispute(disputePage.data)
       : undefined;
   const conversationHref =
     actionableConversation.kind === "ACTIONABLE"
@@ -35,13 +35,13 @@ export default async function SellerHomePage() {
         <div className={styles.nextAction}>
           {actionableDispute ? (
             <>
-              <h2>یک اختلاف منتظر پاسخ فروشگاه است</h2>
+              <h2>یک پرونده اختلاف منتظر پاسخ فروشگاه است</h2>
               <p>مهلت پاسخ: {formatDisputeTime(actionableDispute.deadline!.dueAt)}</p>
               <Link
                 className={styles.primary}
                 href={`/seller/disputes/${actionableDispute.disputeId}`}
               >
-                پاسخ به اختلاف
+                پاسخ به پرونده اختلاف
               </Link>
             </>
           ) : actionableOrders === undefined &&
@@ -91,7 +91,7 @@ export default async function SellerHomePage() {
             دیدن همه گفت‌وگوها
           </Link>
           <Link className={styles.secondary} href="/seller/disputes">
-            دیدن همه اختلاف‌ها
+            دیدن همه پرونده‌های اختلاف
           </Link>
         </nav>
       </section>

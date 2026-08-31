@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { sellerDisputeViewContract } from "@sevo/contracts/problem-follow-up/v1";
 
 import {
+  formatOrderReference,
   nearestSellerResponseDispute,
   responseRecoveryMessage,
+  sellerNeedsToRespond,
 } from "./seller-dispute-model";
 
 const baseDispute = sellerDisputeViewContract.parse({
@@ -48,8 +50,13 @@ describe("seller dispute presentation", () => {
     );
   });
 
+  it("shares one response-action predicate and presents a short order reference", () => {
+    expect(sellerNeedsToRespond(baseDispute)).toBe(true);
+    expect(formatOrderReference(baseDispute.orderId)).toBe("۸۸۵D۷C");
+  });
+
   it("gives a human recovery step for stale, duplicate and inaccessible cases", () => {
-    expect(responseRecoveryMessage("DEADLINE_PASSED")).toContain("مهلت");
+    expect(responseRecoveryMessage("DEADLINE_PASSED")).toContain("بررسی سوو");
     expect(responseRecoveryMessage("IDEMPOTENCY_CONFLICT")).toContain("تازه");
     expect(responseRecoveryMessage("NOT_FOUND")).toContain("در دسترس");
   });

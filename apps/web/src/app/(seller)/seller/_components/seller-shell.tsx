@@ -8,7 +8,12 @@ import styles from "./seller-shell.module.css";
 const destinations = [
   { href: "/seller", label: "خانه", icon: "⌂" },
   { href: "/seller/orders", label: "سفارش‌ها", icon: "□" },
-  { href: "/seller/disputes", label: "اختلاف‌ها", icon: "!", desktopOnly: true },
+  {
+    href: "/seller/disputes",
+    label: "پرونده‌های اختلاف",
+    icon: "!",
+    desktopOnly: true,
+  },
   { href: "/seller/products", label: "کالاها", icon: "◇" },
   { href: "/seller/inventory", label: "موجودی", icon: "≡" },
   { href: "/seller/store", label: "فروشگاه", icon: "○" },

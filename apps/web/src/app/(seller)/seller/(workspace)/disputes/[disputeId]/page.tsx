@@ -16,7 +16,7 @@ export default async function SellerDisputePage({ params }: Props) {
       <main className={styles.page}>
         <section className={styles.panel} aria-labelledby="unavailable-title">
           <Link className={styles.back} href="/seller/disputes">
-            بازگشت به اختلاف‌ها
+            بازگشت به پرونده‌های اختلاف
           </Link>
           <h1 id="unavailable-title">این پرونده در دسترس نیست</h1>
           <p>پرونده بسته یا متعلق به فروشگاه دیگر از این مسیر نمایش داده نمی‌شود.</p>
