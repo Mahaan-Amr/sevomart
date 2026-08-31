@@ -4,7 +4,11 @@ import type { StoredOutboxEvent } from "@sevo/outbox";
 import type { JSONValue, Sql } from "postgres";
 import { describe, expect, it } from "vitest";
 
-import { projectDisputeState, projectFulfillmentState } from "./index";
+import {
+  projectDisputeState,
+  projectFulfillmentState,
+  projectSellerOrderFact,
+} from "./index";
 
 function captureSql() {
   const calls: Array<{ text: string; values: unknown[] }> = [];
@@ -35,6 +39,26 @@ function envelope(
 }
 
 describe("seller reporting projections", () => {
+  it("projects private order facts with their seller store routing key", async () => {
+    const { calls, sql } = captureSql();
+    const storeId = randomUUID();
+    const event = envelope("OrderReportingSnapshot.v1", 2, {
+      storeId,
+      status: "PAID",
+      total: { amount: 1_200_000, currency: "IRR" },
+      paidAt: "2026-08-31T10:00:00.000Z",
+    });
+
+    await projectSellerOrderFact(event, sql);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.text).toContain("insert into reporting_seller_order_facts");
+    expect(calls[0]!.text).not.toMatch(/order_orders/);
+    expect(calls[0]!.values).toEqual(
+      expect.arrayContaining([event.aggregateId, storeId, 1_200_000]),
+    );
+  });
+
   it("projects the latest fulfillment state without reading fulfillment tables", async () => {
     const { calls, sql } = captureSql();
     const event = envelope("FulfillmentAdvanced.v1", 3, {

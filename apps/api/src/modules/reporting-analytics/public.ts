@@ -1,10 +1,8 @@
 import type { FulfillmentStatus } from "@sevo/contracts/fulfillment/v1";
-import type { SellerActionableOrder } from "@sevo/contracts/orders/v1";
 import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
 
 export type ReportingAnalyticsRequest = Readonly<{
   sessionToken?: string;
-  correlationId: string;
 }>;
 
 export interface ReportingAnalyticsSessionRead {
@@ -21,22 +19,22 @@ export interface ReportingAnalyticsStoreResolver {
   resolveStore(identityId: IdentityId): Promise<StoreId | undefined>;
 }
 
-export interface ReportingAnalyticsOrderRead {
-  listActionableByStore(storeId: StoreId): Promise<SellerActionableOrder[]>;
-}
-
-export type ReportingFulfillmentState = Readonly<{
+export type ReportingSellerOrderState = Readonly<{
   orderId: OrderId;
-  status: FulfillmentStatus;
-  occurredAt: string;
+  totalAmount: number;
+  paidAt: string;
+  fulfillmentStatus?: FulfillmentStatus;
+  fulfillmentOccurredAt?: string;
 }>;
 
 export interface ReportingAnalyticsRepository {
-  readFulfillmentStates(
-    orderIds: readonly OrderId[],
-  ): Promise<ReportingFulfillmentState[]>;
+  readSellerOrderStates(input: {
+    storeId: StoreId;
+    from?: string;
+    to?: string;
+  }): Promise<ReportingSellerOrderState[]>;
   countAwaitingDisputeResponses(storeId: StoreId): Promise<number>;
-  readProjectionUpdatedAt(): Promise<string | null>;
+  readProjectionUpdatedAt(storeId: StoreId): Promise<string | null>;
 }
 
 export type ReportingAnalyticsFaultCode =

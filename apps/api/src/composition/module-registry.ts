@@ -1,5 +1,6 @@
 import type { DynamicModule, Type } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
+import { storeIdContract } from "@sevo/contracts/platform/v1";
 
 import { ConversationsModule } from "../modules/conversations/composition";
 import {
@@ -280,11 +281,12 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "reporting-analytics",
     artifact: ReportingAnalyticsModule,
-    compose: ({ checkoutRepository, environment, storeRepository }) =>
+    compose: ({ environment, storeRepository }) =>
       ReportingAnalyticsModule.register(environment, {
-        orders: checkoutRepository,
-        resolveSellerStore: async (identityId) =>
-          (await storeRepository.findBySellerId(identityId))?.id,
+        resolveSellerStore: async (identityId) => {
+          const store = await storeRepository.findBySellerId(identityId);
+          return store ? storeIdContract.parse(store.id) : undefined;
+        },
       }),
   },
 ];

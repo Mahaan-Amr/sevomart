@@ -1,4 +1,5 @@
 import { fulfillmentAdvancedV1Contract } from "@sevo/contracts/fulfillment/v1";
+import { orderReportingSnapshotV1Contract } from "@sevo/contracts/orders/v1";
 import {
   disputeOpenedV1Contract,
   disputeReopenedV1Contract,
@@ -49,6 +50,29 @@ export const projectFulfillmentState: OutboxEventHandler = async (event, sql) =>
       occurred_at = excluded.occurred_at,
       projected_at = excluded.projected_at
     where reporting_fulfillment_states.aggregate_version
+      < excluded.aggregate_version
+  `;
+};
+
+export const projectSellerOrderFact: OutboxEventHandler = async (event, sql) => {
+  const order = orderReportingSnapshotV1Contract.parse(event);
+  await sql`
+    insert into reporting_seller_order_facts
+      (order_id, store_id, total_amount, currency, paid_at,
+       aggregate_version, last_event_id, projected_at)
+    values
+      (${order.aggregateId}, ${order.payload.storeId}, ${order.payload.total.amount},
+       ${order.payload.total.currency}, ${order.payload.paidAt},
+       ${order.aggregateVersion}, ${order.eventId}, now())
+    on conflict (order_id) do update set
+      store_id = excluded.store_id,
+      total_amount = excluded.total_amount,
+      currency = excluded.currency,
+      paid_at = excluded.paid_at,
+      aggregate_version = excluded.aggregate_version,
+      last_event_id = excluded.last_event_id,
+      projected_at = excluded.projected_at
+    where reporting_seller_order_facts.aggregate_version
       < excluded.aggregate_version
   `;
 };
@@ -112,6 +136,7 @@ const sellerOperationsProjectionWorker: WorkerHandler = {
   async start(environment) {
     const consumerName = "reporting-seller-operations-v1";
     const handlers = {
+      "OrderReportingSnapshot.v1": projectSellerOrderFact,
       "FulfillmentAdvanced.v1": projectFulfillmentState,
       "DisputeOpened.v1": projectDisputeState,
       "DisputeResponded.v1": projectDisputeState,

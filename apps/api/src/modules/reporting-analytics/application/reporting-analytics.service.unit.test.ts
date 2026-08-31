@@ -1,94 +1,54 @@
-import type { SellerActionableOrder } from "@sevo/contracts/orders/v1";
 import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
 import { describe, expect, it } from "vitest";
 
-import {
-  type ReportingAnalyticsOrderRead,
-  type ReportingAnalyticsRepository,
-} from "../public";
+import type { ReportingAnalyticsRepository } from "../public";
 import { ReportingAnalyticsService } from "./reporting-analytics.service";
 
 const sellerId = "47a3f408-858c-45d7-a0bd-ab84a28718ef" as IdentityId;
 const storeId = "57a3f408-858c-45d7-a0bd-ab84a28718ef" as StoreId;
-const otherStoreId = "67a3f408-858c-45d7-a0bd-ab84a28718ef" as StoreId;
 const now = new Date("2026-08-31T12:00:00.000Z");
 
-function order(orderId: string, amount: number, paidAt: string): SellerActionableOrder {
-  return {
-    orderId: orderId as OrderId,
-    status: "PAID",
-    total: { amount, currency: "IRR" },
-    paidAt,
-    createdAt: paidAt,
-    itemCount: 1,
-  };
-}
-
 function createHarness() {
-  const ordersByStore = new Map<StoreId, SellerActionableOrder[]>([
-    [
-      storeId,
-      [
-        order(
-          "77a3f408-858c-45d7-a0bd-ab84a28718ef",
-          1_000_000,
-          "2026-08-10T08:00:00.000Z",
-        ),
-        order(
-          "87a3f408-858c-45d7-a0bd-ab84a28718ef",
-          2_000_000,
-          "2026-08-20T08:00:00.000Z",
-        ),
-        order(
-          "97a3f408-858c-45d7-a0bd-ab84a28718ef",
-          9_000_000,
-          "2026-07-20T08:00:00.000Z",
-        ),
-      ],
-    ],
-    [
-      otherStoreId,
-      [
-        order(
-          "a7a3f408-858c-45d7-a0bd-ab84a28718ef",
-          90_000_000,
-          "2026-08-12T08:00:00.000Z",
-        ),
-      ],
-    ],
-  ]);
-  const orders: ReportingAnalyticsOrderRead = {
-    async listActionableByStore(requestedStoreId) {
-      return ordersByStore.get(requestedStoreId) ?? [];
-    },
-  };
   const repository: ReportingAnalyticsRepository = {
-    async readFulfillmentStates(orderIds) {
-      expect(orderIds).not.toContain("a7a3f408-858c-45d7-a0bd-ab84a28718ef" as OrderId);
-      return [
+    async readSellerOrderStates(input) {
+      expect(input.storeId).toBe(storeId);
+      const rows = [
         {
           orderId: "77a3f408-858c-45d7-a0bd-ab84a28718ef" as OrderId,
-          status: "DELIVERED",
-          occurredAt: "2026-08-12T08:00:00.000Z",
+          totalAmount: 1_000_000,
+          paidAt: "2026-08-10T08:00:00.000Z",
+          fulfillmentStatus: "DELIVERED" as const,
+          fulfillmentOccurredAt: "2026-08-12T08:00:00.000Z",
         },
         {
           orderId: "87a3f408-858c-45d7-a0bd-ab84a28718ef" as OrderId,
-          status: "PREPARING",
-          occurredAt: "2026-08-29T08:00:00.000Z",
+          totalAmount: 2_000_000,
+          paidAt: "2026-08-20T08:00:00.000Z",
+          fulfillmentStatus: "PREPARING" as const,
+          fulfillmentOccurredAt: "2026-08-29T08:00:00.000Z",
+        },
+        {
+          orderId: "97a3f408-858c-45d7-a0bd-ab84a28718ef" as OrderId,
+          totalAmount: 9_000_000,
+          paidAt: "2026-07-20T08:00:00.000Z",
         },
       ];
+      return rows.filter(
+        ({ paidAt }) =>
+          (!input.from || paidAt >= input.from) && (!input.to || paidAt < input.to),
+      );
     },
     async countAwaitingDisputeResponses(requestedStoreId) {
       expect(requestedStoreId).toBe(storeId);
       return 2;
     },
-    async readProjectionUpdatedAt() {
+    async readProjectionUpdatedAt(requestedStoreId) {
+      expect(requestedStoreId).toBe(storeId);
       return "2026-08-31T11:59:00.000Z";
     },
   };
   return new ReportingAnalyticsService(
     repository,
-    orders,
     {
       async readActiveIdentitySession() {
         return { identityId: sellerId };
@@ -112,7 +72,6 @@ describe("ReportingAnalyticsService", () => {
   it("returns only real operational work for the authenticated seller store", async () => {
     const result = await createHarness().readOperationalSummary({
       sessionToken: "session",
-      correlationId: "correlation",
     });
 
     expect(result).toEqual({
@@ -137,7 +96,7 @@ describe("ReportingAnalyticsService", () => {
 
   it("reports private sales, orders and completion inside the explicit range", async () => {
     const result = await createHarness().readBasicReport(
-      { sessionToken: "session", correlationId: "correlation" },
+      { sessionToken: "session" },
       { from: "2026-08-01T00:00:00.000Z", to: "2026-09-01T00:00:00.000Z" },
     );
 
@@ -157,7 +116,7 @@ describe("ReportingAnalyticsService", () => {
   it("rejects inactive sellers before reading a store report", async () => {
     const service = new ReportingAnalyticsService(
       {
-        async readFulfillmentStates() {
+        async readSellerOrderStates() {
           return [];
         },
         async countAwaitingDisputeResponses() {
@@ -165,11 +124,6 @@ describe("ReportingAnalyticsService", () => {
         },
         async readProjectionUpdatedAt() {
           return null;
-        },
-      },
-      {
-        async listActionableByStore() {
-          return [];
         },
       },
       {
@@ -193,7 +147,6 @@ describe("ReportingAnalyticsService", () => {
     await expect(
       service.readOperationalSummary({
         sessionToken: "session",
-        correlationId: "correlation",
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });

@@ -1,4 +1,3 @@
-import type { OrderId } from "@sevo/contracts/platform/v1";
 import {
   sellerBasicReportContract,
   sellerOperationalSummaryContract,
@@ -7,7 +6,6 @@ import {
 
 import {
   ReportingAnalyticsFault,
-  type ReportingAnalyticsOrderRead,
   type ReportingAnalyticsRepository,
   type ReportingAnalyticsRequest,
   type ReportingAnalyticsSellerAccessRead,
@@ -21,7 +19,6 @@ const PREPARATION_OVERDUE_AFTER_HOURS = 24;
 export class ReportingAnalyticsService {
   constructor(
     private readonly repository: ReportingAnalyticsRepository,
-    private readonly orders: ReportingAnalyticsOrderRead,
     private readonly sessions: ReportingAnalyticsSessionRead,
     private readonly sellerAccess: ReportingAnalyticsSellerAccessRead,
     private readonly stores: ReportingAnalyticsStoreResolver,
@@ -30,11 +27,7 @@ export class ReportingAnalyticsService {
 
   async readOperationalSummary(request: ReportingAnalyticsRequest) {
     const storeId = await this.requireSellerStore(request);
-    const orders = await this.orders.listActionableByStore(storeId);
-    const states = await this.repository.readFulfillmentStates(
-      orders.map(({ orderId }) => orderId),
-    );
-    const stateByOrder = new Map(states.map((state) => [state.orderId, state]));
+    const orders = await this.repository.readSellerOrderStates({ storeId });
     const overdueBefore =
       this.clock().getTime() - PREPARATION_OVERDUE_AFTER_HOURS * 60 * 60 * 1_000;
 
@@ -43,18 +36,20 @@ export class ReportingAnalyticsService {
       tasks: [
         {
           kind: "NEW_ORDERS",
-          count: orders.filter(({ orderId }) => {
-            const status = stateByOrder.get(orderId)?.status;
-            return status === undefined || status === "ACTION_REQUIRED";
-          }).length,
+          count: orders.filter(
+            ({ fulfillmentStatus }) =>
+              fulfillmentStatus === undefined ||
+              fulfillmentStatus === "ACTION_REQUIRED",
+          ).length,
           href: "/seller/orders",
         },
         {
           kind: "OVERDUE_PREPARATIONS",
-          count: states.filter(
-            (state) =>
-              state.status === "PREPARING" &&
-              Date.parse(state.occurredAt) <= overdueBefore,
+          count: orders.filter(
+            (order) =>
+              order.fulfillmentStatus === "PREPARING" &&
+              order.fulfillmentOccurredAt !== undefined &&
+              Date.parse(order.fulfillmentOccurredAt) <= overdueBefore,
           ).length,
           href: "/seller/orders?status=preparing",
         },
@@ -65,36 +60,30 @@ export class ReportingAnalyticsService {
         },
       ],
       preparationOverdueAfterHours: PREPARATION_OVERDUE_AFTER_HOURS,
-      projectionUpdatedAt: await this.repository.readProjectionUpdatedAt(),
+      projectionUpdatedAt: await this.repository.readProjectionUpdatedAt(storeId),
     });
   }
 
   async readBasicReport(request: ReportingAnalyticsRequest, query: unknown) {
     const range = this.reportRange(query);
     const storeId = await this.requireSellerStore(request);
-    const orders = (await this.orders.listActionableByStore(storeId)).filter(
-      ({ paidAt }) => paidAt >= range.from && paidAt < range.to,
-    );
-    const states = await this.repository.readFulfillmentStates(
-      orders.map(({ orderId }) => orderId),
-    );
-    const completed = new Set<OrderId>(
-      states
-        .filter(({ status }) => status === "DELIVERED")
-        .map(({ orderId }) => orderId),
-    );
+    const orders = await this.repository.readSellerOrderStates({
+      storeId,
+      ...range,
+    });
 
     return sellerBasicReportContract.parse({
       storeId,
       range,
       sales: {
-        amount: orders.reduce((total, order) => total + order.total.amount, 0),
+        amount: orders.reduce((total, order) => total + order.totalAmount, 0),
         currency: "IRR",
       },
       orderCount: orders.length,
-      completedOrderCount: orders.filter(({ orderId }) => completed.has(orderId))
-        .length,
-      projectionUpdatedAt: await this.repository.readProjectionUpdatedAt(),
+      completedOrderCount: orders.filter(
+        ({ fulfillmentStatus }) => fulfillmentStatus === "DELIVERED",
+      ).length,
+      projectionUpdatedAt: await this.repository.readProjectionUpdatedAt(storeId),
     });
   }
 

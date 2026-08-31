@@ -13,7 +13,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { readIdentitySessionToken } from "../../http/identity-session";
 import { ReportingAnalyticsService } from "./application/reporting-analytics.service";
-import { ReportingAnalyticsFault } from "./public";
+import { ReportingAnalyticsFault, type ReportingAnalyticsFaultCode } from "./public";
 import { REPORTING_ANALYTICS_SERVICE } from "./reporting-analytics.tokens";
 
 @ApiExcludeController()
@@ -54,27 +54,36 @@ export class ReportingAnalyticsController {
   private context(request: FastifyRequest) {
     return {
       sessionToken: readIdentitySessionToken(request),
-      correlationId: request.id,
     };
   }
 
   private httpError(error: unknown, correlationId: string) {
     if (!(error instanceof ReportingAnalyticsFault)) return error;
-    const status = {
-      UNAUTHENTICATED: HttpStatus.UNAUTHORIZED,
-      FORBIDDEN: HttpStatus.FORBIDDEN,
-      NOT_FOUND: HttpStatus.NOT_FOUND,
-      VALIDATION_ERROR: HttpStatus.UNPROCESSABLE_ENTITY,
-    }[error.code];
-    const message = {
-      UNAUTHENTICATED: "برای دیدن گزارش فروشگاه وارد شوید.",
-      FORBIDDEN: "فروشندگی فعال نیست.",
-      NOT_FOUND: "فروشگاه پیدا نشد.",
-      VALIDATION_ERROR: "بازه گزارش معتبر نیست.",
-    }[error.code];
+    const { status, message } = faultResponses[error.code];
     return new HttpException(
       { version: 1, code: error.code, message, correlationId },
       status,
     );
   }
 }
+
+const faultResponses: Readonly<
+  Record<ReportingAnalyticsFaultCode, { status: HttpStatus; message: string }>
+> = {
+  UNAUTHENTICATED: {
+    status: HttpStatus.UNAUTHORIZED,
+    message: "برای دیدن گزارش فروشگاه وارد شوید.",
+  },
+  FORBIDDEN: {
+    status: HttpStatus.FORBIDDEN,
+    message: "فروشندگی فعال نیست.",
+  },
+  NOT_FOUND: {
+    status: HttpStatus.NOT_FOUND,
+    message: "فروشگاه پیدا نشد.",
+  },
+  VALIDATION_ERROR: {
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: "بازه گزارش معتبر نیست.",
+  },
+};

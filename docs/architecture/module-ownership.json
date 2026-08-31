@@ -94,6 +94,7 @@
     "platform_seed_manifest_receipts": "platform",
     "reporting_store_publications": "reporting-analytics",
     "reporting_fulfillment_states": "reporting-analytics",
+    "reporting_seller_order_facts": "reporting-analytics",
     "reporting_seller_dispute_states": "reporting-analytics",
     "conversation_threads": "conversations",
     "conversation_idempotency": "conversations",
