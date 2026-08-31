@@ -6,11 +6,15 @@ import type { FulfillmentRepository } from "../fulfillment/public";
 import type { OrderPaymentWorkflow } from "../orders/public";
 import {
   IDENTITY_SESSION_READER,
+  PLATFORM_SENSITIVE_ACCESS,
   SELLER_ACCESS_READ,
   type IdentitySessionReader,
+  type OpaquePlatformAccessTransactionContext,
   type PlatformAgentSessionAuthorizer,
+  type PlatformSensitiveAccess,
   type SellerAccessRead,
 } from "../identity-access/public";
+import type { Sql } from "postgres";
 import { identityIdContract, storeIdContract } from "@sevo/contracts/platform/v1";
 import { DirectRefundApplicationService } from "./application/direct-refund.service";
 import { DirectPaymentApplicationService } from "./application/direct-payment.service";
@@ -48,6 +52,9 @@ export class PaymentsModule {
       orders: OrderPaymentWorkflow;
       provider?: DirectPaymentProvider;
       platformAgentSessions: PlatformAgentSessionAuthorizer;
+      createPlatformAccessTransactionContext: (
+        transaction: Sql,
+      ) => OpaquePlatformAccessTransactionContext;
       fulfillment: FulfillmentRepository;
       resolveSellerStore: (identityId: string) => Promise<string | undefined>;
     },
@@ -58,12 +65,6 @@ export class PaymentsModule {
         : undefined;
     const provider = options.provider ?? devProvider;
     if (!provider) throw new Error("The selected payment provider is not configured");
-    const repository = new PostgresDirectPaymentRepository(
-      environment.DATABASE_URL,
-      options.inventory,
-      options.orders,
-      provider.providerKey,
-    );
     const refundRepository = new PostgresDirectRefundRepository(
       environment.DATABASE_URL,
       options.inventory,
@@ -89,7 +90,16 @@ export class PaymentsModule {
         { provide: DIRECT_PAYMENT_PROVIDER, useValue: provider },
         {
           provide: DIRECT_PAYMENT_REPOSITORY,
-          useValue: repository,
+          inject: [PLATFORM_SENSITIVE_ACCESS],
+          useFactory: (sensitiveAccess: PlatformSensitiveAccess) =>
+            new PostgresDirectPaymentRepository(
+              environment.DATABASE_URL,
+              options.inventory,
+              options.orders,
+              provider.providerKey,
+              sensitiveAccess,
+              options.createPlatformAccessTransactionContext,
+            ),
         },
         {
           provide: DIRECT_REFUND_SERVICE,

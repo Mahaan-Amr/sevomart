@@ -99,6 +99,18 @@
         "events": ["directPaymentAttemptConfirmedV1Contract"]
       }
     },
+    "@sevo/contracts/payments/v2": {
+      "owner": "payments",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["paymentReviewQueueV2Contract", "paymentReviewDetailV2Contract"],
+        "operations": ["paymentsV2Operations"],
+        "events": []
+      }
+    },
     "@sevo/contracts/fulfillment/v1": {
       "owner": "fulfillment",
       "approved": true,

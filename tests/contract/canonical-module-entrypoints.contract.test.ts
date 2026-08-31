@@ -10,6 +10,7 @@ import * as mediaV1 from "@sevo/contracts/media/v1";
 import * as notificationsV1 from "@sevo/contracts/notifications/v1";
 import * as ordersV1 from "@sevo/contracts/orders/v1";
 import * as paymentsV1 from "@sevo/contracts/payments/v1";
+import * as paymentsV2 from "@sevo/contracts/payments/v2";
 import {
   errorEnvelopeV1Contract,
   eventEnvelopeV1Contract,
@@ -50,6 +51,7 @@ const canonicalDomainEntrypoints: Record<string, Record<string, unknown>> = {
   "@sevo/contracts/inventory/v1": inventoryV1,
   "@sevo/contracts/orders/v1": ordersV1,
   "@sevo/contracts/payments/v1": paymentsV1,
+  "@sevo/contracts/payments/v2": paymentsV2,
   "@sevo/contracts/fulfillment/v1": fulfillmentV1,
   "@sevo/contracts/conversations/v1": conversationsV1,
   "@sevo/contracts/problem-follow-up/v1": problemFollowUpV1,

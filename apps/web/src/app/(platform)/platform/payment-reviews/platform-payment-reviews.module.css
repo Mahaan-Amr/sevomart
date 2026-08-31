@@ -50,6 +50,16 @@
   border-radius: 18px;
   background: var(--color-surface);
 }
+.queue a {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+.queue a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
 .summary strong,
 .summary span {
   display: block;
