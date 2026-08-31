@@ -1,0 +1,297 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.panel {
+  width: min(100%, 680px);
+  margin: 0 auto;
+  padding: 24px;
+  border-radius: 22px;
+  background: var(--color-background);
+  box-shadow: var(--elevation-raised);
+}
+
+.back {
+  color: var(--color-primary);
+}
+
+.eyebrow {
+  margin: 24px 0 8px;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.panel h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.context,
+.revealForm p,
+.revealed p {
+  line-height: 1.9;
+}
+
+.error {
+  color: var(--color-primary-dark);
+}
+
+.summary {
+  display: grid;
+  gap: 16px;
+  margin-block-start: 24px;
+  padding: 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+  background: var(--color-surface);
+}
+
+.summary h2,
+.history h2,
+.revealForm h2,
+.revealed h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.summary p {
+  margin: 4px 0 0;
+}
+
+.summary > div > p {
+  color: var(--color-muted);
+  direction: ltr;
+  text-align: end;
+}
+
+.summary dl,
+.revealed dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.summary dl div,
+.revealed dl div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.summary dt,
+.revealed dt {
+  color: var(--color-muted);
+}
+
+.summary dd,
+.revealed dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.nextStep {
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--color-divider);
+  line-height: 1.9;
+}
+
+.revealForm,
+.revealed,
+.history {
+  display: grid;
+  gap: 12px;
+  margin-block-start: 24px;
+  padding-block-start: 24px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.history > div > p,
+.history > p {
+  margin: 4px 0 0;
+  color: var(--color-muted);
+  line-height: 1.9;
+}
+
+.history ul {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history li {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.history li:last-child {
+  border-block-end: 0;
+}
+
+.historyHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.historyHeading a {
+  min-width: 0;
+  color: var(--color-primary);
+  overflow-wrap: anywhere;
+}
+
+.historyHeading > span {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-size: 12px;
+}
+
+.history dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.history dl div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.history dt {
+  color: var(--color-muted);
+}
+
+.history dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.history button {
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.history button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.revealForm label {
+  font-weight: 700;
+}
+
+.revealForm textarea {
+  width: 100%;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.8;
+  box-shadow: var(--elevation-pressed);
+}
+
+.revealForm small {
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+
+.revealForm button {
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 180ms ease;
+}
+
+.revealForm button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.revealForm button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.revealForm textarea:focus-visible,
+.revealForm button:focus-visible,
+.history a:focus-visible,
+.history button:focus-visible,
+.back:focus-visible,
+.revealed h2:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+.ltr {
+  direction: ltr;
+  text-align: end;
+}
+
+.orderId {
+  direction: ltr;
+  text-align: end;
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 16px 8px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .summary dl div,
+  .revealed dl div,
+  .history dl div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .historyHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .historyHeading > span {
+    align-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .revealForm button {
+    transition: none;
+  }
+
+  .revealForm button:hover:not(:disabled) {
+    transform: none;
+  }
+}
