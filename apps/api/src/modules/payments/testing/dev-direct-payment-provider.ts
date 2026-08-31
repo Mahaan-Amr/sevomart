@@ -1,6 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { providerCallbackInputContract } from "@sevo/contracts/payments/v1";
+import {
+  providerCallbackInputContract,
+  providerRefundCallbackInputContract,
+} from "@sevo/contracts/payments/v1";
 
 import type { DirectPaymentProvider, VerifiedProviderCallback } from "../public";
 import { InvalidProviderCallbackError } from "../public";
@@ -77,6 +80,27 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
     } satisfies VerifiedProviderCallback;
   }
 
+  refundCallback(input: {
+    paymentAttemptId: string;
+    orderId: string;
+    amount: { amount: number; currency: "IRR" };
+    result: "CONFIRMED" | "FAILED";
+    evidenceReference: string;
+    providerEventId: string;
+  }) {
+    return { ...input, signature: this.#signRefund(input) };
+  }
+
+  async verifyAndMapRefundResult(rawInput: unknown) {
+    const parsed = providerRefundCallbackInputContract.safeParse(rawInput);
+    if (!parsed.success) throw new InvalidProviderCallbackError();
+    const { signature, ...unsigned } = parsed.data;
+    if (!safeEqual(signature, this.#signRefund(unsigned))) {
+      throw new InvalidProviderCallbackError();
+    }
+    return unsigned;
+  }
+
   #sign(input: {
     attemptId: string;
     orderId: string;
@@ -91,6 +115,29 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
           input.orderId,
           input.amount,
           input.result,
+          input.providerEventId,
+        ].join("."),
+      )
+      .digest("hex");
+  }
+
+  #signRefund(input: {
+    paymentAttemptId: string;
+    orderId: string;
+    amount: { amount: number; currency: "IRR" };
+    result: "CONFIRMED" | "FAILED";
+    evidenceReference: string;
+    providerEventId: string;
+  }) {
+    return createHmac("sha256", this.signingSecret)
+      .update(
+        [
+          input.paymentAttemptId,
+          input.orderId,
+          input.amount.amount,
+          input.amount.currency,
+          input.result,
+          input.evidenceReference,
           input.providerEventId,
         ].join("."),
       )

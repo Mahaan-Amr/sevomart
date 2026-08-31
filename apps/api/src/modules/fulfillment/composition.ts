@@ -78,16 +78,18 @@ export function createFulfillmentOrderAccess(
   orders: OrderPaymentWorkflow,
 ): FulfillmentOrderAccess {
   return {
-    async sellerCanFulfill(_actorId, storeId, orderId) {
-      const actionable = await orders.listActionableByStore(storeId);
-      return actionable.some((order) => order.orderId === orderId);
+    async sellerCanAccessFulfillment(_actorId, storeId, orderId) {
+      return orders.sellerCanTrack(storeId, orderId);
     },
     async buyerCanTrack(actorId, orderId) {
       const state = await orders.readBuyerPaymentState(
         identityIdContract.parse(actorId),
         orderId,
       );
-      return state?.status === "PAID";
+      return Boolean(
+        state &&
+        ["PAID", "CANCELLATION_PENDING_REFUND", "CANCELLED"].includes(state.status),
+      );
     },
   };
 }

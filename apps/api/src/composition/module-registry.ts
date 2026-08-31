@@ -220,12 +220,17 @@ export const canonicalApiModuleRegistry: readonly {
       identityOptions,
       inventoryAuthoring,
       platformAgentSessions,
+      fulfillmentRepository,
+      storeRepository,
     }) =>
       PaymentsModule.register(environment, {
         inventory: inventoryAuthoring,
         orders: checkoutRepository,
         platformAgentSessions:
           identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        fulfillment: fulfillmentRepository,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
       }),
   },
   {

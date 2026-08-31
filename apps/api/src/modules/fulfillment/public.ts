@@ -6,6 +6,18 @@ import type {
   FulfillmentTimeline,
 } from "@sevo/contracts/fulfillment/v1";
 import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
+import type { Sql } from "postgres";
+
+declare const fulfillmentTransactionContext: unique symbol;
+export type FulfillmentTransactionContext = Readonly<{
+  [fulfillmentTransactionContext]: never;
+}>;
+
+export function createFulfillmentTransactionContext(
+  transaction: Sql,
+): FulfillmentTransactionContext {
+  return transaction as unknown as FulfillmentTransactionContext;
+}
 
 export type FulfillmentRequest = Readonly<{
   sessionToken?: string;
@@ -27,7 +39,7 @@ export interface FulfillmentStoreResolver {
 }
 
 export interface FulfillmentOrderAccess {
-  sellerCanFulfill(
+  sellerCanAccessFulfillment(
     actorId: IdentityId,
     storeId: StoreId,
     orderId: OrderId,
@@ -66,6 +78,27 @@ export interface FulfillmentRepository {
     requestHash: string;
   }): Promise<FulfillmentTimeline | undefined>;
   advance(command: AdvanceFulfillmentCommand): Promise<FulfillmentTimeline>;
+  beginCancellation(
+    transaction: FulfillmentTransactionContext,
+    command: Readonly<{
+      orderId: OrderId;
+      actorId: IdentityId;
+      storeId: StoreId;
+      correlationId: string;
+      causationId: string;
+      occurredAt: Date;
+    }>,
+  ): Promise<void>;
+  completeCancellation(
+    transaction: FulfillmentTransactionContext,
+    command: Readonly<{
+      orderId: OrderId;
+      actorId: IdentityId;
+      correlationId: string;
+      causationId: string;
+      occurredAt: Date;
+    }>,
+  ): Promise<void>;
 }
 
 export const FULFILLMENT_SERVICE = Symbol("FULFILLMENT_SERVICE");

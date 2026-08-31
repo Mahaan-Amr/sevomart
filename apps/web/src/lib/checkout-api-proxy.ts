@@ -32,10 +32,14 @@ export function proxyPaymentAttemptsRequest(
   });
 }
 
-export function proxySellerOrdersRequest(request: Request) {
-  return proxyJsonApiRequest(request, [], {
+export function proxySellerOrdersRequest(
+  request: Request,
+  segments: readonly string[] = [],
+) {
+  return proxyJsonApiRequest(request, segments, {
     basePath: "/v1/seller/orders",
-    isAllowed: (parts) => parts.length === 0,
+    isAllowed: (parts) =>
+      parts.length === 0 || (parts.length === 2 && parts[1] === "direct-refund"),
     responseHeaders: ["content-type", "x-correlation-id"],
     noStore: true,
   });

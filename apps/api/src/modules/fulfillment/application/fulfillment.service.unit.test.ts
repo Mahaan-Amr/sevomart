@@ -79,9 +79,11 @@ function createHarness(status: FulfillmentTimeline["status"] = "ACTION_REQUIRED"
       };
       return timeline;
     },
+    async beginCancellation() {},
+    async completeCancellation() {},
   };
   const orders: FulfillmentOrderAccess = {
-    async sellerCanFulfill(actorId, requestedStoreId, requestedOrderId) {
+    async sellerCanAccessFulfillment(actorId, requestedStoreId, requestedOrderId) {
       return (
         actorId === sellerId &&
         requestedStoreId === storeId &&

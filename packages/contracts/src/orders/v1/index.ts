@@ -151,11 +151,14 @@ export const orderStatusContract = z.enum([
   "PAYMENT_REVIEW",
   "PAID",
   "EXPIRED",
+  "CANCELLATION_PENDING_REFUND",
+  "CANCELLED",
 ]);
 // EXPIRED closes payment retry, but late results can still require PAYMENT_REVIEW.
-export const orderTerminalStatuses = ["PAID"] as const satisfies readonly z.infer<
-  typeof orderStatusContract
->[];
+export const orderTerminalStatuses = [
+  "PAID",
+  "CANCELLED",
+] as const satisfies readonly z.infer<typeof orderStatusContract>[];
 export const orderPaymentReviewReasonCodeContract = z.enum([
   "PAYMENT_DISPATCH_UNRESOLVED",
   "PAYMENT_CONFIRMED_STOCK_CONFLICT",
@@ -168,6 +171,8 @@ export const orderStateTransitionReasonCodeContract = z.enum([
   "PAYMENT_PROVIDER_CONFLICT",
   "PAYMENT_FAILED",
   "PAID_STOCK_CONFLICT",
+  "REFUND_REQUESTED",
+  "REFUND_CONFIRMED",
 ]);
 export const orderStateTransitionAuditContract = z
   .object({
@@ -180,6 +185,19 @@ export const orderStateTransitionAuditContract = z
     occurredAt: z.iso.datetime({ offset: true }),
   })
   .strict();
+
+export const orderCancellationPendingRefundV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("OrderCancellationPendingRefund.v1"),
+  causationId: z.uuid(),
+  actor: eventActorV1Contract,
+  payload: z.object({ status: z.literal("CANCELLATION_PENDING_REFUND") }).strict(),
+});
+export const orderCancelledV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("OrderCancelled.v1"),
+  causationId: z.uuid(),
+  actor: eventActorV1Contract,
+  payload: z.object({ status: z.literal("CANCELLED") }).strict(),
+});
 
 export const cartIdContract = z.uuid().brand("CartId");
 export const cartIdempotencyKeyContract = z.string().min(1).max(200);
@@ -560,7 +578,7 @@ export const orderExpiredV1Contract = eventEnvelopeV1Contract.extend({
 export const sellerActionableOrderContract = z
   .object({
     orderId: orderIdContract,
-    status: z.literal("PAID"),
+    status: z.enum(["PAID", "CANCELLATION_PENDING_REFUND"]),
     total: moneyV1Contract,
     paidAt: z.iso.datetime({ offset: true }),
     createdAt: z.iso.datetime({ offset: true }),
@@ -813,6 +831,8 @@ export const ordersV1Schemas = {
   OrderPaymentReviewRequiredV1: orderPaymentReviewRequiredV1Contract,
   OrderBecameActionableV1: orderBecameActionableV1Contract,
   OrderReportingSnapshotV1: orderReportingSnapshotV1Contract,
+  OrderCancellationPendingRefundV1: orderCancellationPendingRefundV1Contract,
+  OrderCancelledV1: orderCancelledV1Contract,
 } as const;
 
 export function createOrdersV1JsonSchemas() {

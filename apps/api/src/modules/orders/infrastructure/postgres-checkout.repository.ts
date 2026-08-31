@@ -9,6 +9,8 @@ import {
   orderCreatedV1Contract,
   orderBecameActionableV1Contract,
   orderReportingSnapshotV1Contract,
+  orderCancellationPendingRefundV1Contract,
+  orderCancelledV1Contract,
   orderPaymentReviewRequiredV1Contract,
   orderExpiredV1Contract,
   sellerActionableOrderContract,
@@ -463,7 +465,13 @@ export class PostgresCheckoutRepository
         reservationId: string;
         totalAmount: number;
         reservationExpiresAt: Date;
-        status: "PENDING_PAYMENT" | "PAYMENT_REVIEW" | "PAID" | "EXPIRED";
+        status:
+          | "PENDING_PAYMENT"
+          | "PAYMENT_REVIEW"
+          | "PAID"
+          | "EXPIRED"
+          | "CANCELLATION_PENDING_REFUND"
+          | "CANCELLED";
       }>
     >`
       select id as "orderId", reservation_id as "reservationId",
@@ -614,25 +622,131 @@ export class PostgresCheckoutRepository
         paidAt: Date;
         createdAt: Date;
         itemCount: number;
+        status: "PAID" | "CANCELLATION_PENDING_REFUND";
       }>
     >`
       select orders.id as "orderId", orders.total_amount::float8 as "totalAmount",
         orders.paid_at as "paidAt", orders.created_at as "createdAt",
-        count(items.variant_id)::int as "itemCount"
+        count(items.variant_id)::int as "itemCount", orders.status
       from order_orders orders
       join order_items items on items.order_id = orders.id
-      where orders.store_id = ${storeId} and orders.status = 'PAID'
+      where orders.store_id = ${storeId}
+        and orders.status in ('PAID', 'CANCELLATION_PENDING_REFUND')
       group by orders.id
       order by orders.paid_at, orders.id
     `;
     return rows.map((row) =>
       sellerActionableOrderContract.parse({
         orderId: row.orderId,
-        status: "PAID",
+        status: row.status,
         total: { amount: row.totalAmount, currency: "IRR" },
         paidAt: row.paidAt.toISOString(),
         createdAt: row.createdAt.toISOString(),
         itemCount: row.itemCount,
+      }),
+    );
+  }
+
+  async sellerCanTrack(storeId: StoreId, orderId: OrderId) {
+    const rows = await this.#sql<Array<{ allowed: boolean }>>`
+      select true as allowed from order_orders
+      where id = ${orderId} and store_id = ${storeId}
+        and status in ('PAID', 'CANCELLATION_PENDING_REFUND', 'CANCELLED')
+    `;
+    return Boolean(rows[0]?.allowed);
+  }
+
+  async lockCancellationOrder(
+    transaction: OrderPaymentTransactionContext,
+    storeId: StoreId,
+    orderId: OrderId,
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<
+      Array<{
+        reservationId: string;
+        status: "PAID" | "CANCELLATION_PENDING_REFUND" | "CANCELLED";
+      }>
+    >`
+      select reservation_id as "reservationId", status
+      from order_orders
+      where id = ${orderId} and store_id = ${storeId}
+        and status in ('PAID', 'CANCELLATION_PENDING_REFUND', 'CANCELLED')
+      for update
+    `;
+    return rows[0];
+  }
+
+  async markCancellationPendingRefund(
+    transaction: OrderPaymentTransactionContext,
+    command: Parameters<OrderPaymentWorkflow["markCancellationPendingRefund"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const updated = await sql<Array<{ orderId: string }>>`
+      update order_orders set status = 'CANCELLATION_PENDING_REFUND'
+      where id = ${command.orderId} and status = 'PAID'
+      returning id as "orderId"
+    `;
+    if (!updated[0]) return;
+    await sql`
+      insert into order_state_transitions
+        (id, order_id, from_status, to_status, reason_code, actor_kind,
+         correlation_id, occurred_at)
+      values
+        (${randomUUID()}, ${command.orderId}, 'PAID', 'CANCELLATION_PENDING_REFUND',
+         'REFUND_REQUESTED', 'PAYMENTS_SERVICE', ${command.correlationId},
+         ${command.occurredAt})
+    `;
+    await enqueueOutboxEvent(
+      sql,
+      orderCancellationPendingRefundV1Contract.parse({
+        eventId: randomUUID(),
+        version: 1,
+        eventType: "OrderCancellationPendingRefund.v1",
+        aggregateId: command.orderId,
+        aggregateVersion: 3,
+        occurredAt: command.occurredAt.toISOString(),
+        correlationId: eventCorrelationId(command.correlationId),
+        causationId: command.causationId,
+        actor: { type: "IDENTITY", id: command.actorId },
+        payload: { status: "CANCELLATION_PENDING_REFUND" },
+      }),
+    );
+  }
+
+  async markCancelled(
+    transaction: OrderPaymentTransactionContext,
+    command: Parameters<OrderPaymentWorkflow["markCancelled"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const updated = await sql<Array<{ orderId: string }>>`
+      update order_orders set status = 'CANCELLED'
+      where id = ${command.orderId} and status = 'CANCELLATION_PENDING_REFUND'
+      returning id as "orderId"
+    `;
+    if (!updated[0]) return;
+    await sql`
+      insert into order_state_transitions
+        (id, order_id, from_status, to_status, reason_code, actor_kind,
+         correlation_id, occurred_at)
+      values
+        (${randomUUID()}, ${command.orderId}, 'CANCELLATION_PENDING_REFUND',
+         'CANCELLED', 'REFUND_CONFIRMED', 'PAYMENTS_SERVICE',
+         ${command.correlationId}, ${command.occurredAt})
+    `;
+    await enqueueOutboxEvent(
+      sql,
+      orderCancelledV1Contract.parse({
+        eventId: randomUUID(),
+        version: 1,
+        eventType: "OrderCancelled.v1",
+        aggregateId: command.orderId,
+        aggregateVersion: 4,
+        occurredAt: command.occurredAt.toISOString(),
+        correlationId: eventCorrelationId(command.correlationId),
+        causationId: command.causationId,
+        actor: { type: "IDENTITY", id: command.actorId },
+        payload: { status: "CANCELLED" },
       }),
     );
   }
