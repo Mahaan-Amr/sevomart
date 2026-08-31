@@ -280,7 +280,12 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "reporting-analytics",
     artifact: ReportingAnalyticsModule,
-    compose: () => ReportingAnalyticsModule,
+    compose: ({ checkoutRepository, environment, storeRepository }) =>
+      ReportingAnalyticsModule.register(environment, {
+        orders: checkoutRepository,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
+      }),
   },
 ];
 
