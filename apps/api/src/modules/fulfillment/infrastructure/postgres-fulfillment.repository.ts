@@ -8,7 +8,7 @@ import {
 } from "@sevo/contracts/fulfillment/v1";
 import { storeIdContract } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
-import postgres, { type JSONValue } from "postgres";
+import postgres, { type JSONValue, type Sql } from "postgres";
 
 import { FulfillmentFault, type FulfillmentRepository } from "../public";
 import { nextFulfillmentStatus } from "../application/fulfillment-state";
@@ -152,6 +152,57 @@ export class PostgresFulfillmentRepository implements FulfillmentRepository {
     });
   }
 
+  async beginCancellation(
+    transaction: Parameters<FulfillmentRepository["beginCancellation"]>[0],
+    command: Parameters<FulfillmentRepository["beginCancellation"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<
+      Array<{ status: FulfillmentStatus; version: number; storeId: string | null }>
+    >`
+      select status, version, store_id as "storeId" from fulfillment_orders
+      where order_id = ${command.orderId} for update
+    `;
+    const current = rows[0];
+    if (
+      !current ||
+      (current.storeId !== null && current.storeId !== command.storeId) ||
+      !["ACTION_REQUIRED", "PREPARING", "CANCELLATION_PENDING_REFUND"].includes(
+        current.status,
+      )
+    ) {
+      throw new FulfillmentFault("INVALID_TRANSITION");
+    }
+    if (current.status === "CANCELLATION_PENDING_REFUND") return;
+    await transitionCancellation(sql, current, {
+      ...command,
+      targetStatus: "CANCELLATION_PENDING_REFUND",
+    });
+  }
+
+  async completeCancellation(
+    transaction: Parameters<FulfillmentRepository["completeCancellation"]>[0],
+    command: Parameters<FulfillmentRepository["completeCancellation"]>[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const rows = await sql<Array<{ status: FulfillmentStatus; version: number }>>`
+      select status, version from fulfillment_orders
+      where order_id = ${command.orderId} for update
+    `;
+    const current = rows[0];
+    if (
+      !current ||
+      !["CANCELLATION_PENDING_REFUND", "CANCELLED"].includes(current.status)
+    ) {
+      throw new FulfillmentFault("INVALID_TRANSITION");
+    }
+    if (current.status === "CANCELLED") return;
+    await transitionCancellation(sql, current, {
+      ...command,
+      targetStatus: "CANCELLED",
+    });
+  }
+
   async onModuleDestroy() {
     await this.#sql.end();
   }
@@ -275,6 +326,56 @@ function timelineFromRows(rows: TimelineRow[]): FulfillmentTimeline {
         : {}),
     })),
   });
+}
+
+async function transitionCancellation(
+  sql: Sql,
+  current: { status: FulfillmentStatus; version: number },
+  command: {
+    orderId: string;
+    actorId: string;
+    storeId?: string;
+    correlationId: string;
+    causationId: string;
+    occurredAt: Date;
+    targetStatus: Extract<
+      FulfillmentStatus,
+      "CANCELLATION_PENDING_REFUND" | "CANCELLED"
+    >;
+  },
+) {
+  const version = current.version + 1;
+  await sql`
+    update fulfillment_orders
+    set status = ${command.targetStatus}, version = ${version},
+      store_id = coalesce(store_id, ${command.storeId ?? null}::uuid),
+      updated_at = ${command.occurredAt}
+    where order_id = ${command.orderId}
+  `;
+  await sql`
+    insert into fulfillment_timeline_entries
+      (id, order_id, version, status, actor_type, actor_id, correlation_id,
+       occurred_at, shipping_method, tracking_code)
+    values
+      (${randomUUID()}, ${command.orderId}, ${version}, ${command.targetStatus},
+       'IDENTITY', ${command.actorId}, ${command.correlationId},
+       ${command.occurredAt}, null, null)
+  `;
+  await enqueueOutboxEvent(
+    sql,
+    fulfillmentAdvancedV1Contract.parse({
+      version: 1,
+      eventId: randomUUID(),
+      eventType: "FulfillmentAdvanced.v1",
+      aggregateId: command.orderId,
+      aggregateVersion: version,
+      occurredAt: command.occurredAt.toISOString(),
+      correlationId: command.correlationId,
+      causationId: command.causationId,
+      actor: { type: "IDENTITY", id: command.actorId },
+      payload: { fromStatus: current.status, toStatus: command.targetStatus },
+    }),
+  );
 }
 
 function asJson(value: unknown): JSONValue {

@@ -4,6 +4,7 @@ import {
   sellerActionableOrderListContract,
   type SellerActionableOrder,
 } from "@sevo/contracts/orders/v1";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../lib/format-money";
@@ -41,6 +42,11 @@ export function SellerOrders() {
                 <small>{order.itemCount.toLocaleString("fa-IR")} کالا</small>
               </span>
               <strong>{formatIrrAsToman(order.total.amount)}</strong>
+              <Link href={`/seller/orders/${order.orderId}/refund`}>
+                {order.status === "PAID"
+                  ? "لغو و پیگیری بازپرداخت"
+                  : "دیدن وضعیت بازپرداخت"}
+              </Link>
             </li>
           ))}
         </ul>

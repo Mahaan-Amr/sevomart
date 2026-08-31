@@ -15,6 +15,8 @@ export const fulfillmentStatusContract = z.enum([
   "PREPARING",
   "SHIPPED",
   "DELIVERED",
+  "CANCELLATION_PENDING_REFUND",
+  "CANCELLED",
 ]);
 
 export const fulfillmentIdempotencyKeyContract = z.string().trim().min(8).max(128);

@@ -579,6 +579,67 @@ export class PostgresInventoryAuthoring
     return rows[0].status;
   }
 
+  async restoreConsumedReservationForCancellation(
+    transaction: InventoryTransactionContext,
+    command: Parameters<
+      InventoryAuthoring["restoreConsumedReservationForCancellation"]
+    >[1],
+  ) {
+    const sql = transaction as unknown as Sql;
+    const reservations = await sql<Array<{ status: string; storeId: string }>>`
+      select status, store_id as "storeId"
+      from inventory_reservations
+      where id = ${command.reservationId}::uuid and order_id = ${command.orderId}::uuid
+      for update
+    `;
+    const reservation = reservations[0];
+    if (reservation?.status === "CANCELLED") return false;
+    if (!reservation || reservation.status !== "CONSUMED") {
+      throw new InventoryReservationNotConsumableError();
+    }
+    const lines = await sql<Array<{ variantId: string; quantity: number }>>`
+      select variant_id as "variantId", quantity
+      from inventory_reservation_lines
+      where reservation_id = ${command.reservationId}::uuid
+      order by variant_id
+    `;
+    for (const line of lines) {
+      const levels = await sql<
+        Array<{ previousOnHand: number; previousRevision: number }>
+      >`
+        select on_hand as "previousOnHand", revision as "previousRevision"
+        from inventory_levels where variant_id = ${line.variantId}::uuid for update
+      `;
+      const level = levels[0];
+      if (!level) throw new InventoryReservationNotConsumableError();
+      const nextOnHand = level.previousOnHand + line.quantity;
+      const nextRevision = level.previousRevision + 1;
+      await sql`
+        update inventory_levels
+        set on_hand = ${nextOnHand}, revision = ${nextRevision},
+          updated_at = ${command.occurredAt}
+        where variant_id = ${line.variantId}::uuid
+      `;
+      await sql`
+        insert into inventory_adjustments
+          (id, variant_id, store_id, actor_identity_id, reason_code,
+           previous_on_hand, next_on_hand, revision, operation,
+           previous_revision, next_revision, correlation_id, occurred_at)
+        values
+          (${randomUUID()}, ${line.variantId}, ${reservation.storeId}, ${command.actorId},
+           'ORDER_CANCELLED', ${level.previousOnHand}, ${nextOnHand}, ${nextRevision},
+           'RESTORE_CANCELLED_ORDER', ${level.previousRevision}, ${nextRevision},
+           ${command.correlationId}, ${command.occurredAt})
+      `;
+    }
+    await sql`
+      update inventory_reservations
+      set status = 'CANCELLED', payment_attempt_id = null, hold_lease_until = null
+      where id = ${command.reservationId}::uuid and status = 'CONSUMED'
+    `;
+    return true;
+  }
+
   async onModuleDestroy() {
     await this.#sql.end();
   }

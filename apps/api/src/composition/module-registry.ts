@@ -12,7 +12,10 @@ import {
   DiscoveryModule,
   PostgresStoreFollowingRepository,
 } from "../modules/discovery/composition";
-import { FulfillmentModule } from "../modules/fulfillment/composition";
+import {
+  FulfillmentModule,
+  PostgresFulfillmentRepository,
+} from "../modules/fulfillment/composition";
 import {
   IdentityAccessModule,
   PostgresPlatformAgentSessionAuthorizer,
@@ -77,6 +80,9 @@ function createApiCompositionContext(
   const platformAgentSessions = new PostgresPlatformAgentSessionAuthorizer(
     environment.DATABASE_URL,
   );
+  const fulfillmentRepository = new PostgresFulfillmentRepository(
+    environment.DATABASE_URL,
+  );
 
   let conversationMediaAccess: ConversationMediaAccess = async () => false;
   return {
@@ -88,6 +94,7 @@ function createApiCompositionContext(
     checkoutRepository,
     contentRepository,
     environment,
+    fulfillmentRepository,
     identityOptions,
     inventoryAuthoring,
     otpProvider,
@@ -211,20 +218,31 @@ export const canonicalApiModuleRegistry: readonly {
       identityOptions,
       inventoryAuthoring,
       platformAgentSessions,
+      fulfillmentRepository,
+      storeRepository,
     }) =>
       PaymentsModule.register(environment, {
         inventory: inventoryAuthoring,
         orders: checkoutRepository,
         platformAgentSessions:
           identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        fulfillment: fulfillmentRepository,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
       }),
   },
   {
     owner: "fulfillment",
     artifact: FulfillmentModule,
-    compose: ({ checkoutRepository, environment, storeRepository }) =>
+    compose: ({
+      checkoutRepository,
+      environment,
+      fulfillmentRepository,
+      storeRepository,
+    }) =>
       FulfillmentModule.register(environment, {
         orders: checkoutRepository,
+        repository: fulfillmentRepository,
         resolveSellerStore: async (identityId) =>
           (await storeRepository.findBySellerId(identityId))?.id,
       }),

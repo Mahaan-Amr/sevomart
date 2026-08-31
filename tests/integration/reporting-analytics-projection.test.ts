@@ -124,6 +124,37 @@ describe("seller reporting projection", () => {
     );
   });
 
+  it("projects cancellation states without leaving cancelled orders actionable", async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const orderId = orderIdContract.parse(randomUUID());
+    for (const [aggregateVersion, fromStatus, toStatus] of [
+      [2, "ACTION_REQUIRED", "CANCELLATION_PENDING_REFUND"],
+      [3, "CANCELLATION_PENDING_REFUND", "CANCELLED"],
+    ] as const) {
+      await projectFulfillmentState(
+        fulfillmentAdvancedV1Contract.parse({
+          version: 1,
+          eventId: randomUUID(),
+          eventType: "FulfillmentAdvanced.v1",
+          aggregateId: orderId,
+          aggregateVersion,
+          occurredAt: "2026-08-31T08:00:00.000Z",
+          correlationId: randomUUID(),
+          causationId: randomUUID(),
+          actor: { type: "SYSTEM" },
+          payload: { fromStatus, toStatus },
+        }),
+        sql,
+      );
+    }
+    const rows = await sql<Array<{ status: string; aggregateVersion: number }>>`
+      select status, aggregate_version as "aggregateVersion"
+      from reporting_fulfillment_states where order_id = ${orderId}
+    `;
+    expect(rows).toEqual([{ status: "CANCELLED", aggregateVersion: 3 }]);
+    await sql.end();
+  });
+
   it("counts only disputes awaiting a response for the requested store", async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const requestedStoreId = storeIdContract.parse(randomUUID());
