@@ -53,11 +53,22 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
     shippingMethod: {
       id: ids.shipping,
       revision: 1,
-      code: "PICKUP",
-      label: "تحویل حضوری",
+      code: "NATIONAL_POST",
+      label: "پست پیشتاز",
       fee: { amount: 0, currency: "IRR" },
-      estimatedDeliveryText: "هماهنگی با فروشگاه",
-      requiresDeliveryAddress: false,
+      estimatedDeliveryText: "سه تا پنج روز کاری",
+      requiresDeliveryAddress: true,
+    },
+    address: {
+      addressId: randomUUID(),
+      revision: 1,
+      recipientName: "سارا احمدی",
+      recipientMobile: mobile,
+      provinceText: "تهران",
+      cityText: "تهران",
+      addressLine:
+        "خیابان آزادی، خیابان فرصت، کوچه نمونه بسیار بلند برای بررسی چیدمان فارسی، پلاک دوازده، واحد سه",
+      postalCode: "1234567890",
     },
     returnPolicy: {
       revision: 1,
@@ -136,6 +147,20 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       attemptId: attempt.attemptId,
       duplicate: true,
     });
+    await sql`
+      insert into fulfillment_orders
+        (order_id, store_id, status, version, accepted_event_id, created_at, updated_at)
+      values
+        (${ids.order}, ${ids.store}, 'SHIPPED', 1, ${randomUUID()}, now(), now())
+    `;
+    await sql`
+      insert into fulfillment_timeline_entries
+        (id, order_id, version, status, actor_type, actor_id, correlation_id, occurred_at,
+         shipping_method, tracking_code)
+      values
+        (${randomUUID()}, ${ids.order}, 1, 'SHIPPED', 'IDENTITY', ${identityId}, ${randomUUID()}, now(),
+         'پست پیشتاز', 'POST-1234567890')
+    `;
 
     await page.goto(`/orders/${ids.order}?attemptId=${attempt.attemptId}`);
     await expect(page).toHaveURL(
@@ -159,14 +184,22 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
     await expect(page.getByText("خانه فنجان")).toBeVisible();
     await page.getByRole("link", { name: /خانه فنجان/ }).click();
     await expect(page).toHaveURL(`/orders/${ids.order}`);
-    await expect(page.getByRole("heading", { name: "پرداخت تأیید شد" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "سفارش ارسال شد" })).toBeVisible();
     await expect(page.getByText("سیاست مرجوعی ثبت‌شده هنگام سفارش")).toBeVisible();
     await expect(page.getByText("تسویه مستقیم با فروشگاه")).toBeVisible();
+    await expect(page.getByText("نشانی ثبت‌شده برای تحویل")).toBeVisible();
+    await expect(page.getByText("کد رهگیری:")).toBeVisible();
+    await page.getByRole("button", { name: "کپی کد" }).click();
+    await expect(page.getByRole("button", { name: "کپی شد" })).toBeVisible();
+    await page.getByText("اختلاف و بازپرداخت").click();
     await expect(
       page.getByText("برای این سفارش پرونده اختلافی ثبت نشده است."),
     ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
+    ).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("heading", { name: "پرداخت تأیید شد" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "سفارش ارسال شد" })).toBeVisible();
     await assertNoHorizontalOverflow(page);
     await assertMinimumContrast(page.locator("main h1, main h2, main p, main a"));
     const back = page.getByRole("link", { name: "همه سفارش‌ها" });
@@ -220,6 +253,8 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       await sql`delete from payment_idempotency_records where attempt_id = ${createdAttemptId}`;
       await sql`delete from payment_attempts where id = ${createdAttemptId}`;
     }
+    await sql`delete from fulfillment_timeline_entries where order_id = ${ids.order}`;
+    await sql`delete from fulfillment_orders where order_id = ${ids.order}`;
     await sql`delete from order_state_transitions where order_id = ${ids.order}`;
     await sql`delete from platform_outbox_events where aggregate_id in (${ids.order}, ${createdAttemptId ?? ids.order})`;
     await sql`delete from inventory_reservation_lines where reservation_id = ${ids.reservation}`;

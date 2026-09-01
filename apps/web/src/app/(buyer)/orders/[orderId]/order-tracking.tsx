@@ -17,6 +17,7 @@ import { buyerDisputePageContract } from "@sevo/contracts/problem-follow-up/v1";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { newConversationHref } from "../../../../lib/conversation-navigation";
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import { presentBuyerOrderState } from "../../../../lib/buyer-order-presentation";
 import styles from "./order-tracking.module.css";
@@ -28,6 +29,10 @@ export function OrderTracking({ orderId }: { orderId: string }) {
   const [fulfillment, setFulfillment] = useState<FulfillmentTimeline>();
   const [refund, setRefund] = useState<DirectRefund>();
   const [dispute, setDispute] = useState<BuyerDispute>();
+  const [supplementalState, setSupplementalState] = useState<
+    Record<"fulfillment" | "refund" | "dispute", "LOADING" | "READY" | "ERROR">
+  >({ fulfillment: "LOADING", refund: "LOADING", dispute: "LOADING" });
+  const [copiedTrackingCode, setCopiedTrackingCode] = useState<string>();
   const [error, setError] = useState<"SIGNED_OUT" | "NOT_FOUND" | "UNAVAILABLE">();
   const [paying, setPaying] = useState(false);
   const [paymentError, setPaymentError] = useState(false);
@@ -47,21 +52,46 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         const parsed = buyerOrderSnapshotContract.safeParse(await response.json());
         if (!response.ok || !parsed.success) throw new Error("order unavailable");
         if (active) setOrder(parsed.data);
-        await Promise.all([
+        await Promise.allSettled([
           optionalRead(
             `/api/orders/${encodeURIComponent(orderId)}/fulfillment`,
             fulfillmentTimelineContract,
-          ).then((value) => active && value && setFulfillment(value)),
+          )
+            .then((value) => {
+              if (!active) return;
+              if (value) setFulfillment(value);
+              setSupplementalState((current) => ({ ...current, fulfillment: "READY" }));
+            })
+            .catch(() => {
+              if (active)
+                setSupplementalState((current) => ({
+                  ...current,
+                  fulfillment: "ERROR",
+                }));
+            }),
           optionalRead(
             `/api/orders/${encodeURIComponent(orderId)}/direct-refund`,
             directRefundContract,
-          ).then((value) => active && value && setRefund(value)),
-          optionalRead("/api/buyer/disputes?limit=25", buyerDisputePageContract).then(
-            (value) =>
-              active &&
-              value &&
-              setDispute(value.items.find((item) => item.orderId === orderId)),
-          ),
+          )
+            .then((value) => {
+              if (!active) return;
+              if (value) setRefund(value);
+              setSupplementalState((current) => ({ ...current, refund: "READY" }));
+            })
+            .catch(() => {
+              if (active)
+                setSupplementalState((current) => ({ ...current, refund: "ERROR" }));
+            }),
+          readBuyerDispute(orderId)
+            .then((value) => {
+              if (!active) return;
+              if (value) setDispute(value);
+              setSupplementalState((current) => ({ ...current, dispute: "READY" }));
+            })
+            .catch(() => {
+              if (active)
+                setSupplementalState((current) => ({ ...current, dispute: "ERROR" }));
+            }),
         ]);
       })
       .catch(() => active && setError("UNAVAILABLE"));
@@ -131,7 +161,18 @@ export function OrderTracking({ orderId }: { orderId: string }) {
       </p>
     );
 
-  const state = presentBuyerOrderState(order.status, refund?.status);
+  const state =
+    order.status === "PAID" && supplementalState.fulfillment === "ERROR"
+      ? {
+          label: "پرداخت تأیید شد",
+          nextStep:
+            "وضعیت آماده‌سازی و ارسال اکنون در دسترس نیست؛ کمی بعد دوباره بررسی کنید.",
+        }
+      : presentBuyerOrderState(order.status, refund?.status, fulfillment?.status);
+  const conversationHref = newConversationHref(
+    { kind: "ORDER", storeId: order.store.storeId, orderId },
+    `/orders/${orderId}`,
+  );
   return (
     <article className={styles.page}>
       <Link className={styles.back} href="/orders">
@@ -159,93 +200,179 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         ) : null}
       </header>
 
-      <section aria-labelledby="snapshot-title">
-        <h2 id="snapshot-title">خلاصه ثبت‌شده سفارش</h2>
-        <ul className={styles.items}>
-          {order.items.map((item) => (
-            <li key={item.variantId}>
-              <span>
-                {item.name} × {new Intl.NumberFormat("fa-IR").format(item.quantity)}
-              </span>
-              <strong>{formatIrrAsToman(item.lineTotal.amount)}</strong>
-            </li>
-          ))}
-        </ul>
-        <dl className={styles.facts}>
-          <div>
-            <dt>مبلغ نهایی</dt>
-            <dd>{formatIrrAsToman(order.total.amount)}</dd>
-          </div>
-          <div>
-            <dt>روش پرداخت</dt>
-            <dd>تسویه مستقیم با فروشگاه</dd>
-          </div>
-          <div>
-            <dt>روش ارسال</dt>
-            <dd>{order.shippingMethod.label}</dd>
-          </div>
-          <div>
-            <dt>زمان ثبت</dt>
-            <dd>{formatDate(order.createdAt)}</dd>
-          </div>
-        </dl>
-        <div className={styles.trust}>
-          <h3>سیاست مرجوعی ثبت‌شده هنگام سفارش</h3>
-          <p>{order.returnPolicy.text}</p>
-          <p>سوو گزارش مشکل و تخلف را پیگیری می‌کند، اما بازپرداخت را تضمین نمی‌کند.</p>
-        </div>
-      </section>
-
-      <section aria-labelledby="tracking-title">
-        <h2 id="tracking-title">رهگیری و خط زمانی</h2>
-        {fulfillment ? (
-          <ol className={styles.timeline}>
-            {fulfillment.timeline.map((entry, index) => (
-              <li key={`${entry.status}-${entry.occurredAt}-${index}`}>
-                <strong>{fulfillmentLabel(entry.status)}</strong>
-                <time dateTime={entry.occurredAt}>{formatDate(entry.occurredAt)}</time>
-                {entry.shipping?.trackingCode ? (
-                  <span>
-                    کد رهگیری: <bdi>{entry.shipping.trackingCode}</bdi>
-                  </span>
+      <details className={styles.disclosure} open>
+        <summary id="snapshot-title">خلاصه ثبت‌شده سفارش</summary>
+        <div className={styles.disclosureBody} aria-labelledby="snapshot-title">
+          <ul className={styles.items}>
+            {order.items.map((item) => (
+              <li key={item.variantId}>
+                <span>
+                  {item.name} × {new Intl.NumberFormat("fa-IR").format(item.quantity)}
+                </span>
+                <strong>{formatIrrAsToman(item.lineTotal.amount)}</strong>
+              </li>
+            ))}
+          </ul>
+          <dl className={styles.facts}>
+            <div>
+              <dt>مبلغ نهایی</dt>
+              <dd>{formatIrrAsToman(order.total.amount)}</dd>
+            </div>
+            <div>
+              <dt>روش پرداخت</dt>
+              <dd>تسویه مستقیم با فروشگاه</dd>
+            </div>
+            <div>
+              <dt>روش ارسال</dt>
+              <dd>
+                {order.shippingMethod.label}؛{" "}
+                {order.shippingMethod.estimatedDeliveryText}
+              </dd>
+            </div>
+            <div>
+              <dt>زمان ثبت</dt>
+              <dd>{formatDate(order.createdAt)}</dd>
+            </div>
+          </dl>
+          {order.delivery ? (
+            <div className={styles.trust}>
+              <h3>نشانی ثبت‌شده برای تحویل</h3>
+              <p>
+                {order.delivery.recipientName}،{" "}
+                <bdi>{order.delivery.recipientMobile}</bdi>
+              </p>
+              <p>
+                {order.delivery.provinceText}، {order.delivery.cityText}،{" "}
+                {order.delivery.addressLine}
+                {order.delivery.postalCode ? (
+                  <>
+                    ، کد پستی <bdi>{order.delivery.postalCode}</bdi>
+                  </>
                 ) : null}
+              </p>
+            </div>
+          ) : null}
+          <div className={styles.trust}>
+            <h3>سیاست مرجوعی ثبت‌شده هنگام سفارش</h3>
+            <p>{order.returnPolicy.text}</p>
+            <p>
+              سوو گزارش مشکل و تخلف را پیگیری می‌کند، اما بازپرداخت را تضمین نمی‌کند.
+            </p>
+          </div>
+        </div>
+      </details>
+
+      <details className={styles.disclosure} open>
+        <summary id="tracking-title">رهگیری و خط زمانی</summary>
+        <div className={styles.disclosureBody} aria-labelledby="tracking-title">
+          <h3>وضعیت سفارش</h3>
+          <ol className={styles.timeline}>
+            <li>
+              <strong>سفارش ثبت شد</strong>
+              <time dateTime={order.createdAt}>{formatDate(order.createdAt)}</time>
+            </li>
+            {order.timeline.map((entry, index) => (
+              <li key={`${entry.toStatus}-${entry.occurredAt}-${index}`}>
+                <strong>{orderTransitionLabel(entry.reasonCode)}</strong>
+                <time dateTime={entry.occurredAt}>{formatDate(entry.occurredAt)}</time>
               </li>
             ))}
           </ol>
-        ) : (
-          <p>پس از تأیید پرداخت، آماده‌سازی و ارسال در این بخش ثبت می‌شود.</p>
-        )}
-      </section>
+          <h3 className={styles.subheading}>ارسال</h3>
+          {supplementalState.fulfillment === "ERROR" ? (
+            <p role="status">
+              وضعیت ارسال اکنون در دسترس نیست؛ کمی بعد دوباره تلاش کنید.
+            </p>
+          ) : fulfillment ? (
+            <ol className={styles.timeline}>
+              {fulfillment.timeline.map((entry, index) => (
+                <li key={`${entry.status}-${entry.occurredAt}-${index}`}>
+                  <strong>{fulfillmentLabel(entry.status)}</strong>
+                  <time dateTime={entry.occurredAt}>
+                    {formatDate(entry.occurredAt)}
+                  </time>
+                  {entry.shipping?.trackingCode ? (
+                    <span className={styles.trackingCode}>
+                      کد رهگیری: <bdi>{entry.shipping.trackingCode}</bdi>{" "}
+                      <button
+                        type="button"
+                        className={styles.secondary}
+                        onClick={() => {
+                          void navigator.clipboard
+                            .writeText(entry.shipping!.trackingCode!)
+                            .then(() =>
+                              setCopiedTrackingCode(entry.shipping!.trackingCode),
+                            );
+                        }}
+                      >
+                        {copiedTrackingCode === entry.shipping.trackingCode
+                          ? "کپی شد"
+                          : "کپی کد"}
+                      </button>
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          ) : supplementalState.fulfillment === "LOADING" ? (
+            <p role="status">در حال دریافت وضعیت ارسال…</p>
+          ) : (
+            <p>پس از تأیید پرداخت، آماده‌سازی و ارسال در این بخش ثبت می‌شود.</p>
+          )}
+        </div>
+      </details>
 
-      <section aria-labelledby="problem-title">
-        <h2 id="problem-title">اختلاف و بازپرداخت</h2>
-        {dispute ? (
+      <details className={styles.disclosure}>
+        <summary id="problem-title">اختلاف و بازپرداخت</summary>
+        <div className={styles.disclosureBody} aria-labelledby="problem-title">
+          {supplementalState.dispute === "ERROR" ? (
+            <p role="status">
+              وضعیت پرونده اختلاف اکنون در دسترس نیست؛ کمی بعد دوباره تلاش کنید.
+            </p>
+          ) : dispute ? (
+            <p>
+              پرونده اختلاف با وضعیت «{disputeStatusLabel(dispute.status)}» در{" "}
+              {formatDate(dispute.openedAt)} ثبت شده است.
+            </p>
+          ) : supplementalState.dispute === "LOADING" ? (
+            <p role="status">در حال دریافت وضعیت اختلاف…</p>
+          ) : (
+            <p>برای این سفارش پرونده اختلافی ثبت نشده است.</p>
+          )}
+          {supplementalState.refund === "ERROR" ? (
+            <p role="status">
+              وضعیت بازپرداخت اکنون در دسترس نیست؛ کمی بعد دوباره تلاش کنید.
+            </p>
+          ) : refund ? (
+            <dl className={styles.facts}>
+              <div>
+                <dt>وضعیت بازپرداخت</dt>
+                <dd>{refundStatusLabel(refund.status)}</dd>
+              </div>
+              <div>
+                <dt>مبلغ</dt>
+                <dd>{formatIrrAsToman(refund.amount.amount)}</dd>
+              </div>
+              <div>
+                <dt>آخرین پیگیری</dt>
+                <dd>{formatDate(refund.updatedAt)}</dd>
+              </div>
+            </dl>
+          ) : supplementalState.refund === "LOADING" ? (
+            <p role="status">در حال دریافت وضعیت بازپرداخت…</p>
+          ) : (
+            <p>بازپرداختی برای این سفارش ثبت نشده است.</p>
+          )}
           <p>
-            پرونده اختلاف با وضعیت «{disputeStatusLabel(dispute.status)}» در{" "}
-            {formatDate(dispute.openedAt)} ثبت شده است.
+            اگر سفارش نرسیده، آسیب‌دیده یا مغایر است، گفت‌وگوی مرتبط با سفارش را شروع
+            کنید. اگر مشکل حل نشد، مدارک همان زمینه برای ثبت پرونده اختلاف استفاده
+            می‌شود.
           </p>
-        ) : (
-          <p>برای این سفارش پرونده اختلافی ثبت نشده است.</p>
-        )}
-        {refund ? (
-          <dl className={styles.facts}>
-            <div>
-              <dt>وضعیت بازپرداخت</dt>
-              <dd>{refundStatusLabel(refund.status)}</dd>
-            </div>
-            <div>
-              <dt>مبلغ</dt>
-              <dd>{formatIrrAsToman(refund.amount.amount)}</dd>
-            </div>
-            <div>
-              <dt>آخرین پیگیری</dt>
-              <dd>{formatDate(refund.updatedAt)}</dd>
-            </div>
-          </dl>
-        ) : (
-          <p>بازپرداختی برای این سفارش ثبت نشده است.</p>
-        )}
-      </section>
+          <Link className={styles.secondaryLink} href={conversationHref}>
+            گفت‌وگو درباره سفارش
+          </Link>
+        </div>
+      </details>
     </article>
   );
 }
@@ -259,7 +386,25 @@ async function optionalRead<Output>(
   const response = await fetch(path, { cache: "no-store" });
   if (response.status === 404) return undefined;
   const parsed = contract.safeParse(await response.json());
-  return response.ok && parsed.success ? parsed.data : undefined;
+  if (!response.ok || !parsed.success) throw new Error("supplemental read unavailable");
+  return parsed.data;
+}
+
+async function readBuyerDispute(orderId: string) {
+  let cursor: string | null = null;
+  do {
+    const search = new URLSearchParams({ limit: "100" });
+    if (cursor) search.set("cursor", cursor);
+    const page = await optionalRead(
+      `/api/buyer/disputes?${search}`,
+      buyerDisputePageContract,
+    );
+    if (!page) return undefined;
+    const match = page.items.find((item) => item.orderId === orderId);
+    if (match) return match;
+    cursor = page.nextCursor;
+  } while (cursor);
+  return undefined;
 }
 
 function formatDate(value: string) {
@@ -300,4 +445,21 @@ function disputeStatusLabel(status: BuyerDispute["status"]) {
       CLOSED: "بسته شده",
     } as const
   )[status];
+}
+
+function orderTransitionLabel(
+  reason: BuyerOrderSnapshot["timeline"][number]["reasonCode"],
+) {
+  return (
+    {
+      PAYMENT_CONFIRMED: "پرداخت تأیید شد",
+      PAYMENT_DISPATCH_UNRESOLVED: "نتیجه پرداخت نیازمند بررسی شد",
+      PAYMENT_CONFIRMED_STOCK_CONFLICT: "پرداخت تأیید شد؛ موجودی نیازمند بررسی است",
+      PAYMENT_PROVIDER_CONFLICT: "گزارش درگاه نیازمند بررسی شد",
+      PAYMENT_FAILED: "پرداخت ناموفق ثبت شد",
+      PAID_STOCK_CONFLICT: "موجودی سفارش پرداخت‌شده نیازمند بررسی شد",
+      REFUND_REQUESTED: "بازپرداخت درخواست شد",
+      REFUND_CONFIRMED: "بازپرداخت تأیید شد",
+    } as const
+  )[reason];
 }

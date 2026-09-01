@@ -23,4 +23,15 @@ describe("buyer order state presentation", () => {
       nextStep: "ثبت نتیجه درگاه انجام شده است؛ رسید بانکی خود را نیز نگه دارید.",
     });
   });
+
+  it("uses fulfillment progress for the real next step after payment", () => {
+    expect(presentBuyerOrderState("PAID", undefined, "SHIPPED")).toEqual({
+      label: "سفارش ارسال شد",
+      nextStep: "کد رهگیری و مسیر ارسال را بررسی کنید.",
+    });
+    expect(presentBuyerOrderState("PAID", undefined, "DELIVERED")).toEqual({
+      label: "سفارش تحویل شد",
+      nextStep: "اگر مشکلی هست، از همین صفحه با فروشگاه گفت‌وگو کنید.",
+    });
+  });
 });

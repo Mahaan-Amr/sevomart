@@ -17,6 +17,7 @@ import {
   createOrderInputContract,
   prepareCheckoutInputContract,
 } from "@sevo/contracts/orders/v1";
+import { orderIdContract } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { requireIdentity } from "../../http/identity-session";
@@ -65,12 +66,11 @@ export class CheckoutController {
   ) {
     response.header("cache-control", "no-store");
     const identityId = await requireIdentity(request, this.sessions);
-    try {
-      const order = await this.checkout.readBuyerOrder(identityId, orderId);
-      if (order) return order;
-    } catch {
-      // Invalid and non-owned identifiers share the same non-disclosing response.
-    }
+    const parsedOrderId = orderIdContract.safeParse(orderId);
+    const order = parsedOrderId.success
+      ? await this.checkout.readBuyerOrder(identityId, parsedOrderId.data)
+      : undefined;
+    if (order) return order;
     throw new HttpException(
       {
         code: "ORDER_NOT_FOUND",
