@@ -7,6 +7,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { loginHref } from "../../../../lib/navigation";
+import { readPurchaseExperienceEligibility } from "../../../../lib/purchase-experience-client";
 import styles from "./purchase-experience.module.css";
 
 type Eligibility = ReturnType<
@@ -33,20 +34,13 @@ export function PurchaseExperienceForm({
 
   useEffect(() => {
     let active = true;
-    void fetch(
-      `/api/purchase-experiences/eligibility/${encodeURIComponent(orderItemId)}`,
-      { cache: "no-store" },
-    )
-      .then(async (response) => {
-        if (response.status === 401) {
+    void readPurchaseExperienceEligibility(orderItemId)
+      .then((result) => {
+        if (result.status === "UNAUTHENTICATED") {
           window.location.assign(loginHref(resumePath, returnTo));
           return;
         }
-        const parsed = purchaseExperienceEligibilityDecisionV2Contract.safeParse(
-          await response.json(),
-        );
-        if (!response.ok || !parsed.success) throw new Error("eligibility unavailable");
-        if (active) setEligibility(parsed.data);
+        if (active) setEligibility(result.decision);
       })
       .catch(() => {
         if (active) setMessage("شرایط ثبت تجربه دریافت نشد. دوباره تلاش کنید.");

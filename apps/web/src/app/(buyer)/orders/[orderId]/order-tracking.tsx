@@ -4,7 +4,6 @@ import {
   buyerOrderSnapshotContract,
   type BuyerOrderSnapshot,
 } from "@sevo/contracts/orders/v1";
-import { purchaseExperienceEligibilityDecisionV2Contract } from "@sevo/contracts/content/v2";
 import {
   directPaymentAttemptContract,
   directRefundContract,
@@ -21,6 +20,7 @@ import { useEffect, useState } from "react";
 import { newConversationHref } from "../../../../lib/conversation-navigation";
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import { presentBuyerOrderState } from "../../../../lib/buyer-order-presentation";
+import { readPurchaseExperienceEligibility } from "../../../../lib/purchase-experience-client";
 import styles from "./order-tracking.module.css";
 
 type BuyerDispute = ReturnType<typeof buyerDisputePageContract.parse>["items"][number];
@@ -72,23 +72,18 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           ...(parsed.data.status === "PAID"
             ? parsed.data.items.map(async (item) => {
                 try {
-                  const response = await fetch(
-                    `/api/purchase-experiences/eligibility/${encodeURIComponent(item.orderItemId)}`,
-                    { cache: "no-store" },
+                  const result = await readPurchaseExperienceEligibility(
+                    item.orderItemId,
                   );
-                  const decision =
-                    purchaseExperienceEligibilityDecisionV2Contract.safeParse(
-                      await response.json(),
-                    );
-                  if (!response.ok || !decision.success) {
+                  if (result.status !== "READY") {
                     throw new Error("eligibility unavailable");
                   }
                   if (!active) return;
                   setPurchaseExperienceStates((current) => ({
                     ...current,
-                    [item.orderItemId]: decision.data.eligible
+                    [item.orderItemId]: result.decision.eligible
                       ? "ELIGIBLE"
-                      : decision.data.reason === "ALREADY_SUBMITTED"
+                      : result.decision.reason === "ALREADY_SUBMITTED"
                         ? "ALREADY_SUBMITTED"
                         : "INELIGIBLE",
                   }));
