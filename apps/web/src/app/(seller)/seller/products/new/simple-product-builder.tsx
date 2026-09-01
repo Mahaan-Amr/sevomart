@@ -21,6 +21,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatIrrAsToman } from "../../../../../lib/format-money";
 import styles from "./simple-product-builder.module.css";
 import { axisValueErrorId, domIdPart } from "./product-builder-dom";
+import {
+  applyRevisionConflictChoices,
+  buildRevisionConflictReview,
+  type ConflictChoice,
+  type ProductAuthoringSnapshot,
+  type ProductConflictScope,
+  type RevisionConflictItem,
+  type RevisionConflictKey,
+  type RevisionConflictReview,
+} from "./product-conflict-reconciliation";
 
 type Step = "details" | "images" | "sale" | "review" | "published" | "unpublished";
 type AxisValue = { clientKey: string; name: string };
@@ -45,6 +55,10 @@ type ImageDraft = {
 type IdempotentRequest = { payload: string; key: string };
 type RequestRef = { current: IdempotentRequest | undefined };
 type ProductIssue = { path: string; code: string };
+type RevisionConflictState = {
+  authoritative: ProductView;
+  review: RevisionConflictReview;
+};
 
 const PRODUCT_ID_STORAGE = "sevo-product-authoring-id";
 const CREATE_KEY_STORAGE = "sevo-product-authoring-create-key";
@@ -69,6 +83,10 @@ export function SimpleProductBuilder({
   const [preview, setPreview] = useState<PublicProduct>();
   const [issues, setIssues] = useState<ProductIssue[]>([]);
   const [message, setMessage] = useState("");
+  const [revisionConflict, setRevisionConflict] = useState<RevisionConflictState>();
+  const [conflictChoices, setConflictChoices] = useState<
+    Partial<Record<RevisionConflictKey, ConflictChoice>>
+  >({});
   const [showDetailsErrors, setShowDetailsErrors] = useState(false);
   const [showImageError, setShowImageError] = useState(false);
   const [showSaleErrors, setShowSaleErrors] = useState(false);
@@ -201,6 +219,82 @@ export function SimpleProductBuilder({
     );
   }
 
+  async function openRevisionConflict(
+    scope: ProductConflictScope,
+    local: ProductAuthoringSnapshot,
+  ) {
+    const response = await fetch(`/api/store/seller/products/${productId}`, {
+      cache: "no-store",
+    });
+    const body: unknown = await response.json();
+    const parsed = productViewContract.safeParse(body);
+    if (!response.ok || !parsed.success) {
+      throw new Error(
+        humanError(body, "خواندن نسخه تازه کالا انجام نشد. دوباره تلاش کنید."),
+      );
+    }
+    const review = buildRevisionConflictReview(
+      scope,
+      local,
+      authoringSnapshotFromProduct(parsed.data),
+    );
+    setConflictChoices(
+      review.items.some((item) => item.key === "revision")
+        ? { revision: "server" }
+        : {},
+    );
+    setRevisionConflict({ authoritative: parsed.data, review });
+  }
+
+  function applyReviewedConflict() {
+    if (!revisionConflict) return;
+    if (
+      revisionConflict.review.items.some(
+        (item) => conflictChoices[item.key] === undefined,
+      )
+    ) {
+      return;
+    }
+    const merged = applyRevisionConflictChoices(
+      revisionConflict.review,
+      conflictChoices,
+    );
+    hydrate(revisionConflict.authoritative);
+    setName(merged.name);
+    setDescription(merged.description);
+    setImages(
+      merged.orderedMediaIds.map((mediaId) => ({
+        key: mediaId,
+        mediaId: mediaId as MediaId,
+      })),
+    );
+    setAxes(merged.axes);
+    setKind(merged.axes.length === 0 ? "simple" : "multi");
+    setSaleRows(
+      Object.fromEntries(
+        merged.variants.map((variant) => [
+          variant.clientKey,
+          {
+            variantId: variant.variantId,
+            priceToman: variant.priceToman,
+            sku: variant.sku,
+            onHand: variant.onHand,
+            inventoryRevision: variant.inventoryRevision,
+          },
+        ]),
+      ),
+    );
+    setRevisionConflict(undefined);
+    setConflictChoices({});
+    setMessage("انتخاب‌ها روی نسخه تازه آماده شد. اکنون دوباره ذخیره کنید.");
+  }
+
+  function cancelConflictReview() {
+    setRevisionConflict(undefined);
+    setConflictChoices({});
+    setMessage("تغییرهای شما دست‌نخورده ماند. برای ذخیره، نسخه تازه را بازبینی کنید.");
+  }
+
   async function saveWorkingCopy(
     options: {
       uploadImage?: boolean;
@@ -254,6 +348,14 @@ export function SimpleProductBuilder({
             }
           : null,
     };
+    const localSnapshot = authoringSnapshotFromEditor({
+      name,
+      description,
+      images: effectiveImages,
+      axes: kind === "simple" ? [] : axes,
+      variants: currentVariants,
+      rows: desiredRows,
+    });
     const response = await fetchWithRetry(
       `/api/store/seller/products/${productId}/working-copy`,
       {
@@ -265,6 +367,10 @@ export function SimpleProductBuilder({
     const body: unknown = await response.json();
     const parsed = productViewContract.safeParse(body);
     if (!response.ok || !parsed.success) {
+      if (isRevisionConflict(body)) {
+        await openRevisionConflict("working-copy", localSnapshot);
+        throw new RevisionConflictHandledError();
+      }
       setIssues(apiIssues(body));
       throw new Error(humanError(body, "ذخیره پیش‌نویس انجام نشد."));
     }
@@ -305,6 +411,13 @@ export function SimpleProductBuilder({
     const offerBody: unknown = await offerResponse.json();
     const offerResult = productBatchResultContract.safeParse(offerBody);
     if (!offerResponse.ok || !offerResult.success) {
+      if (isRevisionConflict(offerBody)) {
+        await openRevisionConflict(
+          "offers",
+          authoringSnapshotFromProduct(product, desiredRows),
+        );
+        throw new RevisionConflictHandledError();
+      }
       setIssues(apiIssues(offerBody));
       throw new Error(humanError(offerBody, "ذخیره قیمت و شناسه‌ها انجام نشد."));
     }
@@ -334,6 +447,13 @@ export function SimpleProductBuilder({
     const inventoryBody: unknown = await inventoryResponse.json();
     const inventoryResult = productBatchResultContract.safeParse(inventoryBody);
     if (!inventoryResponse.ok || !inventoryResult.success) {
+      if (isRevisionConflict(inventoryBody)) {
+        await openRevisionConflict(
+          "inventory",
+          authoringSnapshotFromProduct(product, desiredRows),
+        );
+        throw new RevisionConflictHandledError();
+      }
       setIssues(apiIssues(inventoryBody));
       throw new Error(humanError(inventoryBody, "ذخیره موجودی انجام نشد."));
     }
@@ -522,7 +642,9 @@ export function SimpleProductBuilder({
     try {
       await action();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "تغییر ذخیره نشد.");
+      if (!(error instanceof RevisionConflictHandledError)) {
+        setMessage(error instanceof Error ? error.message : "تغییر ذخیره نشد.");
+      }
     } finally {
       setPending(false);
     }
@@ -544,6 +666,95 @@ export function SimpleProductBuilder({
           <button className={styles.primaryButton} onClick={() => location.reload()}>
             دوباره تلاش کنید
           </button>
+        </section>
+      </main>
+    );
+  }
+  if (revisionConflict) {
+    const choicesComplete = revisionConflict.review.items.every(
+      (item) => conflictChoices[item.key] !== undefined,
+    );
+    return (
+      <main className={styles.page}>
+        <section className={styles.workspace} aria-live="polite">
+          <span className={styles.brand}>سوو</span>
+          <h1>تغییرهای هم‌زمان را بازبینی کنید</h1>
+          <p>{conflictIntro(revisionConflict.review.scope)}</p>
+          <div className={styles.conflictList}>
+            {revisionConflict.review.items.map((item) =>
+              item.key === "revision" ? (
+                <section className={styles.conflictItem} key={item.key}>
+                  <h2>{item.title}</h2>
+                  <p>{item.serverSummary}</p>
+                </section>
+              ) : (
+                <fieldset className={styles.conflictItem} key={item.key}>
+                  <legend>{item.title}</legend>
+                  <label
+                    className={
+                      conflictChoices[item.key] === "local"
+                        ? styles.conflictOptionSelected
+                        : styles.conflictOption
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name={`conflict-${domIdPart(item.key)}`}
+                      checked={conflictChoices[item.key] === "local"}
+                      onChange={() =>
+                        setConflictChoices((current) => ({
+                          ...current,
+                          [item.key]: "local",
+                        }))
+                      }
+                    />
+                    <ConflictChoiceContent item={item} source="local" />
+                  </label>
+                  <label
+                    className={
+                      conflictChoices[item.key] === "server"
+                        ? styles.conflictOptionSelected
+                        : styles.conflictOption
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name={`conflict-${domIdPart(item.key)}`}
+                      checked={conflictChoices[item.key] === "server"}
+                      onChange={() =>
+                        setConflictChoices((current) => ({
+                          ...current,
+                          [item.key]: "server",
+                        }))
+                      }
+                    />
+                    <ConflictChoiceContent item={item} source="server" />
+                  </label>
+                </fieldset>
+              ),
+            )}
+          </div>
+          <p className={styles.liveChangeNotice}>
+            هیچ تغییری هنوز جایگزین نشده است. پس از انتخاب، نسخه ادغام‌شده را یک بار
+            دیگر ذخیره می‌کنید.
+          </p>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={cancelConflictReview}
+            >
+              بازگشت به ویرایش
+            </button>
+            <button
+              type="button"
+              className={styles.primaryButton}
+              disabled={!choicesComplete}
+              onClick={applyReviewedConflict}
+            >
+              آماده‌کردن تغییرهای انتخاب‌شده
+            </button>
+          </div>
         </section>
       </main>
     );
@@ -723,6 +934,40 @@ export function SimpleProductBuilder({
         </p>
       </section>
     </main>
+  );
+}
+
+function ConflictChoiceContent({
+  item,
+  source,
+}: {
+  item: RevisionConflictItem;
+  source: "local" | "server";
+}) {
+  const title = source === "local" ? "تغییر من" : "نسخه تازه";
+  const summary = source === "local" ? item.localSummary : item.serverSummary;
+  const mediaIds =
+    item.kind === "images"
+      ? source === "local"
+        ? item.localMediaIds
+        : item.serverMediaIds
+      : [];
+  return (
+    <span>
+      <strong>{title}</strong>
+      {mediaIds.length > 0 ? (
+        <span className={styles.conflictImages} aria-label={`تصویرهای ${title}`}>
+          {mediaIds.map((mediaId, index) => (
+            <img
+              key={mediaId}
+              src={`/api/store/media/${mediaId}`}
+              alt={`تصویر ${index + 1} در ${title}`}
+            />
+          ))}
+        </span>
+      ) : null}
+      <small>{summary}</small>
+    </span>
   );
 }
 
@@ -1386,6 +1631,95 @@ function redirectIfUnauthorized(response: Response, productId?: string) {
   window.location.assign(`/seller/login?returnTo=${encodeURIComponent(returnTo)}`);
   return true;
 }
+
+function authoringSnapshotFromEditor(input: {
+  name: string;
+  description: string;
+  images: ImageDraft[];
+  axes: Axis[];
+  variants: VariantDraft[];
+  rows: Record<string, SaleRow>;
+}): ProductAuthoringSnapshot {
+  return {
+    name: input.name,
+    description: input.description,
+    orderedMediaIds: input.images.flatMap((image) =>
+      image.mediaId ? [image.mediaId] : [],
+    ),
+    axes: input.axes,
+    variants: input.variants.map((variant) => {
+      const row = input.rows[variant.clientKey];
+      return {
+        ...variant,
+        variantId: row?.variantId,
+        priceToman: row?.priceToman ?? "",
+        sku: row?.sku ?? "",
+        onHand: row?.onHand ?? "0",
+        inventoryRevision: row?.inventoryRevision ?? 0,
+      };
+    }),
+  };
+}
+
+function authoringSnapshotFromProduct(
+  product: ProductView,
+  desiredRows?: Record<string, SaleRow>,
+): ProductAuthoringSnapshot {
+  const workingCopy = product.workingCopy;
+  if (!workingCopy) {
+    return {
+      name: "",
+      description: "",
+      orderedMediaIds: [],
+      axes: [],
+      variants: [],
+    };
+  }
+  const inventory = new Map(
+    product.inventory.map((row) => [row.variantId, row] as const),
+  );
+  return {
+    name: workingCopy.name ?? "",
+    description: workingCopy.description,
+    orderedMediaIds: workingCopy.orderedMediaIds,
+    axes: workingCopy.axes,
+    variants: workingCopy.variants.map((variant) => {
+      const desired = desiredRows?.[variant.clientKey];
+      const stock = inventory.get(variant.variantId);
+      return {
+        clientKey: variant.clientKey,
+        variantId: variant.variantId,
+        combination: variant.combination,
+        priceToman:
+          desired?.priceToman ??
+          (variant.price ? String(variant.price.amount / 10) : ""),
+        sku: desired?.sku ?? variant.sku ?? "",
+        onHand: desired?.onHand ?? String(stock?.onHand ?? 0),
+        inventoryRevision: stock?.revision ?? 0,
+      };
+    }),
+  };
+}
+
+function conflictIntro(scope: ProductConflictScope) {
+  return scope === "working-copy"
+    ? "نسخه کاری کالا جای دیگری تغییر کرده است. برای هر بخش مشخص کنید کدام مقدار بماند."
+    : scope === "offers"
+      ? "قیمت یا شناسه گونه‌ها تازه‌تر شده است. انتخاب شما روی همان نسخه تازه اعمال می‌شود."
+      : "موجودی گونه‌ها تازه‌تر شده است. مقدارهای محلی و تازه را پیش از ادامه مقایسه کنید.";
+}
+
+function isRevisionConflict(body: unknown) {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "code" in body &&
+    body.code === "REVISION_CONFLICT"
+  );
+}
+
+class RevisionConflictHandledError extends Error {}
+
 function tomanToMoney(value: string) {
   if (!/^\d+$/u.test(value)) return null;
   const amount = Number(value) * 10;

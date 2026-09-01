@@ -339,6 +339,92 @@
   color: var(--color-primary-dark) !important;
 }
 
+.conflictList {
+  display: grid;
+  gap: 12px;
+}
+
+.conflictItem {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border-primary-soft);
+  border-radius: 16px;
+}
+
+.conflictItem legend,
+.conflictItem h2 {
+  padding-inline: 4px;
+  color: var(--color-primary-dark);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.conflictOption,
+.conflictOptionSelected {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  background: var(--color-background);
+  cursor: pointer;
+}
+
+.conflictOptionSelected {
+  background: var(--color-cover-start);
+  box-shadow: inset 3px 3px 7px var(--shadow-neutral-soft);
+}
+
+.conflictOption input,
+.conflictOptionSelected input {
+  width: 40px;
+  height: 40px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.conflictOption span,
+.conflictOptionSelected span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.conflictOption small,
+.conflictOptionSelected small {
+  overflow-wrap: anywhere;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.8;
+}
+
+.conflictOption .conflictImages,
+.conflictOptionSelected .conflictImages {
+  display: flex;
+  overflow-x: auto;
+  gap: 8px;
+  padding-block: 4px;
+}
+
+.conflictImages img {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.conflictOption:focus-within,
+.conflictOptionSelected:focus-within {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
 @media (min-width: 768px) {
   .page {
     padding: 32px;

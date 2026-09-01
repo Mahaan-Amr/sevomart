@@ -239,10 +239,150 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
 
   await page.getByRole("link", { name: "ویرایش کالا" }).click();
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
-  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
-  await page.getByRole("button", { name: "ادامه" }).click();
-  await page.getByRole("button", { name: "ادامه" }).click();
   const publishedProductId = new URL(page.url()).pathname.split("/").at(-2) ?? "";
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await page
+    .getByLabel("توضیح کالا")
+    .fill("فنجان دست‌ساز با توضیح بازبینی‌شده فروشنده");
+  let rejectedWorkingCopyRevision = false;
+  let concurrentWorkingRevision = 0;
+  await page.route("**/api/store/seller/products/*/working-copy", async (route) => {
+    if (rejectedWorkingCopyRevision) return route.continue();
+    rejectedWorkingCopyRevision = true;
+    const latestResponse = await page.request.get(
+      `/api/store/seller/products/${publishedProductId}`,
+    );
+    expect(latestResponse.ok()).toBe(true);
+    const latest = (await latestResponse.json()) as {
+      revision: number;
+      workingCopy: {
+        name: string;
+        description: string;
+        orderedMediaIds: string[];
+        axes: unknown[];
+        variants: Array<{
+          clientKey: string;
+          combination: unknown[];
+          price: { amount: number; currency: "IRR" } | null;
+          sku: string | null;
+        }>;
+      } | null;
+    };
+    expect(latest.workingCopy).not.toBeNull();
+    const concurrentResponse = await page.request.put(
+      `/api/store/seller/products/${publishedProductId}/working-copy`,
+      {
+        headers: {
+          "idempotency-key": `concurrent-working-${randomUUID()}`,
+          "if-match": `"${latest.revision}"`,
+        },
+        data: {
+          expectedRevision: latest.revision,
+          workingCopy: {
+            name: "فنجان تازه سرور",
+            description: latest.workingCopy!.description,
+            orderedMediaIds: latest.workingCopy!.orderedMediaIds,
+            axes: latest.workingCopy!.axes,
+            variants: latest.workingCopy!.variants.map((variant) => ({
+              clientKey: variant.clientKey,
+              combination: variant.combination,
+              price: variant.price,
+              sku: variant.sku,
+            })),
+          },
+          inventory: null,
+        },
+      },
+    );
+    const concurrentBody = (await concurrentResponse.json()) as {
+      revision?: number;
+    };
+    expect(
+      concurrentResponse.ok(),
+      `${concurrentResponse.status()} ${JSON.stringify(concurrentBody)}`,
+    ).toBe(true);
+    concurrentWorkingRevision = concurrentBody.revision ?? 0;
+    expect(concurrentWorkingRevision).toBeGreaterThan(latest.revision);
+    await route.continue();
+  });
+  const staleWorkingResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/products/${publishedProductId}/working-copy`) &&
+      response.status() === 409,
+  );
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await staleWorkingResponse;
+  await expect(
+    page.getByRole("heading", { name: "تغییرهای هم‌زمان را بازبینی کنید" }),
+  ).toBeVisible();
+  expect(concurrentWorkingRevision).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "بازگشت به ویرایش" }).click();
+  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
+  await expect(page.getByLabel("توضیح کالا")).toHaveValue(
+    "فنجان دست‌ساز با توضیح بازبینی‌شده فروشنده",
+  );
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(
+    page.getByRole("heading", { name: "تغییرهای هم‌زمان را بازبینی کنید" }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await assertNoHorizontalOverflow(page);
+  await assertInteractiveTargets(page);
+  await assertMinimumContrast(
+    page.locator("main h1, main h2, main p, main strong, main small, main button"),
+  );
+  const prepareConflict = page.getByRole("button", {
+    name: "آماده‌کردن تغییرهای انتخاب‌شده",
+  });
+  await expect(prepareConflict).toBeDisabled();
+  expect(
+    Number.parseFloat(
+      await prepareConflict.evaluate(
+        (button) => getComputedStyle(button).transitionDuration,
+      ),
+    ) || 0,
+  ).toBeLessThanOrEqual(0.001);
+  const nameConflict = page.getByRole("group", { name: "نام کالا" });
+  await expect(nameConflict).toContainText("فنجان تازه سرور");
+  const freshName = nameConflict.getByRole("radio", { name: /نسخه تازه/ });
+  await freshName.focus();
+  await page.keyboard.press("Space");
+  await expect(freshName).toBeChecked();
+  const descriptionConflict = page.getByRole("group", { name: "توضیح کالا" });
+  await expect(descriptionConflict).toContainText("توضیح بازبینی‌شده فروشنده");
+  await expect(descriptionConflict).toContainText("مناسب نوشیدنی گرم");
+  const localDescription = descriptionConflict.getByRole("radio", {
+    name: /تغییر من/,
+  });
+  await localDescription.focus();
+  await page.keyboard.press("Space");
+  await expect(localDescription).toBeChecked();
+  await prepareConflict.click();
+  await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
+  await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان تازه سرور");
+  await expect(page.getByLabel("توضیح کالا")).toHaveValue(
+    "فنجان دست‌ساز با توضیح بازبینی‌شده فروشنده",
+  );
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByRole("heading", { name: "تصویرهای کالا" })).toBeVisible();
+  const reconciledWorkingCopy = await page.request.get(
+    `/api/store/seller/products/${publishedProductId}`,
+  );
+  expect(reconciledWorkingCopy.ok()).toBe(true);
+  expect(
+    (await reconciledWorkingCopy.json()) as {
+      revision: number;
+      workingCopy: { name: string; description: string };
+    },
+  ).toMatchObject({
+    revision: expect.any(Number),
+    workingCopy: {
+      name: "فنجان تازه سرور",
+      description: "فنجان دست‌ساز با توضیح بازبینی‌شده فروشنده",
+    },
+  });
+  await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByLabel("قیمت قرمز، کوچک").fill("456000");
   await page.getByRole("button", { name: "برگشت", exact: true }).click();
   await expect(page.getByRole("heading", { name: "تصویرهای کالا" })).toBeVisible();
@@ -262,13 +402,61 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
       "کوچک",
     ]),
   ).resolves.toBe(4_560_000);
-  await page.getByRole("link", { name: "ویرایش فنجان سرامیکی" }).click();
+  await page.getByRole("link", { name: "ویرایش فنجان تازه سرور" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByLabel("قیمت قرمز، کوچک").fill("457000");
+  await page.getByLabel("موجودی قرمز، کوچک").fill("9");
   let offersSaved = 0;
   let inventorySaved = 0;
+  let rejectedOfferRevision = false;
+  let concurrentOfferRevision = 0;
   let rejectedOffer = false;
   await page.route("**/api/store/seller/products/*/offers", async (route) => {
+    if (!rejectedOfferRevision) {
+      rejectedOfferRevision = true;
+      const latestResponse = await page.request.get(
+        `/api/store/seller/products/${publishedProductId}`,
+      );
+      expect(latestResponse.ok()).toBe(true);
+      const latest = (await latestResponse.json()) as {
+        revision: number;
+        workingCopy: {
+          variants: Array<{
+            variantId: string;
+            price: { amount: number; currency: "IRR" } | null;
+            sku: string | null;
+            offerRevision: number;
+          }>;
+        };
+      };
+      const concurrentResponse = await page.request.put(
+        `/api/store/seller/products/${publishedProductId}/offers`,
+        {
+          headers: {
+            "idempotency-key": `concurrent-offer-${randomUUID()}`,
+            "if-match": `"${latest.revision}"`,
+          },
+          data: {
+            expectedRevision: latest.revision,
+            rows: latest.workingCopy.variants.map((variant, index) => ({
+              variantId: variant.variantId,
+              price:
+                index === 0 ? { amount: 4_580_000, currency: "IRR" } : variant.price,
+              sku: variant.sku,
+              expectedRevision: variant.offerRevision,
+            })),
+          },
+        },
+      );
+      expect(concurrentResponse.ok()).toBe(true);
+      concurrentOfferRevision = (
+        (await concurrentResponse.json()) as { productRevision: number }
+      ).productRevision;
+      expect(concurrentOfferRevision).toBeGreaterThan(latest.revision);
+      await route.continue();
+      return;
+    }
     if (!rejectedOffer) {
       rejectedOffer = true;
       await route.fulfill({
@@ -289,10 +477,70 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     offersSaved += 1;
     await route.continue();
   });
+  let rejectedInventoryRevision = false;
+  let concurrentInventoryRevision = 0;
   await page.route("**/api/store/seller/products/*/inventory", async (route) => {
+    if (!rejectedInventoryRevision) {
+      rejectedInventoryRevision = true;
+      const latestResponse = await page.request.get(
+        `/api/store/seller/products/${publishedProductId}`,
+      );
+      expect(latestResponse.ok()).toBe(true);
+      const latest = (await latestResponse.json()) as {
+        revision: number;
+        inventory: Array<{
+          variantId: string;
+          onHand: number;
+          revision: number;
+        }>;
+      };
+      const concurrentResponse = await page.request.put(
+        `/api/store/seller/products/${publishedProductId}/inventory`,
+        {
+          headers: {
+            "idempotency-key": `concurrent-inventory-${randomUUID()}`,
+            "if-match": `"${latest.revision}"`,
+          },
+          data: {
+            expectedRevision: latest.revision,
+            reasonCode: "MANUAL_COUNT",
+            rows: latest.inventory.map((row, index) => ({
+              variantId: row.variantId,
+              onHand: index === 0 ? 10 : row.onHand,
+              expectedRevision: row.revision,
+            })),
+          },
+        },
+      );
+      expect(concurrentResponse.ok()).toBe(true);
+      concurrentInventoryRevision = (
+        (await concurrentResponse.json()) as { productRevision: number }
+      ).productRevision;
+      expect(concurrentInventoryRevision).toBeGreaterThan(latest.revision);
+      await route.continue();
+      return;
+    }
     inventorySaved += 1;
     await route.continue();
   });
+  await page.getByRole("button", { name: "اعمال فروش و دیدن پیش‌نمایش" }).click();
+  await expect(
+    page.getByRole("heading", { name: "تغییرهای هم‌زمان را بازبینی کنید" }),
+  ).toBeVisible();
+  expect(concurrentOfferRevision).toBeGreaterThan(0);
+  const offerConflict = page.getByRole("group", {
+    name: "قیمت گونه قرمز، کوچک",
+  });
+  await expect(offerConflict).toContainText("۴۵۷٬۰۰۰ تومان");
+  await expect(offerConflict).toContainText("۴۵۸٬۰۰۰ تومان");
+  await offerConflict.getByRole("radio", { name: /تغییر من/ }).click();
+  const firstInventoryConflict = page.getByRole("group", {
+    name: "موجودی گونه قرمز، کوچک",
+  });
+  await firstInventoryConflict.getByRole("radio", { name: /تغییر من/ }).click();
+  await page.getByRole("button", { name: "آماده‌کردن تغییرهای انتخاب‌شده" }).click();
+  await expect(page.getByLabel("قیمت قرمز، کوچک")).toHaveValue("457000");
+  await expect(page.getByLabel("موجودی قرمز، کوچک")).toHaveValue("9");
   await page.getByRole("button", { name: "اعمال فروش و دیدن پیش‌نمایش" }).click();
   await expect(page.getByLabel("قیمت قرمز، کوچک")).toHaveAttribute(
     "aria-invalid",
@@ -305,9 +553,38 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
       .getByText("این مقدار را بررسی کنید."),
   ).toBeVisible();
   await page.getByRole("button", { name: "اعمال فروش و دیدن پیش‌نمایش" }).click();
+  await expect(
+    page.getByRole("heading", { name: "تغییرهای هم‌زمان را بازبینی کنید" }),
+  ).toBeVisible();
+  expect(concurrentInventoryRevision).toBeGreaterThan(0);
+  const inventoryConflict = page.getByRole("group", {
+    name: "موجودی گونه قرمز، کوچک",
+  });
+  await expect(inventoryConflict).toContainText("۹ عدد");
+  await expect(inventoryConflict).toContainText("۱۰ عدد");
+  await inventoryConflict.getByRole("radio", { name: /تغییر من/ }).click();
+  await page.getByRole("button", { name: "آماده‌کردن تغییرهای انتخاب‌شده" }).click();
+  await page.getByRole("button", { name: "اعمال فروش و دیدن پیش‌نمایش" }).click();
   await expect(page.getByRole("button", { name: "توقف انتشار" })).toBeVisible();
-  await expect.poll(() => offersSaved).toBe(1);
+  await expect.poll(() => offersSaved).toBe(2);
   await expect.poll(() => inventorySaved).toBe(1);
+  await expect(
+    readPublicVariantAmount(page, e2eApiUrl, slug, publishedProductId, [
+      "قرمز",
+      "کوچک",
+    ]),
+  ).resolves.toBe(4_570_000);
+  const reconciledSaleResponse = await page.request.get(
+    `/api/store/seller/products/${publishedProductId}`,
+  );
+  expect(reconciledSaleResponse.ok()).toBe(true);
+  expect(
+    (
+      (await reconciledSaleResponse.json()) as {
+        inventory: Array<{ onHand: number }>;
+      }
+    ).inventory[0]?.onHand,
+  ).toBe(9);
   const unpublicationKeys: string[] = [];
   let interruptedUnpublication = false;
   await page.route("**/api/store/seller/products/*/unpublication", async (route) => {
@@ -365,7 +642,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.goto(`/s/${slug}`);
   await expect(page.getByText("۰ کالای فعال")).toBeVisible();
   const storefrontHtml = await page.content();
-  await expect(page.getByRole("link", { name: /فنجان سرامیکی/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /فنجان تازه سرور/ })).toHaveCount(0);
 
   const newerDraft = await page.request.post("/api/store/seller/products", {
     headers: { "idempotency-key": `newer-draft-${randomUUID()}` },
@@ -376,13 +653,13 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.getByText("کالای بدون نام", { exact: true }).first()).toBeVisible();
-  await page.getByRole("link", { name: "ویرایش فنجان سرامیکی" }).click();
+  await page.getByRole("link", { name: "ویرایش فنجان تازه سرور" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
   await page.getByRole("button", { name: "انتشار دوباره" }).click();
   await page.getByRole("link", { name: "دیدن کالا در فروشگاه" }).click();
-  await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "فنجان تازه سرور" })).toBeVisible();
   await expect(page.getByText("از ۴۵۶٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toHaveCount(0);
   await expect(page.getByText("رنگ", { exact: true })).toBeVisible();
   await expect(page.getByText("قرمز، آبی", { exact: true })).toBeVisible();
@@ -434,9 +711,9 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByLabel("تعداد")).toBeDisabled();
   await expect(page.getByRole("button", { name: "فعلاً ناموجود" })).toBeDisabled();
   await variantSelector.selectOption({ label: "قرمز، کوچک" });
-  await expect(page.getByText("۴۵۶٬۰۰۰ تومان", { exact: true })).toBeVisible();
+  await expect(page.getByText("۴۵۷٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "افزودن به سبد" })).toBeEnabled();
-  await expect(page.getByText("8", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("9", { exact: true })).toHaveCount(0);
   const publicStoreResponse = await page.request.get(`${e2eApiUrl}/v1/stores/${slug}`);
   const publicProductsResponse = await page.request.get(
     `${e2eApiUrl}/v1/stores/${slug}/products`,
