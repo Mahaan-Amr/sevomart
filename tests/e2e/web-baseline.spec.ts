@@ -24,9 +24,8 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
     page.getByRole("banner").getByRole("link", { name: "سبد" }),
   ).toBeVisible();
   await expect(navigation.getByRole("link", { name: "گفت‌وگوها" })).toBeVisible();
-  for (const destination of ["دنبال‌شده‌ها", "سفارش‌ها"]) {
-    await expect(navigation.getByRole("link", { name: destination })).toHaveCount(0);
-  }
+  await expect(navigation.getByRole("link", { name: "دنبال‌شده‌ها" })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "سفارش‌ها" })).toHaveCount(0);
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page, "header a, nav a, summary");
   await page.keyboard.press("Tab");
@@ -259,9 +258,8 @@ test("discovery keeps three columns with long Persian text and follows its curso
     path: testInfo.outputPath("buyer-discovery.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "کالاهای بعدی" }).click();
-  await expect(page).toHaveURL(/\?cursor=next-page$/);
-  await expect(page.getByText("فعلاً کالایی برای دیدن نیست.")).toBeVisible();
-  await page.getByRole("link", { name: "بازگشت به کشف", exact: true }).click();
+  await page.getByRole("button", { name: "دیدن کالاهای بیشتر" }).click();
+  await expect(page).toHaveURL(/\/$/);
   await expect(cards).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "دیدن کالاهای بیشتر" })).toHaveCount(0);
 });

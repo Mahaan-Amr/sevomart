@@ -1,5 +1,5 @@
 import { firstParameter } from "../../../lib/navigation";
-import { DiscoveryView } from "./discovery-view";
+import { FeedView } from "./feed-view";
 
 export default async function DiscoveryPage({
   searchParams,
@@ -10,7 +10,7 @@ export default async function DiscoveryPage({
   return (
     <>
       <h1>کشف تازه‌ها</h1>
-      <DiscoveryView key={cursor ?? "first"} cursor={cursor} />
+      <FeedView kind="discovery" initialCursor={cursor} />
     </>
   );
 }
