@@ -144,7 +144,10 @@ export const allE2eTestMobiles = [
 ];
 
 export function visualProjectIndex(projectName: string) {
-  const index = visualViewports.findIndex(({ name }) => name === projectName);
+  const viewportName = projectName.match(/^(?:chromium|webkit)-(\d+x\d+)$/)?.[1];
+  const index = visualViewports.findIndex(({ name }) =>
+    name.endsWith(`-${viewportName}`),
+  );
   if (index === -1) throw new Error(`Unknown visual project ${projectName}`);
   return index;
 }

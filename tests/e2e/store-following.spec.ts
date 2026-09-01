@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "../helpers/release-playwright";
 import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import postgres from "postgres";
 

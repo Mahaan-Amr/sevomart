@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "interface": "release-evidence.v1",
+  "manifest": "ops/qa/release-evidence-manifest.v1.json",
+  "policySource": "manifest.policy",
+  "unexpectedErrors": ["console", "page", "network"],
+  "candidateBindings": ["sha", "migration", "seedVersion", "health", "startup"],
+  "review": "independent-per-cell-and-two-developer-final",
+  "retentionDays": 30
+}

@@ -4,7 +4,7 @@ import {
   test,
   type Locator,
   type Page,
-} from "@playwright/test";
+} from "../helpers/release-playwright";
 import postgres from "postgres";
 
 import {

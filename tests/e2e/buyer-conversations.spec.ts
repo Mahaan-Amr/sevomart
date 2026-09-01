@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/release-playwright";
 import { conversationsV1Examples } from "@sevo/contracts/conversations/v1";
 
 import {

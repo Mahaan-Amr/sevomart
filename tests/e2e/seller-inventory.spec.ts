@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 
 import {

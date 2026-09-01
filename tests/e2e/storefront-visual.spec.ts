@@ -1,4 +1,4 @@
-import { expect, request as createRequest, test } from "@playwright/test";
+import { expect, request as createRequest, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
 

@@ -8,6 +8,7 @@ node_modules/
 packages/database/generated/
 playwright-report/
 output/playwright-results/
+output/release-evidence/
 test-results/
 *.tsbuildinfo
 .scratch-*

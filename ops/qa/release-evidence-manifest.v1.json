@@ -1,0 +1,446 @@
+{
+  "schemaVersion": 1,
+  "contract": "release-evidence.v1",
+  "manifestVersion": 1,
+  "claim": "demo-complete-integration-ready",
+  "spaces": [
+    { "id": "buyer", "label": "فضای خریدار" },
+    { "id": "seller", "label": "فضای کار فروشنده" },
+    { "id": "platform", "label": "فضای کار پلتفرم" }
+  ],
+  "identities": [
+    { "id": "buyer", "label": "نیلوفر", "fixture": "09000000001" },
+    { "id": "seller", "label": "سارا", "fixture": "09000000002" },
+    { "id": "applicant", "label": "مهسا", "fixture": "09000000003" },
+    { "id": "review-agent", "label": "آرمان", "fixture": "09000000004" },
+    { "id": "access-manager", "label": "لیلا", "fixture": "09000000005" }
+  ],
+  "scenarios": {
+    "required": [
+      "success",
+      "empty",
+      "loading",
+      "validation",
+      "domain-error",
+      "access-denied",
+      "resource-unavailable",
+      "provider-server-failure",
+      "recovery"
+    ],
+    "conditional": ["concurrency", "idempotency", "expiry", "ambiguous-result"]
+  },
+  "coverage": {
+    "viewports": ["360x800", "390x844", "768x1024", "1440x900", "zoom-200"],
+    "browsers": ["chromium", "webkit"],
+    "testLayers": ["unit", "contract", "integration", "e2e"],
+    "artifactKinds": [
+      "test-result",
+      "selected-screenshot",
+      "accessibility-report",
+      "human-review"
+    ]
+  },
+  "policy": {
+    "candidateRuns": 2,
+    "retries": 0,
+    "forbiddenOutcomes": ["SKIPPED", "QUARANTINED", "RETRIED"],
+    "failOnUnexpectedConsoleError": true,
+    "failOnUnexpectedPageError": true,
+    "failOnUnexpectedNetworkError": true,
+    "externalNetwork": "forbidden",
+    "independentReviewer": true,
+    "retentionDays": 30
+  },
+  "journeys": [
+    {
+      "id": "buyer-discovery",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": ["tests/unit/discovery-ranking-cursor.test.ts"],
+        "contract": ["tests/contract/discovery-public-feed.contract.test.ts"],
+        "integration": ["tests/integration/discovery-public-feed-api.test.ts"],
+        "e2e": ["tests/e2e/store-following.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-following",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["idempotency"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": ["tests/unit/discovery-ranking-cursor.test.ts"],
+        "contract": ["tests/contract/discovery-following-feed.contract.test.ts"],
+        "integration": ["tests/integration/store-following-api.test.ts"],
+        "e2e": ["tests/e2e/store-following.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-storefront",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": ["apps/web/src/lib/store-api-proxy.unit.test.ts"],
+        "contract": ["tests/contract/store-authoritative-read.contract.test.ts"],
+        "integration": ["tests/integration/seller-store-api.test.ts"],
+        "e2e": ["tests/e2e/storefront-visual.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-product-cart",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": ["tests/unit/checkout.service.test.ts"],
+        "contract": ["tests/contract/orders-cart-v1.contract.test.ts"],
+        "integration": ["tests/integration/guest-cart-login-api.test.ts"],
+        "e2e": ["tests/e2e/guest-cart-login.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-sign-in",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium", "webkit"],
+      "additionalScenarios": ["expiry", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["apps/web/src/lib/identity-api-proxy.unit.test.ts"],
+        "contract": ["tests/contract/dev-otp-provider.contract.test.ts"],
+        "integration": ["tests/integration/identity-session-api.test.ts"],
+        "e2e": ["tests/e2e/guest-cart-login.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-address-checkout",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency", "expiry"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/checkout-expiry.runner.test.ts"],
+        "contract": ["tests/contract/orders-checkout-v1.contract.test.ts"],
+        "integration": ["tests/integration/saved-addresses-api.test.ts"],
+        "e2e": ["tests/e2e/guest-cart-login.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-payment",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium", "webkit"],
+      "additionalScenarios": [
+        "concurrency",
+        "idempotency",
+        "expiry",
+        "ambiguous-result"
+      ],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/payment-recovery.runner.test.ts"],
+        "contract": ["tests/contract/direct-payment-v1.contract.test.ts"],
+        "integration": ["tests/integration/direct-payment-success.test.ts"],
+        "e2e": ["tests/e2e/direct-payment-success.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-order-tracking",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["apps/web/src/lib/seller-order-actionability.unit.test.ts"],
+        "contract": ["tests/contract/fulfillment-v1.contract.test.ts"],
+        "integration": ["tests/integration/fulfillment-producer.test.ts"],
+        "e2e": ["tests/e2e/seller-order-fulfillment.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-conversations",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["apps/web/src/lib/conversation-navigation.unit.test.ts"],
+        "contract": ["tests/contract/conversations-v1.contract.test.ts"],
+        "integration": ["tests/integration/conversations-api.test.ts"],
+        "e2e": ["tests/e2e/buyer-conversations.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-purchase-experience",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["idempotency"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": [
+          "apps/api/src/modules/content/application/content.service.unit.test.ts"
+        ],
+        "contract": ["tests/contract/content-v2.contract.test.ts"],
+        "integration": ["tests/integration/content-producer.test.ts"],
+        "e2e": ["tests/e2e/release-critical-tracers.spec.ts"]
+      }
+    },
+    {
+      "id": "buyer-dispute",
+      "space": "buyer",
+      "identities": ["buyer"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/problem-follow-up-controller.test.ts"],
+        "contract": ["tests/contract/problem-follow-up-v2.contract.test.ts"],
+        "integration": ["tests/integration/problem-follow-up-producer.test.ts"],
+        "e2e": ["tests/e2e/platform-dispute-review.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-application",
+      "space": "seller",
+      "identities": ["applicant"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["apps/web/src/lib/seller-workspace-access.unit.test.ts"],
+        "contract": ["tests/contract/seller-application.contract.test.ts"],
+        "integration": ["tests/integration/seller-application-api.test.ts"],
+        "e2e": ["tests/e2e/seller-application.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-store-setup",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": ["apps/web/src/app/(seller)/seller/store/store-color.unit.test.ts"],
+        "contract": ["tests/contract/store-v1-schema.contract.test.ts"],
+        "integration": ["tests/integration/seller-store-api.test.ts"],
+        "e2e": ["tests/e2e/store-builder.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-product",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": [
+          "apps/web/src/app/(seller)/seller/products/new/simple-product-builder.unit.test.ts"
+        ],
+        "contract": ["tests/contract/multivariant-product-v1.contract.test.ts"],
+        "integration": ["tests/integration/simple-product-tracer-api.test.ts"],
+        "e2e": ["tests/e2e/simple-product-tracer.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-inventory",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": [
+          "apps/web/src/app/(seller)/seller/(workspace)/inventory/seller-inventory-model.unit.test.ts"
+        ],
+        "contract": ["tests/contract/inventory-v1.contract.test.ts"],
+        "integration": ["tests/integration/inventory-order-reservation.test.ts"],
+        "e2e": ["tests/e2e/seller-inventory.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-sales-content",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["idempotency"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": [
+          "apps/api/src/modules/content/application/content.service.unit.test.ts"
+        ],
+        "contract": ["tests/contract/content-v1.contract.test.ts"],
+        "integration": ["tests/integration/content-producer.test.ts"],
+        "e2e": ["tests/e2e/release-critical-tracers.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-fulfillment",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency", "expiry"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": [
+          "apps/api/src/modules/fulfillment/application/fulfillment.service.unit.test.ts"
+        ],
+        "contract": ["tests/contract/fulfillment-v1.contract.test.ts"],
+        "integration": ["tests/integration/fulfillment-producer.test.ts"],
+        "e2e": ["tests/e2e/seller-order-fulfillment.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-home-reporting",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "reviewRisk": "standard",
+      "tests": {
+        "unit": ["apps/web/src/lib/seller-order-actionability.unit.test.ts"],
+        "contract": ["tests/contract/fulfillment-v1.contract.test.ts"],
+        "integration": ["tests/integration/reporting-analytics-projection.test.ts"],
+        "e2e": ["tests/e2e/seller-home-reports.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-related-buyer",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/store-buyer-cursor.test.ts"],
+        "contract": ["tests/contract/orders-address-v1.contract.test.ts"],
+        "integration": ["tests/integration/related-store-buyers.test.ts"],
+        "e2e": ["tests/e2e/seller-related-buyers.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-conversations",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["apps/web/src/lib/seller-conversation-api.unit.test.ts"],
+        "contract": ["tests/contract/conversations-v1.contract.test.ts"],
+        "integration": ["tests/integration/conversations-api.test.ts"],
+        "e2e": ["tests/e2e/seller-conversations.spec.ts"]
+      }
+    },
+    {
+      "id": "seller-dispute-response",
+      "space": "seller",
+      "identities": ["seller"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency", "expiry"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/problem-follow-up-controller.test.ts"],
+        "contract": ["tests/contract/problem-follow-up-v2.contract.test.ts"],
+        "integration": ["tests/integration/problem-follow-up-producer.test.ts"],
+        "e2e": ["tests/e2e/seller-disputes.spec.ts"]
+      }
+    },
+    {
+      "id": "platform-agent-sign-in",
+      "space": "platform",
+      "identities": ["review-agent", "access-manager"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["expiry"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["apps/web/src/lib/platform-workspace-access.unit.test.ts"],
+        "contract": ["tests/contract/platform-agent-workspace.contract.test.ts"],
+        "integration": ["tests/integration/identity-session-api.test.ts"],
+        "e2e": ["tests/e2e/platform-agent-login.spec.ts"]
+      }
+    },
+    {
+      "id": "platform-seller-application-review",
+      "space": "platform",
+      "identities": ["review-agent"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["apps/web/src/lib/platform-workspace-access.unit.test.ts"],
+        "contract": ["tests/contract/seller-application.contract.test.ts"],
+        "integration": ["tests/integration/platform-seller-application-review.test.ts"],
+        "e2e": ["tests/e2e/platform-seller-application-review.spec.ts"]
+      }
+    },
+    {
+      "id": "platform-payment-review",
+      "space": "platform",
+      "identities": ["review-agent"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency", "ambiguous-result"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/platform-payment-review-controller.test.ts"],
+        "contract": ["tests/contract/direct-payment-v1.contract.test.ts"],
+        "integration": ["tests/integration/platform-payment-review.test.ts"],
+        "e2e": ["tests/e2e/platform-payment-review.spec.ts"]
+      }
+    },
+    {
+      "id": "platform-dispute-review",
+      "space": "platform",
+      "identities": ["review-agent"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/problem-follow-up-controller.test.ts"],
+        "contract": ["tests/contract/problem-follow-up-v2.contract.test.ts"],
+        "integration": ["tests/integration/problem-follow-up-producer.test.ts"],
+        "e2e": ["tests/e2e/platform-dispute-review.spec.ts"]
+      }
+    },
+    {
+      "id": "platform-violation-review",
+      "space": "platform",
+      "identities": ["review-agent"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": ["tests/unit/problem-follow-up-controller.test.ts"],
+        "contract": ["tests/contract/problem-follow-up-v2.contract.test.ts"],
+        "integration": ["tests/integration/problem-follow-up-producer.test.ts"],
+        "e2e": ["tests/e2e/platform-violation-review.spec.ts"]
+      }
+    },
+    {
+      "id": "platform-access-emergency-lifecycle",
+      "space": "platform",
+      "identities": ["access-manager"],
+      "browsers": ["chromium"],
+      "additionalScenarios": ["concurrency", "idempotency", "expiry"],
+      "reviewRisk": "high",
+      "tests": {
+        "unit": [
+          "apps/web/src/app/(platform)/platform/access/platform-access-request-model.unit.test.ts"
+        ],
+        "contract": ["tests/contract/platform-access-v1.contract.test.ts"],
+        "integration": ["tests/integration/platform-access-core.test.ts"],
+        "e2e": ["tests/e2e/platform-access-management.spec.ts"]
+      }
+    }
+  ]
+}

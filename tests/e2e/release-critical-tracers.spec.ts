@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
 

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/release-playwright";
 
 import { seedUnderReviewDisputeFixture } from "../../apps/api/src/modules/problem-follow-up/problem-follow-up-test-fixture";
 import {
