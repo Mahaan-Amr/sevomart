@@ -120,7 +120,12 @@
     "content_product_states": "content",
     "content_purchase_experiences": "content",
     "content_idempotency_records": "content",
-    "content_audits": "content"
+    "content_audits": "content",
+    "content_public_sales_contents": "content",
+    "content_public_sales_content_products": "content",
+    "content_public_sales_content_status": "content",
+    "content_public_product_states": "content",
+    "content_public_store_states": "content"
   },
   "contracts": {
     "@sevo/contracts/platform/v1": "platform",

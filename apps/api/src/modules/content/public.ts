@@ -1,11 +1,12 @@
 import type {
-  ContentError,
   OrderItemId,
   PurchaseExperience,
   SalesContent,
 } from "@sevo/contracts/content/v1";
 import type {
   ProductPurchaseExperiences,
+  ContentErrorV2,
+  PublicSalesContentFeedV2,
   PublishPurchaseExperienceInputV2,
   PublishSalesContentInputV2,
   PurchaseExperienceEligibilityDecisionV2,
@@ -22,7 +23,7 @@ export type ContentRequest = Readonly<{
 }>;
 
 export class ContentFault extends Error {
-  constructor(readonly code: ContentError["code"] | "UNAUTHENTICATED") {
+  constructor(readonly code: ContentErrorV2["code"] | "UNAUTHENTICATED") {
     super(code);
   }
 }
@@ -95,6 +96,9 @@ export interface ContentRepository {
   readProductPurchaseExperiences(
     productId: ProductId,
   ): Promise<ProductPurchaseExperiences>;
+  readPublicSalesContent(
+    storeIds: readonly StoreId[],
+  ): Promise<PublicSalesContentFeedV2>;
 }
 
 export interface ContentPublishedMediaRead {

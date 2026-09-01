@@ -8,6 +8,7 @@ import {
   Inject,
   Param,
   Post,
+  Query,
   Req,
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
@@ -83,6 +84,14 @@ export class ContentController {
     );
   }
 
+  @Get("v2/sales-content")
+  readPublicSalesContentV2(
+    @Req() request: FastifyRequest,
+    @Query("storeIds") storeIds: string | undefined,
+  ) {
+    return this.respond(request, () => this.content.readPublicSalesContent(storeIds));
+  }
+
   private context(request: FastifyRequest) {
     request.id = eventCorrelationId(request.id);
     return {
@@ -125,6 +134,7 @@ function contentHttpError(correlationId: string, code: string, status: number) {
   const messages: Record<string, string> = {
     NO_ACTIVE_PRODUCT: "حداقل یک کالای فعال از همین فروشگاه انتخاب کنید.",
     FORBIDDEN: "اجازه انتشار در این زمینه را ندارید.",
+    INVALID_QUERY: "شناسه فروشگاه‌ها را درست وارد کنید و دوباره تلاش کنید.",
     NOT_ELIGIBLE: "این خرید هنوز شرایط ثبت تجربه را ندارد.",
     ALREADY_SUBMITTED: "برای این خرید قبلاً تجربه ثبت شده است.",
     IDEMPOTENCY_CONFLICT: "این شناسه درخواست قبلاً با اطلاعات دیگری استفاده شده است.",

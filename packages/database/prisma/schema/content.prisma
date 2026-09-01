@@ -55,6 +55,62 @@ model ContentPurchaseExperience {
   @@map("content_purchase_experiences")
 }
 
+model ContentPublicSalesContent {
+  contentId       String   @id @map("content_id") @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  source          String
+  moderationState String   @map("moderation_state")
+  mediaId         String   @map("media_id") @db.Uuid
+  mediaKind       String   @map("media_kind")
+  aggregateVersion BigInt  @map("aggregate_version")
+  publishedAt     DateTime @map("published_at") @db.Timestamptz(6)
+  updatedAt       DateTime @map("updated_at") @db.Timestamptz(6)
+  products        ContentPublicSalesContentProduct[]
+
+  @@index([storeId, publishedAt, contentId], map: "content_public_sales_contents_store_published_idx")
+  @@map("content_public_sales_contents")
+}
+
+model ContentPublicSalesContentProduct {
+  contentId                   String   @map("content_id") @db.Uuid
+  productId                   String   @map("product_id") @db.Uuid
+  active                      Boolean
+  lastProductAggregateVersion BigInt  @default(0) @map("last_product_aggregate_version")
+  lastProductOccurredAt       DateTime @map("last_product_occurred_at") @db.Timestamptz(6)
+  content                     ContentPublicSalesContent @relation(fields: [contentId], references: [contentId], onDelete: Cascade)
+
+  @@id([contentId, productId])
+  @@index([productId], map: "content_public_sales_content_products_product_idx")
+  @@map("content_public_sales_content_products")
+}
+
+model ContentPublicProductState {
+  productId          String   @id @map("product_id") @db.Uuid
+  aggregateVersion   BigInt   @map("aggregate_version")
+  publicationVersion BigInt   @map("publication_version")
+  active             Boolean
+  updatedAt          DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("content_public_product_states")
+}
+
+model ContentPublicStoreState {
+  storeId            String   @id @map("store_id") @db.Uuid
+  aggregateVersion   BigInt   @map("aggregate_version")
+  publicationVersion BigInt   @map("publication_version")
+  published          Boolean
+  updatedAt          DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("content_public_store_states")
+}
+
+model ContentPublicSalesContentStatus {
+  projectionName String   @id @map("projection_name")
+  updatedAt      DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("content_public_sales_content_status")
+}
+
 model ContentIdempotencyRecord {
   operation    String   @db.VarChar(48)
   actorId      String   @map("actor_id") @db.Uuid

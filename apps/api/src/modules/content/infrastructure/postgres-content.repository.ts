@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { productPurchaseExperiencesContract } from "@sevo/contracts/content/v2";
+import {
+  productPurchaseExperiencesContract,
+  publicSalesContentFeedV2Contract,
+} from "@sevo/contracts/content/v2";
 import {
   purchaseExperienceContract,
   purchaseExperiencePublishedV1Contract,
@@ -115,6 +118,74 @@ export class PostgresContentRepository implements ContentRepository {
         ...experience,
         createdAt: experience.createdAt.toISOString(),
       })),
+    });
+  }
+
+  async readPublicSalesContent(storeIds: readonly string[]) {
+    const rows = await this.#sql<
+      Array<{
+        contentId: string;
+        storeId: string;
+        source: "SELLER";
+        mediaId: string;
+        mediaKind: "IMAGE" | "VIDEO";
+        productId: string;
+        active: boolean;
+        publishedAt: Date;
+      }>
+    >`
+      with selected as (
+        select content.content_id, content.store_id, content.source,
+          content.media_id, content.media_kind, content.published_at
+        from content_public_sales_contents content
+        join content_public_store_states store on store.store_id = content.store_id
+          and store.published
+        where content.store_id in ${this.#sql(storeIds)}
+          and content.moderation_state = 'PUBLISHED'
+        order by content.published_at desc, content.content_id desc
+        limit 60
+      )
+      select selected.content_id as "contentId", selected.store_id as "storeId",
+        selected.source, selected.media_id as "mediaId",
+        selected.media_kind as "mediaKind", product.product_id as "productId",
+        product.active, selected.published_at as "publishedAt"
+      from selected
+      join content_public_sales_content_products product
+        on product.content_id = selected.content_id
+      order by selected.published_at desc, selected.content_id desc,
+        product.product_id
+    `;
+    const [status] = await this.#sql<Array<{ updatedAt: Date }>>`
+      select updated_at as "updatedAt"
+      from content_public_sales_content_status
+      where projection_name = 'public-sales-content-v2'
+    `;
+    const byContent = new Map<
+      string,
+      {
+        contentId: string;
+        source: "SELLER";
+        storeId: string;
+        media: { mediaId: string; kind: "IMAGE" | "VIDEO" };
+        products: Array<{ productId: string; active: boolean }>;
+        publishedAt: string;
+      }
+    >();
+    for (const row of rows) {
+      const item = byContent.get(row.contentId) ?? {
+        contentId: row.contentId,
+        source: row.source,
+        storeId: row.storeId,
+        media: { mediaId: row.mediaId, kind: row.mediaKind },
+        products: [],
+        publishedAt: row.publishedAt.toISOString(),
+      };
+      item.products.push({ productId: row.productId, active: row.active });
+      byContent.set(row.contentId, item);
+    }
+    return publicSalesContentFeedV2Contract.parse({
+      projectionUpdatedAt: (status?.updatedAt ?? new Date(0)).toISOString(),
+      items: [...byContent.values()],
     });
   }
 

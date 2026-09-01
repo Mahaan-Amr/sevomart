@@ -42,7 +42,7 @@ pnpm qa:evidence:validate
 ```bash
 pnpm qa:evidence:plan -- \
   --sha <40-character-sha> \
-  --migration 20260901123000__media__purchase-experience-images \
+  --migration 20260901133000__content__public-sales-content-projection \
   --seed-version 2 \
   --health-api output/health/api.json \
   --health-web output/health/web.json \

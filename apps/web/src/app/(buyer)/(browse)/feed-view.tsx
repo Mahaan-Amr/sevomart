@@ -5,11 +5,17 @@ import {
   discoveryFollowingFeedPageV1Contract,
   type DiscoveryFeedItemV1,
 } from "@sevo/contracts/discovery/v1";
+import {
+  publicSalesContentFeedV2Contract,
+  type PublicSalesContentItemV2,
+} from "@sevo/contracts/content/v2";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { SalesContentGrid } from "../../_components/sales-content-grid";
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { loginHref } from "../../../lib/navigation";
+import { buildSalesContentCards } from "../../../lib/sales-content-view-model";
 import { classifyFeedError, cursorNotice, type FeedErrorState } from "./feed-errors";
 import { appendFeedPage, emptyFeedState, replaceFeedPage } from "./feed-state";
 import { type FeedKind, useFeedWorkspace } from "./feed-workspace";
@@ -68,10 +74,14 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
             ? discoveryFollowingFeedPageV1Contract.safeParse(body)
             : discoveryFeedPageV1Contract.safeParse(body);
         if (!parsed.success) throw new Error("invalid feed response");
+        const salesContent = await readSalesContent(
+          parsed.data.items,
+          controller.signal,
+        );
         setFeedState(kind, (current) =>
           replace
-            ? replaceFeedPage(current, parsed.data)
-            : appendFeedPage(current, parsed.data),
+            ? replaceFeedPage(current, parsed.data, salesContent)
+            : appendFeedPage(current, parsed.data, salesContent),
         );
       } catch {
         if (!controller.signal.aborted) {
@@ -102,6 +112,29 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
     return <FeedError error={error} onRetry={() => void load(failedCursor, true)} />;
   }
 
+  const salesContentCards = buildSalesContentCards(
+    {
+      projectionUpdatedAt: state.projectionUpdatedAt ?? new Date(0).toISOString(),
+      items: state.salesContent ?? [],
+    },
+    state.items.map((item) => ({
+      productId: item.productId,
+      name: item.product.name,
+      href: `/s/${item.storeSlug}/products/${item.productId}`,
+      priceLabel: `${
+        item.priceRange.minimum.amount !== item.priceRange.maximum.amount ? "از " : ""
+      }${formatIrrAsToman(item.priceRange.minimum.amount)}`,
+      unavailable: item.availability === "OUT_OF_STOCK",
+    })),
+    { includeContentWithoutVisibleProducts: false },
+  );
+  const stores = new Map(
+    state.items.map((item) => [
+      item.storeId,
+      { name: item.store.name, href: `/s/${item.storeSlug}` },
+    ]),
+  );
+
   return (
     <section aria-label={kind === "discovery" ? "فید کشف" : "فید دنبال‌شده‌ها"}>
       <div className={styles.feedMeta} aria-live="polite">
@@ -127,6 +160,19 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
           ? `${new Intl.NumberFormat("fa-IR").format(state.items.length)} کالا نمایش داده شد.`
           : "کالایی در این فید نمایش داده نشد."}
       </p>
+      {salesContentCards.length > 0 ? (
+        <section
+          className={styles.salesContent}
+          aria-labelledby={`${kind}-sales-title`}
+        >
+          <h2 id={`${kind}-sales-title`}>محتوای فروش تازه</h2>
+          <SalesContentGrid
+            cards={salesContentCards}
+            stores={stores}
+            label="محتوای فروش قابل خرید"
+          />
+        </section>
+      ) : null}
       {state.items.length > 0 ? (
         <FeedGrid items={state.items} kind={kind} onLeave={saveForBrowse} />
       ) : null}
@@ -159,6 +205,27 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
       ) : null}
     </section>
   );
+}
+
+async function readSalesContent(
+  items: DiscoveryFeedItemV1[],
+  signal: AbortSignal,
+): Promise<PublicSalesContentItemV2[]> {
+  const storeIds = [...new Set(items.map((item) => item.storeId))];
+  if (storeIds.length === 0) return [];
+  try {
+    const query = new URLSearchParams({ storeIds: storeIds.join(",") });
+    const response = await fetch(`/api/sales-content?${query}`, {
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) return [];
+    const parsed = publicSalesContentFeedV2Contract.safeParse(await response.json());
+    return parsed.success ? parsed.data.items : [];
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return [];
+  }
 }
 
 function FeedGrid({

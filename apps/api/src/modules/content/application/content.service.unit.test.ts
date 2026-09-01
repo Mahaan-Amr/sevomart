@@ -86,6 +86,12 @@ function fixture(
         experiences: [],
       };
     },
+    async readPublicSalesContent() {
+      return {
+        projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+        items: [],
+      };
+    },
   };
   const sessions = {
     async readActiveIdentitySession(token: string) {
@@ -176,6 +182,14 @@ function fixture(
 }
 
 describe("ContentService", () => {
+  it("rejects malformed public store filters with a query-specific fault", async () => {
+    const { service } = fixture();
+
+    await expect(
+      service.readPublicSalesContent("not-a-store-id"),
+    ).rejects.toMatchObject({ code: "INVALID_QUERY" });
+  });
+
   it("publishes seller content only with owned media and active same-store products", async () => {
     const { service, writes } = fixture();
     const result = await service.publishSalesContent(

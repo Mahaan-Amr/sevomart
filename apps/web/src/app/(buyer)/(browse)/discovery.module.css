@@ -9,6 +9,18 @@
   line-height: 1.8;
 }
 
+.salesContent {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px 32px;
+}
+
+.salesContent > h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
 .grid,
 .loadingGrid {
   display: grid;

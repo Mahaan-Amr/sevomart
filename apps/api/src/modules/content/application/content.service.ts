@@ -4,6 +4,7 @@ import {
   createPurchaseExperienceMediaContextInputContract,
   contentIdempotencyKeyContract,
   productPurchaseExperiencesContract,
+  publicSalesContentStoreIdsV2Contract,
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
 } from "@sevo/contracts/content/v2";
@@ -174,6 +175,12 @@ export class ContentService {
       identityId: actorId,
       orderItemId: parsed.data.orderItemId,
     });
+  }
+
+  async readPublicSalesContent(rawStoreIds: unknown) {
+    const parsed = publicSalesContentStoreIdsV2Contract.safeParse(rawStoreIds);
+    if (!parsed.success) throw new ContentFault("INVALID_QUERY");
+    return this.repository.readPublicSalesContent(parsed.data);
   }
 
   private async requireIdentity(request: ContentRequest) {

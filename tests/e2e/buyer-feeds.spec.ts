@@ -154,9 +154,10 @@ test("returning from product detail restores the loaded feed, scroll, and origin
   await page.goto("/");
   await page.getByRole("button", { name: "دیدن کالاهای بیشتر" }).click();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  const savedScroll = await page.evaluate(() => window.scrollY);
   const origin = page.getByRole("link", { name: "کالای تازه 19", exact: true });
-  await origin.click();
+  await origin.scrollIntoViewIfNeeded();
+  const savedScroll = await page.evaluate(() => window.scrollY);
+  await origin.evaluate((element: HTMLAnchorElement) => element.click());
   await expect(page).toHaveURL(/\/products\/00000019-/);
   await page.goBack();
 
@@ -318,4 +319,86 @@ test("a stale following cursor replaces the old snapshot instead of merging it",
   await expect(
     page.getByText("فروشگاه‌های دنبال‌شده تغییر کردند؛ فید را تازه کردیم."),
   ).toBeVisible();
+});
+
+test("sales content stays distinct, purchasable, and human when media or stock fails", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const item = {
+    ...feedItem(41),
+    availability: "OUT_OF_STOCK" as const,
+  };
+  await page.route("**/api/discovery*", (route) =>
+    route.fulfill({
+      json: {
+        ...discoveryV1Examples.DiscoveryFeedPageV1,
+        emptyState: undefined,
+        items: [item],
+      },
+    }),
+  );
+  await page.route("**/api/sales-content*", (route) =>
+    route.fulfill({
+      json: {
+        projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+        items: [
+          {
+            contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+            source: "SELLER",
+            storeId: item.storeId,
+            media: {
+              mediaId: "807c619f-a989-4fd9-8b78-a437a07c7bc4",
+              kind: "IMAGE",
+            },
+            products: [{ productId: item.productId, active: true }],
+            publishedAt: "2026-09-01T09:00:00.000Z",
+          },
+          {
+            contentId: "61fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+            source: "SELLER",
+            storeId: item.storeId,
+            media: {
+              mediaId: "707c619f-a989-4fd9-8b78-a437a07c7bc5",
+              kind: "VIDEO",
+            },
+            products: [{ productId: item.productId, active: true }],
+            publishedAt: "2026-09-01T08:00:00.000Z",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/store/media/807c619f-*", (route) => route.abort());
+  await page.route("**/api/store/media/707c619f-*", (route) =>
+    route.fulfill({ contentType: "video/mp4", body: "" }),
+  );
+
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "محتوای فروش تازه" })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByText("محتوای فروش", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("تصویر این محتوا باز نشد.")).toBeVisible();
+  await expect(page.getByText("ویدیوی این محتوا باز نشد.")).toBeVisible();
+  await expect(page.getByText("ناموجود", { exact: true })).toHaveCount(3);
+  await expect(page.getByText(/پسند|بازدید|محبوب/)).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await assertNoHorizontalOverflow(page);
+  await assertInteractiveTargets(page, "main a, main button, main video");
+  await assertMinimumContrast(
+    page
+      .getByRole("list", { name: "محتوای فروش قابل خرید" })
+      .locator("span, a, strong"),
+  );
+  expect(
+    Number.parseFloat(
+      await page
+        .getByRole("list", { name: "محتوای فروش قابل خرید" })
+        .locator("article")
+        .first()
+        .evaluate((element) => getComputedStyle(element).transitionDuration),
+    ),
+  ).toBeLessThanOrEqual(0.00001);
 });

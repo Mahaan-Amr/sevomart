@@ -55,6 +55,11 @@ export const contentV2Operations = {
     method: "post",
     path: "/v2/purchase-experiences/media-contexts",
   },
+  readPublicSalesContent: {
+    operationId: "readPublicSalesContentV2",
+    method: "get",
+    path: "/v2/sales-content",
+  },
 } as const;
 
 export const createPurchaseExperienceMediaContextInputContract = z
@@ -137,6 +142,57 @@ export const productPurchaseExperiencesContract = z
   })
   .strict();
 
+export const publicSalesContentStoreIdsV2ParameterContract = z.string().min(1).max(700);
+
+export const publicSalesContentStoreIdsV2Contract =
+  publicSalesContentStoreIdsV2ParameterContract
+    .transform((value) => value.split(","))
+    .pipe(z.array(storeIdContract).min(1).max(18))
+    .refine((storeIds) => new Set(storeIds).size === storeIds.length, {
+      message: "Store ids must be unique",
+    });
+
+export const publicSalesContentProductV2Contract = z
+  .object({
+    productId: productIdContract,
+    active: z.boolean(),
+  })
+  .strict();
+
+export const publicSalesContentItemV2Contract = z
+  .object({
+    contentId: contentIdContract,
+    source: z.literal("SELLER"),
+    storeId: storeIdContract,
+    media: z
+      .object({
+        mediaId: mediaIdContract,
+        kind: z.enum(["IMAGE", "VIDEO"]),
+      })
+      .strict(),
+    products: z.array(publicSalesContentProductV2Contract).min(1).max(10),
+    publishedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const publicSalesContentFeedV2Contract = z
+  .object({
+    projectionUpdatedAt: z.iso.datetime({ offset: true }),
+    items: z.array(publicSalesContentItemV2Contract).max(60),
+  })
+  .strict();
+
+export const contentErrorV2Contract = z.union([
+  contentErrorContract,
+  z
+    .object({
+      code: z.literal("INVALID_QUERY"),
+      message: z.string().min(1),
+      correlationId: z.uuid(),
+    })
+    .strict(),
+]);
+
 export const contentV2Schemas = {
   ContentId: contentIdContract,
   PurchaseExperienceId: purchaseExperienceIdContract,
@@ -157,8 +213,13 @@ export const contentV2Schemas = {
   PublicPurchaseExperience: publicPurchaseExperienceContract,
   PurchaseExperienceSummary: purchaseExperienceSummaryContract,
   ProductPurchaseExperiences: productPurchaseExperiencesContract,
+  PublicSalesContentStoreIdsV2: publicSalesContentStoreIdsV2ParameterContract,
+  PublicSalesContentProductV2: publicSalesContentProductV2Contract,
+  PublicSalesContentItemV2: publicSalesContentItemV2Contract,
+  PublicSalesContentFeedV2: publicSalesContentFeedV2Contract,
   PurchaseExperience: purchaseExperienceContract,
   ContentError: contentErrorContract,
+  ContentErrorV2: contentErrorV2Contract,
   SalesContentPublishedV1: salesContentPublishedV1Contract,
   PurchaseExperiencePublishedV1: purchaseExperiencePublishedV1Contract,
 } as const;
@@ -207,6 +268,28 @@ export const contentV2Examples = {
     maxItems: PURCHASE_EXPERIENCE_MEDIA_MAX_ITEMS,
     maxBytesPerItem: MEDIA_UPLOAD_MAX_BYTES,
     uploadUrl: "/v1/purchase-experience-media/70000000-0000-4000-8000-000000000001",
+  },
+  PublicSalesContentStoreIdsV2: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+  PublicSalesContentFeedV2: {
+    projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+    items: [
+      {
+        contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+        source: "SELLER",
+        storeId: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+        media: {
+          mediaId: "807c619f-a989-4fd9-8b78-a437a07c7bc4",
+          kind: "IMAGE",
+        },
+        products: [
+          {
+            productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+            active: true,
+          },
+        ],
+        publishedAt: "2026-09-01T09:00:00.000Z",
+      },
+    ],
   },
 } as const;
 
@@ -260,3 +343,9 @@ export type CreatePurchaseExperienceMediaContextInput = z.infer<
 export type PurchaseExperienceMediaContext = z.infer<
   typeof purchaseExperienceMediaContextContract
 >;
+export type PublicSalesContentProductV2 = z.infer<
+  typeof publicSalesContentProductV2Contract
+>;
+export type PublicSalesContentItemV2 = z.infer<typeof publicSalesContentItemV2Contract>;
+export type PublicSalesContentFeedV2 = z.infer<typeof publicSalesContentFeedV2Contract>;
+export type ContentErrorV2 = z.infer<typeof contentErrorV2Contract>;

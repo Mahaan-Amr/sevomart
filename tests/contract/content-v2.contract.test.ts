@@ -1,13 +1,17 @@
 import {
   contentV2Operations,
-  productPurchaseExperiencesContract,
   createPurchaseExperienceMediaContextInputContract,
+  productPurchaseExperiencesContract,
   purchaseExperienceMediaContextContract,
+  contentErrorV2Contract,
+  publicSalesContentFeedV2Contract,
+  publicSalesContentStoreIdsV2Contract,
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
   purchaseExperienceEligibilityDecisionV2Contract,
 } from "@sevo/contracts/content/v2";
 import { describe, expect, it } from "vitest";
+import { contentErrorContract } from "@sevo/contracts/content/v1";
 
 const ids = {
   buyer: "97554510-44c2-4e02-b44f-95c17ff239de",
@@ -85,6 +89,11 @@ describe("content v2 contract", () => {
         method: "post",
         path: "/v2/purchase-experiences/media-contexts",
       },
+      readPublicSalesContent: {
+        operationId: "readPublicSalesContentV2",
+        method: "get",
+        path: "/v2/sales-content",
+      },
     });
   });
 
@@ -139,5 +148,62 @@ describe("content v2 contract", () => {
     });
     expect(context).not.toHaveProperty("orderItemId");
     expect(context.uploadUrl).not.toContain(ids.orderItem);
+  });
+
+  it("publishes a privacy-safe sales-content projection for visible stores", () => {
+    expect(publicSalesContentStoreIdsV2Contract.parse(ids.store)).toEqual([ids.store]);
+    expect(
+      publicSalesContentFeedV2Contract.parse({
+        projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+        items: [
+          {
+            contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+            source: "SELLER",
+            storeId: ids.store,
+            media: { mediaId: ids.media, kind: "VIDEO" },
+            products: [{ productId: ids.product, active: false }],
+            publishedAt: "2026-09-01T09:00:00.000Z",
+          },
+        ],
+      }),
+    ).toMatchObject({
+      items: [
+        {
+          source: "SELLER",
+          products: [{ productId: ids.product, active: false }],
+        },
+      ],
+    });
+  });
+
+  it("rejects private or popularity fields from the public projection", () => {
+    expect(
+      publicSalesContentFeedV2Contract.safeParse({
+        projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+        items: [
+          {
+            contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+            source: "SELLER",
+            storeId: ids.store,
+            media: { mediaId: ids.media, kind: "IMAGE" },
+            products: [{ productId: ids.product, active: true }],
+            publishedAt: "2026-09-01T09:00:00.000Z",
+            actorIdentityId: ids.buyer,
+            viewCount: 12,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("adds the public-query error only to the v2 contract", () => {
+    const error = {
+      code: "INVALID_QUERY",
+      message: "شناسه فروشگاه‌ها را درست وارد کنید.",
+      correlationId: "7609f906-c921-490c-a793-84398fb67e0c",
+    } as const;
+
+    expect(contentErrorV2Contract.parse(error)).toEqual(error);
+    expect(contentErrorContract.safeParse(error).success).toBe(false);
   });
 });

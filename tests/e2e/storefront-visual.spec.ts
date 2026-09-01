@@ -215,6 +215,52 @@ test("keyboard order, focus, and interactive targets stay usable", async ({ page
   await assertInteractiveTargets(page, "button");
 });
 
+test("the storefront shows stopped sales content without a purchase action", async ({
+  page,
+}) => {
+  await page.route("**/api/sales-content*", (route) => {
+    const storeId = new URL(route.request().url()).searchParams.get("storeIds");
+    return route.fulfill({
+      json: {
+        projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+        items: [
+          {
+            contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+            source: "SELLER",
+            storeId,
+            media: {
+              mediaId: "807c619f-a989-4fd9-8b78-a437a07c7bc4",
+              kind: "IMAGE",
+            },
+            products: [
+              {
+                productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+                active: false,
+              },
+            ],
+            publishedAt: "2026-09-01T09:00:00.000Z",
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/store/media/807c619f-*", (route) => route.abort());
+
+  await page.goto(`/s/${stores.defaultSlug}`);
+
+  await expect(page.getByRole("heading", { name: "محتوای فروش" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("list", { name: "محتوای فروش فروشگاه" })
+      .getByText("محتوای فروش", { exact: true }),
+  ).toHaveCount(1);
+  await expect(page.getByText("تصویر این محتوا باز نشد.")).toBeVisible();
+  await expect(page.getByText("کالای متصل فعلاً قابل خرید نیست.")).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "محتوای فروش فروشگاه" }).getByRole("link"),
+  ).toHaveCount(1);
+});
+
 test("the storefront reflows without clipping at an effective 200% zoom", async ({
   page,
 }, testInfo) => {

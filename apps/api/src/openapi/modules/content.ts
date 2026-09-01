@@ -101,6 +101,24 @@ const v2Operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    ...contentV2Operations.readPublicSalesContent,
+    tag: "content",
+    auth: "none",
+    queryParameters: [
+      {
+        name: "storeIds",
+        schema: "PublicSalesContentStoreIdsV2",
+        example: contentV2Examples.PublicSalesContentStoreIdsV2,
+        required: true,
+      },
+    ],
+    responses: [
+      { status: 200, schema: "PublicSalesContentFeedV2" },
+      { status: 422, schema: "ContentErrorV2" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 const responseMetadata = {
