@@ -76,6 +76,11 @@
   color: var(--color-primary-dark);
   font-weight: 600;
 }
+.itemState {
+  flex: 0 1 auto;
+  color: var(--color-muted);
+  font-size: 13px;
+}
 .facts {
   margin: 12px 0;
 }

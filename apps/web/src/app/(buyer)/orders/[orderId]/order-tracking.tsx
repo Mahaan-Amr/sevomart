@@ -4,6 +4,7 @@ import {
   buyerOrderSnapshotContract,
   type BuyerOrderSnapshot,
 } from "@sevo/contracts/orders/v1";
+import { purchaseExperienceEligibilityDecisionV2Contract } from "@sevo/contracts/content/v2";
 import {
   directPaymentAttemptContract,
   directRefundContract,
@@ -23,6 +24,8 @@ import { presentBuyerOrderState } from "../../../../lib/buyer-order-presentation
 import styles from "./order-tracking.module.css";
 
 type BuyerDispute = ReturnType<typeof buyerDisputePageContract.parse>["items"][number];
+type PurchaseExperienceState =
+  "LOADING" | "ELIGIBLE" | "ALREADY_SUBMITTED" | "INELIGIBLE" | "ERROR";
 
 export function OrderTracking({ orderId }: { orderId: string }) {
   const [order, setOrder] = useState<BuyerOrderSnapshot>();
@@ -36,6 +39,9 @@ export function OrderTracking({ orderId }: { orderId: string }) {
   const [error, setError] = useState<"SIGNED_OUT" | "NOT_FOUND" | "UNAVAILABLE">();
   const [paying, setPaying] = useState(false);
   const [paymentError, setPaymentError] = useState(false);
+  const [purchaseExperienceStates, setPurchaseExperienceStates] = useState<
+    Record<string, PurchaseExperienceState>
+  >({});
 
   useEffect(() => {
     let active = true;
@@ -51,8 +57,51 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         }
         const parsed = buyerOrderSnapshotContract.safeParse(await response.json());
         if (!response.ok || !parsed.success) throw new Error("order unavailable");
-        if (active) setOrder(parsed.data);
+        if (active) {
+          setOrder(parsed.data);
+          setPurchaseExperienceStates(
+            Object.fromEntries(
+              parsed.data.items.map((item) => [
+                item.orderItemId,
+                parsed.data.status === "PAID" ? "LOADING" : "INELIGIBLE",
+              ]),
+            ),
+          );
+        }
         await Promise.allSettled([
+          ...(parsed.data.status === "PAID"
+            ? parsed.data.items.map(async (item) => {
+                try {
+                  const response = await fetch(
+                    `/api/purchase-experiences/eligibility/${encodeURIComponent(item.orderItemId)}`,
+                    { cache: "no-store" },
+                  );
+                  const decision =
+                    purchaseExperienceEligibilityDecisionV2Contract.safeParse(
+                      await response.json(),
+                    );
+                  if (!response.ok || !decision.success) {
+                    throw new Error("eligibility unavailable");
+                  }
+                  if (!active) return;
+                  setPurchaseExperienceStates((current) => ({
+                    ...current,
+                    [item.orderItemId]: decision.data.eligible
+                      ? "ELIGIBLE"
+                      : decision.data.reason === "ALREADY_SUBMITTED"
+                        ? "ALREADY_SUBMITTED"
+                        : "INELIGIBLE",
+                  }));
+                } catch {
+                  if (active) {
+                    setPurchaseExperienceStates((current) => ({
+                      ...current,
+                      [item.orderItemId]: "ERROR",
+                    }));
+                  }
+                }
+              })
+            : []),
           optionalRead(
             `/api/orders/${encodeURIComponent(orderId)}/fulfillment`,
             fulfillmentTimelineContract,
@@ -205,6 +254,8 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         <div className={styles.disclosureBody} aria-labelledby="snapshot-title">
           <ul className={styles.items}>
             {order.items.map((item) => {
+              const experienceState =
+                purchaseExperienceStates[item.orderItemId] ?? "LOADING";
               const returnTo = `/orders/${order.orderId}`;
               const experienceHref = `/purchase-experiences/new?${new URLSearchParams({
                 orderItemId: item.orderItemId,
@@ -219,7 +270,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                     </span>
                     <strong>{formatIrrAsToman(item.lineTotal.amount)}</strong>
                   </div>
-                  {order.status === "PAID" ? (
+                  {experienceState === "ELIGIBLE" ? (
                     <Link
                       className={styles.itemAction}
                       href={experienceHref}
@@ -227,7 +278,14 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                     >
                       ثبت تجربه خرید
                     </Link>
-                  ) : null}
+                  ) : (
+                    <span
+                      className={styles.itemState}
+                      role={experienceState === "LOADING" ? "status" : undefined}
+                    >
+                      {purchaseExperienceStateLabel(experienceState)}
+                    </span>
+                  )}
                 </li>
               );
             })}
@@ -394,6 +452,16 @@ export function OrderTracking({ orderId }: { orderId: string }) {
       </details>
     </article>
   );
+}
+
+function purchaseExperienceStateLabel(state: PurchaseExperienceState) {
+  return {
+    LOADING: "در حال بررسی امکان ثبت تجربه…",
+    ELIGIBLE: "ثبت تجربه خرید",
+    ALREADY_SUBMITTED: "تجربه این خرید ثبت شده است.",
+    INELIGIBLE: "این قلم فعلاً شرایط ثبت تجربه را ندارد.",
+    ERROR: "امکان ثبت تجربه اکنون در دسترس نیست.",
+  }[state];
 }
 
 async function optionalRead<Output>(

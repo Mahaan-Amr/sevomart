@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
-import { ordersV1Examples } from "@sevo/contracts/orders/v1";
+import { directSettlementDisclosure } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
 
 import {
@@ -26,6 +26,50 @@ test("eligible buyer retries once and publishes one verified purchase experience
   const cartId = randomUUID();
   const checkoutId = randomUUID();
   const orderId = randomUUID();
+  const addressId = randomUUID();
+  const reviewSnapshot = {
+    checkoutRevision: checkoutId,
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    cart: { cartId, revision: 1 },
+    store: { storeId, name: "فروشگاه تجربه" },
+    items: [
+      {
+        productId,
+        variantId,
+        name: "کالای تأییدشده",
+        quantity: 1,
+        publicationVersion: 1,
+        unitPrice: { amount: 1000, currency: "IRR" },
+        lineTotal: { amount: 1000, currency: "IRR" },
+      },
+    ],
+    address: {
+      addressId,
+      revision: 1,
+      recipientName: "خریدار آزمون",
+      recipientMobile: mobile,
+      provinceText: "تهران",
+      cityText: "تهران",
+      addressLine: "خیابان آزمون، پلاک ۱",
+      postalCode: "1234567890",
+    },
+    shippingMethod: {
+      id: shippingMethodId,
+      revision: 1,
+      code: "NATIONAL_POST",
+      label: "پست پیشتاز",
+      fee: { amount: 500000, currency: "IRR" },
+      estimatedDeliveryText: "۳ تا ۵ روز کاری",
+      requiresDeliveryAddress: true,
+    },
+    returnPolicy: {
+      revision: 1,
+      text: "تا هفت روز امکان درخواست مرجوعی دارید.",
+    },
+    subtotal: { amount: 1000, currency: "IRR" },
+    total: { amount: 501000, currency: "IRR" },
+    settlement: { mode: "DIRECT", disclosure: directSettlementDisclosure },
+  };
   let orderCreated = false;
   try {
     await page.goto("/login?next=/");
@@ -100,15 +144,16 @@ test("eligible buyer retries once and publishes one verified purchase experience
       insert into order_checkout_preparations
         (checkout_revision, identity_id, cart_id, cart_revision,
          shipping_method_id, shipping_revision, policy_revision, snapshot, expires_at)
-      values (${checkoutId}, ${buyerId}, ${cartId}, 1, ${randomUUID()}, 1, 1,
-        ${sql.json({})}, now() + interval '1 day')
+      values (${checkoutId}, ${buyerId}, ${cartId}, 1, ${shippingMethodId}, 1, 1,
+        ${sql.json(reviewSnapshot)}, now() + interval '1 day')
     `;
     await sql`
       insert into order_orders
         (id, identity_id, store_id, checkout_revision, reservation_id, status,
          total_amount, currency, reservation_expires_at, review_snapshot, paid_at)
       values (${orderId}, ${buyerId}, ${storeId}, ${checkoutId}, ${randomUUID()},
-        'PAID', 1000, 'IRR', now() + interval '1 day', ${sql.json({})}, now())
+        'PAID', 501000, 'IRR', now() + interval '1 day',
+        ${sql.json(reviewSnapshot)}, now())
     `;
     await sql`
       insert into order_items
@@ -130,29 +175,6 @@ test("eligible buyer retries once and publishes one verified purchase experience
       }
       return route.continue();
     });
-
-    await page.route(new RegExp(`/api/orders/${orderId}$`), (route) =>
-      route.fulfill({
-        json: {
-          ...ordersV1Examples.BuyerOrderSnapshot,
-          orderId,
-          store: { storeId, name: "فروشگاه تجربه" },
-          items: [
-            {
-              ...ordersV1Examples.BuyerOrderSnapshot.items[0],
-              orderItemId,
-              productId,
-              variantId,
-              name: "کالای تأییدشده",
-              unitPrice: { amount: 1000, currency: "IRR" },
-              lineTotal: { amount: 1000, currency: "IRR" },
-            },
-          ],
-          subtotal: { amount: 1000, currency: "IRR" },
-          total: { amount: 1000, currency: "IRR" },
-        },
-      }),
-    );
 
     const returnTo = `/orders/${orderId}`;
     await page.goto(returnTo);
@@ -187,6 +209,8 @@ test("eligible buyer retries once and publishes one verified purchase experience
 
     await page.getByRole("link", { name: "بازگشت به سفارش" }).click();
     await expect(page).toHaveURL(returnTo);
+    await expect(page.getByText("تجربه این خرید ثبت شده است.")).toBeVisible();
+    await expect(experienceAction).toHaveCount(0);
 
     const [experience] = await sql<
       Array<{ experienceId: string; source: string; moderationState: string }>
@@ -238,10 +262,9 @@ test("eligible buyer retries once and publishes one verified purchase experience
     await page.reload();
     await expect(page.getByText("۳ خرید تأییدشده")).toContainText("میانگین ۴ از ۵");
 
-    await page.goto(returnTo);
-    await page
-      .getByRole("link", { name: `ثبت تجربه خرید برای کالای تأییدشده` })
-      .click();
+    await page.goto(
+      `/purchase-experiences/new?${new URLSearchParams({ orderItemId, returnTo })}`,
+    );
     await expect(
       page.getByText("برای این خرید قبلاً یک تجربه ثبت شده است."),
     ).toBeVisible();
