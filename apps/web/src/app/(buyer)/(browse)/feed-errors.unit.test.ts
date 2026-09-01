@@ -16,6 +16,7 @@ describe("buyer feed error copy", () => {
       message: "دسترسی این هویت به دنبال‌شده‌ها فعال نیست.",
       retryable: false,
       goToDiscovery: true,
+      followUpHref: "/conversations",
     });
   });
 });

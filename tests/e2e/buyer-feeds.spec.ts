@@ -273,6 +273,10 @@ test("following errors use safe code-based guidance and keep private data out of
     page.getByText("دسترسی این هویت به دنبال‌شده‌ها فعال نیست."),
   ).toBeVisible();
   await expect(page.getByText("internal unsafe detail")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "پیگیری از گفت‌وگوها" })).toHaveAttribute(
+    "href",
+    "/conversations",
+  );
   await expect(page.getByRole("link", { name: "بازگشت به کشف" })).toBeVisible();
   await page.reload();
   await expect(page.getByText("فروشگاه خصوصی")).toBeVisible();

@@ -264,6 +264,9 @@ function FeedError({
           تلاش دوباره
         </button>
       ) : null}
+      {error.followUpHref ? (
+        <Link href={error.followUpHref}>پیگیری از گفت‌وگوها</Link>
+      ) : null}
       {error.goToDiscovery ? <Link href="/">بازگشت به کشف</Link> : null}
     </div>
   );
