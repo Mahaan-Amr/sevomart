@@ -4,7 +4,6 @@ export type FeedErrorState = {
   message: string;
   retryable: boolean;
   goToDiscovery?: boolean;
-  followUpHref?: string;
 };
 
 export function cursorNotice(code: string, kind: FeedKind) {
@@ -26,10 +25,10 @@ export function classifyFeedError(code: string): FeedErrorState {
   switch (code) {
     case "IDENTITY_INACTIVE":
       return {
-        message: "دسترسی این هویت به دنبال‌شده‌ها فعال نیست.",
+        message:
+          "دسترسی این هویت به دنبال‌شده‌ها فعال نیست. اگر انتظار دارید دسترسی فعال باشد، وضعیت هویت را با پشتیبانی سوو پیگیری کنید.",
         retryable: false,
         goToDiscovery: true,
-        followUpHref: "/conversations",
       };
     case "PROJECTION_UNAVAILABLE":
       return {

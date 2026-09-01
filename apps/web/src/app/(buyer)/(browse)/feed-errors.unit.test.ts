@@ -13,10 +13,10 @@ describe("buyer feed error copy", () => {
 
   it("does not expose an inactive identity as a retryable server message", () => {
     expect(classifyFeedError("IDENTITY_INACTIVE")).toEqual({
-      message: "دسترسی این هویت به دنبال‌شده‌ها فعال نیست.",
+      message:
+        "دسترسی این هویت به دنبال‌شده‌ها فعال نیست. اگر انتظار دارید دسترسی فعال باشد، وضعیت هویت را با پشتیبانی سوو پیگیری کنید.",
       retryable: false,
       goToDiscovery: true,
-      followUpHref: "/conversations",
     });
   });
 });
