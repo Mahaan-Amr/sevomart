@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  createPurchaseExperienceMediaContextInputContract,
   contentIdempotencyKeyContract,
   productPurchaseExperiencesContract,
   publishPurchaseExperienceInputV2Contract,
@@ -104,16 +105,20 @@ export class ContentService {
     };
     const replay = await this.repository.replayPurchaseExperience(mutation);
     if (replay) return replay;
-    for (const mediaId of input.mediaIds) {
-      if (!(await this.media.readOwnedKind(mediaId, actorId))) {
-        throw new ContentFault("FORBIDDEN");
-      }
-    }
     const eligibility = await this.purchases.readEligibility({
       buyerId: actorId,
       orderItemId: input.orderItemId,
     });
     if (!eligibility.eligible) throw new ContentFault(eligibility.reason);
+    if (
+      !(await this.media.arePurchaseExperienceImagesReady({
+        identityId: actorId,
+        orderItemId: input.orderItemId,
+        mediaIds: input.mediaIds,
+      }))
+    ) {
+      throw new ContentFault("FORBIDDEN");
+    }
     return this.repository.publishPurchaseExperience({
       ...mutation,
       input,
@@ -146,6 +151,29 @@ export class ContentService {
     return productPurchaseExperiencesContract.parse(
       await this.repository.readProductPurchaseExperiences(productId.data),
     );
+  }
+
+  async createPurchaseExperienceMediaContext(
+    request: ContentRequest,
+    body: unknown,
+    key: unknown,
+  ) {
+    const actorId = await this.requireIdentity(request);
+    this.requireKey(key);
+    const parsed = createPurchaseExperienceMediaContextInputContract.safeParse(body);
+    if (!parsed.success) throw new ContentFault("NOT_ELIGIBLE");
+    const eligibility = await this.purchases.readEligibility({
+      buyerId: actorId,
+      orderItemId: parsed.data.orderItemId,
+    });
+    if (!eligibility.eligible) throw new ContentFault(eligibility.reason);
+    if (await this.repository.hasPurchaseExperience(parsed.data.orderItemId)) {
+      throw new ContentFault("ALREADY_SUBMITTED");
+    }
+    return this.media.issuePurchaseExperienceUploadContext({
+      identityId: actorId,
+      orderItemId: parsed.data.orderItemId,
+    });
   }
 
   private async requireIdentity(request: ContentRequest) {

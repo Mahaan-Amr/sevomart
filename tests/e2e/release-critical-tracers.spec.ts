@@ -23,6 +23,7 @@ test("traces seller approval and publication through discovery, follow, payment 
   const agentIdentity = await playwright.request.newContext({ baseURL: apiBaseUrl });
   const agent = await playwright.request.newContext({ baseURL: apiBaseUrl });
   const buyer = await playwright.request.newContext({ baseURL: apiBaseUrl });
+  const guest = await playwright.request.newContext({ baseURL: apiBaseUrl });
 
   try {
     const storeId = await provisionApprovedSeller(
@@ -40,12 +41,14 @@ test("traces seller approval and publication through discovery, follow, payment 
     await expectProductInFeed(buyer, "/v1/me/feeds/following", product.productId);
     const orderId = await completeBuyerPayment(buyer, product.variantId);
     await expectSellerActionableOrder(seller, orderId);
+    await publishPurchaseExperienceWithMedia(buyer, guest, orderId);
   } finally {
     await Promise.all([
       seller.dispose(),
       agentIdentity.dispose(),
       agent.dispose(),
       buyer.dispose(),
+      guest.dispose(),
     ]);
   }
 });
@@ -70,6 +73,74 @@ function releaseFixture(projectName: string, retry: number) {
     buyerMobile: releaseBuyerTestMobiles[fixtureIndex]!,
     slug: `release-tracer-${index}-retry-${retry}`,
   };
+}
+
+async function publishPurchaseExperienceWithMedia(
+  buyer: APIRequestContext,
+  guest: APIRequestContext,
+  orderId: string,
+) {
+  const { buyerId, orderItemId } = await purchaseExperienceIdentifiers(orderId);
+  const contextResponse = await buyer.post("/v2/purchase-experiences/media-contexts", {
+    headers: { "idempotency-key": randomUUID() },
+    data: { orderItemId },
+  });
+  await expectOk(contextResponse, 201);
+  const context = (await contextResponse.json()) as { uploadUrl: string };
+  const image = await sharp({
+    create: { width: 640, height: 640, channels: 4, background: "#F6E3E9" },
+  })
+    .png()
+    .toBuffer();
+  const idempotencyKey = randomUUID();
+  const uploaded = await buyer.post(context.uploadUrl, {
+    headers: { "idempotency-key": idempotencyKey },
+    multipart: {
+      file: { name: "buyer-experience.png", mimeType: "image/png", buffer: image },
+    },
+  });
+  await expectOk(uploaded, 201);
+  const media = (await uploaded.json()) as { id: string; url: string };
+  const replay = await buyer.post(context.uploadUrl, {
+    headers: { "idempotency-key": idempotencyKey },
+    multipart: {
+      file: { name: "buyer-experience.png", mimeType: "image/png", buffer: image },
+    },
+  });
+  await expectOk(replay, 201);
+  expect(await replay.json()).toEqual(media);
+  expect((await guest.get(media.url)).status()).toBe(401);
+
+  const published = await buyer.post("/v2/purchase-experiences", {
+    headers: { "idempotency-key": randomUUID() },
+    data: {
+      buyerId,
+      orderItemId,
+      rating: 5,
+      text: "کالا سالم و مطابق تصویر رسید.",
+      mediaIds: [media.id],
+    },
+  });
+  await expectOk(published, 201);
+  await expectOk(await guest.get(media.url), 200);
+}
+
+async function purchaseExperienceIdentifiers(orderId: string) {
+  const sql = postgres(requiredDatabaseUrl(), { max: 1 });
+  try {
+    const [row] = await sql<Array<{ buyerId: string; orderItemId: string }>>`
+      select orders.identity_id as "buyerId", items.id as "orderItemId"
+      from order_orders orders
+      join order_items items on items.order_id = orders.id
+      where orders.id = ${orderId}
+      order by items.id
+      limit 1
+    `;
+    if (!row) throw new Error(`Order item was not created for ${orderId}`);
+    return row;
+  } finally {
+    await sql.end();
+  }
 }
 
 async function provisionApprovedSeller(

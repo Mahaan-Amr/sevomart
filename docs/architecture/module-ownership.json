@@ -98,6 +98,8 @@
     "problem_follow_up_idempotency_records": "problem-follow-up",
     "media_assets": "media",
     "media_variants": "media",
+    "media_purchase_experience_upload_contexts": "media",
+    "media_purchase_experience_upload_idempotency": "media",
     "platform_outbox_events": "platform",
     "platform_outbox_consumptions": "platform",
     "platform_data_environment": "platform",

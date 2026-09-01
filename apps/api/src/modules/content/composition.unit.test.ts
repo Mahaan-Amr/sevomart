@@ -2,7 +2,7 @@ import { mediaIdContract } from "@sevo/contracts/media/v1";
 import { identityIdContract } from "@sevo/contracts/platform/v1";
 import { describe, expect, it } from "vitest";
 
-import type { MediaStorage } from "../media/public";
+import type { MediaStorage, PurchaseExperienceMedia } from "../media/public";
 import { createContentMediaRead } from "./composition";
 
 describe("content media composition", () => {
@@ -18,7 +18,7 @@ describe("content media composition", () => {
           checksum: "a".repeat(64),
           width: 1,
           height: 1,
-          ownerSellerId: identityId,
+          ownerIdentityId: identityId,
           ownerReferenceId: "thread-91",
           visibility: "PRIVATE",
         };
@@ -29,10 +29,34 @@ describe("content media composition", () => {
       },
       async makePublic() {},
       async makePrivate() {},
+      async issuePurchaseExperienceUploadContext() {
+        throw new Error("not used");
+      },
+      async readPurchaseExperienceUploadContext() {
+        return undefined;
+      },
+      async putPurchaseExperienceMedia() {
+        throw new Error("not used");
+      },
+    };
+
+    const purchaseExperienceMedia: PurchaseExperienceMedia = {
+      async issueUploadContext() {
+        throw new Error("not used");
+      },
+      async readUploadContext() {
+        return undefined;
+      },
+      async checkReadyForPublication() {
+        return false;
+      },
     };
 
     await expect(
-      createContentMediaRead(media).readOwnedKind(mediaId, identityId),
+      createContentMediaRead(media, purchaseExperienceMedia).readOwnedKind(
+        mediaId,
+        identityId,
+      ),
     ).resolves.toBeUndefined();
   });
 });

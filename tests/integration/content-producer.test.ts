@@ -5,6 +5,7 @@ import {
   publishSalesContentInputContract,
 } from "@sevo/contracts/content/v1";
 import { orderItemIdContract } from "@sevo/contracts/orders/v1";
+import { mediaReferenceContract } from "@sevo/contracts/media/v1";
 import {
   identityIdContract,
   productIdContract,
@@ -25,7 +26,9 @@ import {
 import { createActiveSellerFixture } from "../../apps/api/src/modules/identity-access/testing/active-seller.fixture";
 import {
   MEDIA_STORAGE,
+  PURCHASE_EXPERIENCE_MEDIA,
   type MediaStorage,
+  type PurchaseExperienceMedia,
 } from "../../apps/api/src/modules/media/public";
 import { createPaidOrderItemFixture } from "../../apps/api/src/modules/orders/testing/paid-order-item.fixture";
 import { createPublishedProductFixture } from "../../apps/api/src/modules/product/testing/published-product.fixture";
@@ -45,6 +48,10 @@ const contentSellerEnvironment = {
     contentSellerMobile,
   ] as typeof apiTestEnvironment.DEV_OTP_TEST_MOBILES,
 };
+const purchaseImage = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
 
 beforeEach(async () => {
   await sql`delete from content_product_states where product_id = ${productId}`;
@@ -86,7 +93,7 @@ describe("content producer persistence", () => {
             height: 1,
           },
         ],
-        ownerSellerId: actorId,
+        ownerIdentityId: actorId,
         visibility: "PRIVATE",
       });
       await storage.put({
@@ -107,12 +114,15 @@ describe("content producer persistence", () => {
             height: 1,
           },
         ],
-        ownerSellerId: actorId,
+        ownerIdentityId: actorId,
         ownerReferenceId: randomUUID(),
         visibility: "PRIVATE",
       });
       await expect(
-        createContentMediaRead(storage).readOwnedKind(attachmentId, actorId),
+        createContentMediaRead(
+          storage,
+          app.get<PurchaseExperienceMedia>(PURCHASE_EXPERIENCE_MEDIA),
+        ).readOwnedKind(attachmentId, actorId),
       ).resolves.toBeUndefined();
       const input = publishSalesContentInputContract.parse({
         storeId,
@@ -277,7 +287,7 @@ describe("content producer persistence", () => {
         width: 1,
         height: 1,
         variants: [],
-        ownerSellerId: parsedSellerId,
+        ownerIdentityId: parsedSellerId,
         visibility: "PRIVATE",
       });
 
@@ -325,12 +335,12 @@ describe("content producer persistence", () => {
   it("publishes one purchase experience through HTTP for the buyer's paid order item", async () => {
     const app = await createApiApp(apiTestEnvironment);
     const server = app.getHttpAdapter().getInstance();
-    const storage = app.get<MediaStorage>(MEDIA_STORAGE);
     const orderItemId = orderItemIdContract.parse(
       "94000000-0000-4000-8000-000000000091",
     );
     let buyerId = "";
     let experienceId = "";
+    let mediaId = "";
     let paidOrder: Awaited<ReturnType<typeof createPaidOrderItemFixture>> | undefined;
     try {
       const requested = await server.inject({
@@ -371,28 +381,31 @@ describe("content producer persistence", () => {
         storeId,
         productId,
       });
-      const mediaId = randomUUID();
-      await storage.put({
-        key: mediaId,
-        purpose: "PRODUCT_IMAGE",
-        contentType: "image/png",
-        bytes: Uint8Array.from([1]),
-        checksum: "d".repeat(64),
-        width: 1,
-        height: 1,
-        variants: [
-          {
-            key: `media/${mediaId}/variants/product-detail.webp`,
-            name: "product-detail",
-            contentType: "image/webp",
-            bytes: Uint8Array.from([2]),
-            width: 1,
-            height: 1,
-          },
-        ],
-        ownerSellerId: buyerId,
-        visibility: "PRIVATE",
+      const mediaContext = await server.inject({
+        method: "POST",
+        url: "/v2/purchase-experiences/media-contexts",
+        headers: { cookie, "idempotency-key": "experience-media-context-91" },
+        payload: { orderItemId },
       });
+      expect(mediaContext.statusCode).toBe(201);
+      const uploaded = await server.inject({
+        method: "POST",
+        url: mediaContext.json().uploadUrl,
+        headers: {
+          cookie,
+          "idempotency-key": "experience-media-upload-91",
+          "content-type": "multipart/form-data; boundary=experience",
+        },
+        payload: Buffer.concat([
+          Buffer.from(
+            '--experience\r\nContent-Disposition: form-data; name="file"; filename="experience.png"\r\nContent-Type: image/png\r\n\r\n',
+          ),
+          purchaseImage,
+          Buffer.from("\r\n--experience--\r\n"),
+        ]),
+      });
+      expect(uploaded.statusCode).toBe(201);
+      mediaId = mediaReferenceContract.parse(uploaded.json()).id;
       const payload = {
         buyerId,
         orderItemId,
@@ -488,6 +501,11 @@ describe("content producer persistence", () => {
         await sql`delete from content_idempotency_records where actor_id = ${buyerId}`;
         await sql`delete from content_purchase_experiences where buyer_identity_id = ${buyerId}`;
       }
+      if (mediaId) await sql`delete from media_assets where id = ${mediaId}`;
+      await sql`
+        delete from media_purchase_experience_upload_contexts
+        where order_item_id = ${orderItemId}
+      `;
       await paidOrder?.cleanup();
       await app.close();
     }

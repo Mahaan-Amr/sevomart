@@ -15,7 +15,7 @@ export class MediaAttachmentReader implements ConversationAttachmentReader {
     const media = await this.storage.inspect(parsed.data.mediaId);
     if (
       !media ||
-      media.ownerSellerId !== parsed.data.identityId ||
+      media.ownerIdentityId !== parsed.data.identityId ||
       media.ownerReferenceId !== parsed.data.conversationId ||
       media.purpose !== "CONVERSATION_ATTACHMENT" ||
       media.visibility !== "PRIVATE"

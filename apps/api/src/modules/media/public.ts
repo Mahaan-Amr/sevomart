@@ -3,7 +3,12 @@ import type {
   ConversationAttachmentResult,
   MediaUploadPurpose,
   MediaVariant,
+  MediaId,
+  MediaUploadIdempotencyKey,
+  PurchaseExperienceMediaContextId,
 } from "@sevo/contracts/media/v1";
+import type { OrderItemId } from "@sevo/contracts/orders/v1";
+import type { IdentityId } from "@sevo/contracts/platform/v1";
 
 export type StoredMediaVariant = {
   key: string;
@@ -23,7 +28,7 @@ export type StoredMedia = {
   width: number;
   height: number;
   variants: StoredMediaVariant[];
-  ownerSellerId: string;
+  ownerIdentityId: IdentityId;
   ownerReferenceId?: string;
   visibility: "PRIVATE" | "PUBLIC";
 };
@@ -46,15 +51,63 @@ export interface MediaStorage {
   put(object: StoredMedia): Promise<void>;
   inspect(key: string): Promise<MediaMetadata | undefined>;
   get(key: string, variant?: MediaVariant): Promise<ReadableMedia | undefined>;
-  makePublic(key: string, ownerSellerId: string): Promise<void>;
-  makePrivate(key: string, ownerSellerId: string): Promise<void>;
+  makePublic(key: string, ownerIdentityId: IdentityId): Promise<void>;
+  makePrivate(key: string, ownerIdentityId: IdentityId): Promise<void>;
+  issuePurchaseExperienceUploadContext(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+    expiresAt: Date;
+  }): Promise<{ contextId: PurchaseExperienceMediaContextId; expiresAt: Date }>;
+  readPurchaseExperienceUploadContext(
+    contextId: PurchaseExperienceMediaContextId,
+    options?: { includeExpired?: boolean },
+  ): Promise<
+    { identityId: IdentityId; orderItemId: OrderItemId; expiresAt: Date } | undefined
+  >;
+  putPurchaseExperienceMedia(input: {
+    object: StoredMedia;
+    contextId: PurchaseExperienceMediaContextId;
+    idempotencyKey: MediaUploadIdempotencyKey;
+    requestHash: string;
+    maxItems: number;
+  }): Promise<MediaMetadata>;
 }
 
 /** @deprecated Use the module-owned MediaStorage port. */
 export type ObjectStoragePort = MediaStorage;
 
 export type StoredMediaPurpose =
-  MediaUploadPurpose | "CONVERSATION_ATTACHMENT" | "DISPUTE_EVIDENCE";
+  | MediaUploadPurpose
+  | "CONVERSATION_ATTACHMENT"
+  | "DISPUTE_EVIDENCE"
+  | "PURCHASE_EXPERIENCE_IMAGE";
+export const PURCHASE_EXPERIENCE_MEDIA = Symbol("PURCHASE_EXPERIENCE_MEDIA");
+export const PURCHASE_EXPERIENCE_MEDIA_ACCESS = Symbol(
+  "PURCHASE_EXPERIENCE_MEDIA_ACCESS",
+);
+export type PurchaseExperienceMediaAccess = (input: {
+  identityId: IdentityId;
+  orderItemId: OrderItemId;
+}) => Promise<boolean>;
+export interface PurchaseExperienceMedia {
+  issueUploadContext(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+  }): Promise<{ contextId: PurchaseExperienceMediaContextId; expiresAt: string }>;
+  readUploadContext(
+    contextId: PurchaseExperienceMediaContextId,
+  ): Promise<
+    { identityId: IdentityId; orderItemId: OrderItemId; expiresAt: Date } | undefined
+  >;
+  checkReadyForPublication(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+    mediaIds: readonly MediaId[];
+  }): Promise<boolean>;
+}
+
+export class PurchaseExperienceMediaLimitError extends Error {}
+export class PurchaseExperienceMediaIdempotencyConflictError extends Error {}
 export const CONVERSATION_MEDIA_ACCESS = Symbol("CONVERSATION_MEDIA_ACCESS");
 export const CONVERSATION_ATTACHMENT_READER = Symbol("CONVERSATION_ATTACHMENT_READER");
 export const DISPUTE_EVIDENCE_READER = Symbol("DISPUTE_EVIDENCE_READER");

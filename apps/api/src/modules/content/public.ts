@@ -9,6 +9,7 @@ import type {
   PublishPurchaseExperienceInputV2,
   PublishSalesContentInputV2,
   PurchaseExperienceEligibilityDecisionV2,
+  PurchaseExperienceMediaContext,
 } from "@sevo/contracts/content/v2";
 import type { MediaId } from "@sevo/contracts/media/v1";
 import type { IdentityId, ProductId, StoreId } from "@sevo/contracts/platform/v1";
@@ -43,6 +44,15 @@ export interface ContentProductRead {
 }
 export interface ContentMediaRead {
   readOwnedKind(mediaId: MediaId, identityId: IdentityId): Promise<"IMAGE" | undefined>;
+  issuePurchaseExperienceUploadContext(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+  }): Promise<PurchaseExperienceMediaContext>;
+  arePurchaseExperienceImagesReady(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+    mediaIds: readonly MediaId[];
+  }): Promise<boolean>;
 }
 export interface PurchaseEligibilityRead {
   readEligibility(input: {

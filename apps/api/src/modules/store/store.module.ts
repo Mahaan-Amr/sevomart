@@ -1,5 +1,6 @@
 import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
+import { identityIdContract } from "@sevo/contracts/platform/v1";
 import { MEDIA_STORAGE, type MediaStorage } from "../media/public";
 import { SELLER_ACCESS_READ, type SellerAccessRead } from "../identity-access/public";
 
@@ -69,8 +70,10 @@ export class StoreModule {
               (destination) => verifier.verify(destination),
               undefined,
               (id) => mediaStorage.get(id),
-              (id, sellerId) => mediaStorage.makePublic(id, sellerId),
-              (id, sellerId) => mediaStorage.makePrivate(id, sellerId),
+              (id, sellerId) =>
+                mediaStorage.makePublic(id, identityIdContract.parse(sellerId)),
+              (id, sellerId) =>
+                mediaStorage.makePrivate(id, identityIdContract.parse(sellerId)),
               sellerAccess,
             ),
         },

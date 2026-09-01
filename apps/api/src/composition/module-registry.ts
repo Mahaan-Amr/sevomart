@@ -30,6 +30,7 @@ import {
 import type {
   ConversationMediaAccess,
   DisputeMediaAccess,
+  PurchaseExperienceMediaAccess,
 } from "../modules/media/public";
 import { MediaModule } from "../modules/media/composition";
 import { NotificationsModule } from "../modules/notifications/composition";
@@ -91,6 +92,7 @@ function createApiCompositionContext(
 
   let conversationMediaAccess: ConversationMediaAccess = async () => false;
   let disputeMediaAccess: DisputeMediaAccess = async () => false;
+  let purchaseExperienceMediaAccess: PurchaseExperienceMediaAccess = async () => false;
   return {
     authorizeConversationMedia: (input: Parameters<ConversationMediaAccess>[0]) =>
       conversationMediaAccess(input),
@@ -101,6 +103,12 @@ function createApiCompositionContext(
       disputeMediaAccess(input),
     setDisputeMediaAccess: (access: DisputeMediaAccess) => {
       disputeMediaAccess = access;
+    },
+    authorizePurchaseExperienceMedia: (
+      input: Parameters<PurchaseExperienceMediaAccess>[0],
+    ) => purchaseExperienceMediaAccess(input),
+    setPurchaseExperienceMediaAccess: (access: PurchaseExperienceMediaAccess) => {
+      purchaseExperienceMediaAccess = access;
     },
     checkoutRepository,
     contentRepository,
@@ -155,6 +163,7 @@ export const canonicalApiModuleRegistry: readonly {
       contentRepository,
       authorizeConversationMedia,
       authorizeDisputeMedia,
+      authorizePurchaseExperienceMedia,
     }) =>
       MediaModule.register(
         environment,
@@ -168,6 +177,7 @@ export const canonicalApiModuleRegistry: readonly {
         },
         authorizeConversationMedia,
         authorizeDisputeMedia,
+        authorizePurchaseExperienceMedia,
       ),
   },
   {
@@ -310,11 +320,13 @@ export const canonicalApiModuleRegistry: readonly {
       environment,
       productRepository,
       checkoutRepository,
+      setPurchaseExperienceMediaAccess,
     }) =>
       ContentModule.register(environment, {
         products: productRepository,
         purchases: createOrderPurchaseEligibilityRead(checkoutRepository),
         repository: contentRepository,
+        onMediaAccessReady: setPurchaseExperienceMediaAccess,
       }),
   },
   {

@@ -1,12 +1,35 @@
-import type { MediaVariant } from "@sevo/contracts/media/v1";
-import type { ObjectStoragePort, StoredMedia } from "../public";
+import { randomUUID } from "node:crypto";
+
+import {
+  purchaseExperienceMediaContextIdContract,
+  type MediaUploadIdempotencyKey,
+  type MediaVariant,
+  type PurchaseExperienceMediaContextId,
+} from "@sevo/contracts/media/v1";
+import type { OrderItemId } from "@sevo/contracts/orders/v1";
+import type { IdentityId } from "@sevo/contracts/platform/v1";
+import {
+  type ObjectStoragePort,
+  PurchaseExperienceMediaIdempotencyConflictError,
+  PurchaseExperienceMediaLimitError,
+  type StoredMedia,
+} from "../public";
+import { mediaPurposePolicy } from "../media-purpose-policy";
 
 export class FakeObjectStorage implements ObjectStoragePort {
   readonly #objects = new Map<string, StoredMedia>();
+  readonly #purchaseContexts = new Map<
+    PurchaseExperienceMediaContextId,
+    { identityId: IdentityId; orderItemId: OrderItemId; expiresAt: Date }
+  >();
+  readonly #purchaseIdempotency = new Map<
+    string,
+    { requestHash: string; mediaId: string }
+  >();
 
   async put(object: StoredMedia): Promise<void> {
     if (
-      ["CONVERSATION_ATTACHMENT", "DISPUTE_EVIDENCE"].includes(object.purpose) &&
+      mediaPurposePolicy(object.purpose).requiresOwnerReference &&
       (object.visibility !== "PRIVATE" || !object.ownerReferenceId)
     )
       throw new Error("Private media must be bound to its owning context");
@@ -23,15 +46,7 @@ export class FakeObjectStorage implements ObjectStoragePort {
   async get(key: string, requestedVariant?: MediaVariant) {
     const object = this.#objects.get(key);
     if (!object) return undefined;
-    const canonical = ["CONVERSATION_ATTACHMENT", "DISPUTE_EVIDENCE"].includes(
-      object.purpose,
-    )
-      ? "attachment-preview"
-      : object.purpose === "STORE_LOGO"
-        ? "logo-large"
-        : object.purpose === "STORE_COVER"
-          ? "cover-desktop"
-          : "product-detail";
+    const canonical = mediaPurposePolicy(object.purpose).canonicalVariant;
     const variant = object.variants.find(
       (candidate) => candidate.name === (requestedVariant ?? canonical),
     );
@@ -55,29 +70,78 @@ export class FakeObjectStorage implements ObjectStoragePort {
       checksum: object.checksum,
       width: object.width,
       height: object.height,
-      ownerSellerId: object.ownerSellerId,
+      ownerIdentityId: object.ownerIdentityId,
       ownerReferenceId: object.ownerReferenceId,
       visibility: object.visibility,
     };
   }
 
-  async makePublic(key: string, ownerSellerId: string): Promise<void> {
+  async makePublic(key: string, ownerIdentityId: IdentityId): Promise<void> {
     const object = this.#objects.get(key);
     if (
       !object ||
-      object.ownerSellerId !== ownerSellerId ||
-      ["CONVERSATION_ATTACHMENT", "DISPUTE_EVIDENCE"].includes(object.purpose)
+      object.ownerIdentityId !== ownerIdentityId ||
+      !mediaPurposePolicy(object.purpose).visibilityCanChange
     ) {
       throw new Error("Media is not owned by the publishing seller");
     }
     this.#objects.set(key, { ...object, visibility: "PUBLIC" });
   }
 
-  async makePrivate(key: string, ownerSellerId: string): Promise<void> {
+  async makePrivate(key: string, ownerIdentityId: IdentityId): Promise<void> {
     const object = this.#objects.get(key);
-    if (!object || object.ownerSellerId !== ownerSellerId) {
+    if (!object || object.ownerIdentityId !== ownerIdentityId) {
       throw new Error("Media is not owned by the editing seller");
     }
     this.#objects.set(key, { ...object, visibility: "PRIVATE" });
+  }
+
+  async issuePurchaseExperienceUploadContext(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+    expiresAt: Date;
+  }) {
+    const contextId = purchaseExperienceMediaContextIdContract.parse(randomUUID());
+    this.#purchaseContexts.set(contextId, input);
+    return { contextId, expiresAt: input.expiresAt };
+  }
+
+  async readPurchaseExperienceUploadContext(
+    contextId: PurchaseExperienceMediaContextId,
+    options: { includeExpired?: boolean } = {},
+  ) {
+    const context = this.#purchaseContexts.get(contextId);
+    return context && (options.includeExpired || context.expiresAt > new Date())
+      ? context
+      : undefined;
+  }
+
+  async putPurchaseExperienceMedia(input: {
+    object: StoredMedia;
+    contextId: PurchaseExperienceMediaContextId;
+    idempotencyKey: MediaUploadIdempotencyKey;
+    requestHash: string;
+    maxItems: number;
+  }) {
+    const replayKey = `${input.contextId}:${input.idempotencyKey}`;
+    const replay = this.#purchaseIdempotency.get(replayKey);
+    if (replay) {
+      if (replay.requestHash !== input.requestHash) {
+        throw new PurchaseExperienceMediaIdempotencyConflictError();
+      }
+      return (await this.inspect(replay.mediaId))!;
+    }
+    const count = [...this.#objects.values()].filter(
+      (item) =>
+        item.purpose === "PURCHASE_EXPERIENCE_IMAGE" &&
+        item.ownerReferenceId === input.contextId,
+    ).length;
+    if (count >= input.maxItems) throw new PurchaseExperienceMediaLimitError();
+    await this.put(input.object);
+    this.#purchaseIdempotency.set(replayKey, {
+      requestHash: input.requestHash,
+      mediaId: input.object.key,
+    });
+    return (await this.inspect(input.object.key))!;
   }
 }

@@ -16,7 +16,12 @@ import {
   salesContentPublishedV1Contract,
 } from "../v1/index";
 import { createJsonSchemaMap } from "../../json-schema";
-import { mediaIdContract } from "../../media-v1";
+import {
+  MEDIA_UPLOAD_MAX_BYTES,
+  PURCHASE_EXPERIENCE_MEDIA_MAX_ITEMS,
+  mediaIdContract,
+  purchaseExperienceMediaContextIdContract,
+} from "../../media-v1";
 import { orderItemIdContract } from "../../orders/v1/index";
 import {
   identityIdContract,
@@ -45,7 +50,25 @@ export const contentV2Operations = {
     method: "get",
     path: "/v2/products/{productId}/purchase-experiences",
   },
+  createPurchaseExperienceMediaContext: {
+    operationId: "createPurchaseExperienceMediaContextV2",
+    method: "post",
+    path: "/v2/purchase-experiences/media-contexts",
+  },
 } as const;
+
+export const createPurchaseExperienceMediaContextInputContract = z
+  .object({ orderItemId: orderItemIdContract })
+  .strict();
+export const purchaseExperienceMediaContextContract = z
+  .object({
+    contextId: purchaseExperienceMediaContextIdContract,
+    expiresAt: z.iso.datetime(),
+    maxItems: z.literal(PURCHASE_EXPERIENCE_MEDIA_MAX_ITEMS),
+    maxBytesPerItem: z.literal(MEDIA_UPLOAD_MAX_BYTES),
+    uploadUrl: z.string().regex(/^\/v1\/purchase-experience-media\/[0-9a-f-]{36}$/),
+  })
+  .strict();
 
 export const salesContentMediaV2Contract = z
   .object({
@@ -127,6 +150,9 @@ export const contentV2Schemas = {
     salesContentProductEligibilityDecisionContract,
   PurchaseExperienceEligibilityDecisionV2:
     purchaseExperienceEligibilityDecisionV2Contract,
+  CreatePurchaseExperienceMediaContextInput:
+    createPurchaseExperienceMediaContextInputContract,
+  PurchaseExperienceMediaContext: purchaseExperienceMediaContextContract,
   PublishPurchaseExperienceInputV2: publishPurchaseExperienceInputV2Contract,
   PublicPurchaseExperience: publicPurchaseExperienceContract,
   PurchaseExperienceSummary: purchaseExperienceSummaryContract,
@@ -171,6 +197,16 @@ export const contentV2Examples = {
         createdAt: "2026-09-01T08:30:00.000Z",
       },
     ],
+  },
+  CreatePurchaseExperienceMediaContextInput: {
+    orderItemId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+  },
+  PurchaseExperienceMediaContext: {
+    contextId: "70000000-0000-4000-8000-000000000001",
+    expiresAt: "2026-09-01T12:30:00.000Z",
+    maxItems: PURCHASE_EXPERIENCE_MEDIA_MAX_ITEMS,
+    maxBytesPerItem: MEDIA_UPLOAD_MAX_BYTES,
+    uploadUrl: "/v1/purchase-experience-media/70000000-0000-4000-8000-000000000001",
   },
 } as const;
 
@@ -217,4 +253,10 @@ export type PurchaseExperienceSummary = z.infer<
 >;
 export type ProductPurchaseExperiences = z.infer<
   typeof productPurchaseExperiencesContract
+>;
+export type CreatePurchaseExperienceMediaContextInput = z.infer<
+  typeof createPurchaseExperienceMediaContextInputContract
+>;
+export type PurchaseExperienceMediaContext = z.infer<
+  typeof purchaseExperienceMediaContextContract
 >;

@@ -1,6 +1,8 @@
 import {
   contentV2Operations,
   productPurchaseExperiencesContract,
+  createPurchaseExperienceMediaContextInputContract,
+  purchaseExperienceMediaContextContract,
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
   purchaseExperienceEligibilityDecisionV2Contract,
@@ -78,6 +80,11 @@ describe("content v2 contract", () => {
         method: "get",
         path: "/v2/products/{productId}/purchase-experiences",
       },
+      createPurchaseExperienceMediaContext: {
+        operationId: "createPurchaseExperienceMediaContextV2",
+        method: "post",
+        path: "/v2/purchase-experiences/media-contexts",
+      },
     });
   });
 
@@ -115,5 +122,22 @@ describe("content v2 contract", () => {
         summary: { verifiedPurchaseCount: 3, averageRating: 4.3 },
       }).summary.averageRating,
     ).toBe(4.3);
+  });
+
+  it("returns an opaque media context without exposing the order item", () => {
+    expect(
+      createPurchaseExperienceMediaContextInputContract.parse({
+        orderItemId: ids.orderItem,
+      }),
+    ).toEqual({ orderItemId: ids.orderItem });
+    const context = purchaseExperienceMediaContextContract.parse({
+      contextId: "70000000-0000-4000-8000-000000000001",
+      expiresAt: "2026-09-01T12:30:00.000Z",
+      maxItems: 4,
+      maxBytesPerItem: 10 * 1024 * 1024,
+      uploadUrl: "/v1/purchase-experience-media/70000000-0000-4000-8000-000000000001",
+    });
+    expect(context).not.toHaveProperty("orderItemId");
+    expect(context.uploadUrl).not.toContain(ids.orderItem);
   });
 });

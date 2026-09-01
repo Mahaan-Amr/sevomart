@@ -86,6 +86,21 @@ const v2Operations = [
       { status: 500, schema: "InternalServerError" },
     ],
   },
+  {
+    ...contentV2Operations.createPurchaseExperienceMediaContext,
+    ...authenticatedPublishing,
+    request: {
+      schema: "CreatePurchaseExperienceMediaContextInput",
+      example: contentV2Examples.CreatePurchaseExperienceMediaContextInput,
+    },
+    responses: [
+      { status: 201, schema: "PurchaseExperienceMediaContext" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 409, schema: "ContentError" },
+      { status: 422, schema: "ContentError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 const responseMetadata = {

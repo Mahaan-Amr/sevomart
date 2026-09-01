@@ -12,7 +12,7 @@ export class MediaDisputeEvidenceReader implements DisputeEvidenceReader {
     const media = await this.storage.inspect(input.evidenceId);
     if (
       !media ||
-      media.ownerSellerId !== input.identityId ||
+      media.ownerIdentityId !== input.identityId ||
       media.ownerReferenceId !== input.disputeId ||
       media.purpose !== "DISPUTE_EVIDENCE" ||
       media.visibility !== "PRIVATE"

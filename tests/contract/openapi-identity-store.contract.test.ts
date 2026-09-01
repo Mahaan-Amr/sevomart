@@ -29,6 +29,18 @@ const frozenConsumerOperations = [
     "identity",
     [201, 401, 404, 413, 422, 429, 500],
   ],
+  [
+    "post",
+    "/v1/purchase-experience-media/{contextId}",
+    "identity",
+    [201, 401, 404, 409, 413, 422, 428, 429, 500],
+  ],
+  [
+    "post",
+    "/v2/purchase-experiences/media-contexts",
+    "identity",
+    [201, 401, 409, 422, 500],
+  ],
   ["post", "/v1/auth/otp/requests", "none", [202, 422, 429, 500]],
   ["post", "/v1/auth/otp/verifications", "none", [200, 401, 422, 500]],
   ["get", "/v1/auth/session", "identity", [200, 401, 500]],
@@ -202,7 +214,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "d3359524dd46d3dd364e1ac9f0f682c3d0f00c89343d65880b4bc8e7b7166c9a",
+      "f9952d644e165128a45c60cd8a60431cdc821d19ce391946db476aff89ec58eb",
     );
   });
 

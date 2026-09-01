@@ -50,6 +50,8 @@ describe("OpenAPI executable content contract", () => {
         PurchaseExperienceEligibilityDecisionV2: expect.any(Object),
         PublishPurchaseExperienceInputV2: expect.any(Object),
         ProductPurchaseExperiences: expect.any(Object),
+        CreatePurchaseExperienceMediaContextInput: expect.any(Object),
+        PurchaseExperienceMediaContext: expect.any(Object),
       }),
     );
     expect(document.components.schemas.PublishSalesContentInput).toBeUndefined();

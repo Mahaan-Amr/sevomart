@@ -57,7 +57,7 @@ type VerifySettlement = (
 type ResolveMedia = (id: string) => Promise<
   | {
       contentType: "image/webp";
-      ownerSellerId: string;
+      ownerIdentityId: string;
     }
   | undefined
 >;
@@ -360,7 +360,7 @@ export class StoreService implements StoreAuthoritativeRead {
         .filter((id): id is string => Boolean(id))
         .map(async (id) => {
           const media = await this.resolveMedia(id);
-          if (!media || media.ownerSellerId !== sellerId) {
+          if (!media || media.ownerIdentityId !== sellerId) {
             throw new InvalidStoreMediaError(id);
           }
         }),

@@ -9,7 +9,7 @@ describe("seller dispute evidence reader", () => {
       inspect: vi.fn().mockResolvedValue({
         key: "evidence-id",
         purpose: "DISPUTE_EVIDENCE",
-        ownerSellerId: "seller-id",
+        ownerIdentityId: "seller-id",
         ownerReferenceId: "dispute-id",
         visibility: "PRIVATE",
       }),

@@ -17,6 +17,17 @@ export const MEDIA_UPLOAD_PURPOSES = [
   "STORE_COVER",
   "PRODUCT_IMAGE",
 ] as const;
+export const purchaseExperienceMediaUploadPurpose =
+  "PURCHASE_EXPERIENCE_IMAGE" as const;
+export const PURCHASE_EXPERIENCE_MEDIA_MAX_ITEMS = 4;
+export const purchaseExperienceMediaContextIdContract = z
+  .uuid()
+  .brand<"PurchaseExperienceMediaContextId">();
+export const mediaUploadIdempotencyKeyContract = z
+  .string()
+  .min(8)
+  .max(128)
+  .regex(/^[A-Za-z0-9._:-]+$/);
 export const MEDIA_VARIANTS = [
   "attachment-preview",
   "logo-small",
@@ -32,6 +43,9 @@ export const mediaUploadInputContract = z.object({
   purpose: mediaUploadPurposeContract,
   file: z.string().min(1),
 });
+export const purchaseExperienceMediaUploadInputContract = z
+  .object({ file: z.string().min(1) })
+  .strict();
 
 export const mediaReferenceContract = z.object({
   id: mediaIdContract,
@@ -71,6 +85,9 @@ export type ConversationAttachmentResult = z.infer<
 export const mediaV1Schemas = {
   MediaConversationId: conversationMediaContextIdContract,
   ConversationMediaUploadInput: conversationMediaUploadInputContract,
+  PurchaseExperienceMediaUploadInput: purchaseExperienceMediaUploadInputContract,
+  PurchaseExperienceMediaContextId: purchaseExperienceMediaContextIdContract,
+  MediaUploadIdempotencyKey: mediaUploadIdempotencyKeyContract,
   MediaId: mediaIdContract,
   MediaUploadInput: mediaUploadInputContract,
   MediaReference: mediaReferenceContract,
@@ -84,6 +101,9 @@ export function createMediaV1JsonSchemas() {
 export const mediaV1Examples = {
   MediaConversationId: "20000000-0000-4000-8000-000000000002",
   ConversationMediaUploadInput: { file: "(binary)" },
+  PurchaseExperienceMediaUploadInput: { file: "(binary)" },
+  PurchaseExperienceMediaContextId: "70000000-0000-4000-8000-000000000001",
+  MediaUploadIdempotencyKey: "experience-image-1",
   MediaId: "6014fdd4-e393-4100-a037-030b781b6637",
   MediaUploadInput: {
     purpose: "STORE_LOGO",
@@ -106,3 +126,9 @@ export type MediaUploadInput = z.infer<typeof mediaUploadInputContract>;
 export type MediaUploadPurpose = z.infer<typeof mediaUploadPurposeContract>;
 export type MediaVariant = (typeof MEDIA_VARIANTS)[number];
 export type MediaReference = z.infer<typeof mediaReferenceContract>;
+export type PurchaseExperienceMediaContextId = z.infer<
+  typeof purchaseExperienceMediaContextIdContract
+>;
+export type MediaUploadIdempotencyKey = z.infer<
+  typeof mediaUploadIdempotencyKeyContract
+>;

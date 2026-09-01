@@ -4,6 +4,7 @@ import {
   contentIdContract,
   purchaseExperienceIdContract,
 } from "@sevo/contracts/content/v1";
+import { purchaseExperienceMediaContextContract } from "@sevo/contracts/content/v2";
 import {
   identityIdContract,
   productIdContract,
@@ -36,11 +37,14 @@ function fixture(
     storeFailure?: Error;
     replaySales?: boolean;
     replayPurchase?: boolean;
-    purchaseSubmitted?: boolean;
+    existingExperience?: boolean;
   } = {},
 ) {
   const writes: unknown[] = [];
   const repository: ContentRepository = {
+    async hasPurchaseExperience() {
+      return overrides.existingExperience ?? false;
+    },
     async replaySalesContent() {
       return overrides.replaySales
         ? {
@@ -74,9 +78,6 @@ function fixture(
         source: "VERIFIED_PURCHASE",
         moderationState: "PUBLISHED",
       };
-    },
-    async hasPurchaseExperience() {
-      return overrides.purchaseSubmitted ?? false;
     },
     async readProductPurchaseExperiences(productId) {
       return {
@@ -118,6 +119,23 @@ function fixture(
       return mediaId === ids.media && [ids.seller, ids.buyer].includes(identityId)
         ? "IMAGE"
         : undefined;
+    },
+    async issuePurchaseExperienceUploadContext(input) {
+      void input;
+      return purchaseExperienceMediaContextContract.parse({
+        contextId: "70000000-0000-4000-8000-000000000001",
+        expiresAt: "2026-09-01T12:30:00.000Z",
+        maxItems: 4,
+        maxBytesPerItem: 10 * 1024 * 1024,
+        uploadUrl: "/v1/purchase-experience-media/70000000-0000-4000-8000-000000000001",
+      });
+    },
+    async arePurchaseExperienceImagesReady(input) {
+      return (
+        input.identityId === ids.buyer &&
+        input.orderItemId === ids.orderItem &&
+        input.mediaIds.every((mediaId) => mediaId === ids.media)
+      );
     },
   };
   const purchases: PurchaseEligibilityRead = {
@@ -267,6 +285,41 @@ describe("ContentService", () => {
     });
   });
 
+  it("issues an opaque media upload context only after purchase eligibility", async () => {
+    const { service } = fixture();
+    await expect(
+      service.createPurchaseExperienceMediaContext(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        { orderItemId: ids.orderItem },
+        "experience-media-context-1",
+      ),
+    ).resolves.toMatchObject({
+      contextId: "70000000-0000-4000-8000-000000000001",
+      maxItems: 4,
+    });
+
+    const ineligible = fixture({ purchaseEligible: false });
+    await expect(
+      ineligible.service.createPurchaseExperienceMediaContext(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        { orderItemId: ids.orderItem },
+        "experience-media-context-2",
+      ),
+    ).rejects.toMatchObject({ code: "NOT_ELIGIBLE" });
+  });
+
+  it("does not issue another upload context after an experience was submitted", async () => {
+    const { service } = fixture({ existingExperience: true });
+
+    await expect(
+      service.createPurchaseExperienceMediaContext(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        { orderItemId: ids.orderItem },
+        "experience-media-context-after-submit",
+      ),
+    ).rejects.toMatchObject({ code: "ALREADY_SUBMITTED" });
+  });
+
   it("rejects an ineligible purchase and a buyer/body identity mismatch", async () => {
     const { service } = fixture({ purchaseEligible: false });
     const input = {
@@ -326,7 +379,7 @@ describe("ContentService", () => {
       orderItemId: ids.orderItem,
     });
 
-    const submitted = fixture({ purchaseSubmitted: true });
+    const submitted = fixture({ existingExperience: true });
     await expect(
       submitted.service.readPurchaseExperienceEligibility(
         { sessionToken: "buyer", correlationId: randomUUID() },
@@ -338,7 +391,7 @@ describe("ContentService", () => {
   it("does not reveal another buyer's existing submission", async () => {
     const nonOwner = fixture({
       purchaseEligible: false,
-      purchaseSubmitted: true,
+      existingExperience: true,
     });
 
     await expect(

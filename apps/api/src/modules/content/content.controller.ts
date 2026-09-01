@@ -58,6 +58,21 @@ export class ContentController {
     );
   }
 
+  @Post("v2/purchase-experiences/media-contexts")
+  @HttpCode(HttpStatus.CREATED)
+  createPurchaseExperienceMediaContextV2(
+    @Req() request: FastifyRequest,
+    @Headers("idempotency-key") key: string | undefined,
+  ) {
+    return this.respond(request, () =>
+      this.content.createPurchaseExperienceMediaContext(
+        this.context(request),
+        request.body,
+        key,
+      ),
+    );
+  }
+
   @Get("v2/products/:productId/purchase-experiences")
   readProductPurchaseExperiencesV2(
     @Req() request: FastifyRequest,

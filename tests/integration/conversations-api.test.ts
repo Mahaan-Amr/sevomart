@@ -503,7 +503,7 @@ it("rejects wrong-owner and wrong-thread media and retries an unready attachment
     width: 1,
     height: 1,
     variants: [],
-    ownerSellerId: f.buyer.identityId,
+    ownerIdentityId: f.buyer.identityId,
     ownerReferenceId: thread.conversationId,
     visibility: "PRIVATE",
   };
@@ -515,7 +515,7 @@ it("rejects wrong-owner and wrong-thread media and retries an unready attachment
       payload: { content: { type: "MEDIA", mediaId, caption: "تصویر خصوصی" } },
     });
   expect((await submit()).json().code).toBe("MESSAGE_REJECTED");
-  await storage.put({ ...media, ownerSellerId: f.seller.identityId });
+  await storage.put({ ...media, ownerIdentityId: f.seller.identityId });
   expect((await submit()).json().code).toBe("MESSAGE_REJECTED");
   await storage.put({ ...media, ownerReferenceId: randomUUID() });
   expect((await submit()).json().code).toBe("MESSAGE_REJECTED");
@@ -624,7 +624,7 @@ it.each(["identity revocation", "claim takeover"])(
       checksum: "test",
       width: 1,
       height: 1,
-      ownerSellerId: f.buyer.identityId,
+      ownerIdentityId: f.buyer.identityId,
       ownerReferenceId: id,
       visibility: "PRIVATE",
       variants: [
