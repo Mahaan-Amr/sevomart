@@ -19,7 +19,8 @@ const destinations = [
 export function BuyerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const query = useSearchParams().toString();
-  const { rememberScroll, restored, scrollFor } = useFeedWorkspace();
+  const { clearRestoredFocus, rememberScroll, restored, restoredFocus, scrollFor } =
+    useFeedWorkspace();
   const returnTo = `${pathname}${query ? `?${query}` : ""}`;
   const activeFeed =
     pathname === "/" ? "discovery" : pathname === "/following" ? "following" : null;
@@ -34,11 +35,19 @@ export function BuyerShell({ children }: { children: ReactNode }) {
       attempts += 1;
       if (Math.abs(window.scrollY - target) > 1 && attempts < 120) {
         frame = requestAnimationFrame(restore);
+      } else if (restoredFocus) {
+        const origin = document.querySelector<HTMLElement>(
+          `[data-feed-focus="${CSS.escape(restoredFocus)}"]`,
+        );
+        if (origin) {
+          origin.focus({ preventScroll: true });
+          clearRestoredFocus();
+        }
       }
     };
     frame = requestAnimationFrame(restore);
     return () => cancelAnimationFrame(frame);
-  }, [activeFeed, restored, scrollFor]);
+  }, [activeFeed, clearRestoredFocus, restored, restoredFocus, scrollFor]);
 
   return (
     <div className={styles.shell}>

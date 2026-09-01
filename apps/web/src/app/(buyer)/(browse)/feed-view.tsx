@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { loginHref } from "../../../lib/navigation";
+import { classifyFeedError, cursorNotice, type FeedErrorState } from "./feed-errors";
 import { appendFeedPage, emptyFeedState, replaceFeedPage } from "./feed-state";
 import { type FeedKind, useFeedWorkspace } from "./feed-workspace";
 import styles from "./discovery.module.css";
@@ -20,10 +21,11 @@ type FeedViewProps = {
 };
 
 export function FeedView({ kind, initialCursor }: FeedViewProps) {
-  const { restored, states, setFeedState, saveForLogin } = useFeedWorkspace();
+  const { restored, states, setFeedState, saveForBrowse, saveDiscoveryForLogin } =
+    useFeedWorkspace();
   const state = states[kind];
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<FeedErrorState>();
   const [failedCursor, setFailedCursor] = useState<string>();
   const [notice, setNotice] = useState("");
   const started = useRef(false);
@@ -35,7 +37,7 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
       const controller = new AbortController();
       request.current = controller;
       setPending(true);
-      setError("");
+      setError(undefined);
       setFailedCursor(undefined);
       const query = cursor ? `?${new URLSearchParams({ cursor })}` : "";
       try {
@@ -45,26 +47,19 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
         });
         const body: unknown = await response.json();
         if (response.status === 401 && kind === "following") {
-          saveForLogin(kind, window.scrollY);
+          saveDiscoveryForLogin();
           window.location.assign(loginHref("/following", "/"));
           return;
         }
         if (!response.ok) {
           const code = errorCode(body);
-          if (
-            cursor &&
-            ["INVALID_CURSOR", "CURSOR_EXPIRED", "FEED_CURSOR_STALE"].includes(code)
-          ) {
-            setNotice(
-              kind === "following"
-                ? "فروشگاه‌های دنبال‌شده تغییر کردند؛ فید را تازه کردیم."
-                : "فید را تازه کردیم.",
-            );
+          if (cursor && cursorNotice(code, kind)) {
+            setNotice(cursorNotice(code, kind));
             setFeedState(kind, { ...emptyFeedState });
             await load(undefined, true);
             return;
           }
-          setError(humanError(body));
+          setError(classifyFeedError(code));
           setFailedCursor(cursor);
           return;
         }
@@ -80,14 +75,17 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
         );
       } catch {
         if (!controller.signal.aborted) {
-          setError("کالاها بارگیری نشدند. دوباره تلاش کنید.");
+          setError({
+            message: "کالاها بارگیری نشدند. دوباره تلاش کنید.",
+            retryable: true,
+          });
           setFailedCursor(cursor);
         }
       } finally {
         if (!controller.signal.aborted) setPending(false);
       }
     },
-    [kind, saveForLogin, setFeedState],
+    [kind, saveDiscoveryForLogin, setFeedState],
   );
 
   useEffect(() => {
@@ -101,7 +99,7 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
   if (!restored || (!state.snapshotAt && pending)) return <FeedLoading />;
 
   if (!state.snapshotAt && error) {
-    return <FeedError message={error} onRetry={() => void load(failedCursor, true)} />;
+    return <FeedError error={error} onRetry={() => void load(failedCursor, true)} />;
   }
 
   return (
@@ -124,7 +122,14 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
           {notice}
         </p>
       ) : null}
-      {state.items.length > 0 ? <FeedGrid items={state.items} /> : null}
+      <p className={styles.srOnly} role="status">
+        {state.items.length > 0
+          ? `${new Intl.NumberFormat("fa-IR").format(state.items.length)} کالا نمایش داده شد.`
+          : "کالایی در این فید نمایش داده نشد."}
+      </p>
+      {state.items.length > 0 ? (
+        <FeedGrid items={state.items} kind={kind} onLeave={saveForBrowse} />
+      ) : null}
       {state.emptyState ? (
         <div className={styles.state}>
           <p>{state.emptyState.message}</p>
@@ -137,7 +142,7 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
       ) : null}
       {error ? (
         <FeedError
-          message={error}
+          error={error}
           compact
           onRetry={() => void load(failedCursor, !state.snapshotAt)}
         />
@@ -156,44 +161,70 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
   );
 }
 
-function FeedGrid({ items }: { items: DiscoveryFeedItemV1[] }) {
+function FeedGrid({
+  items,
+  kind,
+  onLeave,
+}: {
+  items: DiscoveryFeedItemV1[];
+  kind: FeedKind;
+  onLeave: (kind: FeedKind, scrollY: number, focusTarget: string) => void;
+}) {
   return (
     <ul className={styles.grid} aria-label="کالاهای تازه">
-      {items.map((item) => (
-        <li key={item.productId}>
-          <article className={styles.product}>
-            <Link
-              className={styles.imageLink}
-              href={`/s/${item.storeSlug}/products/${item.productId}`}
-              aria-label={`دیدن ${item.product.name}`}
-            >
-              <img
-                src={`/api/store/media/${item.product.image.id}`}
-                alt=""
-                width={300}
-                height={300}
-              />
-            </Link>
-            <h2>
-              <Link href={`/s/${item.storeSlug}/products/${item.productId}`}>
-                {item.product.name}
+      {items.map((item) => {
+        const imageFocus = `${item.productId}:image`;
+        const titleFocus = `${item.productId}:title`;
+        const storeFocus = `${item.productId}:store`;
+        const rememberOrigin = (focusTarget: string) =>
+          onLeave(kind, window.scrollY, focusTarget);
+        return (
+          <li key={item.productId}>
+            <article className={styles.product}>
+              <Link
+                className={styles.imageLink}
+                href={`/s/${item.storeSlug}/products/${item.productId}`}
+                aria-label={`دیدن ${item.product.name}`}
+                data-feed-focus={imageFocus}
+                onNavigate={() => rememberOrigin(imageFocus)}
+              >
+                <img
+                  src={`/api/store/media/${item.product.image.id}`}
+                  alt=""
+                  width={300}
+                  height={300}
+                />
               </Link>
-            </h2>
-            <Link className={styles.storeLink} href={`/s/${item.storeSlug}`}>
-              {item.store.name}
-            </Link>
-            <strong>
-              {item.priceRange.minimum.amount !== item.priceRange.maximum.amount
-                ? "از "
-                : ""}
-              {formatIrrAsToman(item.priceRange.minimum.amount)}
-            </strong>
-            {item.availability === "OUT_OF_STOCK" ? (
-              <span className={styles.unavailable}>ناموجود</span>
-            ) : null}
-          </article>
-        </li>
-      ))}
+              <h2>
+                <Link
+                  href={`/s/${item.storeSlug}/products/${item.productId}`}
+                  data-feed-focus={titleFocus}
+                  onNavigate={() => rememberOrigin(titleFocus)}
+                >
+                  {item.product.name}
+                </Link>
+              </h2>
+              <Link
+                className={styles.storeLink}
+                href={`/s/${item.storeSlug}`}
+                data-feed-focus={storeFocus}
+                onNavigate={() => rememberOrigin(storeFocus)}
+              >
+                {item.store.name}
+              </Link>
+              <strong>
+                {item.priceRange.minimum.amount !== item.priceRange.maximum.amount
+                  ? "از "
+                  : ""}
+                {formatIrrAsToman(item.priceRange.minimum.amount)}
+              </strong>
+              {item.availability === "OUT_OF_STOCK" ? (
+                <span className={styles.unavailable}>ناموجود</span>
+              ) : null}
+            </article>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -204,7 +235,12 @@ function FeedLoading() {
       <p role="status">در حال دریافت کالاها…</p>
       <div className={styles.loadingGrid} aria-hidden="true">
         {Array.from({ length: 18 }, (_, index) => (
-          <span key={index} />
+          <span className={styles.loadingCard} key={index}>
+            <i />
+            <b />
+            <b />
+            <b />
+          </span>
         ))}
       </div>
     </section>
@@ -212,20 +248,23 @@ function FeedLoading() {
 }
 
 function FeedError({
-  message,
+  error,
   onRetry,
   compact = false,
 }: {
-  message: string;
+  error: FeedErrorState;
   onRetry: () => void;
   compact?: boolean;
 }) {
   return (
     <div className={compact ? styles.inlineError : styles.state}>
-      <p role="alert">{message}</p>
-      <button type="button" onClick={onRetry}>
-        تلاش دوباره
-      </button>
+      <p role="alert">{error.message}</p>
+      {error.retryable ? (
+        <button type="button" onClick={onRetry}>
+          تلاش دوباره
+        </button>
+      ) : null}
+      {error.goToDiscovery ? <Link href="/">بازگشت به کشف</Link> : null}
     </div>
   );
 }
@@ -236,14 +275,6 @@ function errorCode(body: unknown) {
     return typeof code === "string" ? code : "";
   }
   return "";
-}
-
-function humanError(body: unknown) {
-  if (typeof body === "object" && body !== null && "message" in body) {
-    const message = (body as { message?: unknown }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return "کالاها بارگیری نشدند. دوباره تلاش کنید.";
 }
 
 function formatFreshness(value: string) {
