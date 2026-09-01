@@ -168,7 +168,14 @@ describe("successful direct payment transaction seam", () => {
       orderId: ids.order,
       settlement: { mode: "DIRECT" },
       returnPolicy: reviewSnapshot.returnPolicy,
-      items: [{ name: "فنجان سرامیکی", quantity: 1 }],
+      items: [
+        {
+          orderItemId: ids.item,
+          productId: reviewSnapshot.items[0].productId,
+          name: "فنجان سرامیکی",
+          quantity: 1,
+        },
+      ],
     });
     await expect(
       orders.readBuyerOrder(

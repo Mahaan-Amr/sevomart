@@ -204,14 +204,33 @@ export function OrderTracking({ orderId }: { orderId: string }) {
         <summary id="snapshot-title">خلاصه ثبت‌شده سفارش</summary>
         <div className={styles.disclosureBody} aria-labelledby="snapshot-title">
           <ul className={styles.items}>
-            {order.items.map((item) => (
-              <li key={item.variantId}>
-                <span>
-                  {item.name} × {new Intl.NumberFormat("fa-IR").format(item.quantity)}
-                </span>
-                <strong>{formatIrrAsToman(item.lineTotal.amount)}</strong>
-              </li>
-            ))}
+            {order.items.map((item) => {
+              const returnTo = `/orders/${order.orderId}`;
+              const experienceHref = `/purchase-experiences/new?${new URLSearchParams({
+                orderItemId: item.orderItemId,
+                returnTo,
+              })}`;
+              return (
+                <li key={item.orderItemId}>
+                  <div className={styles.itemSummary}>
+                    <span>
+                      {item.name} ×{" "}
+                      {new Intl.NumberFormat("fa-IR").format(item.quantity)}
+                    </span>
+                    <strong>{formatIrrAsToman(item.lineTotal.amount)}</strong>
+                  </div>
+                  {order.status === "PAID" ? (
+                    <Link
+                      className={styles.itemAction}
+                      href={experienceHref}
+                      aria-label={`ثبت تجربه خرید برای ${item.name}`}
+                    >
+                      ثبت تجربه خرید
+                    </Link>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
           <dl className={styles.facts}>
             <div>

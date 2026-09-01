@@ -582,6 +582,7 @@ export const buyerOrderPageContract = z
 
 const buyerOrderItemContract = z
   .object({
+    orderItemId: orderItemIdContract,
     productId: productIdContract,
     variantId: variantIdContract,
     name: z.string().min(1).max(120),
@@ -999,6 +1000,7 @@ export const ordersV1Examples = {
     },
     items: [
       {
+        orderItemId: "50000000-0000-4000-8000-000000000001",
         productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
         variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
         name: "فنجان سرامیکی",

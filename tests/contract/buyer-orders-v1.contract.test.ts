@@ -2,6 +2,7 @@ import {
   buyerOrderPageContract,
   buyerOrderSnapshotContract,
   ordersV1Operations,
+  ordersV1Examples,
 } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
 import { paymentsV1Operations } from "@sevo/contracts/payments/v1";
@@ -54,6 +55,7 @@ describe("BuyerOrderRead.v1", () => {
         store: { storeId, name: "خانه فنجان" },
         items: [
           {
+            orderItemId: "50000000-0000-4000-8000-000000000001",
             productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
             variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
             name: "فنجان سرامیکی",
@@ -95,5 +97,18 @@ describe("BuyerOrderRead.v1", () => {
         ],
       }),
     ).toMatchObject({ orderId, status: "PAID" });
+  });
+
+  it("requires the stable order item identity without exposing another identity", () => {
+    const snapshot = structuredClone(ordersV1Examples.BuyerOrderSnapshot) as Record<
+      string,
+      unknown
+    > & { items: Array<Record<string, unknown>> };
+    delete snapshot.items[0]?.orderItemId;
+
+    expect(buyerOrderSnapshotContract.safeParse(snapshot).success).toBe(false);
+    expect(JSON.stringify(ordersV1Examples.BuyerOrderSnapshot)).not.toMatch(
+      /buyerId|identityId/i,
+    );
   });
 });

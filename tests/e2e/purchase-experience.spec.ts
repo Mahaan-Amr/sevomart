@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import { ordersV1Examples } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
 
 import {
@@ -130,10 +131,39 @@ test("eligible buyer retries once and publishes one verified purchase experience
       return route.continue();
     });
 
-    const returnTo = `/orders/${randomUUID()}`;
-    await page.goto(
+    await page.route(new RegExp(`/api/orders/${orderId}$`), (route) =>
+      route.fulfill({
+        json: {
+          ...ordersV1Examples.BuyerOrderSnapshot,
+          orderId,
+          store: { storeId, name: "فروشگاه تجربه" },
+          items: [
+            {
+              ...ordersV1Examples.BuyerOrderSnapshot.items[0],
+              orderItemId,
+              productId,
+              variantId,
+              name: "کالای تأییدشده",
+              unitPrice: { amount: 1000, currency: "IRR" },
+              lineTotal: { amount: 1000, currency: "IRR" },
+            },
+          ],
+          subtotal: { amount: 1000, currency: "IRR" },
+          total: { amount: 1000, currency: "IRR" },
+        },
+      }),
+    );
+
+    const returnTo = `/orders/${orderId}`;
+    await page.goto(returnTo);
+    const experienceAction = page.getByRole("link", {
+      name: `ثبت تجربه خرید برای کالای تأییدشده`,
+    });
+    await expect(experienceAction).toHaveAttribute(
+      "href",
       `/purchase-experiences/new?${new URLSearchParams({ orderItemId, returnTo })}`,
     );
+    await experienceAction.click();
     await expect(
       page.getByRole("heading", { name: "تجربه این خرید را ثبت کنید" }),
     ).toBeVisible();
@@ -154,6 +184,9 @@ test("eligible buyer retries once and publishes one verified purchase experience
     expect(requestKeys).toHaveLength(2);
     expect(requestKeys[0]).toBeTruthy();
     expect(requestKeys[1]).toBe(requestKeys[0]);
+
+    await page.getByRole("link", { name: "بازگشت به سفارش" }).click();
+    await expect(page).toHaveURL(returnTo);
 
     const [experience] = await sql<
       Array<{ experienceId: string; source: string; moderationState: string }>
@@ -205,9 +238,10 @@ test("eligible buyer retries once and publishes one verified purchase experience
     await page.reload();
     await expect(page.getByText("۳ خرید تأییدشده")).toContainText("میانگین ۴ از ۵");
 
-    await page.goto(
-      `/purchase-experiences/new?${new URLSearchParams({ orderItemId, returnTo })}`,
-    );
+    await page.goto(returnTo);
+    await page
+      .getByRole("link", { name: `ثبت تجربه خرید برای کالای تأییدشده` })
+      .click();
     await expect(
       page.getByText("برای این خرید قبلاً یک تجربه ثبت شده است."),
     ).toBeVisible();

@@ -141,25 +141,36 @@ export class PostgresCheckoutRepository
     const row = rows[0];
     if (!row) return undefined;
     const review = checkoutPreparationContract.parse(row.review);
-    const transitions = await this.#sql<
-      Array<{
-        fromStatus: string | null;
-        toStatus: string;
-        reasonCode: string;
-        occurredAt: Date;
-      }>
-    >`
-      select from_status as "fromStatus", to_status as "toStatus",
-        reason_code as "reasonCode", occurred_at as "occurredAt"
-      from order_state_transitions
-      where order_id = ${orderId}
-      order by occurred_at, id
-    `;
+    const [orderItems, transitions] = await Promise.all([
+      this.#sql<Array<{ orderItemId: string; variantId: string }>>`
+        select id as "orderItemId", variant_id as "variantId"
+        from order_items
+        where order_id = ${orderId}
+      `,
+      this.#sql<
+        Array<{
+          fromStatus: string | null;
+          toStatus: string;
+          reasonCode: string;
+          occurredAt: Date;
+        }>
+      >`
+        select from_status as "fromStatus", to_status as "toStatus",
+          reason_code as "reasonCode", occurred_at as "occurredAt"
+        from order_state_transitions
+        where order_id = ${orderId}
+        order by occurred_at, id
+      `,
+    ]);
+    const orderItemIdByVariant = new Map(
+      orderItems.map((item) => [item.variantId, item.orderItemId]),
+    );
     return buyerOrderSnapshotContract.parse({
       orderId,
       status: row.status,
       store: review.store,
       items: review.items.map((item) => ({
+        orderItemId: orderItemIdByVariant.get(item.variantId),
         productId: item.productId,
         variantId: item.variantId,
         name: item.name,

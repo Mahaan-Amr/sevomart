@@ -57,6 +57,25 @@
   gap: 16px;
   padding-block: 10px;
 }
+.items li {
+  align-items: center;
+  border-block-end: 1px solid var(--color-divider);
+}
+.itemSummary {
+  display: flex;
+  flex: 1 1 320px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+}
+.itemAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
 .facts {
   margin: 12px 0;
 }
@@ -73,7 +92,7 @@
 .facts dt {
   flex: 1 1 120px;
 }
-.items li > span {
+.itemSummary > span {
   flex: 1 1 220px;
   min-width: 0;
 }
