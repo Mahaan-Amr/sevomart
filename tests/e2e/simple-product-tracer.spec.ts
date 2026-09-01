@@ -108,14 +108,37 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     .png()
     .toBuffer();
   const imageUploadKeys: string[] = [];
+  const uploadedMediaIds = new Map<string, string>();
+  let authoredProductId = "";
   let firstUploadKey = "";
   let exhaustedUploadKey = "";
   let exhaustedAttempts = 0;
+  let releaseFirstUpload: (() => void) | undefined;
+  const firstUploadGate = new Promise<void>((resolve) => {
+    releaseFirstUpload = resolve;
+  });
+  page.on("response", async (response) => {
+    if (
+      response.request().method() !== "POST" ||
+      !response.url().match(/\/api\/store\/seller\/products\/[0-9a-f-]+\/images$/) ||
+      !response.ok()
+    ) {
+      return;
+    }
+    const requestBody = response.request().postData() ?? "";
+    const fileName = ["cup.png", "cup-side.png", "cup-handle.png", "cup-box.png"].find(
+      (candidate) => requestBody.includes(candidate),
+    );
+    const body = (await response.json()) as { id: string };
+    if (fileName) uploadedMediaIds.set(fileName, body.id);
+    authoredProductId ||= new URL(response.url()).pathname.split("/").at(-2) ?? "";
+  });
   await page.route("**/api/store/seller/products/*/images", async (route) => {
     const key = route.request().headers()["idempotency-key"] ?? "";
     imageUploadKeys.push(key);
     if (!firstUploadKey) {
       firstUploadKey = key;
+      await firstUploadGate;
       await route.abort("timedout");
       return;
     }
@@ -132,11 +155,39 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByLabel("انتخاب تصویر کالا").setInputFiles([
     { name: "cup.png", mimeType: "image/png", buffer: image },
     { name: "cup-side.png", mimeType: "image/png", buffer: image },
+    { name: "cup-handle.png", mimeType: "image/png", buffer: image },
+    { name: "cup-box.png", mimeType: "image/png", buffer: image },
   ]);
-  await expect(page.getByText("۲ تصویر انتخاب شده است")).toBeVisible();
-  await page.getByRole("button", { name: "انتقال تصویر 2 به ابتدا" }).focus();
+  await expect(page.getByText("۴ تصویر انتخاب شده است")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /انتقال تصویر \d به قبل/ }),
+  ).toHaveCount(4);
+  await expect(
+    page.getByRole("button", { name: /انتقال تصویر \d به بعد/ }),
+  ).toHaveCount(4);
+  await expect(
+    page.getByRole("button", { name: "انتقال تصویر 1 به قبل" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "انتقال تصویر 4 به بعد" }),
+  ).toBeDisabled();
+  await assertMinimumContrast(page.locator("main button"));
+  await page.getByLabel("انتخاب تصویر کالا").focus();
+  await tabTo(page, page.getByRole("button", { name: "انتقال تصویر 4 به قبل" }));
   await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.keyboard.press("Enter");
+  await tabTo(page, page.getByRole("button", { name: "انتقال تصویر 1 به بعد" }));
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await tabTo(page, page.getByRole("button", { name: "ادامه" }));
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("انتخاب تصویر کالا")).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "انتقال تصویر 2 به قبل" }),
+  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "حذف تصویر 2" })).toBeDisabled();
+  releaseFirstUpload?.();
   await expect(
     page.getByText("پاسخ سرور به‌موقع نرسید. دوباره تلاش کنید."),
   ).toBeVisible();
@@ -148,14 +199,24 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   for (const key of imageUploadKeys) {
     uploadAttemptsByKey.set(key, (uploadAttemptsByKey.get(key) ?? 0) + 1);
   }
-  expect([...uploadAttemptsByKey.values()].sort()).toEqual([2, 4]);
+  expect([...uploadAttemptsByKey.values()].sort()).toEqual([1, 1, 2, 4]);
   expect([...uploadAttemptsByKey.keys()].every(Boolean)).toBe(true);
+  await expect.poll(() => uploadedMediaIds.size).toBe(4);
+  const expectedMediaIds = [
+    "cup-box.png",
+    "cup-side.png",
+    "cup-handle.png",
+    "cup.png",
+  ].map((fileName) => uploadedMediaIds.get(fileName));
+  expect(expectedMediaIds.every(Boolean)).toBe(true);
+  await expectSellerWorkingMediaOrder(page, authoredProductId, expectedMediaIds);
   await page.reload();
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
   await expect(page.getByLabel("نام کالا")).toHaveValue("فنجان سرامیکی");
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByRole("heading", { name: "تصویرهای کالا" })).toBeVisible();
-  await expect(page.getByText("۲ تصویر انتخاب شده است")).toBeVisible();
+  await expect(page.getByText("۴ تصویر انتخاب شده است")).toBeVisible();
+  await expectSellerWorkingMediaOrder(page, authoredProductId, expectedMediaIds);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
   await page.getByLabel("قیمت گونه اصلی").fill("440000");
@@ -165,7 +226,19 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByLabel("قیمت گونه اصلی")).toHaveValue("440000");
   await expect(page.getByLabel("موجودی گونه اصلی")).toHaveValue("3");
+  const previewResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith(`/products/${authoredProductId}/preview`),
+  );
   await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+  const previewResponse = await previewResponsePromise;
+  expect(previewResponse.ok()).toBe(true);
+  expect(
+    (
+      (await previewResponse.json()) as {
+        projection: { images: Array<{ id: string }> };
+      }
+    ).projection.images.map((entry) => entry.id),
+  ).toEqual(expectedMediaIds);
   await expect(page.getByRole("heading", { name: "پیش‌نمایش کالا" })).toBeVisible();
   await expect(page.getByText("۴۴۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "برگشت و ویرایش" }).click();
@@ -236,6 +309,25 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(publicLink).toBeVisible();
   expect(publicationKeys.length).toBeGreaterThanOrEqual(2);
   expect(new Set(publicationKeys).size).toBe(1);
+  const publishedProductResponse = await page.request.get(
+    `${e2eApiUrl}/v1/stores/${slug}/products/${authoredProductId}`,
+  );
+  expect(publishedProductResponse.ok()).toBe(true);
+  expect(
+    (
+      (await publishedProductResponse.json()) as {
+        images: Array<{ id: string }>;
+      }
+    ).images.map((entry) => entry.id),
+  ).toEqual(expectedMediaIds);
+  const publicProductPath = await publicLink.getAttribute("href");
+  expect(publicProductPath).toBeTruthy();
+  const publicProductPage = await page.context().newPage();
+  await publicProductPage.goto(publicProductPath!);
+  await expect(
+    publicProductPage.getByRole("img", { name: "فنجان سرامیکی", exact: true }),
+  ).toHaveAttribute("src", new RegExp(expectedMediaIds[0]!));
+  await publicProductPage.close();
 
   await page.getByRole("link", { name: "ویرایش کالا" }).click();
   await expect(page.getByRole("heading", { name: "مشخصات کالا" })).toBeVisible();
@@ -794,4 +886,28 @@ async function readPublicVariantAmount(
   );
   if (!variant) throw new Error(`Public variant ${values.join(", ")} was not found`);
   return variant.price.amount;
+}
+
+async function expectSellerWorkingMediaOrder(
+  page: import("@playwright/test").Page,
+  productId: string,
+  expectedMediaIds: Array<string | undefined>,
+) {
+  const response = await page.request.get(`/api/store/seller/products/${productId}`);
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as {
+    workingCopy: { orderedMediaIds: string[] };
+  };
+  expect(body.workingCopy.orderedMediaIds).toEqual(expectedMediaIds);
+}
+
+async function tabTo(
+  page: import("@playwright/test").Page,
+  target: import("@playwright/test").Locator,
+) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    await page.keyboard.press("Tab");
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+  }
+  await expect(target).toBeFocused();
 }

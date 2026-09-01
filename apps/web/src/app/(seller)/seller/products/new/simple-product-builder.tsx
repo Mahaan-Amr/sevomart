@@ -1044,6 +1044,7 @@ function ImageStep(props: {
         <input
           type="file"
           multiple
+          disabled={props.pending}
           accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
           aria-invalid={missing || tooMany}
           aria-describedby={missing || tooMany ? "product-image-error" : undefined}
@@ -1079,20 +1080,29 @@ function ImageStep(props: {
                 {entry.file ? ` — ${entry.file.name}` : " — ذخیره شده"}
               </span>
               <div className={styles.imageActions}>
-                {index > 0 ? (
-                  <button
-                    type="button"
-                    className={styles.textButton}
-                    aria-label={`انتقال تصویر ${index + 1} به ابتدا`}
-                    onClick={() => move(index, 0)}
-                  >
-                    اصلی شود
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className={styles.textButton}
+                  aria-label={`انتقال تصویر ${index + 1} به قبل`}
+                  disabled={props.pending || index === 0}
+                  onClick={() => move(index, index - 1)}
+                >
+                  قبل
+                </button>
+                <button
+                  type="button"
+                  className={styles.textButton}
+                  aria-label={`انتقال تصویر ${index + 1} به بعد`}
+                  disabled={props.pending || index === props.images.length - 1}
+                  onClick={() => move(index, index + 1)}
+                >
+                  بعد
+                </button>
                 <button
                   type="button"
                   className={styles.textButton}
                   aria-label={`حذف تصویر ${index + 1}`}
+                  disabled={props.pending}
                   onClick={() =>
                     props.onImages(
                       props.images.filter((candidate) => candidate.key !== entry.key),

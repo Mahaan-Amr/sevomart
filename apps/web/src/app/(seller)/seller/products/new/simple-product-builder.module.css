@@ -163,6 +163,14 @@
   text-decoration: none;
 }
 
+.textButton:disabled {
+  border-color: var(--color-border-primary-soft);
+  background: var(--color-surface);
+  box-shadow: inset 2px 2px 5px var(--shadow-neutral-soft);
+  color: var(--color-text);
+  cursor: default;
+}
+
 .count,
 .rowNumber {
   color: var(--color-muted) !important;
