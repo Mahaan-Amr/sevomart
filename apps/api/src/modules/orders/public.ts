@@ -11,6 +11,8 @@ import type {
   CreateSavedAddressInput,
   CreateOrderInput,
   Order,
+  BuyerOrderPage,
+  BuyerOrderSnapshot,
   OrderPaymentReviewReasonCode,
   OrderStatus,
   SellerActionableOrder,
@@ -345,6 +347,11 @@ export interface SavedAddressRepository {
 }
 
 export interface CheckoutRepository {
+  listBuyerOrders(identityId: IdentityId): Promise<BuyerOrderPage>;
+  readBuyerOrder(
+    identityId: IdentityId,
+    orderId: OrderId,
+  ): Promise<BuyerOrderSnapshot | undefined>;
   savePreparation(command: {
     identityId: IdentityId;
     input: PrepareCheckoutInput;

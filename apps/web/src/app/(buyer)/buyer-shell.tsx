@@ -11,7 +11,7 @@ import styles from "./buyer-shell.module.css";
 const destinations = [
   { href: "/", label: "کشف", ready: true },
   { href: "/following", label: "دنبال‌شده‌ها", ready: false },
-  { href: "/orders", label: "سفارش‌ها", ready: false },
+  { href: "/orders", label: "سفارش‌ها", ready: true },
   { href: "/conversations", label: "گفت‌وگوها", ready: true },
 ];
 

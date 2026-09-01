@@ -93,6 +93,11 @@ export class ProblemFollowUpService {
     return this.repository.readBuyer(actorId, this.parse(disputeIdContract, disputeId));
   }
 
+  async listBuyer(request: ProblemFollowUpRequest, cursor?: unknown, limit?: unknown) {
+    const actorId = await this.requireIdentity(request.sessionToken);
+    return this.repository.listBuyer(actorId, this.page(cursor, limit));
+  }
+
   async listSeller(request: ProblemFollowUpRequest, cursor?: unknown, limit?: unknown) {
     const { storeId } = await this.requireSeller(request.sessionToken);
     return this.repository.listSeller(storeId, this.page(cursor, limit));

@@ -163,6 +163,46 @@ export class DirectRefundController {
   }
 }
 
+@ApiExcludeController()
+@Controller("v1/orders")
+export class BuyerDirectRefundController {
+  constructor(
+    @Inject(DIRECT_REFUND_SERVICE) private readonly refunds: DirectRefundService,
+  ) {}
+
+  @Get(":orderId/direct-refund")
+  async read(
+    @Param("orderId") orderId: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    request.id = eventCorrelationId(request.id);
+    try {
+      return await this.refunds.readBuyer(
+        {
+          sessionToken: readIdentitySessionToken(request),
+          correlationId: request.id,
+        },
+        orderId,
+      );
+    } catch (error) {
+      if (!(error instanceof DirectRefundFault)) throw error;
+      const unauthenticated = error.code === "UNAUTHENTICATED";
+      throw new HttpException(
+        {
+          code: unauthenticated ? "UNAUTHENTICATED" : "REFUND_NOT_FOUND",
+          message: unauthenticated
+            ? "برای دیدن بازپرداخت دوباره وارد شوید."
+            : "برای این سفارش بازپرداختی ثبت نشده یا سفارش به شما تعلق ندارد.",
+          correlationId: request.id,
+        },
+        unauthenticated ? HttpStatus.UNAUTHORIZED : HttpStatus.NOT_FOUND,
+      );
+    }
+  }
+}
+
 function requireIdempotencyKey(correlationId: string, value: string | undefined) {
   const key = paymentIdempotencyKeyContract.safeParse(value);
   if (!key.success) {

@@ -1,0 +1,134 @@
+.page {
+  width: min(100%, 720px);
+  margin-inline: auto;
+  overflow-wrap: anywhere;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  margin-block-end: 12px;
+  color: var(--color-primary-dark);
+}
+.hero {
+  padding-block: 12px 24px;
+  border-block-end: 1px solid var(--color-divider);
+}
+.hero > p:first-child {
+  margin: 0;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+.hero h1 {
+  margin: 4px 0;
+  font-size: 24px;
+}
+.page section {
+  padding-block: 24px;
+  border-block-end: 1px solid var(--color-divider);
+}
+.page h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+.page h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.items,
+.timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.items li,
+.facts div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 10px;
+}
+.facts {
+  margin: 12px 0;
+}
+.facts div {
+  border-block-end: 1px solid var(--color-divider);
+}
+.facts dd {
+  flex: 1 1 180px;
+  min-width: 0;
+  margin: 0;
+  text-align: end;
+  font-weight: 600;
+}
+.facts dt {
+  flex: 1 1 120px;
+}
+.items li > span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.trust {
+  margin-block-start: 16px;
+  padding: 16px;
+  border-inline-start: 4px solid var(--color-primary);
+  border-radius: 12px;
+  background: var(--color-cover-start);
+}
+.timeline li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 16px 16px 0;
+  border-inline-start: 2px solid var(--color-primary);
+}
+.timeline time,
+.timeline span {
+  color: var(--color-muted);
+}
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.page a:focus-visible,
+.primary:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+.primary:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+.message {
+  width: min(100%, 560px);
+  margin-inline: auto;
+  padding-block: 32px;
+}
+@media (max-width: 560px) {
+  .facts div,
+  .items li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .facts dd {
+    text-align: start;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}

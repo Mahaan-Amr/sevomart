@@ -45,6 +45,11 @@ function harness() {
         ? refund
         : undefined;
     },
+    async readForBuyer(requestedIdentityId, requestedOrderId) {
+      return requestedIdentityId === actorId && requestedOrderId === orderId
+        ? refund
+        : undefined;
+    },
     async recordResult(command) {
       refund = {
         orderId: command.orderId,

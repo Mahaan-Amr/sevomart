@@ -23,6 +23,7 @@ import { PostgresDirectPaymentRepository } from "./infrastructure/postgres-direc
 import { PostgresDirectRefundRepository } from "./infrastructure/postgres-direct-refund.repository";
 import {
   DevPaymentController,
+  BuyerDirectRefundController,
   DirectRefundController,
   InternalPaymentRecoveryController,
   PaymentController,
@@ -75,6 +76,7 @@ export class PaymentsModule {
       module: PaymentsModule,
       controllers: [
         PaymentController,
+        BuyerDirectRefundController,
         DirectRefundController,
         ProviderCallbackController,
         InternalPaymentRecoveryController,

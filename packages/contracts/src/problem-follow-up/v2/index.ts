@@ -16,6 +16,7 @@ import {
 } from "../v1/index";
 
 export const problemFollowUpV1ReadOperations = {
+  listBuyerDisputes: problemFollowUpV1Operations.listBuyerDisputes,
   readBuyerDispute: problemFollowUpV1Operations.readBuyerDispute,
   listSellerDisputes: problemFollowUpV1Operations.listSellerDisputes,
   readSellerDispute: problemFollowUpV1Operations.readSellerDispute,

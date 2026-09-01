@@ -63,6 +63,16 @@ export type OrderPurchaseExperienceEligibilityDecision = z.infer<
 >;
 
 export const ordersV1Operations = {
+  listBuyerOrders: {
+    operationId: "listBuyerOrders",
+    method: "get",
+    path: "/v1/orders",
+  },
+  readBuyerOrder: {
+    operationId: "readBuyerOrder",
+    method: "get",
+    path: "/v1/orders/{orderId}",
+  },
   listSellerActionableOrders: {
     operationId: "listSellerActionableOrders",
     method: "get",
@@ -550,6 +560,95 @@ export const checkoutRevisionConflictContract = z
   })
   .strict();
 
+const buyerOrderStoreContract = z
+  .object({ storeId: storeIdContract, name: z.string().min(1).max(120) })
+  .strict();
+
+export const buyerOrderSummaryContract = z
+  .object({
+    orderId: orderIdContract,
+    store: buyerOrderStoreContract,
+    status: orderStatusContract,
+    total: moneyV1Contract,
+    itemCount: z.int().positive(),
+    createdAt: z.iso.datetime({ offset: true }),
+    paidAt: z.iso.datetime({ offset: true }).optional(),
+  })
+  .strict();
+
+export const buyerOrderPageContract = z
+  .object({ items: z.array(buyerOrderSummaryContract).readonly() })
+  .strict();
+
+const buyerOrderItemContract = z
+  .object({
+    productId: productIdContract,
+    variantId: variantIdContract,
+    name: z.string().min(1).max(120),
+    quantity: z.int().positive(),
+    unitPrice: moneyV1Contract,
+    lineTotal: moneyV1Contract,
+  })
+  .strict();
+
+const buyerOrderDeliveryContract = z
+  .object({
+    recipientName: z.string().min(1).max(120),
+    recipientMobile: z.string().regex(/^09\d{9}$/),
+    provinceText: z.string().min(1).max(80),
+    cityText: z.string().min(1).max(80),
+    addressLine: z.string().min(3).max(500),
+    postalCode: z
+      .string()
+      .regex(/^\d{10}$/)
+      .optional(),
+  })
+  .strict();
+
+export const buyerOrderTimelineEntryContract = z
+  .object({
+    fromStatus: orderStatusContract.nullable(),
+    toStatus: orderStatusContract,
+    reasonCode: orderStateTransitionReasonCodeContract,
+    occurredAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const buyerOrderSnapshotContract = z
+  .object({
+    orderId: orderIdContract,
+    status: orderStatusContract,
+    store: buyerOrderStoreContract,
+    items: z.array(buyerOrderItemContract).min(1).max(100).readonly(),
+    delivery: buyerOrderDeliveryContract.optional(),
+    shippingMethod: z
+      .object({
+        label: z.string().min(1).max(60),
+        fee: moneyV1Contract,
+        estimatedDeliveryText: z.string().min(1).max(120),
+      })
+      .strict(),
+    returnPolicy: z
+      .object({ revision: z.int().positive(), text: z.string().min(10).max(1_000) })
+      .strict(),
+    settlement: z.object({ mode: z.literal("DIRECT") }).strict(),
+    subtotal: moneyV1Contract,
+    total: moneyV1Contract,
+    reservationExpiresAt: z.iso.datetime({ offset: true }),
+    createdAt: z.iso.datetime({ offset: true }),
+    paidAt: z.iso.datetime({ offset: true }).optional(),
+    timeline: z.array(buyerOrderTimelineEntryContract).readonly(),
+  })
+  .strict();
+
+export const buyerOrderErrorContract = z
+  .object({
+    code: z.literal("ORDER_NOT_FOUND"),
+    message: z.string().min(1),
+    correlationId: z.string().min(1),
+  })
+  .strict();
+
 export const orderContract = z
   .object({
     orderId: orderIdContract,
@@ -831,6 +930,11 @@ export const ordersV1Schemas = {
   CreateOrderInput: createOrderInputContract,
   CheckoutChange: checkoutChangeContract,
   CheckoutRevisionConflict: checkoutRevisionConflictContract,
+  BuyerOrderSummary: buyerOrderSummaryContract,
+  BuyerOrderPage: buyerOrderPageContract,
+  BuyerOrderTimelineEntry: buyerOrderTimelineEntryContract,
+  BuyerOrderSnapshot: buyerOrderSnapshotContract,
+  BuyerOrderError: buyerOrderErrorContract,
   Order: orderContract,
   SellerActionableOrder: sellerActionableOrderContract,
   SellerActionableOrderList: sellerActionableOrderListContract,
@@ -870,6 +974,63 @@ export function createOrdersV1JsonSchemas() {
 }
 
 export const ordersV1Examples = {
+  BuyerOrderPage: {
+    items: [
+      {
+        orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+        store: {
+          storeId: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+          name: "خانه فنجان",
+        },
+        status: "PAID",
+        total: { amount: 9_500_000, currency: "IRR" },
+        itemCount: 1,
+        createdAt: "2026-08-24T20:00:00.000Z",
+        paidAt: "2026-08-24T20:03:00.000Z",
+      },
+    ],
+  },
+  BuyerOrderSnapshot: {
+    orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+    status: "PAID",
+    store: {
+      storeId: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+      name: "خانه فنجان",
+    },
+    items: [
+      {
+        productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+        variantId: "a3991ca0-50f6-44b9-a4b2-5ae917e5dac7",
+        name: "فنجان سرامیکی",
+        quantity: 1,
+        unitPrice: { amount: 9_000_000, currency: "IRR" },
+        lineTotal: { amount: 9_000_000, currency: "IRR" },
+      },
+    ],
+    shippingMethod: {
+      label: "پست پیشتاز",
+      fee: { amount: 500_000, currency: "IRR" },
+      estimatedDeliveryText: "۳ تا ۵ روز کاری",
+    },
+    returnPolicy: {
+      revision: 2,
+      text: "تا هفت روز امکان درخواست مرجوعی دارید.",
+    },
+    settlement: { mode: "DIRECT" },
+    subtotal: { amount: 9_000_000, currency: "IRR" },
+    total: { amount: 9_500_000, currency: "IRR" },
+    reservationExpiresAt: "2026-08-24T20:15:00.000Z",
+    createdAt: "2026-08-24T20:00:00.000Z",
+    paidAt: "2026-08-24T20:03:00.000Z",
+    timeline: [
+      {
+        fromStatus: "PENDING_PAYMENT",
+        toStatus: "PAID",
+        reasonCode: "PAYMENT_CONFIRMED",
+        occurredAt: "2026-08-24T20:03:00.000Z",
+      },
+    ],
+  },
   OrderItemId: "50000000-0000-4000-8000-000000000001",
   OrderPurchaseExperienceEligibilityInput: {
     buyerId: "10000000-0000-4000-8000-000000000001",
@@ -1211,6 +1372,9 @@ export type CheckoutOptions = z.infer<typeof checkoutOptionsContract>;
 export type CreateOrderInput = z.infer<typeof createOrderInputContract>;
 export type CheckoutChange = z.infer<typeof checkoutChangeContract>;
 export type Order = z.infer<typeof orderContract>;
+export type BuyerOrderSummary = z.infer<typeof buyerOrderSummaryContract>;
+export type BuyerOrderPage = z.infer<typeof buyerOrderPageContract>;
+export type BuyerOrderSnapshot = z.infer<typeof buyerOrderSnapshotContract>;
 export type OrderStatus = z.infer<typeof orderStatusContract>;
 export type OrderPaymentReviewReasonCode = z.infer<
   typeof orderPaymentReviewReasonCodeContract

@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   checkoutPreparationContract,
+  buyerOrderPageContract,
+  buyerOrderSnapshotContract,
   checkoutOptionsContract,
   checkoutRevisionContract,
   createOrderInputContract,
@@ -45,6 +47,21 @@ export class CheckoutService {
     private readonly inventory: InventoryAuthoring,
     private readonly stores: StoreAuthoritativeRead,
   ) {}
+
+  async listBuyerOrders(identity: string) {
+    const result = await this.repository.listBuyerOrders(
+      identityIdContract.parse(identity),
+    );
+    return buyerOrderPageContract.parse(result);
+  }
+
+  async readBuyerOrder(identity: string, order: string) {
+    const result = await this.repository.readBuyerOrder(
+      identityIdContract.parse(identity),
+      orderIdContract.parse(order),
+    );
+    return result ? buyerOrderSnapshotContract.parse(result) : undefined;
+  }
 
   async options(identity: string) {
     await this.repository.expirePendingOrders?.(new Date());

@@ -1,6 +1,7 @@
 import type { FulfillmentOrderSnapshot } from "@sevo/contracts/fulfillment/v1";
 import type {
   buyerDisputeViewContract,
+  buyerDisputePageContract,
   platformDisputeQueueContract,
   platformDisputeViewContract,
   platformViolationCaseViewContract,
@@ -43,6 +44,7 @@ export interface ProblemFollowUpFulfillmentRead {
 
 export type OpenDisputeInput = OpenDisputeInputV2;
 export type BuyerDisputeView = ReturnType<typeof buyerDisputeViewContract.parse>;
+export type BuyerDisputePage = ReturnType<typeof buyerDisputePageContract.parse>;
 export type SellerDisputeView = ReturnType<typeof sellerDisputeViewContract.parse>;
 export type SellerDisputePage = ReturnType<typeof sellerDisputePageContract.parse>;
 export type PlatformDisputeQueue = ReturnType<
@@ -78,6 +80,7 @@ export interface ProblemFollowUpRepository {
   }): Promise<BuyerDisputeView | undefined>;
   open(command: OpenDisputeCommand): Promise<BuyerDisputeView>;
   readBuyer(actorId: IdentityId, disputeId: DisputeId): Promise<BuyerDisputeView>;
+  listBuyer(actorId: IdentityId, query: PageQuery): Promise<BuyerDisputePage>;
   listSeller(storeId: StoreId, query: PageQuery): Promise<SellerDisputePage>;
   readSeller(storeId: StoreId, disputeId: DisputeId): Promise<SellerDisputeView>;
   respond(
