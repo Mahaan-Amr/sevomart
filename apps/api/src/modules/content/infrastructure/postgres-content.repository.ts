@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { productPurchaseExperiencesContract } from "@sevo/contracts/content/v2";
 import {
   purchaseExperienceContract,
   purchaseExperiencePublishedV1Contract,
@@ -61,6 +62,59 @@ export class PostgresContentRepository implements ContentRepository {
         command,
       );
       return replay ? purchaseExperienceContract.parse(replay) : undefined;
+    });
+  }
+
+  async hasPurchaseExperience(orderItemId: string) {
+    const [row] = await this.#sql<Array<{ exists: boolean }>>`
+      select exists (
+        select 1 from content_purchase_experiences
+        where order_item_id = ${orderItemId}
+      ) as "exists"
+    `;
+    return row?.exists ?? false;
+  }
+
+  async readProductPurchaseExperiences(productId: string) {
+    const [summary] = await this.#sql<
+      Array<{ verifiedPurchaseCount: number; averageRating: number | null }>
+    >`
+      select count(*)::int as "verifiedPurchaseCount",
+        case when count(*) >= 3
+          then round(avg(rating)::numeric, 1)::float
+          else null
+        end as "averageRating"
+      from content_purchase_experiences
+      where product_id = ${productId}
+        and moderation_state = 'PUBLISHED'
+    `;
+    const experiences = await this.#sql<
+      Array<{
+        experienceId: string;
+        source: string;
+        moderationState: string;
+        rating: number;
+        text: string;
+        mediaIds: string[];
+        createdAt: Date;
+      }>
+    >`
+      select id as "experienceId", source,
+        moderation_state as "moderationState", rating, text,
+        media_ids as "mediaIds", created_at as "createdAt"
+      from content_purchase_experiences
+      where product_id = ${productId}
+        and moderation_state = 'PUBLISHED'
+      order by created_at desc, id desc
+      limit 20
+    `;
+    return productPurchaseExperiencesContract.parse({
+      productId,
+      summary: summary ?? { verifiedPurchaseCount: 0, averageRating: null },
+      experiences: experiences.map((experience) => ({
+        ...experience,
+        createdAt: experience.createdAt.toISOString(),
+      })),
     });
   }
 

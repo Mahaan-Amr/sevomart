@@ -1,10 +1,12 @@
 import {
   Controller,
+  Get,
   Headers,
   HttpCode,
   HttpException,
   HttpStatus,
   Inject,
+  Param,
   Post,
   Req,
 } from "@nestjs/common";
@@ -40,6 +42,29 @@ export class ContentController {
   ) {
     return this.respond(request, () =>
       this.content.publishPurchaseExperience(this.context(request), request.body, key),
+    );
+  }
+
+  @Get("v2/purchase-experiences/eligibility/:orderItemId")
+  readPurchaseExperienceEligibilityV2(
+    @Req() request: FastifyRequest,
+    @Param("orderItemId") orderItemId: string,
+  ) {
+    return this.respond(request, () =>
+      this.content.readPurchaseExperienceEligibility(
+        this.context(request),
+        orderItemId,
+      ),
+    );
+  }
+
+  @Get("v2/products/:productId/purchase-experiences")
+  readProductPurchaseExperiencesV2(
+    @Req() request: FastifyRequest,
+    @Param("productId") productId: string,
+  ) {
+    return this.respond(request, () =>
+      this.content.readProductPurchaseExperiences(productId),
     );
   }
 

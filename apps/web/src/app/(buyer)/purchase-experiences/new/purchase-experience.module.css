@@ -1,0 +1,173 @@
+.page {
+  display: grid;
+  min-height: calc(100dvh - 72px);
+  padding: 16px;
+  place-items: start center;
+}
+
+.panel {
+  display: grid;
+  width: min(100%, 540px);
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--color-border-primary-soft);
+  border-radius: 22px;
+  background: var(--color-surface);
+  box-shadow:
+    8px 8px 24px var(--shadow-neutral),
+    -8px -8px 24px var(--shadow-highlight);
+}
+
+.panel h1,
+.panel p {
+  margin: 0;
+}
+
+.panel h1 {
+  font-size: 22px;
+}
+
+.back,
+.secondary {
+  width: fit-content;
+  min-height: 40px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.lead,
+.moderation,
+.counter {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.form,
+.success {
+  display: grid;
+  gap: 12px;
+}
+
+.form fieldset {
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+
+.form legend,
+.form > label {
+  margin-block-end: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ratings {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(40px, 1fr));
+  gap: 8px;
+  margin-block-start: 8px;
+}
+
+.ratings label {
+  position: relative;
+  display: grid;
+  min-height: 44px;
+  cursor: pointer;
+  place-items: center;
+}
+
+.ratings input {
+  position: absolute;
+  opacity: 0;
+}
+
+.ratings span {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  place-items: center;
+  font-weight: 600;
+}
+
+.ratings input:checked + span {
+  border-color: var(--color-primary);
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  box-shadow: inset 2px 2px 6px var(--shadow-neutral);
+}
+
+.form textarea {
+  width: 100%;
+  border: 1px solid var(--color-divider);
+  border-radius: 12px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.form textarea {
+  min-height: 132px;
+  padding: 12px;
+  line-height: 1.8;
+  resize: vertical;
+}
+
+.counter {
+  justify-self: end;
+}
+
+.primary,
+.primaryLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.primary {
+  cursor: pointer;
+}
+
+.primary:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.success {
+  padding-block-start: 8px;
+}
+
+.success > strong {
+  color: var(--color-primary-dark);
+  font-size: 18px;
+}
+
+.back:focus-visible,
+.secondary:focus-visible,
+.primary:focus-visible,
+.primaryLink:focus-visible,
+.form textarea:focus-visible,
+.ratings input:focus-visible + span {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .page {
+    padding: 32px;
+  }
+
+  .panel {
+    padding: 24px;
+  }
+}

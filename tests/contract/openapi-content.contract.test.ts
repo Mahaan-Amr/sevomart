@@ -25,12 +25,18 @@ describe("OpenAPI executable content contract", () => {
     for (const operation of Object.values(contentV2Operations)) {
       const published = document.paths[operation.path]?.[operation.method];
       expect(published?.operationId).toBe(operation.operationId);
-      expect(published?.security).toEqual([{ identitySession: [] }]);
-      expect(published?.parameters).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ name: "Idempotency-Key", required: true }),
-        ]),
-      );
+      if (operation.operationId === "readProductPurchaseExperiencesV2") {
+        expect(published?.security).toEqual([]);
+      } else {
+        expect(published?.security).toEqual([{ identitySession: [] }]);
+      }
+      if (operation.method === "post") {
+        expect(published?.parameters).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Idempotency-Key", required: true }),
+          ]),
+        );
+      }
     }
     expect(document.components.schemas).toEqual(
       expect.objectContaining({
@@ -43,6 +49,7 @@ describe("OpenAPI executable content contract", () => {
         PublishSalesContentInputV2: expect.any(Object),
         PurchaseExperienceEligibilityDecisionV2: expect.any(Object),
         PublishPurchaseExperienceInputV2: expect.any(Object),
+        ProductPurchaseExperiences: expect.any(Object),
       }),
     );
     expect(document.components.schemas.PublishSalesContentInput).toBeUndefined();

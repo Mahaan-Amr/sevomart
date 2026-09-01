@@ -325,6 +325,7 @@ describe("content producer persistence", () => {
   it("publishes one purchase experience through HTTP for the buyer's paid order item", async () => {
     const app = await createApiApp(apiTestEnvironment);
     const server = app.getHttpAdapter().getInstance();
+    const storage = app.get<MediaStorage>(MEDIA_STORAGE);
     const orderItemId = orderItemIdContract.parse(
       "94000000-0000-4000-8000-000000000091",
     );
@@ -357,12 +358,47 @@ describe("content producer persistence", () => {
         productId,
         orderItemId,
       });
+      const eligibility = await server.inject({
+        method: "GET",
+        url: `/v2/purchase-experiences/eligibility/${orderItemId}`,
+        headers: { cookie },
+      });
+      expect(eligibility.statusCode).toBe(200);
+      expect(eligibility.json()).toMatchObject({
+        eligible: true,
+        buyerId,
+        orderItemId,
+        storeId,
+        productId,
+      });
+      const mediaId = randomUUID();
+      await storage.put({
+        key: mediaId,
+        purpose: "PRODUCT_IMAGE",
+        contentType: "image/png",
+        bytes: Uint8Array.from([1]),
+        checksum: "d".repeat(64),
+        width: 1,
+        height: 1,
+        variants: [
+          {
+            key: `media/${mediaId}/variants/product-detail.webp`,
+            name: "product-detail",
+            contentType: "image/webp",
+            bytes: Uint8Array.from([2]),
+            width: 1,
+            height: 1,
+          },
+        ],
+        ownerSellerId: buyerId,
+        visibility: "PRIVATE",
+      });
       const payload = {
         buyerId,
         orderItemId,
         rating: 5,
         text: "کالا سالم و مطابق تصویر رسید.",
-        mediaIds: [],
+        mediaIds: [mediaId],
       };
       const published = await server.inject({
         method: "POST",
@@ -372,6 +408,68 @@ describe("content producer persistence", () => {
       });
       expect(published.statusCode).toBe(201);
       experienceId = published.json().experienceId;
+
+      const publicFeed = await server.inject({
+        method: "GET",
+        url: `/v2/products/${productId}/purchase-experiences`,
+      });
+      expect(publicFeed.statusCode).toBe(200);
+      expect(publicFeed.json()).toEqual({
+        productId,
+        summary: { verifiedPurchaseCount: 1, averageRating: null },
+        experiences: [
+          expect.objectContaining({
+            experienceId,
+            source: "VERIFIED_PURCHASE",
+            moderationState: "PUBLISHED",
+            rating: 5,
+            text: payload.text,
+            mediaIds: [mediaId],
+          }),
+        ],
+      });
+      await sql`
+        insert into content_purchase_experiences
+          (id, buyer_identity_id, order_item_id, store_id, product_id,
+           moderation_state, rating, text, media_ids)
+        values
+          (${randomUUID()}, ${buyerId}, ${randomUUID()}, ${storeId}, ${productId},
+           'PUBLISHED', 4, 'تجربه منتشرشده دوم', '{}'),
+          (${randomUUID()}, ${buyerId}, ${randomUUID()}, ${storeId}, ${productId},
+           'PUBLISHED', 3, 'تجربه منتشرشده سوم', '{}'),
+          (${randomUUID()}, ${buyerId}, ${randomUUID()}, ${storeId}, ${productId},
+           'HIDDEN', 1, 'این تجربه نباید عمومی باشد', '{}')
+      `;
+      const thresholdFeed = await server.inject({
+        method: "GET",
+        url: `/v2/products/${productId}/purchase-experiences`,
+      });
+      expect(thresholdFeed.statusCode).toBe(200);
+      expect(thresholdFeed.json()).toMatchObject({
+        summary: { verifiedPurchaseCount: 3, averageRating: 4 },
+      });
+      expect(thresholdFeed.json().experiences).toHaveLength(3);
+      expect(thresholdFeed.json().experiences).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ text: "این تجربه نباید عمومی باشد" }),
+        ]),
+      );
+      const publicMedia = await server.inject({
+        method: "GET",
+        url: `/v1/media/${mediaId}`,
+      });
+      expect(publicMedia.statusCode).toBe(200);
+
+      const submittedEligibility = await server.inject({
+        method: "GET",
+        url: `/v2/purchase-experiences/eligibility/${orderItemId}`,
+        headers: { cookie },
+      });
+      expect(submittedEligibility.statusCode).toBe(200);
+      expect(submittedEligibility.json()).toEqual({
+        eligible: false,
+        reason: "ALREADY_SUBMITTED",
+      });
 
       const duplicate = await server.inject({
         method: "POST",

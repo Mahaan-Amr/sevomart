@@ -36,6 +36,7 @@ function fixture(
     storeFailure?: Error;
     replaySales?: boolean;
     replayPurchase?: boolean;
+    purchaseSubmitted?: boolean;
   } = {},
 ) {
   const writes: unknown[] = [];
@@ -72,6 +73,16 @@ function fixture(
         experienceId: purchaseExperienceIdContract.parse(randomUUID()),
         source: "VERIFIED_PURCHASE",
         moderationState: "PUBLISHED",
+      };
+    },
+    async hasPurchaseExperience() {
+      return overrides.purchaseSubmitted ?? false;
+    },
+    async readProductPurchaseExperiences(productId) {
+      return {
+        productId,
+        summary: { verifiedPurchaseCount: 2, averageRating: null },
+        experiences: [],
       };
     },
   };
@@ -300,5 +311,50 @@ describe("ContentService", () => {
       ),
     ).resolves.toMatchObject({ source: "VERIFIED_PURCHASE" });
     expect(writes).toHaveLength(0);
+  });
+
+  it("reads eligibility for the signed-in buyer and reports an existing submission", async () => {
+    const available = fixture();
+    await expect(
+      available.service.readPurchaseExperienceEligibility(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        ids.orderItem,
+      ),
+    ).resolves.toMatchObject({
+      eligible: true,
+      buyerId: ids.buyer,
+      orderItemId: ids.orderItem,
+    });
+
+    const submitted = fixture({ purchaseSubmitted: true });
+    await expect(
+      submitted.service.readPurchaseExperienceEligibility(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        ids.orderItem,
+      ),
+    ).resolves.toEqual({ eligible: false, reason: "ALREADY_SUBMITTED" });
+  });
+
+  it("does not reveal another buyer's existing submission", async () => {
+    const nonOwner = fixture({
+      purchaseEligible: false,
+      purchaseSubmitted: true,
+    });
+
+    await expect(
+      nonOwner.service.readPurchaseExperienceEligibility(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        ids.orderItem,
+      ),
+    ).resolves.toEqual({ eligible: false, reason: "NOT_ELIGIBLE" });
+  });
+
+  it("returns a privacy-safe public experience feed", async () => {
+    const { service } = fixture();
+    await expect(service.readProductPurchaseExperiences(ids.product)).resolves.toEqual({
+      productId: ids.product,
+      summary: { verifiedPurchaseCount: 2, averageRating: null },
+      experiences: [],
+    });
   });
 });

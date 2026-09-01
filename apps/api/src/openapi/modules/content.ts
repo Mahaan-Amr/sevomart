@@ -55,10 +55,42 @@ const v2Operations = [
       ...publishingErrorResponses,
     ],
   },
+  {
+    ...contentV2Operations.readPurchaseExperienceEligibility,
+    tag: "content",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderItemId",
+      schema: "OrderItemId",
+      example: contentV1Examples.OrderItemId,
+    },
+    responses: [
+      { status: 200, schema: "PurchaseExperienceEligibilityDecisionV2" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 422, schema: "ContentError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...contentV2Operations.readProductPurchaseExperiences,
+    tag: "content",
+    auth: "none",
+    pathParameter: {
+      name: "productId",
+      schema: "ProductId",
+      example: contentV2Examples.ProductPurchaseExperiences.productId,
+    },
+    responses: [
+      { status: 200, schema: "ProductPurchaseExperiences" },
+      { status: 422, schema: "ContentError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
 ] as const satisfies readonly ApiOperationContract[];
 
 const responseMetadata = {
   descriptions: {
+    200: "Content read",
     201: "Content published",
     401: "Identity session is missing or invalid",
     403: "This identity cannot publish for the requested context",

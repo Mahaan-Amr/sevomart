@@ -35,6 +35,16 @@ export const contentV2Operations = {
     method: "post",
     path: "/v2/purchase-experiences",
   },
+  readPurchaseExperienceEligibility: {
+    operationId: "readPurchaseExperienceEligibilityV2",
+    method: "get",
+    path: "/v2/purchase-experiences/eligibility/{orderItemId}",
+  },
+  readProductPurchaseExperiences: {
+    operationId: "readProductPurchaseExperiencesV2",
+    method: "get",
+    path: "/v2/products/{productId}/purchase-experiences",
+  },
 } as const;
 
 export const salesContentMediaV2Contract = z
@@ -72,6 +82,38 @@ export const purchaseExperienceEligibilityDecisionV2Contract = z.discriminatedUn
 export const publishPurchaseExperienceInputV2Contract =
   publishPurchaseExperienceInputContract;
 
+export const publicPurchaseExperienceContract = z
+  .object({
+    experienceId: purchaseExperienceIdContract,
+    source: z.literal("VERIFIED_PURCHASE"),
+    moderationState: z.literal("PUBLISHED"),
+    rating: z.int().min(1).max(5),
+    text: z.string().max(2_000),
+    mediaIds: z.array(mediaIdContract).max(4),
+    createdAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const purchaseExperienceSummaryContract = z
+  .object({
+    verifiedPurchaseCount: z.int().nonnegative(),
+    averageRating: z.number().min(1).max(5).nullable(),
+  })
+  .strict()
+  .refine(
+    ({ verifiedPurchaseCount, averageRating }) =>
+      verifiedPurchaseCount >= 3 ? averageRating !== null : averageRating === null,
+    { message: "Average rating requires at least three verified purchases" },
+  );
+
+export const productPurchaseExperiencesContract = z
+  .object({
+    productId: productIdContract,
+    summary: purchaseExperienceSummaryContract,
+    experiences: z.array(publicPurchaseExperienceContract).max(20),
+  })
+  .strict();
+
 export const contentV2Schemas = {
   ContentId: contentIdContract,
   PurchaseExperienceId: purchaseExperienceIdContract,
@@ -86,6 +128,9 @@ export const contentV2Schemas = {
   PurchaseExperienceEligibilityDecisionV2:
     purchaseExperienceEligibilityDecisionV2Contract,
   PublishPurchaseExperienceInputV2: publishPurchaseExperienceInputV2Contract,
+  PublicPurchaseExperience: publicPurchaseExperienceContract,
+  PurchaseExperienceSummary: purchaseExperienceSummaryContract,
+  ProductPurchaseExperiences: productPurchaseExperiencesContract,
   PurchaseExperience: purchaseExperienceContract,
   ContentError: contentErrorContract,
   SalesContentPublishedV1: salesContentPublishedV1Contract,
@@ -111,6 +156,21 @@ export const contentV2Examples = {
     rating: 5,
     text: "بسته‌بندی مرتب بود و کالا مطابق تصویر رسید.",
     mediaIds: ["807c619f-a989-4fd9-8b78-a437a07c7bc4"],
+  },
+  ProductPurchaseExperiences: {
+    productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+    summary: { verifiedPurchaseCount: 3, averageRating: 4.7 },
+    experiences: [
+      {
+        experienceId: "61fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+        source: "VERIFIED_PURCHASE",
+        moderationState: "PUBLISHED",
+        rating: 5,
+        text: "بسته‌بندی مرتب بود و کالا مطابق تصویر رسید.",
+        mediaIds: ["807c619f-a989-4fd9-8b78-a437a07c7bc4"],
+        createdAt: "2026-09-01T08:30:00.000Z",
+      },
+    ],
   },
 } as const;
 
@@ -150,4 +210,11 @@ export type PurchaseExperienceEligibilityDecisionV2 = z.infer<
 >;
 export type PublishPurchaseExperienceInputV2 = z.infer<
   typeof publishPurchaseExperienceInputV2Contract
+>;
+export type PublicPurchaseExperience = z.infer<typeof publicPurchaseExperienceContract>;
+export type PurchaseExperienceSummary = z.infer<
+  typeof purchaseExperienceSummaryContract
+>;
+export type ProductPurchaseExperiences = z.infer<
+  typeof productPurchaseExperiencesContract
 >;

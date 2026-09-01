@@ -5,6 +5,7 @@ import type {
   SalesContent,
 } from "@sevo/contracts/content/v1";
 import type {
+  ProductPurchaseExperiences,
   PublishPurchaseExperienceInputV2,
   PublishSalesContentInputV2,
   PurchaseExperienceEligibilityDecisionV2,
@@ -80,6 +81,10 @@ export interface ContentRepository {
   publishPurchaseExperience(
     command: PublishPurchaseExperienceCommand,
   ): Promise<PurchaseExperience>;
+  hasPurchaseExperience(orderItemId: OrderItemId): Promise<boolean>;
+  readProductPurchaseExperiences(
+    productId: ProductId,
+  ): Promise<ProductPurchaseExperiences>;
 }
 
 export interface ContentPublishedMediaRead {

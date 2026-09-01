@@ -1,5 +1,6 @@
 import {
   contentV2Operations,
+  productPurchaseExperiencesContract,
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
   purchaseExperienceEligibilityDecisionV2Contract,
@@ -67,6 +68,52 @@ describe("content v2 contract", () => {
         method: "post",
         path: "/v2/purchase-experiences",
       },
+      readPurchaseExperienceEligibility: {
+        operationId: "readPurchaseExperienceEligibilityV2",
+        method: "get",
+        path: "/v2/purchase-experiences/eligibility/{orderItemId}",
+      },
+      readProductPurchaseExperiences: {
+        operationId: "readProductPurchaseExperiencesV2",
+        method: "get",
+        path: "/v2/products/{productId}/purchase-experiences",
+      },
     });
+  });
+
+  it("withholds a public average until three verified rated purchases exist", () => {
+    const base = {
+      productId: ids.product,
+      experiences: [
+        {
+          experienceId: "61fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+          source: "VERIFIED_PURCHASE",
+          moderationState: "PUBLISHED",
+          rating: 5,
+          text: "کالا مطابق تصویر بود.",
+          mediaIds: [ids.media],
+          createdAt: "2026-09-01T08:30:00.000Z",
+        },
+      ],
+    } as const;
+
+    expect(
+      productPurchaseExperiencesContract.parse({
+        ...base,
+        summary: { verifiedPurchaseCount: 1, averageRating: null },
+      }).summary,
+    ).toEqual({ verifiedPurchaseCount: 1, averageRating: null });
+    expect(
+      productPurchaseExperiencesContract.safeParse({
+        ...base,
+        summary: { verifiedPurchaseCount: 1, averageRating: 5 },
+      }).success,
+    ).toBe(false);
+    expect(
+      productPurchaseExperiencesContract.parse({
+        ...base,
+        summary: { verifiedPurchaseCount: 3, averageRating: 4.3 },
+      }).summary.averageRating,
+    ).toBe(4.3);
   });
 });
