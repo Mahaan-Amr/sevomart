@@ -8,6 +8,7 @@ export async function proxyJsonApiRequest(
     isAllowed: (segments: readonly string[]) => boolean;
     responseHeaders: readonly string[];
     noStore?: boolean;
+    forwardSearch?: boolean;
   },
 ): Promise<Response> {
   if (!options.isAllowed(segments)) {
@@ -27,12 +28,16 @@ export async function proxyJsonApiRequest(
       if (value) headers.set(name, value);
     }
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
-    const upstream = await fetch(`${API_BASE_URL}${options.basePath}${suffix}`, {
-      method: request.method,
-      headers,
-      body: hasBody ? await request.arrayBuffer() : undefined,
-      cache: "no-store",
-    });
+    const search = options.forwardSearch ? new URL(request.url).search : "";
+    const upstream = await fetch(
+      `${API_BASE_URL}${options.basePath}${suffix}${search}`,
+      {
+        method: request.method,
+        headers,
+        body: hasBody ? await request.arrayBuffer() : undefined,
+        cache: "no-store",
+      },
+    );
     const responseHeaders = new Headers();
     if (options.noStore) responseHeaders.set("cache-control", "no-store");
     for (const name of options.responseHeaders) {

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import {
   orderConversationEligibilityInputContract,
+  orderPurchaseExperienceEligibilityDecisionContract,
+  orderPurchaseExperienceEligibilityInputContract,
   checkoutPreparationContract,
   orderContract,
   orderCreatedV1Contract,
@@ -35,6 +37,7 @@ import {
   CheckoutIdempotencyInProgressError,
   CheckoutRevisionExpiredError,
   type OrderConversationEligibility,
+  type OrderPurchaseExperienceEligibilityRead,
   type CheckoutRepository,
   type OrderPaymentTransactionContext,
   type OrderPaymentWorkflow,
@@ -47,7 +50,11 @@ type PreparationRow = {
 };
 
 export class PostgresCheckoutRepository
-  implements CheckoutRepository, OrderPaymentWorkflow, OrderConversationEligibility
+  implements
+    CheckoutRepository,
+    OrderPaymentWorkflow,
+    OrderConversationEligibility,
+    OrderPurchaseExperienceEligibilityRead
 {
   readonly #sql: Sql;
 
@@ -93,6 +100,42 @@ export class PostgresCheckoutRepository
         and identity_id = ${identityId}
     `;
     return rows[0] ? checkoutPreparationContract.parse(rows[0].snapshot) : undefined;
+  }
+
+  async readPurchaseExperienceEligibility(
+    input: Parameters<
+      OrderPurchaseExperienceEligibilityRead["readPurchaseExperienceEligibility"]
+    >[0],
+  ) {
+    const parsed = orderPurchaseExperienceEligibilityInputContract.safeParse(input);
+    if (!parsed.success) {
+      return orderPurchaseExperienceEligibilityDecisionContract.parse({
+        eligible: false,
+        reason: "NOT_ELIGIBLE",
+      });
+    }
+    const [row] = await this.#sql<
+      Array<{
+        buyerId: string;
+        orderItemId: string;
+        storeId: string;
+        productId: string;
+      }>
+    >`
+      select orders.identity_id as "buyerId", items.id as "orderItemId",
+        orders.store_id as "storeId", items.product_id as "productId"
+      from order_items items
+      join order_orders orders on orders.id = items.order_id
+      where items.id = ${parsed.data.orderItemId}
+        and orders.identity_id = ${parsed.data.buyerId}
+        and orders.status = 'PAID'
+      limit 1
+    `;
+    return orderPurchaseExperienceEligibilityDecisionContract.parse(
+      row
+        ? { eligible: true, ...row, purchaseStatus: "CONFIRMED" }
+        : { eligible: false, reason: "NOT_ELIGIBLE" },
+    );
   }
 
   async replayOrder(

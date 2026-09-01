@@ -30,6 +30,11 @@ pnpm compose:up
 `sevomart-e2e` می‌سازد و پس از آزمون container و volumeهای همان پروژه را حذف می‌کند؛
 دادهٔ محیط توسعه برای آماده‌سازی fixtureها تغییر نمی‌کند.
 
+ریل امن `demo:seed`، fingerprint مقصد، manifest نسخه‌دار و profile جداگانهٔ demo/QA در
+[راهنمای runtime دادهٔ نمایشی و QA](docs/delivery/demo-qa-runtime.md) توضیح داده شده است.
+این فرمان `DATABASE_URL` ارثی را نمی‌پذیرد و هنوز دادهٔ داستانی کامل نمی‌سازد؛ baseline کامل
+در Issue مستقل خود افزوده می‌شود.
+
 ## از کجا شروع کنیم؟
 
 1. [قواعد همکاری و عامل‌ها](AGENTS.md)

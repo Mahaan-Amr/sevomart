@@ -140,6 +140,60 @@ model PlatformPermissionGrant {
   @@map("identity_platform_permission_grants")
 }
 
+model PlatformAccessGrant {
+  id                     String    @id @db.Uuid
+  grantKind              String    @map("grant_kind") @db.VarChar(24)
+  subjectIdentityId      String    @map("subject_identity_id") @db.Uuid
+  requestedByIdentityId  String    @map("requested_by_identity_id") @db.Uuid
+  approvedByIdentityId   String?   @map("approved_by_identity_id") @db.Uuid
+  responsibility         String    @db.VarChar(64)
+  purposeCode            String?   @map("purpose_code") @db.VarChar(48)
+  scope                   Json?     @db.JsonB
+  status                  String    @db.VarChar(24)
+  controlMode             String    @map("control_mode") @db.VarChar(32)
+  singleManagerException Boolean   @default(false) @map("single_manager_exception")
+  revision               Int
+  expiresAt               DateTime? @map("expires_at") @db.Timestamptz(3)
+  createdAt               DateTime  @map("created_at") @db.Timestamptz(3)
+  activatedAt             DateTime? @map("activated_at") @db.Timestamptz(3)
+  revokedAt               DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  @@index([subjectIdentityId, status, createdAt])
+  @@map("identity_platform_access_grants")
+}
+
+model PlatformAccessIdempotency {
+  operation       String   @db.VarChar(64)
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  key             String   @db.VarChar(128)
+  payloadHash     String   @map("payload_hash") @db.VarChar(64)
+  response        Json?    @db.JsonB
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, actorIdentityId, key])
+  @@map("identity_platform_access_idempotency")
+}
+
+model PlatformAccessAudit {
+  id                      String   @id @db.Uuid
+  attemptedGrantId        String   @map("grant_id") @db.Uuid
+  resolvedGrantId         String?  @map("resolved_grant_id") @db.Uuid
+  attemptedResponsibility String?  @map("attempted_responsibility") @db.VarChar(64)
+  action                  String   @db.VarChar(48)
+  actorIdentityId         String   @map("actor_identity_id") @db.Uuid
+  subjectIdentityId       String?  @map("subject_identity_id") @db.Uuid
+  scope                   Json?    @db.JsonB
+  reasonCode              String   @map("reason_code") @db.VarChar(48)
+  reason                  String   @db.VarChar(1000)
+  outcome                 String   @db.VarChar(32)
+  singleManagerException  Boolean? @map("single_manager_exception")
+  correlationId           String   @map("correlation_id") @db.Uuid
+  occurredAt              DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([attemptedGrantId, occurredAt, id])
+  @@map("identity_platform_access_audit")
+}
+
 model SellerApplicationIdempotency {
   operation    String   @db.VarChar(64)
   actorId      String   @map("actor_id") @db.Uuid

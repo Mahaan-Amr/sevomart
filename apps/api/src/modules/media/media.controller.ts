@@ -179,10 +179,7 @@ export class MediaController {
     const media = parsed.success ? await this.storage.inspect(parsed.data) : undefined;
     if (!media) throw mediaNotFound(request.id);
     const isAttachment = media.purpose === "CONVERSATION_ATTACHMENT";
-    const publiclyReadable =
-      !isAttachment &&
-      media.visibility === "PUBLIC" &&
-      (await this.isPublishedMedia(media.key));
+    const publiclyReadable = !isAttachment && (await this.isPublishedMedia(media.key));
     if (isAttachment) {
       const identityId = await requireIdentity(request, this.sessions);
       if (

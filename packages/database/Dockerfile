@@ -22,6 +22,8 @@ WORKDIR /app
 COPY --from=dependencies --chown=node:node /runtime ./
 COPY --chown=node:node packages/database/prisma ./prisma
 COPY --chown=node:node packages/database/prisma.config.ts ./prisma.config.ts
+COPY --chown=node:node scripts/demo ./scripts/demo
+COPY --chown=node:node ops/demo ./ops/demo
 USER node
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["./node_modules/.bin/prisma", "migrate", "deploy"]

@@ -83,13 +83,13 @@ test("guest adds a product, signs in and continues the same cart", async ({
     }
     await sql`
       insert into store_stores
-        (id, name, slug, return_policy, return_policy_revision,
+        (id, name, slug, bio, return_policy, return_policy_revision,
          settlement_kind, settlement_status, settlement_verified_at,
-         status, publication_version, revision, updated_at)
+         status, published_at, publication_version, revision, updated_at)
       values
-        (${ids.store}, 'خانه فنجان', ${slug},
+        (${ids.store}, 'خانه فنجان', ${slug}, 'فنجان‌های دست‌ساز برای خانه شما',
          'تا هفت روز امکان درخواست مرجوعی دارید.', 1,
-         'TEST', 'TEST_VERIFIED', now(), 'PUBLISHED', 1, 1, now())
+         'TEST', 'TEST_VERIFIED', now(), 'PUBLISHED', now(), 1, 1, now())
     `;
     await sql`
       insert into store_shipping_methods
@@ -138,6 +138,10 @@ test("guest adds a product, signs in and continues the same cart", async ({
 
   await page.goto(`/s/${slug}/products/${ids.product}`);
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
+  await expect(page.getByText("تا هفت روز امکان درخواست مرجوعی دارید.")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "پرسیدن درباره این کالا" }),
+  ).toHaveAttribute("href", /\/conversations\/new\?kind=PRODUCT/);
   await page.getByLabel("تعداد").selectOption("2");
   await page.getByRole("button", { name: "افزودن به سبد" }).click();
   await expect(page.getByText("به سبد اضافه شد.")).toBeVisible();
@@ -264,6 +268,9 @@ test("guest adds a product, signs in and continues the same cart", async ({
   }
   await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
   await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
+  ).toHaveAttribute("href", /\/conversations\/new\?kind=ORDER.*returnTo=%2Fcheckout/);
   await assertNoHorizontalOverflow(page);
 
   const historySql = postgres(databaseUrl, { max: 1 });
@@ -275,6 +282,36 @@ test("guest adds a product, signs in and continues the same cart", async ({
     `;
     const created = orders[0];
     if (!created) throw new Error("The browser checkout must persist an order");
+    const originalOrder = await historySql`
+      select status, total_amount, currency, review_snapshot
+      from order_orders where id = ${created.orderId}
+    `;
+    const originalItems = await historySql`
+      select variant_id, product_id, name, quantity, unit_price_amount,
+        publication_version
+      from order_items where order_id = ${created.orderId}
+    `;
+    await historySql`
+      update product_products set state = 'UNPUBLISHED', revision = revision + 1
+      where id = ${ids.product}
+    `;
+    await page.goto(`/s/${slug}/products/${ids.product}`);
+    await expect(
+      page.getByRole("heading", { name: "این کالا در دسترس نیست" }),
+    ).toBeVisible();
+    expect(
+      await historySql`
+        select variant_id, product_id, name, quantity, unit_price_amount,
+          publication_version
+        from order_items where order_id = ${created.orderId}
+      `,
+    ).toEqual(originalItems);
+    expect(
+      await historySql`
+        select status, total_amount, currency, review_snapshot
+        from order_orders where id = ${created.orderId}
+      `,
+    ).toEqual(originalOrder);
     const originalSnapshots = await historySql`
       select address_id, address_revision, recipient_name, recipient_mobile,
         province_text, city_text, address_line, postal_code
@@ -476,9 +513,22 @@ async function seedCartConflict(
       }
       await sql`
         insert into store_stores
-          (id, name, slug, status, publication_version, revision, updated_at)
+          (id, name, slug, bio, return_policy, return_policy_revision,
+           settlement_kind, settlement_status, settlement_verified_at,
+           status, published_at, publication_version, revision, updated_at)
         values
-          (${fixture.storeId}, ${fixture.storeName}, ${fixture.slug}, 'PUBLISHED', 1, 1, now())
+          (${fixture.storeId}, ${fixture.storeName}, ${fixture.slug},
+           'فروشگاه کالاهای دست‌ساز', 'تا هفت روز امکان درخواست مرجوعی دارید.', 1,
+           'TEST', 'TEST_VERIFIED', now(), 'PUBLISHED', now(), 1, 1, now())
+      `;
+      await sql`
+        insert into store_shipping_methods
+          (id, store_id, position, revision, code, label, fixed_fee_amount,
+           estimated_delivery_text, enabled, requires_delivery_address,
+           requires_postal_code)
+        values
+          (${fixture.shippingId}, ${fixture.storeId}, 0, 1, 'NATIONAL_POST',
+           'پست پیشتاز', 500000, '۳ تا ۵ روز کاری', true, true, true)
       `;
       await sql`
         insert into store_memberships (id, store_id, seller_id, role)
@@ -541,5 +591,6 @@ function productFixture(slug: string) {
     productName: slug.startsWith("buyer") ? "کالای حساب" : "کالای مهمان",
     variantId: randomUUID(),
     mediaId: randomUUID(),
+    shippingId: randomUUID(),
   };
 }

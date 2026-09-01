@@ -69,6 +69,18 @@
   font-weight: 600;
   cursor: pointer;
 }
+.conversationAction {
+  display: inline-flex;
+  min-height: 44px;
+  margin-block-end: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  padding: 8px 16px;
+  font-weight: 600;
+  text-decoration: none;
+}
 .primary:focus-visible,
 .choice:focus-within,
 .panel a:focus-visible {

@@ -34,6 +34,12 @@
   font-size: 18px;
 }
 
+.relatedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .primary,
 .secondary {
   display: inline-grid;
@@ -56,6 +62,13 @@
 .secondary {
   border: 1px solid var(--color-border-primary);
   color: var(--color-primary-dark);
+}
+
+.settingsLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block-start: 4px;
 }
 
 .primary:focus-visible,

@@ -1,5 +1,8 @@
 import {
+  contentV1Examples,
   contentV1Operations,
+  contentV1Schemas,
+  orderItemIdContract as contentOrderItemIdContract,
   publishPurchaseExperienceInputContract,
   publishSalesContentInputContract,
   purchaseExperienceEligibilityDecisionContract,
@@ -7,6 +10,7 @@ import {
   salesContentProductEligibilityDecisionContract,
   salesContentPublishedV1Contract,
 } from "@sevo/contracts/content/v1";
+import { orderItemIdContract as ordersOrderItemIdContract } from "@sevo/contracts/orders/v1";
 import { describe, expect, it } from "vitest";
 
 const ids = {
@@ -47,6 +51,12 @@ describe("content v1 contract", () => {
     ]) {
       expect(publishSalesContentInputContract.safeParse(invalid).success).toBe(false);
     }
+    expect(
+      publishSalesContentInputContract.parse({
+        ...input,
+        media: { ...input.media, kind: "VIDEO" },
+      }).media.kind,
+    ).toBe("VIDEO");
 
     expect(
       salesContentProductEligibilityDecisionContract.parse({
@@ -91,6 +101,12 @@ describe("content v1 contract", () => {
     expect(purchaseExperienceEligibilityDecisionContract.parse(eligible)).toEqual(
       eligible,
     );
+    const withoutFulfillment: Record<string, unknown> = { ...eligible };
+    delete withoutFulfillment.fulfillmentStatus;
+    expect(
+      purchaseExperienceEligibilityDecisionContract.safeParse(withoutFulfillment)
+        .success,
+    ).toBe(false);
     expect(
       purchaseExperienceEligibilityDecisionContract.parse({
         eligible: false,
@@ -103,13 +119,6 @@ describe("content v1 contract", () => {
         purchaseStatus: "PENDING",
       }).success,
     ).toBe(false);
-    expect(
-      purchaseExperienceEligibilityDecisionContract.safeParse({
-        ...eligible,
-        fulfillmentStatus: "SHIPPED",
-      }).success,
-    ).toBe(false);
-
     const input = {
       buyerId: ids.buyer,
       orderItemId: ids.orderItem,
@@ -121,6 +130,19 @@ describe("content v1 contract", () => {
     expect(
       publishPurchaseExperienceInputContract.safeParse({ ...input, rating: 6 }).success,
     ).toBe(false);
+  });
+
+  it("re-exports the Orders-owned order item identifier seam", async () => {
+    const ownerValue = ordersOrderItemIdContract.parse(ids.orderItem);
+    expect(contentOrderItemIdContract.parse(ownerValue)).toBe(ownerValue);
+    expect(contentOrderItemIdContract.safeParse("not-an-order-item").success).toBe(
+      false,
+    );
+    expect(contentV1Schemas.OrderItemId).toBe(contentOrderItemIdContract);
+    expect(contentV1Examples.OrderItemId).toBe(ids.orderItem);
+    expect(ordersOrderItemIdContract.parse(contentV1Examples.OrderItemId)).toBe(
+      ids.orderItem,
+    );
   });
 
   it("keeps seller content and verified purchase experience distinct in events", () => {

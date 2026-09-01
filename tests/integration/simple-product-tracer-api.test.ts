@@ -39,12 +39,43 @@ describe("simple product tracer HTTP API", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  it("creates, previews and atomically publishes one sellable physical product", async () => {
+  async function startSellerProductTest() {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
     const cookie = await signIn(server);
     await publishStore(server, cookie);
+    return { server, cookie };
+  }
+
+  it("creates, previews and atomically publishes one sellable physical product", async () => {
+    const { server, cookie } = await startSellerProductTest();
+
+    const unauthorizedInventory = await server.inject({
+      method: "GET",
+      url: "/v1/seller/inventory",
+    });
+    expect(unauthorizedInventory.statusCode).toBe(401);
+    expect(unauthorizedInventory.json()).toEqual({
+      version: 1,
+      code: "UNAUTHORIZED",
+      message: "برای ادامه دوباره وارد شوید.",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
+
+    const unauthorizedAdjustment = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      payload: {},
+    });
+    expect(unauthorizedAdjustment.statusCode).toBe(401);
+    expect(unauthorizedAdjustment.json()).toMatchObject({
+      version: 1,
+      code: "UNAUTHORIZED",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
 
     const createKey = crypto.randomUUID();
     const created = await server.inject({
@@ -185,6 +216,195 @@ describe("simple product tracer HTTP API", () => {
       { clientKey: "simple", everPublished: true },
     ]);
 
+    const sellerInventory = await server.inject({
+      method: "GET",
+      url: "/v1/seller/inventory?limit=20&availability=AVAILABLE",
+      headers: { cookie },
+    });
+    expect(sellerInventory.statusCode).toBe(200);
+    expect(sellerInventory.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          productId: emptyDraft.productId,
+          variantId: publicProduct.variantId,
+          productName: "فنجان سرامیکی",
+          onHand: 8,
+          available: 8,
+          revision: 1,
+        }),
+      ],
+    });
+
+    const adjust = async (
+      key: string,
+      reasonCode: "MANUAL_COUNT" | "DAMAGED" | "CORRECTION",
+      onHand: number,
+      expectedRevision: number,
+    ) =>
+      server.inject({
+        method: "PUT",
+        url: "/v1/seller/inventory",
+        headers: { cookie, "idempotency-key": key },
+        payload: {
+          reasonCode,
+          note: "شمارش ممیزی‌شده انبار",
+          rows: [{ variantId: publicProduct.variantId, onHand, expectedRevision }],
+        },
+      });
+    const increaseKey = crypto.randomUUID();
+    const invalid = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        reasonCode: "MANUAL_COUNT",
+        rows: [
+          {
+            variantId: publicProduct.variantId,
+            onHand: -1,
+            expectedRevision: 1,
+          },
+        ],
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json()).toEqual({
+      version: 1,
+      code: "VALIDATION_ERROR",
+      message: "اطلاعات موجودی را بررسی کنید.",
+      correlationId: expect.any(String),
+      details: {
+        issues: [
+          {
+            path: "rows.0.onHand",
+            code: "INVALID_FORMAT",
+            variantId: publicProduct.variantId,
+          },
+        ],
+      },
+    });
+    const duplicateRows = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/inventory",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        reasonCode: "MANUAL_COUNT",
+        rows: [
+          { variantId: publicProduct.variantId, onHand: 8, expectedRevision: 1 },
+          { variantId: publicProduct.variantId, onHand: 8, expectedRevision: 1 },
+        ],
+      },
+    });
+    expect(duplicateRows.statusCode).toBe(422);
+    expect(duplicateRows.json().details.issues).toEqual([
+      {
+        path: "rows.0.variantId",
+        code: "DUPLICATE",
+        variantId: publicProduct.variantId,
+      },
+      {
+        path: "rows.1.variantId",
+        code: "DUPLICATE",
+        variantId: publicProduct.variantId,
+      },
+    ]);
+    const increased = await adjust(increaseKey, "MANUAL_COUNT", 9, 1);
+    expect(increased.statusCode).toBe(200);
+    expect(increased.json()).toMatchObject({
+      rows: [{ onHand: 9, revision: 2, availability: "AVAILABLE" }],
+    });
+    const replayedIncrease = await adjust(increaseKey, "MANUAL_COUNT", 9, 1);
+    expect(replayedIncrease.json()).toEqual(increased.json());
+    expect((await adjust(increaseKey, "MANUAL_COUNT", 10, 2)).statusCode).toBe(409);
+    expect((await adjust(crypto.randomUUID(), "DAMAGED", 7, 2)).statusCode).toBe(200);
+    expect((await adjust(crypto.randomUUID(), "CORRECTION", 8, 3)).statusCode).toBe(
+      200,
+    );
+
+    const auditSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const adjustments = await auditSql<
+      Array<{
+        previousOnHand: number;
+        nextOnHand: number;
+        reasonCode: string;
+        operation: string;
+        previousRevision: number;
+        nextRevision: number;
+        actorIdentityId: string;
+        note: string | null;
+        occurredAt: Date;
+      }>
+    >`
+      select previous_on_hand as "previousOnHand", next_on_hand as "nextOnHand",
+        reason_code as "reasonCode", operation,
+        previous_revision as "previousRevision", next_revision as "nextRevision",
+        actor_identity_id as "actorIdentityId", note,
+        occurred_at as "occurredAt"
+      from inventory_adjustments
+      where variant_id = ${publicProduct.variantId}::uuid
+      order by revision
+    `;
+    await auditSql.end();
+    expect(adjustments.slice(-3)).toEqual([
+      expect.objectContaining({
+        previousOnHand: 8,
+        nextOnHand: 9,
+        reasonCode: "MANUAL_COUNT",
+        operation: "REPLACE_ON_HAND",
+        previousRevision: 1,
+        nextRevision: 2,
+        note: "شمارش ممیزی‌شده انبار",
+        occurredAt: expect.any(Date),
+      }),
+      expect.objectContaining({
+        previousOnHand: 9,
+        nextOnHand: 7,
+        reasonCode: "DAMAGED",
+      }),
+      expect.objectContaining({
+        previousOnHand: 7,
+        nextOnHand: 8,
+        reasonCode: "CORRECTION",
+      }),
+    ]);
+
+    const reservationInventory = new PostgresInventoryAuthoring(
+      apiTestEnvironment.DATABASE_URL,
+    );
+    const reservationSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const reservationId = crypto.randomUUID();
+    const [inventoryOwner] = await reservationSql<Array<{ storeId: string }>>`
+      select store_id as "storeId" from inventory_levels
+      where variant_id = ${publicProduct.variantId}::uuid
+    `;
+    await reservationSql.begin((transaction) =>
+      reservationInventory.reserveForOrder(transaction as never, {
+        reservationId,
+        orderId: crypto.randomUUID(),
+        storeId: inventoryOwner!.storeId as never,
+        expiresAt: new Date(Date.now() + 60_000),
+        items: [{ variantId: publicProduct.variantId, quantity: 8 }],
+      }),
+    );
+    const reservedPublicRead = await server.inject({
+      method: "GET",
+      url: `/v1/stores/product-tracer-store/products/${emptyDraft.productId}`,
+    });
+    expect(reservedPublicRead.json()).toMatchObject({
+      availability: "OUT_OF_STOCK",
+    });
+    expect(JSON.stringify(reservedPublicRead.json())).not.toMatch(
+      /onHand|reserved|sku/i,
+    );
+    await reservationSql.begin((transaction) =>
+      reservationInventory.releaseExpiredReservation(transaction as never, {
+        reservationId,
+        expiredAt: new Date(Date.now() + 120_000),
+      }),
+    );
+    await reservationSql.end();
+    await reservationInventory.onModuleDestroy();
+
     const replayed = await server.inject(publicationRequest);
     expect(replayed.statusCode).toBe(200);
     expect(replayed.json()).toEqual(published.json());
@@ -224,6 +444,29 @@ describe("simple product tracer HTTP API", () => {
         })
       ).statusCode,
     ).toBe(404);
+
+    const emptiedWhileUnpublished = await adjust(
+      crypto.randomUUID(),
+      "CORRECTION",
+      0,
+      4,
+    );
+    expect(emptiedWhileUnpublished.statusCode).toBe(200);
+
+    const unpublishedEventSql = postgres(apiTestEnvironment.DATABASE_URL, {
+      max: 1,
+    });
+    const unpublishedAvailabilityEvents = await unpublishedEventSql<
+      Array<{ count: number }>
+    >`
+      select count(*)::int as count
+      from platform_outbox_events
+      where event_type = 'VariantAvailabilityChanged.v1'
+        and aggregate_id = ${publicProduct.variantId}::uuid
+    `;
+    await unpublishedEventSql.end();
+    expect(unpublishedAvailabilityEvents).toEqual([{ count: 0 }]);
+
     const republished = await server.inject({
       method: "POST",
       url: `/v1/seller/products/${emptyDraft.productId}/publications`,
@@ -233,20 +476,48 @@ describe("simple product tracer HTTP API", () => {
     expect(republished.statusCode).toBe(200);
     expect(republished.json()).toMatchObject({ publicationVersion: 2 });
 
+    const replenishedAfterRepublish = await adjust(
+      crypto.randomUUID(),
+      "CORRECTION",
+      1,
+      5,
+    );
+    expect(replenishedAfterRepublish.statusCode).toBe(200);
+
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     try {
-      const events = await sql<Array<{ count: number }>>`
-        select count(*)::int as count from platform_outbox_events
+      const events = await sql<Array<{ count: number; hasCausation: boolean }>>`
+        select count(*)::int as count,
+          bool_and(causation_id is not null) as "hasCausation"
+        from platform_outbox_events
         where event_type = 'ProductPublished.v2'
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
-      expect(events[0]?.count).toBe(2);
-      const unpublicationEvents = await sql<Array<{ count: number }>>`
-        select count(*)::int as count from platform_outbox_events
+      expect(events).toEqual([{ count: 2, hasCausation: true }]);
+      const availabilityEvents = await sql<
+        Array<{ publicationVersion: number; availability: string }>
+      >`
+        select (payload->>'publicationVersion')::int as "publicationVersion",
+          payload->>'availability' as availability
+        from platform_outbox_events
+        where event_type = 'VariantAvailabilityChanged.v1'
+          and aggregate_id = ${publicProduct.variantId}::uuid
+        order by aggregate_version desc
+        limit 1
+      `;
+      expect(availabilityEvents).toEqual([
+        { publicationVersion: 2, availability: "AVAILABLE" },
+      ]);
+      const unpublicationEvents = await sql<
+        Array<{ count: number; hasCausation: boolean }>
+      >`
+        select count(*)::int as count,
+          bool_and(causation_id is not null) as "hasCausation"
+        from platform_outbox_events
         where event_type = 'ProductUnpublished.v1'
           and aggregate_id = ${emptyDraft.productId}::uuid
       `;
-      expect(unpublicationEvents[0]?.count).toBe(1);
+      expect(unpublicationEvents).toEqual([{ count: 1, hasCausation: true }]);
       const adjustments = await sql<
         Array<{ reasonCode: string; previousOnHand: number; nextOnHand: number }>
       >`
@@ -255,20 +526,18 @@ describe("simple product tracer HTTP API", () => {
         from inventory_adjustments
         where variant_id = ${saved.json().workingCopy.variant.variantId}::uuid
       `;
-      expect(adjustments).toEqual([
-        { reasonCode: "INITIAL_STOCK", previousOnHand: 0, nextOnHand: 8 },
-      ]);
+      expect(adjustments).toContainEqual({
+        reasonCode: "INITIAL_STOCK",
+        previousOnHand: 0,
+        nextOnHand: 8,
+      });
     } finally {
       await sql.end();
     }
   });
 
   it("rejects private product preview when seller access is no longer active", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const cookie = await signIn(server);
-    await publishStore(server, cookie);
+    const { server, cookie } = await startSellerProductTest();
     const created = await server.inject({
       method: "POST",
       url: "/v1/seller/products",
@@ -293,12 +562,241 @@ describe("simple product tracer HTTP API", () => {
     expect(response.statusCode).toBe(403);
   });
 
+  it("retires a published variant only when the edited working copy is published", async () => {
+    const { server, cookie } = await startSellerProductTest();
+
+    const created = await server.inject({
+      method: "POST",
+      url: "/v1/seller/products",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {},
+    });
+    const productId = created.json<{ productId: string }>().productId;
+    const mediaId = await uploadProductImage(server, cookie, productId);
+    const workingCopy = {
+      name: "کفش روزمره",
+      description: "کفش سبک برای استفاده روزانه",
+      orderedMediaIds: [mediaId],
+      axes: [
+        {
+          clientKey: "size",
+          name: "اندازه",
+          values: [
+            { clientKey: "small", name: "کوچک" },
+            { clientKey: "large", name: "بزرگ" },
+          ],
+        },
+      ],
+      variants: [
+        {
+          clientKey: "small",
+          combination: [{ axisClientKey: "size", valueClientKey: "small" }],
+          price: { amount: 6_000_000, currency: "IRR" as const },
+          sku: "SHOE-S",
+        },
+        {
+          clientKey: "large",
+          combination: [{ axisClientKey: "size", valueClientKey: "large" }],
+          price: { amount: 6_500_000, currency: "IRR" as const },
+          sku: "SHOE-L",
+        },
+      ],
+    };
+    const saved = productViewContract.parse(
+      (
+        await server.inject({
+          method: "PUT",
+          url: `/v1/seller/products/${productId}/working-copy`,
+          headers: writeHeaders(cookie, crypto.randomUUID(), 0),
+          payload: {
+            expectedRevision: 0,
+            workingCopy,
+            inventory: {
+              rows: [
+                { variantClientKey: "small", onHand: 2, expectedRevision: 0 },
+                { variantClientKey: "large", onHand: 3, expectedRevision: 0 },
+              ],
+            },
+          },
+        })
+      ).json(),
+    );
+    const variantIds = Object.fromEntries(
+      saved.workingCopy!.variants.map((variant) => [
+        variant.clientKey,
+        variant.variantId,
+      ]),
+    );
+    const firstPublication = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 1),
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(firstPublication.statusCode).toBe(200);
+
+    const edited = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 2),
+      payload: {
+        expectedRevision: 2,
+        workingCopy: {
+          ...workingCopy,
+          axes: [
+            {
+              ...workingCopy.axes[0],
+              values: [workingCopy.axes[0]!.values[0]],
+            },
+          ],
+          variants: [workingCopy.variants[0]],
+        },
+        inventory: null,
+      },
+    });
+    expect(edited.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      const beforePublication = await sql<
+        Array<{ variantId: string; retired: boolean }>
+      >`
+        select id as "variantId", retired from product_variants
+        where product_id = ${productId}::uuid order by id
+      `;
+      expect(beforePublication).toEqual(
+        expect.arrayContaining([
+          { variantId: variantIds.small, retired: false },
+          { variantId: variantIds.large, retired: false },
+        ]),
+      );
+      const stillPublic = publicProductContract.parse(
+        (
+          await server.inject({
+            method: "GET",
+            url: `/v1/stores/product-tracer-store/products/${productId}`,
+          })
+        ).json(),
+      );
+      expect(stillPublic.variants.map((variant) => variant.variantId)).toEqual(
+        expect.arrayContaining([variantIds.small, variantIds.large]),
+      );
+
+      const [ownership] = await sql<
+        Array<{ storeId: string; actorId: string; eventId: string }>
+      >`
+        select product.store_id as "storeId", membership.seller_id as "actorId",
+          event.event_id as "eventId"
+        from product_products product
+        join store_memberships membership on membership.store_id = product.store_id
+        join platform_outbox_events event on event.aggregate_id = product.id
+          and event.event_type = 'ProductPublished.v2'
+        where product.id = ${productId}::uuid
+        limit 1
+      `;
+      const inventoryReader = new PostgresInventoryAuthoring(
+        apiTestEnvironment.DATABASE_URL,
+      );
+      const rollbackProbe = new PostgresProductRepository(
+        apiTestEnvironment.DATABASE_URL,
+        inventoryReader,
+        () => ownership!.eventId,
+      );
+      try {
+        await expect(
+          rollbackProbe.publishProduct(productId, ownership!.storeId, {
+            operation: "PUBLISH_PRODUCT",
+            actorId: ownership!.actorId as never,
+            correlationId: crypto.randomUUID(),
+            idempotencyKey: crypto.randomUUID(),
+            expectedRevision: 3,
+            requestHash: "f".repeat(64),
+          }),
+        ).rejects.toThrow();
+        const rolledBack = await sql<
+          Array<{ revision: number; publicationVersion: number }>
+        >`
+          select revision, publication_version as "publicationVersion"
+          from product_products where id = ${productId}::uuid
+        `;
+        expect(rolledBack).toEqual([{ revision: 3, publicationVersion: 1 }]);
+        expect(
+          await sql<Array<{ count: number }>>`
+            select count(*)::int as count from product_publications
+            where product_id = ${productId}::uuid
+          `,
+        ).toEqual([{ count: 1 }]);
+        expect(
+          await sql<Array<{ retired: boolean }>>`
+            select retired from product_variants
+            where id = ${variantIds.large}::uuid
+          `,
+        ).toEqual([{ retired: false }]);
+
+        const publishKey = crypto.randomUUID();
+        const publicationRequest = {
+          method: "POST" as const,
+          url: `/v1/seller/products/${productId}/publications`,
+          headers: writeHeaders(cookie, publishKey, 3),
+          payload: { expectedRevision: 3, confirmed: true },
+        };
+        const secondPublication = await server.inject(publicationRequest);
+        expect(secondPublication.statusCode).toBe(200);
+        expect((await server.inject(publicationRequest)).json()).toEqual(
+          secondPublication.json(),
+        );
+        expect(
+          await rollbackProbe.readAuthoritativeVariant(variantIds.large as never),
+        ).toBeUndefined();
+      } finally {
+        await rollbackProbe.onModuleDestroy();
+        await inventoryReader.onModuleDestroy();
+      }
+
+      const afterPublication = await sql<
+        Array<{ variantId: string; retired: boolean; everPublished: boolean }>
+      >`
+        select id as "variantId", retired, ever_published as "everPublished"
+        from product_variants where product_id = ${productId}::uuid order by id
+      `;
+      expect(afterPublication).toEqual(
+        expect.arrayContaining([
+          { variantId: variantIds.small, retired: false, everPublished: true },
+          { variantId: variantIds.large, retired: true, everPublished: true },
+        ]),
+      );
+      const publications = await sql<Array<{ snapshot: unknown }>>`
+        select snapshot from product_publications
+        where product_id = ${productId}::uuid order by publication_version
+      `;
+      expect(publications).toHaveLength(2);
+      expect(
+        publicProductContract
+          .parse(publications[0]!.snapshot)
+          .variants.map((variant) => variant.variantId),
+      ).toEqual(expect.arrayContaining([variantIds.small, variantIds.large]));
+      expect(
+        publicProductContract
+          .parse(publications[1]!.snapshot)
+          .variants.map((variant) => variant.variantId),
+      ).toEqual([variantIds.small]);
+      const publicationEvents = await sql<
+        Array<{ count: number; hasCausation: boolean }>
+      >`
+        select count(*)::int as count,
+          bool_and(causation_id is not null) as "hasCausation"
+        from platform_outbox_events
+        where aggregate_id = ${productId}::uuid
+          and event_type = 'ProductPublished.v2'
+      `;
+      expect(publicationEvents).toEqual([{ count: 2, hasCausation: true }]);
+    } finally {
+      await sql.end();
+    }
+  });
+
   it("keeps deterministic variant identities and applies offer and inventory batches atomically", async () => {
-    const app = await createApiApp(apiTestEnvironment);
-    apps.push(app);
-    const server = app.getHttpAdapter().getInstance();
-    const cookie = await signIn(server);
-    await publishStore(server, cookie);
+    const { server, cookie } = await startSellerProductTest();
 
     const created = await server.inject({
       method: "POST",
@@ -475,6 +973,138 @@ describe("simple product tracer HTTP API", () => {
       "AVAILABLE",
     ]);
     expect(JSON.stringify(publicProduct)).not.toMatch(/sku|onHand/i);
+
+    const invalidVariantSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const foreignVariantId = saved.inventory[0]!.variantId;
+    const missingVariantIds = [crypto.randomUUID(), crypto.randomUUID()];
+    const [originalProductStore] = await invalidVariantSql<Array<{ storeId: string }>>`
+      select store_id as "storeId"
+      from product_products
+      where id = ${productId}::uuid
+    `;
+    await invalidVariantSql`
+      update product_products
+      set store_id = ${crypto.randomUUID()}::uuid
+      where id = ${productId}::uuid
+    `;
+    try {
+      const invalidVariants = await server.inject({
+        method: "PUT",
+        url: "/v1/seller/inventory",
+        headers: { cookie, "idempotency-key": crypto.randomUUID() },
+        payload: {
+          reasonCode: "MANUAL_COUNT",
+          rows: [foreignVariantId, ...missingVariantIds].map((variantId) => ({
+            variantId,
+            onHand: 1,
+            expectedRevision: 0,
+          })),
+        },
+      });
+      expect(invalidVariants.statusCode).toBe(404);
+      expect(invalidVariants.json()).toMatchObject({
+        version: 1,
+        code: "INVENTORY_NOT_FOUND",
+        details: {
+          issues: [foreignVariantId, ...missingVariantIds].map(
+            (variantId, rowIndex) => ({
+              path: `rows.${rowIndex}.variantId`,
+              code: "INVENTORY_NOT_FOUND",
+              variantId,
+            }),
+          ),
+        },
+      });
+    } finally {
+      await invalidVariantSql`
+        update product_products
+        set store_id = ${originalProductStore!.storeId}::uuid
+        where id = ${productId}::uuid
+      `;
+      await invalidVariantSql.end();
+    }
+
+    const conflictInventory = new PostgresInventoryAuthoring(
+      apiTestEnvironment.DATABASE_URL,
+    );
+    const conflictSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      const reservedRow = saved.inventory[1]!;
+      const [inventoryOwner] = await conflictSql<Array<{ storeId: string }>>`
+        select store_id as "storeId"
+        from inventory_levels
+        where variant_id = ${reservedRow.variantId}::uuid
+      `;
+      const conflictReservationId = crypto.randomUUID();
+      await conflictSql.begin((transaction) =>
+        conflictInventory.reserveForOrder(transaction as never, {
+          reservationId: conflictReservationId,
+          orderId: crypto.randomUUID(),
+          storeId: inventoryOwner!.storeId as never,
+          expiresAt: new Date(Date.now() + 60_000),
+          items: [{ variantId: reservedRow.variantId, quantity: 1 }],
+        }),
+      );
+      const beforeRejectedBatch = await inventorySideEffects(
+        conflictSql,
+        saved.inventory.map((row) => row.variantId),
+      );
+
+      const sellerBatchConflict = await server.inject({
+        method: "PUT",
+        url: "/v1/seller/inventory",
+        headers: { cookie, "idempotency-key": crypto.randomUUID() },
+        payload: {
+          reasonCode: "MANUAL_COUNT",
+          rows: [
+            {
+              variantId: saved.inventory[0]!.variantId,
+              onHand: 99,
+              expectedRevision: saved.inventory[0]!.revision,
+            },
+            {
+              variantId: reservedRow.variantId,
+              onHand: 0,
+              expectedRevision: reservedRow.revision + 1,
+            },
+          ],
+        },
+      });
+      expect(sellerBatchConflict.statusCode).toBe(409);
+      expect(sellerBatchConflict.json()).toMatchObject({
+        version: 1,
+        code: "REVISION_CONFLICT",
+        details: {
+          issues: [
+            {
+              path: "rows.0.expectedRevision",
+              code: "REVISION_CONFLICT",
+              variantId: saved.inventory[0]!.variantId,
+            },
+            {
+              path: "rows.1.onHand",
+              code: "RESERVED_STOCK_CONFLICT",
+              variantId: reservedRow.variantId,
+            },
+          ],
+        },
+      });
+      expect(
+        await inventorySideEffects(
+          conflictSql,
+          saved.inventory.map((row) => row.variantId),
+        ),
+      ).toEqual(beforeRejectedBatch);
+      await conflictSql.begin((transaction) =>
+        conflictInventory.releaseExpiredReservation(transaction as never, {
+          reservationId: conflictReservationId,
+          expiredAt: new Date(Date.now() + 120_000),
+        }),
+      );
+    } finally {
+      await conflictSql.end();
+      await conflictInventory.onModuleDestroy();
+    }
 
     const concurrentEdits = await Promise.all(
       ["پیراهن نسخه کاری الف", "پیراهن نسخه کاری ب"].map((name) =>
@@ -803,6 +1433,37 @@ async function simpleVariantState(productId: string) {
   } finally {
     await sql.end();
   }
+}
+
+async function inventorySideEffects(
+  sql: ReturnType<typeof postgres>,
+  variantIds: readonly string[],
+) {
+  const levels = await sql<
+    Array<{ variantId: string; onHand: number; revision: number }>
+  >`
+    select variant_id as "variantId", on_hand as "onHand", revision
+    from inventory_levels
+    where variant_id = any(${variantIds}::uuid[])
+    order by variant_id
+  `;
+  const [counts] = await sql<
+    Array<{ adjustmentCount: number; availabilityEventCount: number }>
+  >`
+    select
+      (
+        select count(*)::int
+        from inventory_adjustments
+        where variant_id = any(${variantIds}::uuid[])
+      ) as "adjustmentCount",
+      (
+        select count(*)::int
+        from platform_outbox_events
+        where event_type = 'VariantAvailabilityChanged.v1'
+          and aggregate_id = any(${variantIds}::uuid[])
+      ) as "availabilityEventCount"
+  `;
+  return { levels, counts };
 }
 
 async function publishStore(server: TestServer, cookie: string) {

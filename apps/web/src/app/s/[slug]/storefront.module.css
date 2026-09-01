@@ -136,6 +136,17 @@
   line-height: 1.8;
 }
 
+.publicSummary {
+  display: grid;
+  gap: 4px;
+}
+
+.identity .productCount {
+  padding-inline: 8px;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 .follow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -162,7 +173,8 @@
 
 .followButton,
 .followingButton,
-.followError button {
+.followError button,
+.conversation {
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--color-primary);
@@ -171,6 +183,17 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
+}
+
+.conversation {
+  display: inline-flex;
+  width: fit-content;
+  margin: 4px 8px 0;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-primary-dark);
+  text-decoration: none;
 }
 
 .followButton {
@@ -342,6 +365,28 @@
   font-weight: 600;
 }
 
+.shippingList {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shippingList li {
+  display: grid;
+  gap: 4px 8px;
+}
+
+.shippingList li strong {
+  font-size: 13px;
+}
+
+.shippingList li span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
 .footer {
   display: flex;
   justify-content: center;
@@ -472,7 +517,8 @@
 
 .followButton:focus-visible,
 .followingButton:focus-visible,
-.followError button:focus-visible {
+.followError button:focus-visible,
+.conversation:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 3px;
 }
@@ -492,6 +538,14 @@
 
   .follow {
     padding-inline: 24px;
+  }
+
+  .identity .productCount {
+    padding-inline: 24px;
+  }
+
+  .conversation {
+    margin-inline: 24px;
   }
 
   .trust {

@@ -28,6 +28,26 @@
   padding-inline: 12px;
 }
 
+.selectedOffer {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding-block: 8px;
+  border-block: 1px solid var(--color-divider);
+}
+
+.selectedOffer span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.selectedOffer span:last-child {
+  grid-column: 1 / -1;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 .cartAction button {
   grid-column: 1 / -1;
   border: 0;
@@ -120,6 +140,36 @@
   border-block-start: 1px solid var(--color-divider);
 }
 
+.purchaseTerms {
+  display: grid;
+  gap: 4px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.purchaseTerms span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.purchaseTerms strong {
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.conversation {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .variants {
   display: grid;
   gap: 8px;
@@ -144,7 +194,8 @@
   text-align: center;
 }
 
-.back:focus-visible {
+.back:focus-visible,
+.conversation:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: -3px;
 }

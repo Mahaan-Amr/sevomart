@@ -7,6 +7,7 @@ import type {
 import type { CSSProperties, ReactNode } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
+import { newConversationHref } from "../../../lib/conversation-navigation";
 import styles from "./storefront.module.css";
 import { StoreFollowControl } from "./store-follow-control";
 
@@ -88,6 +89,10 @@ export function ErrorStorefront({ retryHref }: { retryHref: string }) {
 }
 
 function TrustDetails({ store }: { store: PublicStore }) {
+  const enabledShippingMethods = store.shippingMethods.filter(
+    (method) => method.enabled,
+  );
+
   return (
     <section className={styles.trust} id="trust" aria-labelledby="trust-title">
       <div className={styles.trustHeading}>
@@ -96,8 +101,15 @@ function TrustDetails({ store }: { store: PublicStore }) {
       </div>
       <div className={styles.trustItem}>
         <span>روش ارسال</span>
-        <strong>{store.shippingMethods.map(({ label }) => label).join("، ")}</strong>
-        <p>زمان دقیق ارسال هنگام ثبت سفارش مشخص می‌شود.</p>
+        <ul className={styles.shippingList}>
+          {enabledShippingMethods.map((method) => (
+            <li key={method.id}>
+              <strong>{method.label}</strong>
+              <span>{formatIrrAsToman(method.fixedFee.amount)}</span>
+              <span>{method.estimatedDeliveryText}</span>
+            </li>
+          ))}
+        </ul>
       </div>
       <div className={styles.trustItem}>
         <span>مرجوعی</span>
@@ -108,8 +120,8 @@ function TrustDetails({ store }: { store: PublicStore }) {
         <span>روش پرداخت</span>
         <strong>تسویه مستقیم</strong>
         <p>
-          مقصد تسویه «تأیید آزمایشی» دارد؛ این وضعیت تأیید واقعی یا تضمین بازپرداخت
-          نیست.
+          مبلغ مستقیم برای فروشنده تسویه می‌شود. مقصد فعلی تأیید آزمایشی دارد؛ سوو گزارش
+          مشکل و تخلف را پیگیری می‌کند، اما بازپرداخت را تضمین نمی‌کند.
         </p>
       </div>
     </section>
@@ -158,14 +170,29 @@ export function ReadyStorefront({
           </div>
         </div>
         {store.followerCount ? (
-          <StoreFollowControl
-            storeId={store.id}
-            slug={store.slug}
-            initialCount={store.followerCount}
-            initialViewer={store.viewer}
-            autoFollow={autoFollow}
-          />
+          <div className={styles.publicSummary}>
+            <p className={styles.productCount}>
+              {new Intl.NumberFormat("fa-IR").format(store.activeProductCount)} کالای
+              فعال
+            </p>
+            <StoreFollowControl
+              storeId={store.id}
+              slug={store.slug}
+              initialCount={store.followerCount}
+              initialViewer={store.viewer}
+              autoFollow={autoFollow}
+            />
+          </div>
         ) : null}
+        <Link
+          className={styles.conversation}
+          href={newConversationHref(
+            { kind: "STORE", storeId: store.id },
+            `/s/${store.slug}`,
+          )}
+        >
+          گفت‌وگو با فروشگاه
+        </Link>
       </header>
       {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">

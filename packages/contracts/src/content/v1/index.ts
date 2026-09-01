@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { createJsonSchemaMap } from "../../json-schema";
 import { mediaIdContract } from "../../media-v1";
+import { orderItemIdContract } from "../../orders/v1/index";
 import {
   eventEnvelopeV1Contract,
   identityIdContract,
@@ -24,7 +25,8 @@ export const contentV1Operations = {
 
 export const contentIdContract = z.uuid().brand("ContentId");
 export const purchaseExperienceIdContract = z.uuid().brand("PurchaseExperienceId");
-export const orderItemIdContract = z.uuid().brand("OrderItemId");
+export { orderItemIdContract };
+export type { OrderItemId } from "../../orders/v1/index";
 export const contentIdempotencyKeyContract = z.string().min(1).max(200);
 
 export const contentSourceContract = z.enum(["SELLER", "VERIFIED_PURCHASE"]);
@@ -261,7 +263,6 @@ export const contentV1Examples = {
 
 export type ContentId = z.infer<typeof contentIdContract>;
 export type PurchaseExperienceId = z.infer<typeof purchaseExperienceIdContract>;
-export type OrderItemId = z.infer<typeof orderItemIdContract>;
 export type ContentSource = z.infer<typeof contentSourceContract>;
 export type ContentModerationState = z.infer<typeof contentModerationStateContract>;
 export type PublishSalesContentInput = z.infer<typeof publishSalesContentInputContract>;

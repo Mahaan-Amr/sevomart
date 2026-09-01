@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import {
   orderConversationEligibilityInputContract,
+  orderPurchaseExperienceEligibilityInputContract,
   orderTerminalStatuses,
 } from "@sevo/contracts/orders/v1";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -24,6 +25,7 @@ const ids = {
   checkout: "50000000-0000-4000-8000-000000000005",
   order: "60000000-0000-4000-8000-000000000006",
   reservation: "70000000-0000-4000-8000-000000000007",
+  item: "a0000000-0000-4000-8000-000000000010",
 };
 
 describe("successful direct payment transaction seam", () => {
@@ -91,7 +93,7 @@ describe("successful direct payment transaction seam", () => {
     await sql`insert into order_carts (id, store_id, identity_id, status, revision, expires_at) values (${ids.cart}, ${ids.store}, ${ids.buyer}, 'CONVERTED', 1, now() + interval '1 day')`;
     await sql`insert into order_checkout_preparations (checkout_revision, identity_id, cart_id, cart_revision, shipping_method_id, shipping_revision, policy_revision, snapshot, expires_at) values (${ids.checkout}, ${ids.buyer}, ${ids.cart}, 1, '80000000-0000-4000-8000-000000000008', 1, 1, '{}', now() + interval '1 day')`;
     await sql`insert into order_orders (id, identity_id, store_id, checkout_revision, reservation_id, status, total_amount, currency, reservation_expires_at, review_snapshot) values (${ids.order}, ${ids.buyer}, ${ids.store}, ${ids.checkout}, ${ids.reservation}, 'PENDING_PAYMENT', 4500000, 'IRR', now() + interval '15 minutes', ${sql.json({ store: { name: "خانه فنجان" }, items: [] })})`;
-    await sql`insert into order_items (order_id, variant_id, product_id, name, quantity, unit_price_amount, publication_version) values (${ids.order}, ${ids.variant}, '90000000-0000-4000-8000-000000000009', 'فنجان سرامیکی', 1, 4500000, 1)`;
+    await sql`insert into order_items (id, order_id, variant_id, product_id, name, quantity, unit_price_amount, publication_version) values (${ids.item}, ${ids.order}, ${ids.variant}, '90000000-0000-4000-8000-000000000009', 'فنجان سرامیکی', 1, 4500000, 1)`;
     await sql`insert into inventory_reservations (id, order_id, store_id, status, expires_at) values (${ids.reservation}, ${ids.order}, ${ids.store}, 'ACTIVE', now() + interval '15 minutes')`;
     await sql`insert into inventory_reservation_lines (reservation_id, variant_id, quantity) values (${ids.reservation}, ${ids.variant}, 1)`;
   });
@@ -110,6 +112,39 @@ describe("successful direct payment transaction seam", () => {
       storeId: ids.store,
     });
     expect(await orders.checkConversationOrder(input)).toBe(true);
+  });
+
+  it("confirms only the matching buyer item after payment succeeds", async () => {
+    const input = orderPurchaseExperienceEligibilityInputContract.parse({
+      buyerId: ids.buyer,
+      orderItemId: ids.item,
+    });
+    await expect(orders.readPurchaseExperienceEligibility(input)).resolves.toEqual({
+      eligible: false,
+      reason: "NOT_ELIGIBLE",
+    });
+
+    await sql`
+      update order_orders set status = 'PAID', paid_at = now()
+      where id = ${ids.order}
+    `;
+    await expect(orders.readPurchaseExperienceEligibility(input)).resolves.toEqual({
+      eligible: true,
+      buyerId: ids.buyer,
+      orderItemId: ids.item,
+      storeId: ids.store,
+      productId: "90000000-0000-4000-8000-000000000009",
+      purchaseStatus: "CONFIRMED",
+    });
+    for (const changed of [
+      { ...input, buyerId: "ffffffff-ffff-4fff-8fff-ffffffffffff" },
+      { ...input, orderItemId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" },
+    ]) {
+      await expect(orders.readPurchaseExperienceEligibility(changed)).resolves.toEqual({
+        eligible: false,
+        reason: "NOT_ELIGIBLE",
+      });
+    }
   });
 
   it("denies unrelated buyers, mismatched stores and nonexistent orders without details", async () => {
@@ -167,6 +202,12 @@ describe("successful direct payment transaction seam", () => {
     await expect(disconnected.checkConversationOrder(input)).rejects.toMatchObject({
       code: "CONNECTION_ENDED",
     });
+    await expect(
+      disconnected.readPurchaseExperienceEligibility({
+        buyerId: ids.buyer,
+        orderItemId: ids.item,
+      }),
+    ).rejects.toMatchObject({ code: "CONNECTION_ENDED" });
   });
 
   it("stores the order reference without a cross-module foreign key", async () => {

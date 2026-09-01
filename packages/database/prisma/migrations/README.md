@@ -92,7 +92,60 @@ be safely applied when the constraint is already absent. The architecture checke
 tracks foreign-key additions and removals across the complete SQL migration history
 so a later migration cannot restore a cross-producer constraint.
 
+Issue 132 additively adds the inventory-owned idempotency scope, an optional
+private audit note and explicit operation plus previous/next revision fields for
+seller inventory adjustments. Existing adjustment rows are backfilled from their
+authoritative `revision` (`previous = revision - 1`, `next = revision`) without
+changing quantities, actors, reasons or timestamps; levels and reservations are
+unchanged. No compatibility window is required and deployment corrections use a
+forward migration. The 45-migration history was verified through both
+`docker compose up --build --wait` and `pnpm dev` startup on 2026-08-29.
+
+[Build: create a safe demo and QA runtime and orchestrator](https://github.com/Mahaan-Amr/sevomart/issues/126)
+additively creates the platform-owned managed-data target fingerprint and versioned
+demo-manifest receipt. Existing product data is not read or changed, no compatibility
+window is required, and deployment corrections use a forward migration. Both supported
+startup paths continue to use the same `prisma migrate deploy` history; their smoke
+evidence is recorded in the delivery note for the Issue. The
+`platform_data_environment` and `platform_seed_manifest_receipts` tables are registered
+to the `platform` infrastructure owner in the canonical ownership registry.
+
 The platform outbox envelope-version migration is a forward compatibility fix for
 databases that applied the original outbox migration before `envelope_version` was
 added. It preserves existing events, backfills envelope version `1`, and is a no-op
 for fresh databases that already contain the required column.
+
+Issue 139 adds six content-owned tables: sales content, product links, the latest
+product-state projection, purchase experience, idempotency and audit, after
+`20260827120000__conversations__send-claims`. References to store, product, media,
+identity and order-item identifiers remain scalar; the only foreign key stays within
+the content aggregate. The migration is additive, needs no compatibility window and
+uses a forward fix if deployment must be corrected. Both supported runtime paths use
+the same `prisma migrate deploy` history; verification evidence is recorded on the
+Issue handoff.
+
+Issue 127 additively introduces identity-access-owned responsibility and
+case-scoped sensitive-access aggregates, command idempotency and immutable audit.
+The existing platform-permission table remains the live compatibility projection
+used by current authorizers and is updated atomically with each responsibility
+activation or revocation. The migration needs no compatibility window and uses a
+forward migration for corrections. Sensitive values are never copied into audit or
+outbox payloads; every reveal is re-authorized inside the caller's transaction.
+
+The identity-access-owned follow-up migration
+`20260830113000__identity-access__audit-unresolved-sensitive-attempts` preserves the
+attempted grant identifier while making the resolved grant relationship explicit and
+nullable. It backfills existing audit rows under an exclusive lock in one transaction,
+temporarily disables the append-only trigger only inside that transaction, and restores
+the trigger before commit. Failed deployment rolls back the schema, backfill and trigger
+state together; deployed corrections therefore use another forward migration. The
+change is additive for the published v1 audit page and needs no compatibility window.
+Docker and native startup continue to apply the same `prisma migrate deploy` history;
+their Issue 127 follow-up verification is recorded in the delivery note.
+
+Issue 186 additively gives every orders-owned `order_items` row a stable unique UUID
+and publishes the authoritative confirmed-purchase eligibility read for content.
+Existing rows are backfilled, new rows use a database default, and no cross-module
+foreign key or private order snapshot is exposed. No compatibility window is needed;
+deployment corrections use a forward-fix migration. Docker and native both apply the
+same `prisma migrate deploy` history.

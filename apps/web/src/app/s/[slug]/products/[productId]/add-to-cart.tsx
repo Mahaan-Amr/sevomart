@@ -7,7 +7,12 @@ import styles from "./product-public.module.css";
 export function AddToCart({
   variants,
 }: {
-  variants: Array<{ variantId: string; label: string; available: boolean }>;
+  variants: Array<{
+    variantId: string;
+    label: string;
+    priceLabel: string;
+    available: boolean;
+  }>;
 }) {
   const initialVariant = variants.find((variant) => variant.available) ?? variants[0]!;
   const [variantId, setVariantId] = useState(initialVariant.variantId);
@@ -91,6 +96,11 @@ export function AddToCart({
     <div className={styles.cartAction}>
       {variants.length > 1 ? (
         <>
+          <div className={styles.selectedOffer} aria-live="polite">
+            <span>قیمت گونه انتخاب‌شده</span>
+            <strong>{selectedVariant.priceLabel}</strong>
+            <span>{selectedVariant.available ? "موجود" : "ناموجود"}</span>
+          </div>
           <label htmlFor="cart-variant">گونه</label>
           <select
             id="cart-variant"

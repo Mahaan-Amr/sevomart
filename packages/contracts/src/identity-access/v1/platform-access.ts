@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { platformPermissionContract } from "../../identity-access-v1";
 import {
   eventEnvelopeV1Contract,
   identityIdContract,
@@ -48,18 +49,7 @@ export const platformAccessStatusContract = z.enum([
   "CLOSED",
 ]);
 
-export const responsibilityContract = z.enum([
-  "ACCESS_ADMINISTRATION",
-  "ACCESS_AUDIT_REVIEW",
-  "SELLER_APPLICATION_REVIEW",
-  "PAYMENT_REVIEW",
-  "PAYMENT_OUTCOME_CHANGE",
-  "DISPUTE_REVIEW",
-  "VIOLATION_REVIEW",
-  "RELATED_BUYER_CONTEXT_REVEAL",
-  "SENSITIVE_IDENTITY_BANKING_BROAD_VIEW",
-  "HIGH_RISK_BULK_EXPORT",
-]);
+export const responsibilityContract = platformPermissionContract;
 
 export const highRiskResponsibilityContract = z.enum([
   "ACCESS_ADMINISTRATION",
@@ -547,6 +537,22 @@ export const platformAccessAuditEntryContract = z
   })
   .strict();
 
+export const unresolvedSensitiveAccessAuditEntryContract = z
+  .object({
+    auditId: platformAccessAuditIdContract,
+    attemptedGrantId: platformAccessGrantIdContract,
+    action: z.enum(["SENSITIVE_FIELD_REVEALED", "SENSITIVE_CHANGE_ATTEMPTED"]),
+    actorIdentityId: identityIdContract,
+    attemptedResponsibility: responsibilityContract,
+    scope: platformAccessScopeContract,
+    reasonCode: z.literal("ACCESS_REQUEST_REJECTED"),
+    reason: internalReasonContract,
+    outcome: z.literal("DENIED"),
+    correlationId: z.uuid(),
+    occurredAt: timestampV1Contract,
+  })
+  .strict();
+
 const responsibilityGrantEventPayloadContract = z
   .object({
     grantKind: z.literal("RESPONSIBILITY"),
@@ -925,6 +931,7 @@ export const platformAccessV1Schemas = {
   PlatformAccessRejection: platformAccessRejectionContract,
   PlatformAccessGrantPage: platformAccessGrantPageContract,
   PlatformAccessAuditPage: platformAccessAuditPageContract,
+  UnresolvedSensitiveAccessAuditEntry: unresolvedSensitiveAccessAuditEntryContract,
   PlatformAccessError: platformAccessErrorContract,
 } as const;
 
@@ -1008,6 +1015,23 @@ export const platformAccessV1Examples = {
   },
   PlatformAccessGrantPage: { items: [], nextCursor: null },
   PlatformAccessAuditPage: { items: [], nextCursor: null },
+  UnresolvedSensitiveAccessAuditEntry: {
+    auditId: "88888888-8888-4888-8888-888888888888",
+    attemptedGrantId: "44444444-4444-4444-8444-444444444444",
+    action: "SENSITIVE_FIELD_REVEALED",
+    actorIdentityId: "11111111-1111-4111-8111-111111111111",
+    attemptedResponsibility: "PAYMENT_REVIEW",
+    scope: {
+      resourceType: "PAYMENT_REVIEW",
+      resourceId: "55555555-5555-4555-8555-555555555555",
+      allowedActions: ["REVEAL_MINIMUM"],
+    },
+    reasonCode: "ACCESS_REQUEST_REJECTED",
+    reason: "تلاش ردشده با شناسه اجازه حساس نامعتبر",
+    outcome: "DENIED",
+    correlationId: "66666666-6666-4666-8666-666666666666",
+    occurredAt: "2026-08-26T10:01:00.000Z",
+  },
   PlatformAccessError: {
     code: "SELF_APPROVAL_FORBIDDEN",
     message: "تأییدکننده باید از درخواست‌کننده جدا باشد.",
@@ -1018,6 +1042,9 @@ export const platformAccessV1Examples = {
 export type Responsibility = z.infer<typeof responsibilityContract>;
 export type PlatformAccessScope = z.infer<typeof platformAccessScopeContract>;
 export type PlatformAccessAuditEntry = z.infer<typeof platformAccessAuditEntryContract>;
+export type UnresolvedSensitiveAccessAuditEntry = z.infer<
+  typeof unresolvedSensitiveAccessAuditEntryContract
+>;
 export type PlatformAccessAuditReasonCode = z.infer<
   typeof platformAccessAuditReasonCodeContract
 >;
