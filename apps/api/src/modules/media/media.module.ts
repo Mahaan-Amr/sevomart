@@ -6,7 +6,10 @@ import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media
 import {
   CONVERSATION_MEDIA_ACCESS,
   CONVERSATION_ATTACHMENT_READER,
+  DISPUTE_EVIDENCE_READER,
+  DISPUTE_MEDIA_ACCESS,
   type ConversationMediaAccess,
+  type DisputeMediaAccess,
   MEDIA_STORAGE,
   PUBLISHED_MEDIA_ACCESS,
   SELLER_UPLOAD_RATE_LIMITER,
@@ -14,6 +17,7 @@ import {
   type PublishedMediaAccess,
 } from "./public";
 import { MediaAttachmentReader } from "./media-attachment-reader";
+import { MediaDisputeEvidenceReader } from "./media-dispute-evidence-reader";
 import { MediaController } from "./media.controller";
 import { SellerUploadRateLimiter } from "./seller-upload-rate-limiter";
 
@@ -24,6 +28,7 @@ export class MediaModule {
     storage?: MediaStorage,
     publishedMediaAccess: PublishedMediaAccess = async () => false,
     conversationMediaAccess: ConversationMediaAccess = async () => false,
+    disputeMediaAccess: DisputeMediaAccess = async () => false,
   ): DynamicModule {
     const configuredStorage =
       storage ??
@@ -36,9 +41,14 @@ export class MediaModule {
       controllers: [MediaController],
       providers: [
         { provide: CONVERSATION_MEDIA_ACCESS, useValue: conversationMediaAccess },
+        { provide: DISPUTE_MEDIA_ACCESS, useValue: disputeMediaAccess },
         {
           provide: CONVERSATION_ATTACHMENT_READER,
           useValue: new MediaAttachmentReader(configuredStorage),
+        },
+        {
+          provide: DISPUTE_EVIDENCE_READER,
+          useValue: new MediaDisputeEvidenceReader(configuredStorage),
         },
         { provide: MEDIA_STORAGE, useValue: configuredStorage },
         { provide: PUBLISHED_MEDIA_ACCESS, useValue: publishedMediaAccess },
@@ -47,7 +57,7 @@ export class MediaModule {
           useValue: new SellerUploadRateLimiter(),
         },
       ],
-      exports: [MEDIA_STORAGE, CONVERSATION_ATTACHMENT_READER],
+      exports: [MEDIA_STORAGE, CONVERSATION_ATTACHMENT_READER, DISPUTE_EVIDENCE_READER],
     };
   }
 }

@@ -7,6 +7,7 @@ import { StoreService } from "./application/store.service";
 import { PostgresStoreRepository } from "./infrastructure/postgres-store.repository";
 import {
   STORE_AUTHORITATIVE_READ,
+  type PublicActiveProductCountReader,
   type PublicStoreFollowingReader,
   type SettlementDestinationVerifier,
   type StoreRepository,
@@ -16,6 +17,7 @@ import {
   SETTLEMENT_DESTINATION_VERIFIER,
   STORE_REPOSITORY,
   STORE_SERVICE,
+  PUBLIC_ACTIVE_PRODUCT_COUNT_READER,
   PUBLIC_STORE_FOLLOWING_READER,
 } from "./store.tokens";
 import { TestSettlementDestinationVerifier } from "./testing/test-settlement-verifier";
@@ -24,6 +26,7 @@ export type StoreModuleOptions = {
   repository?: StoreRepository;
   settlementVerifier?: SettlementDestinationVerifier;
   publicStoreFollowingReader?: PublicStoreFollowingReader;
+  publicActiveProductCountReader?: PublicActiveProductCountReader;
 };
 
 @Module({})
@@ -72,6 +75,16 @@ export class StoreModule {
             ),
         },
         { provide: STORE_AUTHORITATIVE_READ, useExisting: STORE_SERVICE },
+        {
+          provide: PUBLIC_ACTIVE_PRODUCT_COUNT_READER,
+          useValue:
+            options.publicActiveProductCountReader ??
+            ({
+              async readActiveProductCount() {
+                return 0;
+              },
+            } satisfies PublicActiveProductCountReader),
+        },
         {
           provide: PUBLIC_STORE_FOLLOWING_READER,
           useValue:

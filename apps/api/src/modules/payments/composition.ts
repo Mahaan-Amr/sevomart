@@ -2,13 +2,28 @@ import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 
 import type { InventoryAuthoring } from "../inventory/public";
+import type { FulfillmentRepository } from "../fulfillment/public";
 import type { OrderPaymentWorkflow } from "../orders/public";
-import type { PlatformAgentSessionAuthorizer } from "../identity-access/public";
+import {
+  IDENTITY_SESSION_READER,
+  PLATFORM_SENSITIVE_ACCESS,
+  SELLER_ACCESS_READ,
+  type IdentitySessionReader,
+  type OpaquePlatformAccessTransactionContext,
+  type PlatformAgentSessionAuthorizer,
+  type PlatformSensitiveAccess,
+  type SellerAccessRead,
+} from "../identity-access/public";
+import type { Sql } from "postgres";
+import { identityIdContract, storeIdContract } from "@sevo/contracts/platform/v1";
+import { DirectRefundApplicationService } from "./application/direct-refund.service";
 import { DirectPaymentApplicationService } from "./application/direct-payment.service";
 import { PaymentRecoveryRunner } from "./application/payment-recovery.runner";
 import { PostgresDirectPaymentRepository } from "./infrastructure/postgres-direct-payment.repository";
+import { PostgresDirectRefundRepository } from "./infrastructure/postgres-direct-refund.repository";
 import {
   DevPaymentController,
+  DirectRefundController,
   InternalPaymentRecoveryController,
   PaymentController,
   PlatformPaymentReviewController,
@@ -18,6 +33,7 @@ import {
   DIRECT_PAYMENT_PROVIDER,
   DIRECT_PAYMENT_REPOSITORY,
   DIRECT_PAYMENT_SERVICE,
+  DIRECT_REFUND_SERVICE,
   PAYMENT_REVIEW_AUTHORIZER,
 } from "./payments.tokens";
 import type {
@@ -36,6 +52,11 @@ export class PaymentsModule {
       orders: OrderPaymentWorkflow;
       provider?: DirectPaymentProvider;
       platformAgentSessions: PlatformAgentSessionAuthorizer;
+      createPlatformAccessTransactionContext: (
+        transaction: Sql,
+      ) => OpaquePlatformAccessTransactionContext;
+      fulfillment: FulfillmentRepository;
+      resolveSellerStore: (identityId: string) => Promise<string | undefined>;
     },
   ): DynamicModule {
     const devProvider =
@@ -44,10 +65,17 @@ export class PaymentsModule {
         : undefined;
     const provider = options.provider ?? devProvider;
     if (!provider) throw new Error("The selected payment provider is not configured");
+    const refundRepository = new PostgresDirectRefundRepository(
+      environment.DATABASE_URL,
+      options.inventory,
+      options.orders,
+      options.fulfillment,
+    );
     return {
       module: PaymentsModule,
       controllers: [
         PaymentController,
+        DirectRefundController,
         ProviderCallbackController,
         InternalPaymentRecoveryController,
         PlatformPaymentReviewController,
@@ -62,12 +90,43 @@ export class PaymentsModule {
         { provide: DIRECT_PAYMENT_PROVIDER, useValue: provider },
         {
           provide: DIRECT_PAYMENT_REPOSITORY,
-          useValue: new PostgresDirectPaymentRepository(
-            environment.DATABASE_URL,
-            options.inventory,
-            options.orders,
-            provider.providerKey,
-          ),
+          inject: [PLATFORM_SENSITIVE_ACCESS],
+          useFactory: (sensitiveAccess: PlatformSensitiveAccess) =>
+            new PostgresDirectPaymentRepository(
+              environment.DATABASE_URL,
+              options.inventory,
+              options.orders,
+              provider.providerKey,
+              sensitiveAccess,
+              options.createPlatformAccessTransactionContext,
+            ),
+        },
+        {
+          provide: DIRECT_REFUND_SERVICE,
+          inject: [IDENTITY_SESSION_READER, SELLER_ACCESS_READ],
+          useFactory: (
+            sessions: IdentitySessionReader,
+            sellerAccess: SellerAccessRead,
+          ) =>
+            new DirectRefundApplicationService(
+              refundRepository,
+              {
+                async readActiveIdentitySession(token) {
+                  const session = await sessions.readActiveIdentitySession(token);
+                  return session
+                    ? { identityId: identityIdContract.parse(session.actor.identityId) }
+                    : undefined;
+                },
+              },
+              sellerAccess,
+              {
+                async resolveStore(identityId) {
+                  const storeId = await options.resolveSellerStore(identityId);
+                  return storeId ? storeIdContract.parse(storeId) : undefined;
+                },
+              },
+              provider,
+            ),
         },
         {
           provide: DIRECT_PAYMENT_SERVICE,
@@ -91,3 +150,4 @@ export class PaymentsModule {
 }
 
 export { PostgresDirectPaymentRepository } from "./infrastructure/postgres-direct-payment.repository";
+export { PostgresDirectRefundRepository } from "./infrastructure/postgres-direct-refund.repository";

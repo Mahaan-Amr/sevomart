@@ -73,3 +73,54 @@ model PaymentAttemptAudit {
   @@index([attemptId, occurredAt])
   @@map("payment_attempt_audits")
 }
+
+model PaymentDirectRefund {
+  orderId           String   @id @map("order_id") @db.Uuid
+  storeId           String   @map("store_id") @db.Uuid
+  paymentAttemptId  String   @map("payment_attempt_id") @db.Uuid
+  amount            BigInt
+  provider          String   @db.VarChar(64)
+  status            String   @db.VarChar(24)
+  version           Int
+  reason             String   @db.VarChar(500)
+  evidenceReference String?  @map("evidence_reference") @db.VarChar(200)
+  requestedBy       String   @map("requested_by") @db.Uuid
+  requestedAt       DateTime @map("requested_at") @db.Timestamptz(3)
+  updatedAt         DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@index([storeId, status, updatedAt])
+  @@map("payment_direct_refunds")
+}
+
+model PaymentDirectRefundAudit {
+  id                String   @id @db.Uuid
+  orderId           String   @map("order_id") @db.Uuid
+  version           Int
+  fromStatus        String?  @map("from_status") @db.VarChar(24)
+  toStatus          String   @map("to_status") @db.VarChar(24)
+  evidenceReference String?  @map("evidence_reference") @db.VarChar(200)
+  actorKind         String   @map("actor_kind") @db.VarChar(24)
+  actorReference    String   @map("actor_reference") @db.VarChar(200)
+  provider          String?  @db.VarChar(64)
+  providerEventId   String?  @map("provider_event_id") @db.VarChar(200)
+  requestHash       String?  @map("request_hash") @db.Char(64)
+  correlationId     String   @map("correlation_id") @db.Uuid
+  occurredAt        DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@unique([orderId, version])
+  @@index([orderId, occurredAt])
+  @@map("payment_direct_refund_audits")
+}
+
+model PaymentDirectRefundIdempotencyRecord {
+  operation       String   @db.VarChar(32)
+  orderId         String   @map("order_id") @db.Uuid
+  scope           String   @db.VarChar(200)
+  key             String   @db.VarChar(200)
+  requestHash     String   @map("request_hash") @db.Char(64)
+  responseJson    Json     @map("response_json") @db.JsonB
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, orderId, scope, key])
+  @@map("payment_direct_refund_idempotency_records")
+}

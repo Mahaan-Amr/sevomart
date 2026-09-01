@@ -26,12 +26,97 @@ export const paymentsV1Operations = {
     method: "post",
     path: "/internal/v1/payment-providers/{provider}/callbacks",
   },
-  listPlatformPaymentReviews: {
-    operationId: "listPlatformPaymentReviews",
+  requestDirectRefund: {
+    operationId: "requestDirectRefund",
+    method: "post",
+    path: "/v1/seller/orders/{orderId}/direct-refund",
+  },
+  readDirectRefund: {
+    operationId: "readDirectRefund",
     method: "get",
-    path: "/v1/platform/payment-reviews",
+    path: "/v1/seller/orders/{orderId}/direct-refund",
+  },
+  recordDirectRefundResult: {
+    operationId: "recordDirectRefundResult",
+    method: "post",
+    path: "/internal/v1/payment-providers/{provider}/direct-refunds",
   },
 } as const;
+
+export const requestDirectRefundInputContract = z
+  .object({ reason: z.string().trim().min(8).max(500) })
+  .strict();
+export const recordDirectRefundResultInputContract = z
+  .object({
+    paymentAttemptId: paymentAttemptIdContract,
+    amount: moneyV1Contract,
+    result: z.enum(["CONFIRMED", "FAILED"]),
+    evidenceReference: z.string().trim().min(3).max(200),
+  })
+  .strict();
+export const providerRefundCallbackInputContract = recordDirectRefundResultInputContract
+  .extend({
+    orderId: orderIdContract,
+    providerEventId: z.string().trim().min(1).max(200),
+    signature: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export const directRefundStatusContract = z.enum(["PENDING", "FAILED", "CONFIRMED"]);
+export const directRefundContract = z
+  .object({
+    orderId: orderIdContract,
+    paymentAttemptId: paymentAttemptIdContract,
+    amount: moneyV1Contract,
+    status: directRefundStatusContract,
+    orderStatus: z.enum(["CANCELLATION_PENDING_REFUND", "CANCELLED"]),
+    nextAction: z.enum(["WAIT_FOR_VERIFICATION", "RETRY_REFUND", "NONE"]),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+export const directRefundErrorContract = z
+  .object({
+    code: z.enum([
+      "FORBIDDEN",
+      "REFUND_NOT_FOUND",
+      "CANCELLATION_NOT_ALLOWED",
+      "INVALID_REFUND_TRANSITION",
+      "REFUND_AMOUNT_MISMATCH",
+      "REFUND_EVIDENCE_REQUIRED",
+      "DUPLICATE_RESULT",
+      "IDEMPOTENCY_CONFLICT",
+      "IDEMPOTENCY_IN_PROGRESS",
+      "PRECONDITION_REQUIRED",
+      "VALIDATION_ERROR",
+    ]),
+    message: z.string().min(1),
+    correlationId: z.string().min(1),
+  })
+  .strict();
+
+export const directRefundPendingV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("DirectRefundPending.v1"),
+  causationId: z.uuid(),
+  actor: eventActorV1Contract,
+  payload: z
+    .object({
+      status: z.literal("PENDING"),
+      paymentAttemptId: paymentAttemptIdContract,
+      amount: moneyV1Contract,
+    })
+    .strict(),
+});
+export const directRefundConfirmedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("DirectRefundConfirmed.v1"),
+  causationId: z.uuid(),
+  actor: eventActorV1Contract,
+  payload: z.object({ status: z.literal("CONFIRMED") }).strict(),
+});
+export const directRefundFailedV1Contract = eventEnvelopeV1Contract.extend({
+  eventType: z.literal("DirectRefundFailed.v1"),
+  causationId: z.uuid(),
+  actor: eventActorV1Contract,
+  payload: z.object({ status: z.literal("FAILED") }).strict(),
+});
 
 export const createDirectPaymentAttemptInputContract = z.object({}).strict();
 export const paymentIdempotencyKeyContract = z.string().min(1).max(200);
@@ -210,6 +295,15 @@ export const paymentReviewQueueContract = z
   .strict();
 
 export const paymentsV1Schemas = {
+  RequestDirectRefundInput: requestDirectRefundInputContract,
+  RecordDirectRefundResultInput: recordDirectRefundResultInputContract,
+  ProviderRefundCallbackInput: providerRefundCallbackInputContract,
+  DirectRefund: directRefundContract,
+  DirectRefundStatus: directRefundStatusContract,
+  DirectRefundError: directRefundErrorContract,
+  DirectRefundPendingV1: directRefundPendingV1Contract,
+  DirectRefundConfirmedV1: directRefundConfirmedV1Contract,
+  DirectRefundFailedV1: directRefundFailedV1Contract,
   OrderId: orderIdContract,
   PaymentAttemptId: paymentAttemptIdContract,
   IdempotencyKey: paymentIdempotencyKeyContract,
@@ -236,6 +330,38 @@ export function createPaymentsV1JsonSchemas() {
 }
 
 export const paymentsV1Examples = {
+  RequestDirectRefundInput: {
+    reason: "کالا پیش از ارسال قابل تأمین نیست.",
+  },
+  RecordDirectRefundResultInput: {
+    paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+    amount: { amount: 12_500_000, currency: "IRR" },
+    result: "CONFIRMED",
+    evidenceReference: "provider-result-135-2",
+  },
+  ProviderRefundCallbackInput: {
+    paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+    orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+    amount: { amount: 12_500_000, currency: "IRR" },
+    result: "CONFIRMED",
+    evidenceReference: "provider-result-135-2",
+    providerEventId: "provider-refund-event-135-2",
+    signature: "a".repeat(64),
+  },
+  DirectRefund: {
+    orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+    paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+    amount: { amount: 12_500_000, currency: "IRR" },
+    status: "PENDING",
+    orderStatus: "CANCELLATION_PENDING_REFUND",
+    nextAction: "WAIT_FOR_VERIFICATION",
+    updatedAt: "2026-08-31T08:00:00.000Z",
+  },
+  DirectRefundError: {
+    code: "CANCELLATION_NOT_ALLOWED",
+    message: "پس از ارسال، لغو و بازپرداخت از این مسیر ممکن نیست.",
+    correlationId: "01J5H8CZHJ2QX0M5MEQ7M6H1P4",
+  },
   CreateDirectPaymentAttemptInput: {},
   DirectPaymentAttempt: {
     attemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
@@ -267,6 +393,15 @@ export const paymentsV1Examples = {
 } as const;
 
 export type DirectPaymentAttempt = z.infer<typeof directPaymentAttemptContract>;
+export type DirectRefund = z.infer<typeof directRefundContract>;
+export type DirectRefundStatus = z.infer<typeof directRefundStatusContract>;
+export type RequestDirectRefundInput = z.infer<typeof requestDirectRefundInputContract>;
+export type RecordDirectRefundResultInput = z.infer<
+  typeof recordDirectRefundResultInputContract
+>;
+export type ProviderRefundCallbackInput = z.infer<
+  typeof providerRefundCallbackInputContract
+>;
 export type DirectPaymentAttemptStatus = z.infer<
   typeof directPaymentAttemptStatusContract
 >;

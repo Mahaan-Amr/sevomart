@@ -114,7 +114,7 @@ export class PostgresMinioMediaStorage implements MediaStorage {
         and v.name = coalesce(
           ${requestedVariant ?? null},
           case
-            when a.purpose = 'CONVERSATION_ATTACHMENT' then 'attachment-preview'
+            when a.purpose in ('CONVERSATION_ATTACHMENT', 'DISPUTE_EVIDENCE') then 'attachment-preview'
             when a.purpose = 'STORE_LOGO' then 'logo-large'
             when a.purpose = 'STORE_COVER' then 'cover-desktop'
             else 'product-detail'
@@ -186,7 +186,7 @@ export class PostgresMinioMediaStorage implements MediaStorage {
     const result = await this.#sql`
       update media_assets set visibility = ${visibility}
       where id = ${key} and owner_seller_id = ${ownerSellerId}
-        and (purpose <> 'CONVERSATION_ATTACHMENT' or ${visibility} = 'PRIVATE')
+        and (purpose not in ('CONVERSATION_ATTACHMENT', 'DISPUTE_EVIDENCE') or ${visibility} = 'PRIVATE')
       returning id
     `;
     if (!result.length) throw new Error("Media is not owned by the publishing seller");

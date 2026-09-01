@@ -18,7 +18,10 @@ import type {
   SellerApplicationView,
   WithdrawSellerApplication,
   PlatformAccessGrant,
+  PlatformAccessAuditEntry,
+  PlatformAccessRejection,
   PlatformAccessScope,
+  SensitiveAccessAuthorizationReceipt,
   Responsibility,
 } from "@sevo/contracts/identity-access/v1";
 import type { IdentityId } from "@sevo/contracts/platform/v1";
@@ -134,12 +137,14 @@ export class PlatformAccessError extends Error {
       | "SECOND_MANAGER_REQUIRED"
       | "RESPONSIBILITY_REQUIRED"
       | "SENSITIVE_SCOPE_REQUIRED"
+      | "EMERGENCY_SCOPE_REQUIRED"
       | "STRONG_AUTHENTICATION_REQUIRED"
       | "STRONG_AUTHENTICATION_STALE"
       | "ACCESS_GRANT_NOT_FOUND"
       | "ACCESS_GRANT_REVISION_CONFLICT"
       | "INVALID_ACCESS_TRANSITION"
       | "ACCESS_ALREADY_REVOKED"
+      | "EMERGENCY_REVIEW_OVERDUE"
       | "IDEMPOTENCY_CONFLICT",
   ) {
     super(code);
@@ -193,10 +198,21 @@ export type PlatformSensitiveAction = {
   correlationId: string;
 };
 
+export type PlatformEmergencyAction = Omit<
+  PlatformSensitiveAction,
+  "responsibility"
+> & {
+  incidentId: string;
+};
+
 export interface PlatformSensitiveAccess {
   authorizeSensitiveAction(
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformSensitiveAction,
+  ): Promise<SensitiveAccessAuthorizationReceipt>;
+  authorizeEmergencyAction(
+    transaction: OpaquePlatformAccessTransactionContext,
+    input: PlatformEmergencyAction,
   ): Promise<void>;
 }
 
@@ -209,6 +225,10 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
       reason: string;
     },
   ): Promise<PlatformAccessGrant>;
+  listResponsibilityAccess(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: PlatformAccessListQuery,
+  ): Promise<PlatformAccessGrantPage>;
   approveResponsibility(
     context: PlatformAccessCommandContext,
     grantId: string,
@@ -219,6 +239,11 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
     grantId: string,
     input: { expectedRevision: number; reason: string },
   ): Promise<PlatformAccessGrant>;
+  rejectResponsibility(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection>;
   requestSensitiveAccess(
     context: PlatformAccessCommandContext,
     input: {
@@ -231,6 +256,10 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
       ttlMinutes: number;
     },
   ): Promise<PlatformAccessGrant>;
+  listSensitiveAccess(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: PlatformAccessListQuery,
+  ): Promise<PlatformAccessGrantPage>;
   approveSensitiveAccess(
     context: PlatformAccessCommandContext,
     grantId: string,
@@ -241,7 +270,88 @@ export interface PlatformAccessCore extends PlatformSensitiveAccess {
     grantId: string,
     input: { expectedRevision: number; reason: string },
   ): Promise<PlatformAccessGrant>;
+  rejectSensitiveAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection>;
+  requestEmergencyAccess(
+    context: PlatformAccessCommandContext,
+    input: {
+      incidentId: string;
+      reason: string;
+      scope: PlatformAccessScope;
+      ttlMinutes: number;
+    },
+  ): Promise<PlatformAccessGrant>;
+  listEmergencyAccess(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: {
+      subjectIdentityId?: string;
+      status?: "PENDING_APPROVAL" | "ACTIVE" | "EXPIRED" | "REVOKED" | "CLOSED";
+      cursor?: string;
+      limit: number;
+    },
+  ): Promise<{ items: PlatformAccessGrant[]; nextCursor: string | null }>;
+  approveEmergencyAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    expectedRevision: number,
+  ): Promise<PlatformAccessGrant>;
+  activateEmergencyAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    expectedRevision: number,
+  ): Promise<PlatformAccessGrant>;
+  revokeEmergencyAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessGrant>;
+  closeEmergencyAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessGrant>;
+  rejectEmergencyAccess(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: { expectedRevision: number; reason: string },
+  ): Promise<PlatformAccessRejection>;
+  completeEmergencyAccessReview(
+    context: PlatformAccessCommandContext,
+    grantId: string,
+    input: {
+      expectedRevision: number;
+      findingCode:
+        | "CONTROLS_FOLLOWED"
+        | "SCOPE_EXCEEDED"
+        | "AUDIT_INCOMPLETE"
+        | "FOLLOW_UP_REQUIRED";
+    },
+  ): Promise<PlatformAccessGrant>;
+  listAudit(
+    context: Omit<PlatformAccessCommandContext, "idempotencyKey">,
+    query: {
+      grantId?: string;
+      actorIdentityId?: string;
+      cursor?: string;
+      limit: number;
+    },
+  ): Promise<{ items: PlatformAccessAuditEntry[]; nextCursor: string | null }>;
 }
+
+type PlatformAccessListQuery = {
+  subjectIdentityId?: string;
+  status?: "PENDING_APPROVAL" | "ACTIVE" | "EXPIRED" | "REVOKED" | "CLOSED";
+  cursor?: string;
+  limit: number;
+};
+
+type PlatformAccessGrantPage = {
+  items: PlatformAccessGrant[];
+  nextCursor: string | null;
+};
 
 export type SellerApplicationReviewContext = SellerApplicationCommandContext & {
   audience: "PLATFORM_AGENT";

@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import {
+  Body,
   Controller,
   Get,
   Headers,
@@ -17,8 +18,14 @@ import { ApiExcludeController } from "@nestjs/swagger";
 import {
   providerCallbackResultContract,
   paymentIdempotencyKeyContract,
-  paymentReviewQueueContract,
 } from "@sevo/contracts/payments/v1";
+import {
+  paymentReconciliationRequestV2Contract,
+  paymentReconciliationRequestInputV2Contract,
+  paymentReviewDetailV2Contract,
+  paymentReviewQueueV2Contract,
+  paymentReviewRevealInputV2Contract,
+} from "@sevo/contracts/payments/v2";
 import type { RuntimeEnvironment } from "@sevo/config";
 import {
   identityIdContract,
@@ -27,21 +34,33 @@ import {
 } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-import { readPlatformSessionToken, requireIdentity } from "../../http/identity-session";
+import { eventCorrelationId } from "../../event-correlation-id";
+import {
+  readIdentitySessionToken,
+  readPlatformSessionToken,
+  requireIdentity,
+} from "../../http/identity-session";
 import {
   IDENTITY_SESSION_READER,
   type IdentitySessionReader,
   PlatformAgentSessionUnauthorizedError,
   PlatformPermissionRequiredError,
+  PlatformAccessError,
   type PlatformAgentSessionAuthorizer,
 } from "../identity-access/public";
 import { DevDirectPaymentProvider } from "./testing/dev-direct-payment-provider";
 import {
   DIRECT_PAYMENT_PROVIDER,
   DIRECT_PAYMENT_SERVICE,
+  DIRECT_REFUND_SERVICE,
   PAYMENT_REVIEW_AUTHORIZER,
 } from "./payments.tokens";
-import type { DirectPaymentProvider, DirectPaymentService } from "./public";
+import type {
+  DirectPaymentProvider,
+  DirectPaymentService,
+  DirectRefundRequest,
+  DirectRefundService,
+} from "./public";
 import { PaymentRecoveryRunner } from "./application/payment-recovery.runner";
 import {
   DirectPaymentAmountMismatchError,
@@ -50,7 +69,98 @@ import {
   DirectPaymentIdempotencyConflictError,
   DirectPaymentOrderNotPayableError,
   InvalidProviderCallbackError,
+  DirectRefundFault,
+  PaymentReconciliationNotAvailableError,
+  PaymentReviewNotFoundError,
 } from "./public";
+
+@ApiExcludeController()
+@Controller("v1/seller/orders")
+export class DirectRefundController {
+  constructor(
+    @Inject(DIRECT_REFUND_SERVICE) private readonly refunds: DirectRefundService,
+  ) {}
+
+  @Post(":orderId/direct-refund")
+  @HttpCode(HttpStatus.OK)
+  request(
+    @Param("orderId") orderId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") key: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    return this.respond(request, () =>
+      this.refunds.request(this.context(request), orderId, body, key),
+    );
+  }
+
+  @Get(":orderId/direct-refund")
+  read(
+    @Param("orderId") orderId: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    return this.respond(request, () =>
+      this.refunds.read(this.context(request), orderId),
+    );
+  }
+
+  private context(request: FastifyRequest): DirectRefundRequest {
+    request.id = eventCorrelationId(request.id);
+    return {
+      sessionToken: readIdentitySessionToken(request),
+      correlationId: request.id,
+    };
+  }
+
+  private async respond(request: FastifyRequest, operation: () => Promise<unknown>) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof DirectRefundFault)) throw error;
+      const status =
+        error.code === "UNAUTHENTICATED"
+          ? HttpStatus.UNAUTHORIZED
+          : error.code === "FORBIDDEN"
+            ? HttpStatus.FORBIDDEN
+            : error.code === "REFUND_NOT_FOUND"
+              ? HttpStatus.NOT_FOUND
+              : error.code === "IDEMPOTENCY_CONFLICT" ||
+                  error.code === "DUPLICATE_RESULT" ||
+                  error.code === "IDEMPOTENCY_IN_PROGRESS"
+                ? HttpStatus.CONFLICT
+                : error.code === "PRECONDITION_REQUIRED"
+                  ? HttpStatus.PRECONDITION_REQUIRED
+                  : HttpStatus.UNPROCESSABLE_ENTITY;
+      const messages: Record<string, string> = {
+        UNAUTHENTICATED: "برای ادامه دوباره وارد شوید.",
+        FORBIDDEN: "اجازه ثبت بازپرداخت این سفارش را ندارید.",
+        REFUND_NOT_FOUND: "بازپرداخت این سفارش پیدا نشد.",
+        CANCELLATION_NOT_ALLOWED: "پس از ارسال، لغو و بازپرداخت از این مسیر ممکن نیست.",
+        INVALID_REFUND_TRANSITION: "نتیجه بازپرداخت با وضعیت فعلی سازگار نیست.",
+        REFUND_AMOUNT_MISMATCH: "مبلغ یا شناسه پرداخت بازپرداخت سازگار نیست.",
+        REFUND_EVIDENCE_REQUIRED: "نتیجه معتبر درگاه یا تأیید خریدار لازم است.",
+        DUPLICATE_RESULT: "این نتیجه بازپرداخت قبلاً با اطلاعات دیگری ثبت شده است.",
+        IDEMPOTENCY_CONFLICT:
+          "این شناسه درخواست قبلاً با اطلاعات دیگری استفاده شده است.",
+        IDEMPOTENCY_IN_PROGRESS: "درخواست مشابه هنوز در حال انجام است.",
+        PRECONDITION_REQUIRED: "شناسه یکتای درخواست را ارسال کنید.",
+        VALIDATION_ERROR: "دلیل یا شناسه نتیجه بازپرداخت کامل و معتبر نیست.",
+      };
+      throw new HttpException(
+        {
+          code: error.code,
+          message: messages[error.code],
+          correlationId: request.id,
+        },
+        status,
+      );
+    }
+  }
+}
 
 function requireIdempotencyKey(correlationId: string, value: string | undefined) {
   const key = paymentIdempotencyKeyContract.safeParse(value);
@@ -154,7 +264,7 @@ export class PaymentController {
 }
 
 @ApiExcludeController()
-@Controller("v1/platform/payment-reviews")
+@Controller("v2/platform/payment-reviews")
 export class PlatformPaymentReviewController {
   constructor(
     @Inject(DIRECT_PAYMENT_SERVICE) private readonly payments: DirectPaymentService,
@@ -168,8 +278,8 @@ export class PlatformPaymentReviewController {
       await this.sessions.authorizePaymentReview(
         readPlatformSessionToken(request) ?? "",
       );
-      return paymentReviewQueueContract.parse({
-        items: await this.payments.listReviewRequired(),
+      return paymentReviewQueueV2Contract.parse({
+        items: await this.payments.listReviewRequiredV2(),
       });
     } catch (error) {
       if (error instanceof PlatformAgentSessionUnauthorizedError) {
@@ -195,6 +305,138 @@ export class PlatformPaymentReviewController {
       throw error;
     }
   }
+
+  @Post(":reviewId/reveal")
+  @HttpCode(HttpStatus.OK)
+  async reveal(
+    @Param("reviewId") rawReviewId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
+    const input = paymentReviewRevealInputV2Contract.safeParse(body);
+    if (!reviewId.success || !input.success) {
+      throw paymentReviewHttpError(
+        "VALIDATION_ERROR",
+        "شناسه پرونده، اجازه دسترسی و دلیل بررسی را کامل کنید.",
+        request.id,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const actor = await this.authorize(request);
+    try {
+      return paymentReviewDetailV2Contract.parse(
+        await this.payments.revealReview({
+          reviewId: reviewId.data,
+          actorIdentityId: actor.identityId,
+          grantId: input.data.grantId,
+          reason: input.data.reason,
+          correlationId: request.id,
+        }),
+      );
+    } catch (error) {
+      this.handleReviewError(error, request.id);
+    }
+  }
+
+  @Post(":reviewId/reconciliation")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async reconcile(
+    @Param("reviewId") rawReviewId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
+    const input = paymentReconciliationRequestInputV2Contract.safeParse(body);
+    if (!reviewId.success || !input.success) {
+      throw paymentReviewHttpError(
+        "VALIDATION_ERROR",
+        "شناسه پرونده و دلیل تطبیق دوباره را کامل کنید.",
+        request.id,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const actor = await this.authorize(request);
+    try {
+      return paymentReconciliationRequestV2Contract.parse(
+        await this.payments.requestReconciliation({
+          reviewId: reviewId.data,
+          actorIdentityId: actor.identityId,
+          grantId: input.data.grantId,
+          reason: input.data.reason,
+          correlationId: request.id,
+        }),
+      );
+    } catch (error) {
+      this.handleReviewError(error, request.id);
+    }
+  }
+
+  private async authorize(request: FastifyRequest) {
+    try {
+      return await this.sessions.authorizePaymentReview(
+        readPlatformSessionToken(request) ?? "",
+      );
+    } catch (error) {
+      this.handleReviewError(error, request.id);
+    }
+  }
+
+  private handleReviewError(error: unknown, correlationId: string): never {
+    if (error instanceof PlatformAgentSessionUnauthorizedError) {
+      throw paymentReviewHttpError(
+        "PLATFORM_PERMISSION_REQUIRED",
+        "برای ادامه با نشست عامل پلتفرم وارد شوید.",
+        correlationId,
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    if (error instanceof PlatformPermissionRequiredError) {
+      throw paymentReviewHttpError(
+        "PLATFORM_PERMISSION_REQUIRED",
+        "مجوز بررسی پرداخت برای این نشست فعال نیست.",
+        correlationId,
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (error instanceof PlatformAccessError) {
+      const responsibilityMissing = error.code === "RESPONSIBILITY_REQUIRED";
+      throw paymentReviewHttpError(
+        responsibilityMissing ? "RESPONSIBILITY_REQUIRED" : "SENSITIVE_SCOPE_REQUIRED",
+        responsibilityMissing
+          ? "مسئولیت بررسی پرداخت لغو شده است."
+          : "اجازه زمان‌دار این پرونده فعال نیست یا با این پرونده سازگار نیست.",
+        correlationId,
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (error instanceof PaymentReviewNotFoundError) {
+      throw paymentReviewHttpError(
+        "REVIEW_NOT_FOUND",
+        "این پرونده دیگر در صف مجاز شما نیست.",
+        correlationId,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (error instanceof PaymentReconciliationNotAvailableError) {
+      throw paymentReviewHttpError(
+        "RECONCILIATION_NOT_AVAILABLE",
+        "این پرونده دیگر نتیجه مبهمی برای تطبیق دوباره ندارد.",
+        correlationId,
+        HttpStatus.CONFLICT,
+      );
+    }
+    throw error;
+  }
+}
+
+function paymentReviewHttpError(
+  code: string,
+  message: string,
+  correlationId: string,
+  status: HttpStatus,
+) {
+  return new HttpException({ code, message, correlationId }, status);
 }
 
 @ApiExcludeController()
@@ -223,9 +465,53 @@ export class InternalPaymentRecoveryController {
 export class ProviderCallbackController {
   constructor(
     @Inject(DIRECT_PAYMENT_SERVICE) private readonly payments: DirectPaymentService,
+    @Inject(DIRECT_REFUND_SERVICE) private readonly refunds: DirectRefundService,
     @Inject(DIRECT_PAYMENT_PROVIDER)
     private readonly provider: DirectPaymentProvider,
   ) {}
+
+  @Post(":provider/direct-refunds")
+  @HttpCode(HttpStatus.OK)
+  async refund(
+    @Param("provider") provider: string,
+    @Headers("idempotency-key") key: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    try {
+      return await this.refunds.applyProviderResult(
+        provider,
+        request.body,
+        key,
+        eventCorrelationId(request.id),
+      );
+    } catch (error) {
+      if (!(error instanceof DirectRefundFault)) throw error;
+      const status =
+        error.code === "REFUND_NOT_FOUND"
+          ? HttpStatus.NOT_FOUND
+          : error.code === "DUPLICATE_RESULT" ||
+              error.code === "IDEMPOTENCY_IN_PROGRESS"
+            ? HttpStatus.CONFLICT
+            : error.code === "PRECONDITION_REQUIRED"
+              ? HttpStatus.PRECONDITION_REQUIRED
+              : HttpStatus.UNPROCESSABLE_ENTITY;
+      const messages: Record<string, string> = {
+        REFUND_NOT_FOUND: "بازپرداخت این سفارش پیدا نشد.",
+        REFUND_AMOUNT_MISMATCH: "مبلغ یا شناسه پرداخت بازپرداخت سازگار نیست.",
+        REFUND_EVIDENCE_REQUIRED: "نتیجه بازپرداخت امضای معتبر ندارد.",
+        DUPLICATE_RESULT: "این نتیجه بازپرداخت قبلاً ثبت شده است.",
+        IDEMPOTENCY_IN_PROGRESS: "نتیجه مشابه هنوز در حال ثبت است.",
+        PRECONDITION_REQUIRED: "شناسه یکتای نتیجه لازم است.",
+        INVALID_REFUND_TRANSITION: "نتیجه بازپرداخت با وضعیت فعلی سازگار نیست.",
+      };
+      throw new HttpException(
+        { code: error.code, message: messages[error.code], correlationId: request.id },
+        status,
+      );
+    }
+  }
 
   @Post(":provider/callbacks")
   @HttpCode(HttpStatus.OK)

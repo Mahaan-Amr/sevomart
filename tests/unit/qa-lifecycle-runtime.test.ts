@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   assertQaProjectIsAbsent,
   createQaLifecycleRequest,
+  publishQaTargetReport,
 } from "../../scripts/qa/runtime.mjs";
 
 const fingerprint = "8e2cd400-e2d7-4ff8-b390-cb265d3eaf9b";
@@ -63,6 +64,32 @@ describe("QA environment lifecycle", () => {
         safeEnvironment,
       ),
     ).toMatchObject({ action: "down", fingerprint });
+  });
+
+  it("keeps factory reports off stdout and uses stdout only for CLI mode", () => {
+    const report = { profile: "qa", runId: "issue-126" };
+    const writeReport = vi.fn();
+    const writeStdout = vi.fn();
+
+    publishQaTargetReport(report, {
+      environment: { SEVO_QA_REPORT_FD: "3" },
+      writeReport,
+      writeStdout,
+    });
+    expect(writeReport).toHaveBeenCalledExactlyOnceWith(
+      3,
+      `${JSON.stringify(report)}\n`,
+    );
+    expect(writeStdout).not.toHaveBeenCalled();
+
+    writeReport.mockClear();
+    publishQaTargetReport(report, {
+      environment: {},
+      writeReport,
+      writeStdout,
+    });
+    expect(writeReport).not.toHaveBeenCalled();
+    expect(writeStdout).toHaveBeenCalledExactlyOnceWith(`${JSON.stringify(report)}\n`);
   });
 
   it.each([

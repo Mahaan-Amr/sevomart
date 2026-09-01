@@ -19,6 +19,10 @@ export interface PublicStoreFollowingReader {
   }>;
 }
 
+export interface PublicActiveProductCountReader {
+  readActiveProductCount(storeId: StoreId): Promise<number>;
+}
+
 export type SettlementDestination = {
   kind: "TEST";
 };

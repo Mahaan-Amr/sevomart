@@ -38,6 +38,13 @@ const repository = new PostgresContentRepository(apiTestEnvironment.DATABASE_URL
 const actorId = identityIdContract.parse("10000000-0000-4000-8000-000000000091");
 const storeId = storeIdContract.parse("20000000-0000-4000-8000-000000000091");
 const productId = productIdContract.parse("30000000-0000-4000-8000-000000000091");
+const contentSellerMobile = "09120000139";
+const contentSellerEnvironment = {
+  ...apiTestEnvironment,
+  DEV_OTP_TEST_MOBILES: [
+    contentSellerMobile,
+  ] as typeof apiTestEnvironment.DEV_OTP_TEST_MOBILES,
+};
 
 beforeEach(async () => {
   await sql`delete from content_product_states where product_id = ${productId}`;
@@ -209,7 +216,7 @@ describe("content producer persistence", () => {
   });
 
   it("publishes sales content through the authenticated v2 HTTP surface", async () => {
-    const app = await createApiApp(apiTestEnvironment);
+    const app = await createApiApp(contentSellerEnvironment);
     const server = app.getHttpAdapter().getInstance();
     const storage = app.get<MediaStorage>(MEDIA_STORAGE);
     const fixtureStoreId = storeIdContract.parse(randomUUID());
@@ -227,7 +234,7 @@ describe("content producer persistence", () => {
       const requested = await server.inject({
         method: "POST",
         url: "/v1/auth/otp/requests",
-        payload: { mobile: "09123456789" },
+        payload: { mobile: contentSellerMobile },
       });
       expect(requested.statusCode).toBe(202);
       const verified = await server.inject({

@@ -90,6 +90,21 @@
   cursor: pointer;
 }
 
+.choice,
+.choiceActive {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.choice input,
+.choiceActive input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+}
+
 .choiceActive {
   background: var(--color-cover-start);
   color: var(--color-primary-dark);
@@ -101,6 +116,17 @@
 .variantList {
   display: grid;
   gap: 12px;
+}
+
+.saleSection {
+  display: grid;
+  gap: 12px;
+  padding-block-end: 16px;
+  border-block-end: 1px solid var(--color-border-primary-soft);
+}
+
+.saleSection h2 {
+  font-size: 15px;
 }
 
 .axis,
@@ -144,12 +170,29 @@
 }
 
 .previewVariants,
-.issues {
+.issues,
+.imageList {
   display: grid;
   gap: 8px;
   padding: 0;
   margin: 4px 0 0;
   list-style: none;
+}
+
+.imageList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-block: 8px;
+  border-block-start: 1px solid var(--color-border-primary-soft);
+  font-size: 12px;
+}
+
+.imageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .previewVariants li {
@@ -174,20 +217,24 @@
 .field textarea:focus-visible,
 .filePicker input:focus-visible,
 .primaryButton:focus-visible,
-.secondaryButton:focus-visible {
+.secondaryButton:focus-visible,
+.dangerButton:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 2px;
 }
 
 .choice:focus-visible,
 .choiceActive:focus-visible,
+.choice:focus-within,
+.choiceActive:focus-within,
 .textButton:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 2px;
 }
 
 .primaryButton,
-.secondaryButton {
+.secondaryButton,
+.dangerButton {
   display: inline-grid;
   min-height: 44px;
   padding: 8px 16px;
@@ -215,6 +262,45 @@
 .secondaryButton {
   background: var(--color-background);
   color: var(--color-primary-dark);
+}
+
+.dangerButton {
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.dangerButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.reviewActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.fieldError {
+  color: var(--color-primary-dark);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.8;
+}
+
+.liveChangeNotice {
+  padding: 8px 12px;
+  border-inline-start: 3px solid var(--color-primary);
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-size: 12px;
+}
+
+.field input[aria-invalid="true"],
+.filePicker input[aria-invalid="true"] {
+  border-color: var(--color-primary);
+  box-shadow: none;
 }
 
 .preview {
@@ -270,14 +356,16 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .primaryButton,
-  .secondaryButton {
+  .secondaryButton,
+  .dangerButton {
     transition:
       transform 180ms cubic-bezier(0.22, 0.8, 0.28, 1),
       box-shadow 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
   }
 
   .primaryButton:hover,
-  .secondaryButton:hover {
+  .secondaryButton:hover,
+  .dangerButton:hover {
     transform: translateY(-2px);
   }
 }

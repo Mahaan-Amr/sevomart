@@ -1,19 +1,19 @@
 import { readRuntimeEnvironment } from "@sevo/config";
 import { startTelemetry } from "@sevo/observability";
 
-import { rebuildDiscoveryPublicFeedProjection } from "./project-public-feed";
+import { rebuildDiscoveryProjections } from "./rebuild-discovery-projections";
 
 async function run() {
-  if (process.env.SEVO_REBUILD_CONFIRM !== "public-feed-v1") {
+  if (process.env.SEVO_REBUILD_CONFIRM !== "discovery-projections-v1") {
     throw new Error(
-      "Set SEVO_REBUILD_CONFIRM=public-feed-v1 to confirm the discovery rebuild",
+      "Set SEVO_REBUILD_CONFIRM=discovery-projections-v1 to confirm the discovery rebuild",
     );
   }
   const environment = readRuntimeEnvironment();
   const telemetry = startTelemetry("sevo-worker-discovery-rebuild");
   try {
-    const result = await rebuildDiscoveryPublicFeedProjection(environment.DATABASE_URL);
-    if (!result.health.healthy) process.exitCode = 2;
+    const result = await rebuildDiscoveryProjections(environment.DATABASE_URL);
+    if (!result.publicFeed.health.healthy) process.exitCode = 2;
   } finally {
     await telemetry.shutdown();
   }

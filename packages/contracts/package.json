@@ -41,6 +41,10 @@
       "types": "./dist/payments/v1/index.d.ts",
       "default": "./dist/payments/v1/index.js"
     },
+    "./payments/v2": {
+      "types": "./dist/payments/v2/index.d.ts",
+      "default": "./dist/payments/v2/index.js"
+    },
     "./fulfillment/v1": {
       "types": "./dist/fulfillment/v1/index.d.ts",
       "default": "./dist/fulfillment/v1/index.js"
@@ -52,6 +56,10 @@
     "./problem-follow-up/v1": {
       "types": "./dist/problem-follow-up/v1/index.d.ts",
       "default": "./dist/problem-follow-up/v1/index.js"
+    },
+    "./problem-follow-up/v2": {
+      "types": "./dist/problem-follow-up/v2/index.d.ts",
+      "default": "./dist/problem-follow-up/v2/index.js"
     },
     "./content/v1": {
       "types": "./dist/content/v1/index.d.ts",

@@ -143,9 +143,64 @@ change is additive for the published v1 audit page and needs no compatibility wi
 Docker and native startup continue to apply the same `prisma migrate deploy` history;
 their Issue 127 follow-up verification is recorded in the delivery note.
 
+Issue 136 additively creates the orders-owned
+`order_fulfillment_status_projections` and `order_sensitive_access_audit` tables after
+`20260830130000__identity-access__emergency-access-lifecycle`. It records only the
+seller actor, store/order scope, a closed reason code, a required SHA-256 reason
+fingerprint, correlation and time; delivery details and free-text reasons are never
+copied into audit, logs or events. The table is append-only and uses scalar references
+at module boundaries. The projection consumes only versioned fulfillment events and
+contains order ID, status, version, accepted event ID and time. No compatibility window
+is needed; deployed corrections use a forward migration. Docker and native startup
+apply the same migration history. On 2026-08-31, native startup applied all 55
+migrations to an isolated database and API, Web and worker readiness checks returned
+healthy. The local Compose build was interrupted before runtime by repeated
+`registry.npmjs.org` `ECONNRESET` failures; container CI remains the required Docker
+verification before merge.
+
+Issue 128 additively extends the identity-access access aggregate with the incident,
+review deadline and immutable post-incident review facts needed for the emergency
+access lifecycle, plus the rejection timestamp and unresolved emergency-attempt facts.
+Post-incident review attempts are stored in a separate append-only history; a later
+independent review links to, rather than overwrites, a single-human review.
+Existing responsibility and sensitive grants remain unchanged. A rejected request
+keeps the approved state-machine vocabulary and is fenced by its separate timestamp;
+unresolved emergency audit rows keep the attempted kind and incident without a false
+grant foreign key. The migration needs no compatibility window and deployment
+corrections use a forward migration.
+
 Issue 186 additively gives every orders-owned `order_items` row a stable unique UUID
 and publishes the authoritative confirmed-purchase eligibility read for content.
 Existing rows are backfilled, new rows use a database default, and no cross-module
 foreign key or private order snapshot is exposed. No compatibility window is needed;
 deployment corrections use a forward-fix migration. Docker and native both apply the
 same `prisma migrate deploy` history.
+
+Issue 134 additively creates fulfillment-owned order state, immutable timeline and
+idempotency tables after
+`20260830113000__identity-access__audit-unresolved-sensitive-attempts`. The order
+identifier and seller-confirmed store identifier remain scalar cross-module
+references; the only foreign key is internal to fulfillment. Existing orders are
+handed off by the versioned outbox event, so no
+backfill or compatibility window is required. Corrections use a forward migration,
+and Docker and native continue to apply the same `prisma migrate deploy` history.
+
+[Build: implement the dispute and violation producer](https://github.com/Mahaan-Amr/sevomart/issues/140)
+additively creates problem-follow-up-owned disputes, violation cases, idempotency
+records and append-only audit histories. Order, buyer, store and case identifiers are
+scalar references across module boundaries; the producer authorizes them through the
+published fulfillment and identity-access interfaces instead of cross-module foreign
+keys or private reads. Existing orders are not backfilled, no compatibility window is
+required, and deployment corrections use a forward migration. Docker Compose and
+native startup both apply this same `prisma migrate deploy` history.
+
+Issue 135 follows `20260831130000__reporting-analytics__seller-operations` and adds
+direct-settlement refund history, immutable refund audits and request replay records
+under the payments owner. Forward migrations extend only the existing orders,
+fulfillment and inventory status/adjustment constraints needed by the same atomic
+cancellation workflow; the final reporting-owned migration accepts the two new
+fulfillment cancellation states so its private consumer remains compatible. No
+cross-module foreign key is introduced. Existing orders, fulfillment timelines,
+reservations and inventory levels are unchanged. Corrections use another forward
+migration, and both supported startup paths continue to apply the same
+`prisma migrate deploy` history.

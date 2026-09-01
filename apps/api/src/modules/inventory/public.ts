@@ -16,6 +16,12 @@ export type InventoryTransactionContext = Readonly<{
   [inventoryTransactionContext]: never;
 }>;
 
+export function createInventoryTransactionContext(
+  transaction: unknown,
+): InventoryTransactionContext {
+  return transaction as InventoryTransactionContext;
+}
+
 export type InventorySnapshot = Readonly<InventoryAvailabilityReadV1>;
 
 export interface InventoryAuthoring {
@@ -112,6 +118,16 @@ export interface InventoryAuthoring {
       now: Date;
     }>,
   ): Promise<"ACTIVE" | "RELEASED">;
+  restoreConsumedReservationForCancellation(
+    transaction: InventoryTransactionContext,
+    command: Readonly<{
+      reservationId: string;
+      orderId: string;
+      actorId: IdentityId;
+      correlationId: string;
+      occurredAt: Date;
+    }>,
+  ): Promise<boolean>;
 }
 
 export type SellerInventoryRow = InventorySnapshot & Readonly<{ variantId: VariantId }>;

@@ -1,1 +1,82 @@
 // Tables in this file are owned by the problem-follow-up module.
+
+model ProblemDispute {
+  id              String    @id @db.Uuid
+  orderId         String    @unique @map("order_id") @db.Uuid
+  buyerIdentityId String    @map("buyer_identity_id") @db.Uuid
+  storeId         String    @map("store_id") @db.Uuid
+  status          String    @db.VarChar(32)
+  category        String    @db.VarChar(40)
+  openedAt        DateTime  @map("opened_at") @db.Timestamptz(3)
+  deadlineKind    String?   @map("deadline_kind") @db.VarChar(32)
+  deadlineAt      DateTime? @map("deadline_at") @db.Timestamptz(3)
+  contributions   Json      @db.JsonB
+  outcome         Json?     @db.JsonB
+  version         Int       @default(1)
+  updatedAt       DateTime  @map("updated_at") @db.Timestamptz(3)
+
+  @@index([buyerIdentityId, openedAt])
+  @@index([storeId, openedAt])
+  @@index([status, deadlineAt, openedAt])
+  @@map("problem_disputes")
+}
+
+model ProblemDisputeAudit {
+  id              String   @id @db.Uuid
+  disputeId       String   @map("dispute_id") @db.Uuid
+  action          String   @db.VarChar(16)
+  actorKind       String   @map("actor_kind") @db.VarChar(24)
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  fromStatus      String?  @map("from_status") @db.VarChar(32)
+  toStatus        String   @map("to_status") @db.VarChar(32)
+  reasonCode      String   @map("reason_code") @db.VarChar(48)
+  evidenceCount   Int      @map("evidence_count")
+  correlationId   String   @map("correlation_id") @db.Uuid
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([disputeId, occurredAt])
+  @@map("problem_dispute_audits")
+}
+
+model ProblemViolationCase {
+  id                String    @id @db.Uuid
+  type              String    @db.VarChar(40)
+  sourceKind        String    @map("source_kind") @db.VarChar(24)
+  sourceReferenceId String    @map("source_reference_id") @db.Uuid
+  status            String    @db.VarChar(24)
+  openedAt          DateTime  @map("opened_at") @db.Timestamptz(3)
+  deadlineAt        DateTime? @map("deadline_at") @db.Timestamptz(3)
+  nextActionCode    String    @map("next_action_code") @db.VarChar(32)
+  evidence          Json      @db.JsonB
+  actionReasonCodes String[]  @map("action_reason_codes") @db.VarChar(48)
+
+  @@index([status, openedAt])
+  @@map("problem_violation_cases")
+}
+
+model ProblemViolationAudit {
+  id              String   @id @db.Uuid
+  violationCaseId String   @map("violation_case_id") @db.Uuid
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  action          String   @db.VarChar(32)
+  status          String   @db.VarChar(24)
+  reasonCode      String   @map("reason_code") @db.VarChar(32)
+  evidenceCount   Int      @map("evidence_count")
+  correlationId   String   @map("correlation_id") @db.Uuid
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([violationCaseId, occurredAt])
+  @@map("problem_violation_audits")
+}
+
+model ProblemFollowUpIdempotencyRecord {
+  operation    String   @db.VarChar(32)
+  actorId      String   @map("actor_id") @db.Uuid
+  key          String   @db.VarChar(200)
+  requestHash  String   @map("request_hash") @db.Char(64)
+  responseJson Json     @map("response_json") @db.JsonB
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([operation, actorId, key])
+  @@map("problem_follow_up_idempotency_records")
+}

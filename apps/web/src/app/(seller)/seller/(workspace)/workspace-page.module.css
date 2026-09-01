@@ -34,6 +34,37 @@
   font-size: 18px;
 }
 
+.taskList {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 16px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.taskList li:first-child {
+  padding-block-start: 0;
+}
+
+.taskList li:last-child {
+  padding-block-end: 0;
+  border-block-end: 0;
+}
+
+.taskList li > div {
+  display: grid;
+  gap: 4px;
+}
+
 .relatedActions {
   display: flex;
   flex-wrap: wrap;
@@ -71,6 +102,89 @@
   margin-block-start: 4px;
 }
 
+.productList {
+  display: grid;
+  gap: 12px;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.productList h2,
+.productList p {
+  margin: 0;
+}
+
+.productList h2 {
+  font-size: 18px;
+}
+
+.productList ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.productList li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-block: 8px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.productList img,
+.productPlaceholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: var(--color-background);
+  object-fit: cover;
+}
+
+.productIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.productIdentity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.productIdentity span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.secondaryButton {
+  width: fit-content;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondaryButton:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .primary:focus-visible,
 .secondary:focus-visible {
   outline: 3px solid var(--color-primary-light);
@@ -80,5 +194,26 @@
 @media (min-width: 768px) {
   .page {
     padding: 48px 32px;
+  }
+}
+
+@media (max-width: 520px) {
+  .taskList li {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .productList li {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .productList img,
+  .productPlaceholder {
+    width: 56px;
+    height: 56px;
+  }
+
+  .productList li > a {
+    grid-column: 1 / -1;
   }
 }

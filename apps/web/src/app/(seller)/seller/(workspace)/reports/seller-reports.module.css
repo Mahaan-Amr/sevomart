@@ -1,0 +1,52 @@
+.range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding-block: 12px;
+  border-block: 1px solid var(--color-divider);
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.range strong {
+  width: 100%;
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.metrics {
+  display: grid;
+  margin: 0;
+}
+
+.metrics > div {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.metrics dt {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+.metrics dd {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.status {
+  display: grid;
+  gap: 4px;
+  padding-block: 16px;
+}
+
+.status h2 {
+  font-size: 18px;
+}

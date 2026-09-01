@@ -1,5 +1,6 @@
 import type { DynamicModule, Type } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
+import { storeIdContract } from "@sevo/contracts/platform/v1";
 
 import { ConversationsModule } from "../modules/conversations/composition";
 import {
@@ -11,8 +12,13 @@ import {
   DiscoveryModule,
   PostgresStoreFollowingRepository,
 } from "../modules/discovery/composition";
-import { FulfillmentModule } from "../modules/fulfillment/composition";
 import {
+  createFulfillmentAuthoritativeRead,
+  FulfillmentModule,
+  PostgresFulfillmentRepository,
+} from "../modules/fulfillment/composition";
+import {
+  createOpaquePlatformAccessTransactionContext,
   IdentityAccessModule,
   PostgresPlatformAgentSessionAuthorizer,
   type IdentityAccessModuleOptions,
@@ -21,7 +27,10 @@ import {
   InventoryModule,
   PostgresInventoryAuthoring,
 } from "../modules/inventory/composition";
-import type { ConversationMediaAccess } from "../modules/media/public";
+import type {
+  ConversationMediaAccess,
+  DisputeMediaAccess,
+} from "../modules/media/public";
 import { MediaModule } from "../modules/media/composition";
 import { NotificationsModule } from "../modules/notifications/composition";
 import {
@@ -76,17 +85,27 @@ function createApiCompositionContext(
   const platformAgentSessions = new PostgresPlatformAgentSessionAuthorizer(
     environment.DATABASE_URL,
   );
+  const fulfillmentRepository = new PostgresFulfillmentRepository(
+    environment.DATABASE_URL,
+  );
 
   let conversationMediaAccess: ConversationMediaAccess = async () => false;
+  let disputeMediaAccess: DisputeMediaAccess = async () => false;
   return {
     authorizeConversationMedia: (input: Parameters<ConversationMediaAccess>[0]) =>
       conversationMediaAccess(input),
     setConversationMediaAccess: (access: ConversationMediaAccess) => {
       conversationMediaAccess = access;
     },
+    authorizeDisputeMedia: (input: Parameters<DisputeMediaAccess>[0]) =>
+      disputeMediaAccess(input),
+    setDisputeMediaAccess: (access: DisputeMediaAccess) => {
+      disputeMediaAccess = access;
+    },
     checkoutRepository,
     contentRepository,
     environment,
+    fulfillmentRepository,
     identityOptions,
     inventoryAuthoring,
     otpProvider,
@@ -135,6 +154,7 @@ export const canonicalApiModuleRegistry: readonly {
       storeRepository,
       contentRepository,
       authorizeConversationMedia,
+      authorizeDisputeMedia,
     }) =>
       MediaModule.register(
         environment,
@@ -147,14 +167,21 @@ export const canonicalApiModuleRegistry: readonly {
           return (await storeRepository.findById(storeId))?.status === "PUBLISHED";
         },
         authorizeConversationMedia,
+        authorizeDisputeMedia,
       ),
   },
   {
     owner: "store",
     artifact: StoreModule,
-    compose: ({ environment, storeFollowingRepository, storeRepository }) =>
+    compose: ({
+      environment,
+      productRepository,
+      storeFollowingRepository,
+      storeRepository,
+    }) =>
       StoreModule.register(environment, {
         repository: storeRepository,
+        publicActiveProductCountReader: productRepository,
         publicStoreFollowingReader: storeFollowingRepository,
       }),
   },
@@ -204,18 +231,36 @@ export const canonicalApiModuleRegistry: readonly {
       identityOptions,
       inventoryAuthoring,
       platformAgentSessions,
+      fulfillmentRepository,
+      storeRepository,
     }) =>
       PaymentsModule.register(environment, {
         inventory: inventoryAuthoring,
         orders: checkoutRepository,
         platformAgentSessions:
           identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        createPlatformAccessTransactionContext:
+          createOpaquePlatformAccessTransactionContext,
+        fulfillment: fulfillmentRepository,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
       }),
   },
   {
     owner: "fulfillment",
     artifact: FulfillmentModule,
-    compose: () => FulfillmentModule,
+    compose: ({
+      checkoutRepository,
+      environment,
+      fulfillmentRepository,
+      storeRepository,
+    }) =>
+      FulfillmentModule.register(environment, {
+        orders: checkoutRepository,
+        repository: fulfillmentRepository,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
+      }),
   },
   {
     owner: "conversations",
@@ -235,7 +280,27 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "problem-follow-up",
     artifact: ProblemFollowUpModule,
-    compose: () => ProblemFollowUpModule,
+    compose: ({
+      checkoutRepository,
+      environment,
+      fulfillmentRepository,
+      identityOptions,
+      platformAgentSessions,
+      setDisputeMediaAccess,
+      storeRepository,
+    }) =>
+      ProblemFollowUpModule.register(environment, {
+        fulfillment: createFulfillmentAuthoritativeRead(
+          fulfillmentRepository,
+          checkoutRepository,
+        ),
+        platformSessions:
+          identityOptions.platformAgentSessionAuthorizer ?? platformAgentSessions,
+        resolveSellerStore: async (identityId) =>
+          (await storeRepository.findBySellerId(identityId))?.id,
+        createAccessTransactionContext: createOpaquePlatformAccessTransactionContext,
+        onMediaAccessReady: setDisputeMediaAccess,
+      }),
   },
   {
     owner: "content",
@@ -269,7 +334,13 @@ export const canonicalApiModuleRegistry: readonly {
   {
     owner: "reporting-analytics",
     artifact: ReportingAnalyticsModule,
-    compose: () => ReportingAnalyticsModule,
+    compose: ({ environment, storeRepository }) =>
+      ReportingAnalyticsModule.register(environment, {
+        resolveSellerStore: async (identityId) => {
+          const store = await storeRepository.findBySellerId(identityId);
+          return store ? storeIdContract.parse(store.id) : undefined;
+        },
+      }),
   },
 ];
 

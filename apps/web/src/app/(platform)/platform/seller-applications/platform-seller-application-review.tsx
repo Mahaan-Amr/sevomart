@@ -8,7 +8,7 @@ import {
   type PlatformSellerApplicationView,
   type SellerApplicationInput,
 } from "@sevo/contracts/identity-access/v1";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import styles from "./platform-seller-application.module.css";
 
@@ -42,6 +42,9 @@ const reasonLabels = {
   OTHER: "دلیل دیگر",
 } as const;
 
+const rejectionCompletionMessage =
+  "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.";
+
 export function PlatformSellerApplicationReview() {
   const [queue, setQueue] = useState<PlatformSellerApplicationPage["items"]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -61,16 +64,28 @@ export function PlatformSellerApplicationReview() {
   const [requestedFields, setRequestedFields] = useState<RequestedField[]>([
     "currentSalesMethod",
   ]);
+  const detailRequestId = useRef(0);
+  const decisionAttempt = useRef<{ fingerprint: string; key: string }>(undefined);
 
   const readApplication = useCallback(async (applicationId: string) => {
-    const response = await fetch(`/api/platform/seller-applications/${applicationId}`, {
-      cache: "no-store",
-    });
-    const body: unknown = await response.json();
-    if (!response.ok) throw new Error(humanError(body));
-    const parsed = platformSellerApplicationViewContract.parse(body);
-    setApplication(parsed);
-    setSelectedId(applicationId);
+    const requestId = ++detailRequestId.current;
+    try {
+      const response = await fetch(
+        `/api/platform/seller-applications/${applicationId}`,
+        {
+          cache: "no-store",
+        },
+      );
+      const body: unknown = await response.json();
+      if (requestId !== detailRequestId.current) return;
+      if (!response.ok) throw new Error(humanError(body));
+      const parsed = platformSellerApplicationViewContract.parse(body);
+      setApplication(parsed);
+      setSelectedId(applicationId);
+    } catch (error) {
+      if (requestId !== detailRequestId.current) return;
+      throw error;
+    }
   }, []);
 
   const readQueue = useCallback(
@@ -95,6 +110,7 @@ export function PlatformSellerApplicationReview() {
           : parsed.items[0]?.applicationId;
       if (nextId) await readApplication(nextId);
       else {
+        detailRequestId.current += 1;
         setSelectedId(undefined);
         setApplication(undefined);
       }
@@ -145,6 +161,27 @@ export function PlatformSellerApplicationReview() {
     setPending(true);
     setMessage("");
     try {
+      let committedMessage = "درخواست تکمیل ثبت شد؛ اکنون منتظر پاسخ متقاضی بمانید.";
+      const decisionPayload = {
+        expectedRevision: application.revision,
+        reasonCode:
+          decision === "information"
+            ? informationReasonCode
+            : decision === "approval"
+              ? "ELIGIBILITY_CONFIRMED"
+              : rejectionReasonCode,
+        publicReason,
+        ...(internalNote.trim() ? { internalNote } : {}),
+        ...(decision === "information" ? { requestedFields } : {}),
+      };
+      const fingerprint = JSON.stringify({
+        applicationId: application.applicationId,
+        decision,
+        payload: decisionPayload,
+      });
+      if (decisionAttempt.current?.fingerprint !== fingerprint) {
+        decisionAttempt.current = { fingerprint, key: crypto.randomUUID() };
+      }
       const response = await fetch(
         `/api/platform/seller-applications/${application.applicationId}/${
           decision === "information"
@@ -157,20 +194,9 @@ export function PlatformSellerApplicationReview() {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "idempotency-key": crypto.randomUUID(),
+            "idempotency-key": decisionAttempt.current.key,
           },
-          body: JSON.stringify({
-            expectedRevision: application.revision,
-            reasonCode:
-              decision === "information"
-                ? informationReasonCode
-                : decision === "approval"
-                  ? "ELIGIBILITY_CONFIRMED"
-                  : rejectionReasonCode,
-            publicReason,
-            ...(internalNote.trim() ? { internalNote } : {}),
-            ...(decision === "information" ? { requestedFields } : {}),
-          }),
+          body: JSON.stringify(decisionPayload),
         },
       );
       const body: unknown = await response.json();
@@ -179,13 +205,31 @@ export function PlatformSellerApplicationReview() {
         approveSellerApplicationResultContract.parse(body);
         setApplication(undefined);
         setSelectedId(undefined);
+        committedMessage = "درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد.";
+        setMessage(committedMessage);
       } else {
         const updated = platformSellerApplicationViewContract.parse(body);
-        setApplication(updated);
+        if (decision === "rejection") {
+          setApplication(undefined);
+          setSelectedId(undefined);
+          committedMessage = rejectionCompletionMessage;
+          setMessage(committedMessage);
+        } else {
+          setApplication(updated);
+        }
       }
       setPublicReason("");
       setInternalNote("");
-      await readQueue();
+      decisionAttempt.current = undefined;
+      try {
+        await readQueue(
+          decision === "information" ? application.applicationId : undefined,
+        );
+      } catch {
+        setMessage(
+          `${committedMessage} تازه‌سازی صف انجام نشد؛ برای دیدن وضعیت تازه، صفحه را دوباره بارگذاری کنید.`,
+        );
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تصمیم ثبت نشد.");
     } finally {
@@ -200,7 +244,7 @@ export function PlatformSellerApplicationReview() {
           <span>سوو · عامل پلتفرم</span>
           <h1>بررسی درخواست‌های فروشندگی</h1>
         </div>
-        <p>{queue.length} درخواست نیازمند اقدام</p>
+        <p>{queue.length} پرونده در صف</p>
       </header>
 
       {message ? (
@@ -410,8 +454,7 @@ export function PlatformSellerApplicationReview() {
                 </p>
               ) : (
                 <p className={styles.closed}>
-                  این درخواست اکنون قابل تصمیم‌گیری نیست؛ وضعیت تازه در صف اعمال شده
-                  است.
+                  {closedApplicationNextStep(application.status)}
                 </p>
               )}
             </>
@@ -424,6 +467,16 @@ export function PlatformSellerApplicationReview() {
       </div>
     </main>
   );
+}
+
+function closedApplicationNextStep(status: PlatformSellerApplicationView["status"]) {
+  if (status === "NEEDS_INFORMATION") {
+    return "قدم بعدی: منتظر تکمیل اطلاعات متقاضی بمانید.";
+  }
+  if (status === "REJECTED") {
+    return rejectionCompletionMessage;
+  }
+  return "این درخواست اکنون قابل تصمیم‌گیری نیست؛ وضعیت تازه در صف اعمال شده است.";
 }
 
 function humanError(value: unknown): string {

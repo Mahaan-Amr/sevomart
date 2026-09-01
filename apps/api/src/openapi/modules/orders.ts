@@ -45,6 +45,97 @@ const idempotencyRetryHeader = {
 
 const operations = [
   {
+    ...ordersV1Operations.listStoreBuyers,
+    tag: "orders",
+    auth: "identity-session",
+    queryParameters: [
+      {
+        name: "search",
+        schema: "StoreBuyerSearch",
+        example: ordersV1Examples.StoreBuyerSearch,
+        required: false,
+      },
+      {
+        name: "cursor",
+        schema: "StoreBuyerCursor",
+        example: ordersV1Examples.StoreBuyerCursor,
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "StoreBuyerLimit",
+        example: ordersV1Examples.StoreBuyerLimit,
+        required: false,
+      },
+    ],
+    responses: [
+      { status: 200, schema: "StoreBuyerPage", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "StoreBuyerError" },
+      { status: 404, schema: "StoreBuyerError" },
+      { status: 422, schema: "StoreBuyerError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...ordersV1Operations.revealSellerOrderDeliveryDetails,
+    tag: "orders",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderId",
+      schema: "OrderId",
+      example: ordersV1Examples.RevealedOrderDeliveryDetails.orderId,
+    },
+    request: {
+      schema: "RevealOrderDeliveryDetailsInput",
+      example: ordersV1Examples.RevealOrderDeliveryDetailsInput,
+    },
+    responses: [
+      {
+        status: 200,
+        schema: "RevealedOrderDeliveryDetails",
+        headers: noStoreHeader,
+      },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "StoreBuyerError" },
+      { status: 404, schema: "StoreBuyerError" },
+      { status: 422, schema: "StoreBuyerError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...ordersV1Operations.listStoreBuyerOrders,
+    tag: "orders",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderId",
+      schema: "OrderId",
+      example: ordersV1Examples.StoreBuyerOrderPage.items[0].orderId,
+    },
+    queryParameters: [
+      {
+        name: "cursor",
+        schema: "StoreBuyerCursor",
+        example: ordersV1Examples.StoreBuyerCursor,
+        required: false,
+      },
+      {
+        name: "limit",
+        schema: "StoreBuyerLimit",
+        example: ordersV1Examples.StoreBuyerLimit,
+        required: false,
+      },
+    ],
+    responses: [
+      { status: 200, schema: "StoreBuyerOrderPage", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "StoreBuyerError" },
+      { status: 404, schema: "StoreBuyerError" },
+      { status: 422, schema: "StoreBuyerError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...ordersV1Operations.listSellerActionableOrders,
     tag: "orders",
     auth: "identity-session",

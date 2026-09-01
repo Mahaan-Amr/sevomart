@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   productPreviewContract,
+  sellerProductListContract,
   publicProductListContract,
   publicSimpleProductListContract,
   simpleProductPreviewContract,
@@ -56,6 +57,30 @@ export class ProductService {
       store.storeId,
       context("CREATE_PRODUCT", identityId, write, {}),
     );
+  }
+
+  async list(
+    identityId: string,
+    query: Readonly<{
+      cursor?: { createdAt: string; productId: ProductId };
+      limit: number;
+      state?: "DRAFT" | "PUBLISHED" | "UNPUBLISHED";
+    }>,
+  ) {
+    const actorId = identityIdContract.parse(identityId);
+    await this.requireActiveSeller(actorId);
+    const store = await this.stores.readOwnedStore(actorId);
+    if (!store) throw new ProductNotFoundError();
+    const rows = await this.repository.listOwned(store.storeId, {
+      ...query,
+      limit: query.limit + 1,
+    });
+    const pageRows = rows.slice(0, query.limit);
+    return sellerProductListContract.parse({
+      items: pageRows.map((row) => row.summary),
+      nextCursor:
+        rows.length > query.limit ? encodeSellerProductCursor(pageRows.at(-1)!) : null,
+    });
   }
 
   async replaceWorkingCopy(
@@ -338,6 +363,13 @@ export class ProductService {
       throw new SellerAccessInactiveError();
     }
   }
+}
+
+function encodeSellerProductCursor(row: {
+  createdAt: string;
+  summary: { productId: ProductId };
+}) {
+  return Buffer.from(`${row.createdAt}|${row.summary.productId}`).toString("base64url");
 }
 
 function context(

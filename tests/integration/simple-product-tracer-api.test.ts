@@ -48,6 +48,249 @@ describe("simple product tracer HTTP API", () => {
     return { server, cookie };
   }
 
+  it("lists only the signed-in seller's products with stable pagination and state filtering", async () => {
+    const { server, cookie } = await startSellerProductTest();
+
+    const empty = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products",
+      headers: { cookie },
+    });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json()).toEqual({ items: [], nextCursor: null });
+
+    const productIds: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const created = await server.inject({
+        method: "POST",
+        url: "/v1/seller/products",
+        headers: { cookie, "idempotency-key": crypto.randomUUID() },
+        payload: {},
+      });
+      expect(created.statusCode).toBe(201);
+      productIds.push(created.json<{ productId: string }>().productId);
+    }
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`
+        insert into product_products (id, store_id, state, revision)
+        values (${crypto.randomUUID()}::uuid, ${crypto.randomUUID()}::uuid, 'DRAFT', 0)
+      `;
+      await sql`
+        update product_products
+        set state = 'PUBLISHED', published_at = now(), updated_at = now()
+        where id = ${productIds[0]}::uuid
+      `;
+    } finally {
+      await sql.end();
+    }
+
+    const firstPage = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products?limit=2",
+      headers: { cookie },
+    });
+    expect(firstPage.statusCode).toBe(200);
+    const first = firstPage.json<{
+      items: Array<Record<string, unknown> & { productId: string }>;
+      nextCursor: string | null;
+    }>();
+    expect(first.items).toHaveLength(2);
+    expect(first.nextCursor).toEqual(expect.any(String));
+    for (const item of first.items) {
+      expect(Object.keys(item).sort()).toEqual(
+        [
+          "name",
+          "primaryMediaId",
+          "productId",
+          "publicationVersion",
+          "revision",
+          "state",
+        ].sort(),
+      );
+      expect(productIds).toContain(item.productId);
+    }
+
+    const cursorBoundaryProductId = first.items[1]!.productId;
+    const mutationSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await mutationSql`
+        update product_products set updated_at = now() + interval '1 hour'
+        where id = ${cursorBoundaryProductId}::uuid
+      `;
+    } finally {
+      await mutationSql.end();
+    }
+
+    const secondPage = await server.inject({
+      method: "GET",
+      url: `/v1/seller/products?limit=2&cursor=${first.nextCursor}`,
+      headers: { cookie },
+    });
+    expect(secondPage.statusCode).toBe(200);
+    const second = secondPage.json<{
+      items: Array<{ productId: string }>;
+      nextCursor: null;
+    }>();
+    expect(second.items).toHaveLength(1);
+    expect(first.items.map((item) => item.productId)).not.toContain(
+      second.items[0]!.productId,
+    );
+    expect(second.nextCursor).toBeNull();
+
+    const published = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products?state=PUBLISHED",
+      headers: { cookie },
+    });
+    expect(published.statusCode).toBe(200);
+    expect(published.json()).toMatchObject({
+      items: [{ productId: productIds[0], state: "PUBLISHED" }],
+      nextCursor: null,
+    });
+
+    const unauthorized = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products",
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const invalidBoundary = Buffer.from(
+      `2026-02-30T10:00:00.000Z|${productIds[0]}`,
+    ).toString("base64url");
+    const invalidCursor = await server.inject({
+      method: "GET",
+      url: `/v1/seller/products?cursor=${invalidBoundary}`,
+      headers: { cookie },
+    });
+    expect(invalidCursor.statusCode).toBe(422);
+    expect(invalidCursor.json()).toMatchObject({
+      version: 1,
+      code: "VALIDATION_ERROR",
+      details: { issues: [{ path: "query.cursor", code: "INVALID_FORMAT" }] },
+    });
+
+    for (const [query, path] of [
+      ["limit=0", "query.limit"],
+      ["state=ARCHIVED", "query.state"],
+    ] as const) {
+      const invalidQuery = await server.inject({
+        method: "GET",
+        url: `/v1/seller/products?${query}`,
+        headers: { cookie },
+      });
+      expect(invalidQuery.statusCode).toBe(422);
+      expect(invalidQuery.json()).toMatchObject({
+        version: 1,
+        code: "VALIDATION_ERROR",
+        details: { issues: [{ path, code: "INVALID_FORMAT" }] },
+      });
+    }
+
+    const accessSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await accessSql`update identity_seller_access set status = 'SUSPENDED'`;
+    } finally {
+      await accessSql.end();
+    }
+    const inactive = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products",
+      headers: { cookie },
+    });
+    expect(inactive.statusCode).toBe(403);
+    expect(inactive.json()).toEqual({
+      version: 1,
+      code: "SELLER_ACCESS_INACTIVE",
+      message: "دسترسی فروشندگی شما فعال نیست.",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
+  });
+
+  it("returns the owner error envelope when the seller has no store", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const cookie = await signIn(server);
+
+    const missingStore = await server.inject({
+      method: "GET",
+      url: "/v1/seller/products",
+      headers: { cookie },
+    });
+    expect(missingStore.statusCode).toBe(404);
+    expect(missingStore.json()).toEqual({
+      version: 1,
+      code: "PRODUCT_NOT_FOUND",
+      message: "کالا پیدا نشد.",
+      correlationId: expect.any(String),
+      details: { issues: [] },
+    });
+  });
+
+  it("reports zero, one and zero active products as publication changes", async () => {
+    const { server, cookie } = await startSellerProductTest();
+    const readActiveProductCount = async () => {
+      const response = await server.inject({
+        method: "GET",
+        url: "/v1/stores/product-tracer-store",
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json<{ activeProductCount: number }>().activeProductCount;
+    };
+
+    expect(await readActiveProductCount()).toBe(0);
+
+    const created = await server.inject({
+      method: "POST",
+      url: "/v1/seller/products",
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: {},
+    });
+    expect(created.statusCode).toBe(201);
+    const productId = created.json<{ productId: string }>().productId;
+    const mediaId = await uploadProductImage(server, cookie, productId);
+    const saved = await server.inject({
+      method: "PUT",
+      url: `/v1/seller/products/${productId}/working-copy`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 0),
+      payload: {
+        expectedRevision: 0,
+        workingCopy: {
+          name: "فنجان شمارش‌پذیر",
+          description: "کالای فیزیکی برای آزمون شمار عمومی فروشگاه",
+          orderedMediaIds: [mediaId],
+          variant: {
+            clientKey: "simple",
+            price: { amount: 4_500_000, currency: "IRR" },
+          },
+        },
+        inventory: { onHand: 1, expectedRevision: 0 },
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const published = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/publications`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 1),
+      payload: { expectedRevision: 1, confirmed: true },
+    });
+    expect(published.statusCode).toBe(200);
+    expect(await readActiveProductCount()).toBe(1);
+
+    const unpublished = await server.inject({
+      method: "POST",
+      url: `/v1/seller/products/${productId}/unpublication`,
+      headers: writeHeaders(cookie, crypto.randomUUID(), 2),
+      payload: { expectedRevision: 2, reasonCode: "SELLER_REQUEST" },
+    });
+    expect(unpublished.statusCode).toBe(200);
+    expect(await readActiveProductCount()).toBe(0);
+  });
+
   it("creates, previews and atomically publishes one sellable physical product", async () => {
     const { server, cookie } = await startSellerProductTest();
 

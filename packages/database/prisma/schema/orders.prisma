@@ -156,6 +156,32 @@ model OrderOrder {
   @@map("order_orders")
 }
 
+model OrderSensitiveAccessAudit {
+  id              String   @id @db.Uuid
+  actorIdentityId String   @map("actor_identity_id") @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  orderId         String   @map("order_id") @db.Uuid
+  action          String   @db.VarChar(48)
+  reasonCode      String   @map("reason_code") @db.VarChar(48)
+  reasonHash      String   @map("reason_hash") @db.Char(64)
+  correlationId   String   @map("correlation_id") @db.Uuid
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([orderId, occurredAt])
+  @@index([actorIdentityId, occurredAt])
+  @@map("order_sensitive_access_audit")
+}
+
+model OrderFulfillmentStatusProjection {
+  orderId         String   @id @map("order_id") @db.Uuid
+  status          String   @db.VarChar(32)
+  version         Int
+  acceptedEventId String   @unique @map("accepted_event_id") @db.Uuid
+  updatedAt       DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("order_fulfillment_status_projections")
+}
+
 model OrderItemSnapshot {
   id                 String @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId            String @map("order_id") @db.Uuid

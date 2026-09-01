@@ -24,6 +24,186 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     await resetPlatformAccessData();
   });
 
+  it("lists responsibility and sensitive grants and exposes audit only to its reviewer", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const reviewer = await seedAgent(["ACCESS_AUDIT_REVIEW"]);
+    const recipient = await seedAgent([]);
+
+    const responsibility = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/responsibility-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: recipient.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        reason: "واگذاری مسئولیت بررسی پرداخت برای صف عملیاتی",
+      },
+    });
+    expect(responsibility.statusCode).toBe(202);
+
+    const sensitive = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/sensitive-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: recipient.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "VERIFY_CASE_EVIDENCE",
+        reason: "بررسی مدرک پرونده پرداخت در محدوده ثبت شده",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: randomUUID(),
+          allowedActions: ["READ_MASKED", "REVEAL_MINIMUM"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    expect(sensitive.statusCode).toBe(202);
+
+    const responsibilityList = await server.inject({
+      method: "GET",
+      url: `/v1/platform/access/responsibility-grants?subjectIdentityId=${recipient.identityId}&status=ACTIVE&limit=20`,
+      headers: { cookie: `sevo_platform_session=${manager.token}` },
+    });
+    expect(responsibilityList.statusCode).toBe(200);
+    expect(responsibilityList.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          grantKind: "RESPONSIBILITY",
+          subjectIdentityId: recipient.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          status: "ACTIVE",
+        }),
+      ],
+      nextCursor: null,
+    });
+
+    const sensitiveList = await server.inject({
+      method: "GET",
+      url: `/v1/platform/access/sensitive-grants?subjectIdentityId=${recipient.identityId}&status=ACTIVE&limit=20`,
+      headers: { cookie: `sevo_platform_session=${manager.token}` },
+    });
+    expect(sensitiveList.statusCode).toBe(200);
+    expect(sensitiveList.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          grantKind: "SENSITIVE_ACCESS",
+          subjectIdentityId: recipient.identityId,
+          status: "ACTIVE",
+        }),
+      ],
+      nextCursor: null,
+    });
+
+    const forbiddenAudit = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/audit?limit=50",
+      headers: { cookie: `sevo_platform_session=${manager.token}` },
+    });
+    expect(forbiddenAudit.statusCode).toBe(403);
+
+    const audit = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/audit?limit=50",
+      headers: { cookie: `sevo_platform_session=${reviewer.token}` },
+    });
+    expect(audit.statusCode).toBe(200);
+    expect(audit.json()).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          grantId: responsibility.json<{ grantId: string }>().grantId,
+          action: "GRANT_REQUESTED",
+        }),
+        expect.objectContaining({
+          grantId: sensitive.json<{ grantId: string }>().grantId,
+          action: "GRANT_ACTIVATED",
+        }),
+      ]),
+      nextCursor: null,
+    });
+  });
+
+  it.each([
+    {
+      kind: "responsibility",
+      requestPath: "/v1/platform/access/responsibility-grants",
+      requestPayload: (recipientIdentityId: string) => ({
+        recipientIdentityId,
+        responsibility: "PAYMENT_OUTCOME_CHANGE",
+        reason: "درخواست مسئولیت پرخطر برای بررسی مستقل",
+      }),
+    },
+    {
+      kind: "sensitive",
+      requestPath: "/v1/platform/access/sensitive-grants",
+      requestPayload: () => ({
+        responsibility: "PAYMENT_REVIEW",
+        purposeCode: "VERIFY_CASE_EVIDENCE",
+        reason: "درخواست دسترسی حساس برای بررسی مستقل",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: randomUUID(),
+          allowedActions: ["READ_MASKED"],
+        },
+        ttlMinutes: 30,
+      }),
+    },
+  ])(
+    "removes a rejected $kind request from its queue and records evidence",
+    async (scenario) => {
+      const app = await createApiApp(apiTestEnvironment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      const requester = await seedAgent([
+        "ACCESS_ADMINISTRATION",
+        ...(scenario.kind === "sensitive" ? (["PAYMENT_REVIEW"] as const) : []),
+      ]);
+      const reviewer = await seedAgent(["ACCESS_ADMINISTRATION"]);
+      const recipient = await seedAgent([]);
+
+      const requested = await server.inject({
+        method: "POST",
+        url: scenario.requestPath,
+        headers: accessHeaders(requester.token),
+        payload: scenario.requestPayload(recipient.identityId),
+      });
+      expect(requested.statusCode).toBe(202);
+      const grantId = requested.json<{ grantId: string }>().grantId;
+      const rejected = await server.inject({
+        method: "POST",
+        url: `${scenario.requestPath}/${grantId}/rejection`,
+        headers: accessHeaders(reviewer.token),
+        payload: {
+          expectedRevision: 1,
+          reason: "رد مستقل درخواست به دلیل دامنه بیشتر از نیاز ثبت‌شده",
+        },
+      });
+      expect(rejected.statusCode).toBe(200);
+      expect(rejected.json()).toMatchObject({ grantId, requestStatus: "REJECTED" });
+
+      const queue = await server.inject({
+        method: "GET",
+        url: `${scenario.requestPath}?limit=20`,
+        headers: { cookie: `sevo_platform_session=${reviewer.token}` },
+      });
+      expect(queue.json()).toMatchObject({ items: [] });
+      const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const evidence = await sql<Array<{ action: string; eventType: string }>>`
+      select a.action, e.event_type as "eventType"
+      from identity_platform_access_audit a
+      join platform_outbox_events e on e.aggregate_id = a.grant_id
+        and e.aggregate_version = 2
+      where a.grant_id = ${grantId} and a.action = 'GRANT_REJECTED'
+    `;
+      await sql.end();
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]?.eventType).toMatch(/Rejected\.v1$/);
+    },
+  );
+
   it("activates a high-risk responsibility only through the explicit single-manager exception and rejects self-grant", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -311,6 +491,160 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
     }
   });
+
+  it.each([
+    {
+      lockTarget: "permission",
+      waitingQuery: "identity_platform_permission_grants",
+    },
+    { lockTarget: "grant", waitingQuery: "identity_platform_access_grants" },
+  ])(
+    "does not issue a receipt when access expires while authorization waits for its $lockTarget lock",
+    async ({ lockTarget, waitingQuery }) => {
+      const app = await createApiApp(apiTestEnvironment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+      const agent = await seedAgent([]);
+
+      const responsibility = await server.inject({
+        method: "POST",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: accessHeaders(manager.token),
+        payload: {
+          recipientIdentityId: agent.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          reason: "واگذاری مسئولیت برای آزمون انقضای هم‌زمان",
+        },
+      });
+      expect(responsibility.statusCode).toBe(202);
+
+      const resourceId = randomUUID();
+      const assigned = await server.inject({
+        method: "POST",
+        url: "/v1/platform/access/sensitive-grants",
+        headers: accessHeaders(manager.token),
+        payload: {
+          recipientIdentityId: agent.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          purposeCode: "RESOLVE_ASSIGNED_CASE",
+          reason: "تخصیص پرونده برای آزمون انقضای هم‌زمان",
+          scope: {
+            resourceType: "PAYMENT_REVIEW",
+            resourceId,
+            allowedActions: ["REVEAL_MINIMUM"],
+          },
+          ttlMinutes: 30,
+        },
+      });
+      expect(assigned.statusCode).toBe(202);
+      const grantId = assigned.json<{ grantId: string }>().grantId;
+
+      const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+      const actionBackend = await actionSql<Array<{ pid: number }>>`
+      select pg_backend_pid() as pid
+    `;
+      await observer`
+      update identity_platform_access_grants
+      set expires_at = clock_timestamp() + interval '500 milliseconds'
+      where id = ${grantId}
+    `;
+      const lockAcquired = deferred();
+      const releaseLock = deferred();
+      const blockingTransaction = blocker.begin(async (transaction) => {
+        if (lockTarget === "permission") {
+          await transaction`
+          select id from identity_platform_permission_grants
+          where identity_id = ${agent.identityId}
+            and permission = 'PAYMENT_REVIEW'
+            and revoked_at is null
+          for update
+        `;
+        } else {
+          await transaction`
+          select id from identity_platform_access_grants
+          where id = ${grantId}
+          for update
+        `;
+        }
+        lockAcquired.resolve();
+        await releaseLock.promise;
+      });
+
+      try {
+        await lockAcquired.promise;
+        const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+        const correlationId = randomUUID();
+        const sensitiveUse = actionSql
+          .begin((transaction) =>
+            access.authorizeSensitiveAction(
+              createOpaquePlatformAccessTransactionContext(transaction),
+              {
+                grantId,
+                actorIdentityId: agent.identityId,
+                responsibility: "PAYMENT_REVIEW",
+                resourceType: "PAYMENT_REVIEW",
+                resourceId,
+                action: "REVEAL_MINIMUM",
+                reason: "تلاش برای مشاهده پس از انقضا هنگام انتظار قفل",
+                correlationId,
+              },
+            ),
+          )
+          .then(
+            (receipt) => ({ receipt }),
+            (error: unknown) => ({ error }),
+          );
+        await waitForSensitiveAuthorizationLockWaiter(
+          observer,
+          actionBackend[0]!.pid,
+          waitingQuery,
+        );
+        await waitUntilGrantExpires(observer, grantId);
+
+        releaseLock.resolve();
+        await blockingTransaction;
+        await expect(sensitiveUse).resolves.toMatchObject({
+          error: { code: "SENSITIVE_SCOPE_REQUIRED" },
+        });
+        const expired = await observer<
+          Array<{
+            status: string;
+            expiryAuditCount: number;
+            expiryEventCount: number;
+            denialAuditCount: number;
+          }>
+        >`
+        select g.status,
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.action = 'GRANT_EXPIRED')
+            as "expiryAuditCount",
+          (select count(*)::int from platform_outbox_events e
+           where e.aggregate_id = g.id
+             and e.event_type = 'SensitiveAccessExpired.v1')
+            as "expiryEventCount",
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.correlation_id = ${correlationId}
+             and a.outcome = 'DENIED') as "denialAuditCount"
+        from identity_platform_access_grants g where g.id = ${grantId}
+      `;
+        expect(expired).toEqual([
+          {
+            status: "EXPIRED",
+            expiryAuditCount: 1,
+            expiryEventCount: 1,
+            denialAuditCount: 1,
+          },
+        ]);
+      } finally {
+        releaseLock.resolve();
+        await blockingTransaction;
+        await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
+      }
+    },
+  );
 
   it("durably audits nonexistent and wrong-kind sensitive grant references", async () => {
     const app = await createApiApp(apiTestEnvironment);
@@ -628,10 +962,12 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     });
     expect(approved.statusCode).toBe(200);
     expect(approved.json()).toMatchObject({ status: "ACTIVE", revision: 2 });
+    const approvedGrant = approved.json<{ expiresAt: string }>();
 
     const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-    await sql.begin((transaction) =>
+    const beforeAuthorization = Date.now();
+    const receipt = await sql.begin((transaction) =>
       access.authorizeSensitiveAction(
         createOpaquePlatformAccessTransactionContext(transaction),
         {
@@ -646,6 +982,25 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
         },
       ),
     );
+    expect(receipt).toMatchObject({
+      grantId,
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+      expiresAt: approvedGrant.expiresAt,
+    });
+    expect(Object.keys(receipt).sort()).toEqual([
+      "accessedAt",
+      "expiresAt",
+      "grantId",
+      "scope",
+    ]);
+    expect(new Date(receipt.accessedAt).getTime()).toBeGreaterThanOrEqual(
+      beforeAuthorization,
+    );
+    expect(new Date(receipt.accessedAt).getTime()).toBeLessThanOrEqual(Date.now());
 
     await sql`
       update identity_platform_access_grants
@@ -741,7 +1096,927 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     );
     await sql.end();
   });
+
+  it("runs the single-manager emergency lifecycle and blocks new requests until overdue review completes", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]);
+    const resourceId = randomUUID();
+    const requestPayload = {
+      incidentId: "INC-2026-0128",
+      reason: "مهار خطر مشخص برای صحت نتیجه پرداخت حادثه",
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId,
+        allowedActions: ["READ_MASKED", "CONTAIN_INCIDENT"],
+      },
+      ttlMinutes: 30,
+    };
+
+    const overlong = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(manager.token),
+      payload: { ...requestPayload, ttlMinutes: 31 },
+    });
+    expect(overlong.statusCode).toBe(422);
+
+    const requestHeaders = accessHeaders(manager.token);
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: requestHeaders,
+      payload: requestPayload,
+    });
+    expect(requested.statusCode).toBe(202);
+    expect(requested.json()).toMatchObject({
+      grantKind: "EMERGENCY_ACCESS",
+      subjectIdentityId: manager.identityId,
+      incidentId: requestPayload.incidentId,
+      status: "PENDING_APPROVAL",
+      revision: 1,
+      singleManagerException: true,
+      reviewStatus: "NOT_DUE",
+    });
+    const requestedView = requested.json<{
+      createdAt: string;
+      expiresAt: string;
+      reviewDueAt: string;
+    }>();
+    expect(
+      new Date(requestedView.reviewDueAt).getTime() -
+        new Date(requestedView.createdAt).getTime(),
+    ).toBe(24 * 60 * 60 * 1_000);
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: "/v1/platform/access/emergency-grants",
+          headers: requestHeaders,
+          payload: requestPayload,
+        })
+      ).json(),
+    ).toEqual(requested.json());
+    const grantId = requested.json<{ grantId: string }>().grantId;
+
+    const activated = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+      headers: accessHeaders(manager.token),
+      payload: { expectedRevision: 1 },
+    });
+    expect(activated.statusCode).toBe(200);
+    expect(activated.json()).toMatchObject({
+      status: "ACTIVE",
+      revision: 2,
+      approvedByIdentityId: null,
+      singleManagerException: true,
+    });
+    expect(activated.json<{ expiresAt: string }>().expiresAt).toBe(
+      requestedView.expiresAt,
+    );
+
+    const closeHeaders = accessHeaders(manager.token);
+    const closePayload = {
+      expectedRevision: 2,
+      reason: "مهار حادثه تکمیل و نشست اضطراری بسته شد",
+    };
+    const closed = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/closure`,
+      headers: closeHeaders,
+      payload: closePayload,
+    });
+    expect(closed.statusCode).toBe(200);
+    expect(closed.json()).toMatchObject({ status: "CLOSED", revision: 3 });
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: `/v1/platform/access/emergency-grants/${grantId}/closure`,
+          headers: closeHeaders,
+          payload: closePayload,
+        })
+      ).json(),
+    ).toEqual(closed.json());
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update identity_platform_access_grants
+      set review_due_at = now() - interval '1 second'
+      where id = ${grantId}
+    `;
+    const blocked = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(manager.token),
+      payload: { ...requestPayload, incidentId: "INC-2026-0128-B" },
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toMatchObject({ code: "EMERGENCY_REVIEW_OVERDUE" });
+
+    const reviewed = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/review`,
+      headers: accessHeaders(manager.token),
+      payload: { expectedRevision: 3, findingCode: "CONTROLS_FOLLOWED" },
+    });
+    expect(reviewed.statusCode).toBe(200);
+    expect(reviewed.json()).toMatchObject({
+      revision: 4,
+      reviewStatus: "COMPLETED_WITHOUT_INDEPENDENT_REVIEW",
+    });
+
+    const unblocked = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(manager.token),
+      payload: { ...requestPayload, incidentId: "INC-2026-0128-C" },
+    });
+    expect(unblocked.statusCode).toBe(202);
+    await sql.end();
+  });
+
+  it("makes queued emergency revocation stop a concurrent incident action", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const resourceId = randomUUID();
+    const incidentId = "INC-2026-0128-RACE";
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        incidentId,
+        reason: "مهار خطر مشخص برای آزمون رقابت لغو اضطراری",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          allowedActions: ["CONTAIN_INCIDENT"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    const grantId = requested.json<{ grantId: string }>().grantId;
+    const activated = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+      headers: accessHeaders(manager.token),
+      payload: { expectedRevision: 1 },
+    });
+    expect(activated.statusCode).toBe(200);
+
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const lockAcquired = deferred();
+    const releaseLock = deferred();
+    const blockingTransaction = blocker.begin(async (transaction) => {
+      await transaction`
+        select id from identity_platform_access_grants
+        where id = ${grantId} for update
+      `;
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+
+    try {
+      await lockAcquired.promise;
+      const revocation = server.inject({
+        method: "POST",
+        url: `/v1/platform/access/emergency-grants/${grantId}/revocation`,
+        headers: accessHeaders(manager.token),
+        payload: {
+          expectedRevision: 2,
+          reason: "لغو فوری دسترسی اضطراری پیش از اقدام هم‌زمان",
+        },
+      });
+      await waitForPlatformGrantLockWaiter(observer);
+
+      const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+      const correlationId = randomUUID();
+      let mutationRan = false;
+      const emergencyUse = actionSql.begin(async (transaction) => {
+        await access.authorizeEmergencyAction(
+          createOpaquePlatformAccessTransactionContext(transaction),
+          {
+            grantId,
+            actorIdentityId: manager.identityId,
+            incidentId,
+            resourceType: "PAYMENT_REVIEW",
+            resourceId,
+            action: "CONTAIN_INCIDENT",
+            reason: "تلاش هم‌زمان برای مهار حادثه پس از آغاز لغو",
+            correlationId,
+          },
+        );
+        mutationRan = true;
+      });
+
+      releaseLock.resolve();
+      await blockingTransaction;
+      const revoked = await revocation;
+      expect(revoked.statusCode).toBe(200);
+      expect(revoked.json()).toMatchObject({ status: "REVOKED", revision: 3 });
+      await expect(emergencyUse).rejects.toMatchObject<Partial<PlatformAccessError>>({
+        code: "EMERGENCY_SCOPE_REQUIRED",
+      });
+      expect(mutationRan).toBe(false);
+      const stopped = await observer<Array<{ outcome: string }>>`
+        select outcome from identity_platform_access_audit
+        where grant_id = ${grantId} and correlation_id = ${correlationId}
+      `;
+      expect(stopped).toEqual([{ outcome: "STOPPED_AFTER_REVOCATION" }]);
+    } finally {
+      releaseLock.resolve();
+      await blockingTransaction;
+      await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
+    }
+  });
+
+  it("requires independent dual-control approval and independent post-incident review", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const requester = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const approver = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const reviewer = await seedAgent(["ACCESS_AUDIT_REVIEW"]);
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(requester.token),
+      payload: {
+        incidentId: "INC-2026-0128-DUAL",
+        reason: "مهار خطر مشخص با کنترل مستقل دو مدیر دسترسی",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: randomUUID(),
+          allowedActions: ["READ_MASKED", "CONTAIN_INCIDENT"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    expect(requested.statusCode).toBe(202);
+    expect(requested.json()).toMatchObject({
+      status: "PENDING_APPROVAL",
+      revision: 1,
+      singleManagerException: false,
+    });
+    const grantId = requested.json<{ grantId: string }>().grantId;
+
+    const selfApproval = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/approval`,
+      headers: accessHeaders(requester.token),
+      payload: { expectedRevision: 1 },
+    });
+    expect(selfApproval.statusCode).toBe(403);
+    expect(selfApproval.json()).toMatchObject({ code: "SELF_APPROVAL_FORBIDDEN" });
+
+    const approved = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/approval`,
+      headers: accessHeaders(approver.token),
+      payload: { expectedRevision: 1 },
+    });
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json()).toMatchObject({
+      status: "PENDING_APPROVAL",
+      revision: 2,
+      approvedByIdentityId: approver.identityId,
+    });
+    const activated = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+      headers: accessHeaders(requester.token),
+      payload: { expectedRevision: 2 },
+    });
+    expect(activated.statusCode).toBe(200);
+    expect(activated.json()).toMatchObject({ status: "ACTIVE", revision: 3 });
+    const revoked = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/revocation`,
+      headers: accessHeaders(requester.token),
+      payload: {
+        expectedRevision: 3,
+        reason: "لغو دسترسی پس از پایان نیاز به مهار حادثه",
+      },
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json()).toMatchObject({ status: "REVOKED", revision: 4 });
+
+    const reviewed = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/review`,
+      headers: accessHeaders(reviewer.token),
+      payload: { expectedRevision: 4, findingCode: "CONTROLS_FOLLOWED" },
+    });
+    expect(reviewed.statusCode).toBe(200);
+    expect(reviewed.json()).toMatchObject({
+      revision: 5,
+      reviewStatus: "COMPLETED",
+    });
+  });
+
+  it("expires emergency access once and rejects incident actions after its fixed deadline", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const incidentId = "INC-2026-0128-EXPIRY";
+    const resourceId = randomUUID();
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        incidentId,
+        reason: "مهار خطر مشخص برای آزمون انقضای دسترسی اضطراری",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          allowedActions: ["CONTAIN_INCIDENT"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    const grantId = requested.json<{ grantId: string }>().grantId;
+    const activated = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+      headers: accessHeaders(manager.token),
+      payload: { expectedRevision: 1 },
+    });
+    expect(activated.statusCode).toBe(200);
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`
+      update identity_platform_access_grants
+      set expires_at = now() - interval '1 second'
+      where id = ${grantId}
+    `;
+    const expiredList = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?status=EXPIRED&limit=20",
+      headers: { cookie: `sevo_platform_session=${manager.token}` },
+    });
+    expect(expiredList.statusCode).toBe(200);
+    expect(expiredList.json()).toMatchObject({
+      items: [expect.objectContaining({ grantId, status: "EXPIRED" })],
+    });
+    const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+    await expect(
+      sql.begin((transaction) =>
+        access.authorizeEmergencyAction(
+          createOpaquePlatformAccessTransactionContext(transaction),
+          {
+            grantId,
+            actorIdentityId: manager.identityId,
+            incidentId,
+            resourceType: "PAYMENT_REVIEW",
+            resourceId,
+            action: "CONTAIN_INCIDENT",
+            reason: "تلاش برای مهار حادثه پس از پایان مهلت اضطراری",
+            correlationId: randomUUID(),
+          },
+        ),
+      ),
+    ).rejects.toMatchObject<Partial<PlatformAccessError>>({
+      code: "EMERGENCY_SCOPE_REQUIRED",
+    });
+    const expired = await sql<Array<{ status: string; eventCount: number }>>`
+      select g.status,
+        (select count(*)::int from platform_outbox_events e
+         where e.aggregate_id = g.id
+           and e.event_type = 'EmergencyAccessExpired.v1') as "eventCount"
+      from identity_platform_access_grants g where g.id = ${grantId}
+    `;
+    expect(expired).toEqual([{ status: "EXPIRED", eventCount: 1 }]);
+    await sql.end();
+  });
+
+  it("rejects emergency use when its grant expires while authorization waits for the grant lock", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const incidentId = "INC-2026-0128-EXPIRY-RACE";
+    const resourceId = randomUUID();
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        incidentId,
+        reason: "مهار خطر مشخص برای آزمون انقضا هنگام انتظار قفل",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          allowedActions: ["CONTAIN_INCIDENT"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    const grantId = requested.json<{ grantId: string }>().grantId;
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+          headers: accessHeaders(manager.token),
+          payload: { expectedRevision: 1 },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const actionSql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await observer`
+      update identity_platform_access_grants
+      set expires_at = clock_timestamp() + interval '500 milliseconds'
+      where id = ${grantId}
+    `;
+    const lockAcquired = deferred();
+    const releaseLock = deferred();
+    const blockingTransaction = blocker.begin(async (transaction) => {
+      await transaction`
+        select id from identity_platform_access_grants
+        where id = ${grantId} for update
+      `;
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+
+    try {
+      await lockAcquired.promise;
+      const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+      const correlationId = randomUUID();
+      const emergencyUse = actionSql
+        .begin((transaction) =>
+          access.authorizeEmergencyAction(
+            createOpaquePlatformAccessTransactionContext(transaction),
+            {
+              grantId,
+              actorIdentityId: manager.identityId,
+              incidentId,
+              resourceType: "PAYMENT_REVIEW",
+              resourceId,
+              action: "CONTAIN_INCIDENT",
+              reason: "تلاش اضطراری پس از انقضا هنگام انتظار قفل",
+              correlationId,
+            },
+          ),
+        )
+        .then(
+          () => ({ authorized: true }),
+          (error: unknown) => ({ error }),
+        );
+      await waitForPlatformGrantLockWaiter(observer);
+      await waitUntilGrantExpires(observer, grantId);
+
+      releaseLock.resolve();
+      await blockingTransaction;
+      await expect(emergencyUse).resolves.toMatchObject({
+        error: { code: "EMERGENCY_SCOPE_REQUIRED" },
+      });
+      const persisted = await observer<
+        Array<{
+          status: string;
+          expiryAuditCount: number;
+          expiryEventCount: number;
+          denialAuditCount: number;
+        }>
+      >`
+        select g.status,
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.action = 'GRANT_EXPIRED')
+            as "expiryAuditCount",
+          (select count(*)::int from platform_outbox_events e
+           where e.aggregate_id = g.id and e.event_type = 'EmergencyAccessExpired.v1')
+            as "expiryEventCount",
+          (select count(*)::int from identity_platform_access_audit a
+           where a.grant_id = g.id and a.correlation_id = ${correlationId}
+             and a.outcome = 'DENIED') as "denialAuditCount"
+        from identity_platform_access_grants g where g.id = ${grantId}
+      `;
+      expect(persisted).toEqual([
+        {
+          status: "EXPIRED",
+          expiryAuditCount: 1,
+          expiryEventCount: 1,
+          denialAuditCount: 1,
+        },
+      ]);
+    } finally {
+      releaseLock.resolve();
+      await blockingTransaction;
+      await Promise.all([blocker.end(), observer.end(), actionSql.end()]);
+    }
+  });
+
+  it("does not list an emergency grant as active after it expires while listing waits for its lock", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const grantId = await createActiveSingleManagerEmergency(server, manager.token);
+    const blocker = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const observer = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await observer`
+      update identity_platform_access_grants
+      set expires_at = clock_timestamp() + interval '500 milliseconds'
+      where id = ${grantId}
+    `;
+    const lockAcquired = deferred();
+    const releaseLock = deferred();
+    const blockingTransaction = blocker.begin(async (transaction) => {
+      await transaction`
+        select id from identity_platform_access_grants
+        where id = ${grantId} for update
+      `;
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+
+    try {
+      await lockAcquired.promise;
+      const listing = server.inject({
+        method: "GET",
+        url: "/v1/platform/access/emergency-grants?limit=20",
+        headers: { cookie: `sevo_platform_session=${manager.token}` },
+      });
+      await waitForPlatformGrantLockWaiter(observer);
+      await waitUntilGrantExpires(observer, grantId);
+
+      releaseLock.resolve();
+      await blockingTransaction;
+      const listed = await listing;
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toMatchObject({
+        items: [expect.objectContaining({ grantId, status: "EXPIRED" })],
+      });
+    } finally {
+      releaseLock.resolve();
+      await blockingTransaction;
+      await Promise.all([blocker.end(), observer.end()]);
+    }
+  });
+
+  it("returns 409 when the live manager topology no longer matches activation control", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const requester = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(requester.token),
+      payload: {
+        incidentId: "INC-2026-0128-TOPOLOGY",
+        reason: "مهار خطر مشخص پیش از تغییر تعداد مدیران دسترسی",
+        scope: {
+          resourceType: "PAYMENT_REVIEW",
+          resourceId: randomUUID(),
+          allowedActions: ["CONTAIN_INCIDENT"],
+        },
+        ttlMinutes: 30,
+      },
+    });
+    const grantId = requested.json<{ grantId: string }>().grantId;
+    await seedAgent(["ACCESS_ADMINISTRATION"]);
+
+    const activation = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+      headers: accessHeaders(requester.token),
+      payload: { expectedRevision: 1 },
+    });
+
+    expect(activation.statusCode).toBe(409);
+    expect(activation.json()).toMatchObject({ code: "INVALID_ACCESS_TRANSITION" });
+  });
+
+  it("lists pending emergency requests and rejects one through the advertised API", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const requester = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const reviewer = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/emergency-grants",
+      headers: accessHeaders(requester.token),
+      payload: {
+        incidentId: "INC-2026-0128-REJECT",
+        reason: "درخواست اضطراری برای آزمون مسیر رد مستقل",
+        scope: {
+          resourceType: "DISPUTE_CASE",
+          resourceId: randomUUID(),
+          allowedActions: ["READ_MASKED"],
+        },
+        ttlMinutes: 20,
+      },
+    });
+    const grantId = requested.json<{ grantId: string }>().grantId;
+
+    const listed = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?status=PENDING_APPROVAL&limit=10",
+      headers: { cookie: `sevo_platform_session=${reviewer.token}` },
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toMatchObject({
+      items: [expect.objectContaining({ grantId, incidentId: "INC-2026-0128-REJECT" })],
+      nextCursor: null,
+    });
+
+    const headers = accessHeaders(reviewer.token);
+    const rejectionRequest = {
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/rejection`,
+      headers,
+      payload: {
+        expectedRevision: 1,
+        reason: "محدوده درخواست با نیاز ثبت‌شده حادثه هم‌خوان نیست",
+      },
+    } as const;
+    const rejected = await server.inject(rejectionRequest);
+    expect(rejected.statusCode).toBe(200);
+    expect(rejected.json()).toMatchObject({
+      grantId,
+      grantKind: "EMERGENCY_ACCESS",
+      requestStatus: "REJECTED",
+      revision: 2,
+    });
+    expect((await server.inject(rejectionRequest)).json()).toEqual(rejected.json());
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const persisted = await sql<
+      Array<{
+        status: string;
+        rejectedAt: Date | null;
+        rejectionAuditCount: number;
+        rejectionEventCount: number;
+      }>
+    >`
+      select g.status, g.rejected_at as "rejectedAt",
+        (select count(*)::int from identity_platform_access_audit a
+         where a.resolved_grant_id = g.id and a.action = 'GRANT_REJECTED')
+          as "rejectionAuditCount",
+        (select count(*)::int from platform_outbox_events e
+         where e.aggregate_id = g.id and e.event_type = 'EmergencyAccessRejected.v1')
+          as "rejectionEventCount"
+      from identity_platform_access_grants g where g.id = ${grantId}
+    `;
+    expect(persisted).toEqual([
+      {
+        status: "PENDING_APPROVAL",
+        rejectedAt: expect.any(Date),
+        rejectionAuditCount: 1,
+        rejectionEventCount: 1,
+      },
+    ]);
+    await sql.end();
+  });
+
+  it("permits self-review only when one platform human exists and supports later independent review", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const requester = await seedAgent(["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]);
+    const grantId = await createClosedSingleManagerEmergency(server, requester.token);
+    const selfQueue = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?limit=20",
+      headers: { cookie: `sevo_platform_session=${requester.token}` },
+    });
+    expect(selfQueue.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          grantId,
+          reviewEligibility: "WITHOUT_INDEPENDENT_REVIEW",
+        }),
+      ],
+    });
+
+    const selfReviewed = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/review`,
+      headers: accessHeaders(requester.token),
+      payload: { expectedRevision: 3, findingCode: "CONTROLS_FOLLOWED" },
+    });
+    expect(selfReviewed.statusCode).toBe(200);
+    expect(selfReviewed.json()).toMatchObject({
+      revision: 4,
+      reviewStatus: "COMPLETED_WITHOUT_INDEPENDENT_REVIEW",
+    });
+
+    const independentReviewer = await seedAgent([
+      "ACCESS_ADMINISTRATION",
+      "ACCESS_AUDIT_REVIEW",
+    ]);
+    const replacementQueue = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?limit=20",
+      headers: { cookie: `sevo_platform_session=${independentReviewer.token}` },
+    });
+    expect(replacementQueue.json()).toMatchObject({
+      items: [expect.objectContaining({ grantId, reviewEligibility: "INDEPENDENT" })],
+    });
+    const independentReview = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/review`,
+      headers: accessHeaders(independentReviewer.token),
+      payload: { expectedRevision: 4, findingCode: "CONTROLS_FOLLOWED" },
+    });
+    expect(independentReview.statusCode).toBe(200);
+    expect(independentReview.json()).toMatchObject({
+      revision: 5,
+      reviewStatus: "COMPLETED",
+    });
+
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const reviews = await sql<
+      Array<{ reviewId: string; reviewMode: string; supersedesReviewId: string | null }>
+    >`
+      select id as "reviewId", review_mode as "reviewMode",
+        supersedes_review_id as "supersedesReviewId"
+      from identity_platform_emergency_access_reviews
+      where grant_id = ${grantId}
+      order by reviewed_at, id
+    `;
+    expect(reviews).toHaveLength(2);
+    expect(reviews[0]).toMatchObject({
+      reviewMode: "WITHOUT_INDEPENDENT_REVIEW",
+      supersedesReviewId: null,
+    });
+    expect(reviews[1]).toMatchObject({
+      reviewMode: "INDEPENDENT",
+      supersedesReviewId: reviews[0]?.reviewId,
+    });
+    await expect(
+      sql`update identity_platform_emergency_access_reviews set finding_code = 'FOLLOW_UP_REQUIRED'`,
+    ).rejects.toThrow(/append-only/);
+    await sql.end();
+  });
+
+  it("blocks self-review when another active platform human exists", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const requester = await seedAgent(["ACCESS_ADMINISTRATION", "ACCESS_AUDIT_REVIEW"]);
+    const grantId = await createClosedSingleManagerEmergency(server, requester.token);
+    await seedAgent([]);
+
+    const queue = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/emergency-grants?limit=20",
+      headers: { cookie: `sevo_platform_session=${requester.token}` },
+    });
+    expect(queue.json()).toMatchObject({
+      items: [expect.objectContaining({ grantId, reviewEligibility: "NOT_ELIGIBLE" })],
+    });
+
+    const forbiddenSelfReview = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/emergency-grants/${grantId}/review`,
+      headers: accessHeaders(requester.token),
+      payload: { expectedRevision: 3, findingCode: "CONTROLS_FOLLOWED" },
+    });
+    expect(forbiddenSelfReview.statusCode).toBe(403);
+    expect(forbiddenSelfReview.json()).toMatchObject({
+      code: "SELF_APPROVAL_FORBIDDEN",
+    });
+  });
+
+  it("durably audits nonexistent and wrong-kind emergency grant references", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const manager = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const recipient = await seedAgent([]);
+    const wrongKind = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/responsibility-grants",
+      headers: accessHeaders(manager.token),
+      payload: {
+        recipientIdentityId: recipient.identityId,
+        responsibility: "PAYMENT_REVIEW",
+        reason: "واگذاری مسئولیت برای آزمون شناسه با نوع نادرست",
+      },
+    });
+    const attempts = [randomUUID(), wrongKind.json<{ grantId: string }>().grantId];
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+
+    for (const grantId of attempts) {
+      await expect(
+        sql.begin((transaction) =>
+          access.authorizeEmergencyAction(
+            createOpaquePlatformAccessTransactionContext(transaction),
+            {
+              grantId,
+              actorIdentityId: manager.identityId,
+              incidentId: "INC-2026-0128-UNRESOLVED",
+              resourceType: "PAYMENT_REVIEW",
+              resourceId: randomUUID(),
+              action: "CONTAIN_INCIDENT",
+              reason: "رد تلاش اضطراری با شناسه نامعتبر یا نوع نادرست",
+              correlationId: randomUUID(),
+            },
+          ),
+        ),
+      ).rejects.toMatchObject<Partial<PlatformAccessError>>({
+        code: "EMERGENCY_SCOPE_REQUIRED",
+      });
+    }
+
+    const audit = await sql<
+      Array<{
+        attemptedGrantId: string;
+        attemptedGrantKind: string;
+        attemptedIncidentId: string;
+        resolvedGrantId: string | null;
+      }>
+    >`
+      select grant_id as "attemptedGrantId",
+        attempted_grant_kind as "attemptedGrantKind",
+        attempted_incident_id as "attemptedIncidentId",
+        resolved_grant_id as "resolvedGrantId"
+      from identity_platform_access_audit
+      where grant_id in ${sql(attempts)} and attempted_grant_kind = 'EMERGENCY_ACCESS'
+      order by grant_id
+    `;
+    expect(audit).toHaveLength(2);
+    expect(audit).toEqual(
+      expect.arrayContaining(
+        attempts.map((attemptedGrantId) => ({
+          attemptedGrantId,
+          attemptedGrantKind: "EMERGENCY_ACCESS",
+          attemptedIncidentId: "INC-2026-0128-UNRESOLVED",
+          resolvedGrantId: null,
+        })),
+      ),
+    );
+    await sql.end();
+  });
 });
+
+async function createClosedSingleManagerEmergency(
+  server: {
+    inject(input: unknown): Promise<{ json<T = unknown>(): T; statusCode: number }>;
+  },
+  token: string,
+) {
+  const grantId = await createActiveSingleManagerEmergency(server, token);
+  const closed = await server.inject({
+    method: "POST",
+    url: `/v1/platform/access/emergency-grants/${grantId}/closure`,
+    headers: accessHeaders(token),
+    payload: {
+      expectedRevision: 2,
+      reason: "مهار حادثه تکمیل و نشست اضطراری بسته شد",
+    },
+  });
+  expect(closed.statusCode).toBe(200);
+  return grantId;
+}
+
+async function createActiveSingleManagerEmergency(
+  server: {
+    inject(input: unknown): Promise<{ json<T = unknown>(): T; statusCode: number }>;
+  },
+  token: string,
+) {
+  const requested = await server.inject({
+    method: "POST",
+    url: "/v1/platform/access/emergency-grants",
+    headers: accessHeaders(token),
+    payload: {
+      incidentId: `INC-${randomUUID()}`,
+      reason: "مهار خطر مشخص برای آزمون بازبینی پسینی",
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId: randomUUID(),
+        allowedActions: ["CONTAIN_INCIDENT"],
+      },
+      ttlMinutes: 30,
+    },
+  });
+  const grantId = requested.json<{ grantId: string }>().grantId;
+  const activated = await server.inject({
+    method: "POST",
+    url: `/v1/platform/access/emergency-grants/${grantId}/activation`,
+    headers: accessHeaders(token),
+    payload: { expectedRevision: 1 },
+  });
+  expect(activated.statusCode).toBe(200);
+  return grantId;
+}
 
 function accessHeaders(token: string) {
   return {
@@ -785,6 +2060,7 @@ function hash(value: string) {
 async function resetPlatformAccessData() {
   const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
   await sql`truncate identity_platform_access_audit`;
+  await sql`truncate identity_platform_emergency_access_reviews`;
   await sql`delete from identity_platform_access_idempotency`;
   await sql`delete from identity_platform_access_grants`;
   await sql`delete from identity_platform_permission_grants`;
@@ -817,6 +2093,40 @@ async function waitForPlatformGrantLockWaiter(sql: Sql) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("revocation did not queue on the platform grant lock");
+}
+
+async function waitForSensitiveAuthorizationLockWaiter(
+  sql: Sql,
+  actionPid: number,
+  waitingQuery: string,
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await sql<Array<{ waiting: boolean }>>`
+      select exists(
+        select 1 from pg_stat_activity
+        where datname = current_database()
+          and pid = ${actionPid}
+          and wait_event_type = 'Lock'
+          and query like ${`%${waitingQuery}%`}
+          and query like '%for share%'
+      ) as waiting
+    `;
+    if (rows[0]?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`sensitive authorization did not wait on its ${waitingQuery} lock`);
+}
+
+async function waitUntilGrantExpires(sql: Sql, grantId: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await sql<Array<{ expired: boolean }>>`
+      select expires_at <= clock_timestamp() as expired
+      from identity_platform_access_grants where id = ${grantId}
+    `;
+    if (rows[0]?.expired) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("sensitive grant did not reach its expiry time");
 }
 
 async function waitForAuditTableWaiters(sql: Sql, expected: number) {

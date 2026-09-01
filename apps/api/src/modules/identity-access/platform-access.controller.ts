@@ -1,17 +1,26 @@
 import {
   Body,
   Controller,
+  Get,
   Headers,
   HttpCode,
   HttpException,
   Param,
   Inject,
   Post,
+  Query,
   Req,
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
   platformAccessApprovalInputContract,
+  emergencyAccessActivationInputContract,
+  emergencyAccessClosureInputContract,
+  emergencyAccessRequestInputContract,
+  emergencyAccessReviewInputContract,
+  platformAccessListQueryContract,
+  platformAccessAuditQueryContract,
+  platformAccessRejectionInputContract,
   platformAccessGrantIdContract,
   platformAccessRevocationInputContract,
   responsibilityGrantRequestInputContract,
@@ -50,6 +59,17 @@ export class PlatformAccessController {
     }
     return this.handle(request, commandKey.data, (context) =>
       this.access.requestResponsibility(context, input.data),
+    );
+  }
+
+  @Get("responsibility-grants")
+  async listResponsibilityAccess(
+    @Query() rawQuery: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const query = parseListQuery(rawQuery, request.id);
+    return this.handleRead(request, (context) =>
+      this.access.listResponsibilityAccess(context, query),
     );
   }
 
@@ -95,6 +115,25 @@ export class PlatformAccessController {
     );
   }
 
+  @Post("responsibility-grants/:grantId/rejection")
+  @HttpCode(200)
+  async rejectResponsibility(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = platformAccessRejectionInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.rejectResponsibility(context, grantId.data, input.data),
+    );
+  }
+
   @Post("sensitive-grants")
   @HttpCode(202)
   async requestSensitiveAccess(
@@ -109,6 +148,17 @@ export class PlatformAccessController {
     }
     return this.handle(request, commandKey.data, (context) =>
       this.access.requestSensitiveAccess(context, input.data),
+    );
+  }
+
+  @Get("sensitive-grants")
+  async listSensitiveAccess(
+    @Query() rawQuery: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const query = parseListQuery(rawQuery, request.id);
+    return this.handleRead(request, (context) =>
+      this.access.listSensitiveAccess(context, query),
     );
   }
 
@@ -154,6 +204,187 @@ export class PlatformAccessController {
     );
   }
 
+  @Post("sensitive-grants/:grantId/rejection")
+  @HttpCode(200)
+  async rejectSensitiveAccess(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = platformAccessRejectionInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.rejectSensitiveAccess(context, grantId.data, input.data),
+    );
+  }
+
+  @Post("emergency-grants")
+  @HttpCode(202)
+  async requestEmergencyAccess(
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const input = emergencyAccessRequestInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.requestEmergencyAccess(context, input.data),
+    );
+  }
+
+  @Get("emergency-grants")
+  async listEmergencyAccess(
+    @Query() rawQuery: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const query = parseListQuery(rawQuery, request.id);
+    return this.handleRead(request, (context) =>
+      this.access.listEmergencyAccess(context, query),
+    );
+  }
+
+  @Get("audit")
+  async listAudit(@Query() rawQuery: unknown, @Req() request: FastifyRequest) {
+    const queryRecord = queryRecordWithNumericLimit(rawQuery);
+    const query = platformAccessAuditQueryContract.safeParse(queryRecord);
+    if (!query.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handleRead(request, (context) =>
+      this.access.listAudit(context, query.data),
+    );
+  }
+
+  @Post("emergency-grants/:grantId/approval")
+  @HttpCode(200)
+  async approveEmergencyAccess(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = platformAccessApprovalInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.approveEmergencyAccess(
+        context,
+        grantId.data,
+        input.data.expectedRevision,
+      ),
+    );
+  }
+
+  @Post("emergency-grants/:grantId/activation")
+  @HttpCode(200)
+  async activateEmergencyAccess(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = emergencyAccessActivationInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.activateEmergencyAccess(
+        context,
+        grantId.data,
+        input.data.expectedRevision,
+      ),
+    );
+  }
+
+  @Post("emergency-grants/:grantId/revocation")
+  @HttpCode(200)
+  async revokeEmergencyAccess(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = platformAccessRevocationInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.revokeEmergencyAccess(context, grantId.data, input.data),
+    );
+  }
+
+  @Post("emergency-grants/:grantId/closure")
+  @HttpCode(200)
+  async closeEmergencyAccess(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = emergencyAccessClosureInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.closeEmergencyAccess(context, grantId.data, input.data),
+    );
+  }
+
+  @Post("emergency-grants/:grantId/rejection")
+  @HttpCode(200)
+  async rejectEmergencyAccess(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = platformAccessRejectionInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.rejectEmergencyAccess(context, grantId.data, input.data),
+    );
+  }
+
+  @Post("emergency-grants/:grantId/review")
+  @HttpCode(200)
+  async completeEmergencyAccessReview(
+    @Param("grantId") rawGrantId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const grantId = platformAccessGrantIdContract.safeParse(rawGrantId);
+    const input = emergencyAccessReviewInputContract.safeParse(body);
+    const commandKey = idempotencyKeyContract.safeParse(idempotencyKey);
+    if (!grantId.success || !input.success || !commandKey.success) {
+      throw accessHttpError("VALIDATION_ERROR", request.id, 422);
+    }
+    return this.handle(request, commandKey.data, (context) =>
+      this.access.completeEmergencyAccessReview(context, grantId.data, input.data),
+    );
+  }
+
   private async handle<T>(
     request: FastifyRequest,
     idempotencyKey: string,
@@ -163,25 +394,68 @@ export class PlatformAccessController {
       idempotencyKey: string;
     }) => Promise<T>,
   ): Promise<T> {
-    try {
-      return await command({
+    return this.execute(
+      command({
         sessionToken: readPlatformSessionToken(request) ?? "",
         correlationId: request.id,
         idempotencyKey,
-      });
+      }),
+      request.id,
+    );
+  }
+
+  private async handleRead<T>(
+    request: FastifyRequest,
+    read: (context: { sessionToken: string; correlationId: string }) => Promise<T>,
+  ): Promise<T> {
+    return this.execute(
+      read({
+        sessionToken: readPlatformSessionToken(request) ?? "",
+        correlationId: request.id,
+      }),
+      request.id,
+    );
+  }
+
+  private async execute<T>(operation: Promise<T>, correlationId: string): Promise<T> {
+    try {
+      return await operation;
     } catch (error) {
       if (error instanceof PlatformAgentSessionUnauthorizedError) {
-        throw accessHttpError("UNAUTHORIZED", request.id, 401);
+        throw accessHttpError("UNAUTHORIZED", correlationId, 401);
       }
       if (error instanceof PlatformPermissionRequiredError) {
-        throw accessHttpError("RESPONSIBILITY_REQUIRED", request.id, 403);
+        throw accessHttpError("RESPONSIBILITY_REQUIRED", correlationId, 403);
       }
       if (error instanceof PlatformAccessError) {
-        throw accessHttpError(error.code, request.id, accessStatus(error.code));
+        throw accessHttpError(error.code, correlationId, accessStatus(error.code));
       }
       throw error;
     }
   }
+}
+
+function parseListQuery(rawQuery: unknown, correlationId: string) {
+  const query = platformAccessListQueryContract.safeParse(
+    queryRecordWithNumericLimit(rawQuery),
+  );
+  if (!query.success) {
+    throw accessHttpError("VALIDATION_ERROR", correlationId, 422);
+  }
+  return query.data;
+}
+
+function queryRecordWithNumericLimit(rawQuery: unknown) {
+  const queryRecord =
+    typeof rawQuery === "object" && rawQuery !== null
+      ? (rawQuery as Record<string, unknown>)
+      : {};
+  return {
+    ...queryRecord,
+    ...(typeof queryRecord.limit === "string"
+      ? { limit: Number(queryRecord.limit) }
+      : {}),
+  };
 }
 
 function accessStatus(code: PlatformAccessError["code"]): number {
@@ -189,7 +463,8 @@ function accessStatus(code: PlatformAccessError["code"]): number {
     code === "SELF_GRANT_FORBIDDEN" ||
     code === "SELF_APPROVAL_FORBIDDEN" ||
     code === "RESPONSIBILITY_REQUIRED" ||
-    code === "SENSITIVE_SCOPE_REQUIRED"
+    code === "SENSITIVE_SCOPE_REQUIRED" ||
+    code === "EMERGENCY_SCOPE_REQUIRED"
   ) {
     return 403;
   }
@@ -207,6 +482,8 @@ function accessHttpError(code: string, correlationId: string, status: number) {
       "مسئولیت لازم برای این اقدام فعال نیست؛ با مدیر دسترسی پلتفرم پیگیری کنید.",
     SENSITIVE_SCOPE_REQUIRED:
       "اجازه زنده و هم‌محدوده برای این پرونده وجود ندارد؛ دسترسی تازه درخواست کنید.",
+    EMERGENCY_SCOPE_REQUIRED:
+      "دسترسی اضطراری زنده و هم‌محدوده برای این حادثه وجود ندارد؛ وضعیت حادثه را بررسی کنید.",
     SECOND_MANAGER_REQUIRED: "برای این واگذاری، تأیید یک مدیر دسترسی دیگر لازم است.",
     STRONG_AUTHENTICATION_REQUIRED:
       "برای ادامه، دوباره با رمز یک‌بارمصرف وارد فضای کار پلتفرم شوید.",
@@ -218,6 +495,8 @@ function accessHttpError(code: string, correlationId: string, status: number) {
     INVALID_ACCESS_TRANSITION:
       "این درخواست دیگر در وضعیت قابل انجام نیست؛ وضعیت تازه را ببینید.",
     ACCESS_ALREADY_REVOKED: "این دسترسی پیش‌تر لغو شده و اکنون قابل استفاده نیست.",
+    EMERGENCY_REVIEW_OVERDUE:
+      "بازبینی دسترسی اضطراری قبلی عقب افتاده است؛ ابتدا همان بازبینی را ببندید.",
     IDEMPOTENCY_CONFLICT:
       "این شناسه قبلاً برای درخواست دیگری استفاده شده است؛ با شناسه تازه دوباره تلاش کنید.",
     UNAUTHORIZED: "نشست عامل پلتفرم معتبر نیست؛ دوباره وارد شوید.",

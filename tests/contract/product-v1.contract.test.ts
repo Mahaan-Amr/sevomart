@@ -1,11 +1,19 @@
 import {
   createSimpleProductInputContract,
   productAuthoritativeVariantV1Contract,
+  productNotFoundErrorContract,
   productPublishedV1Contract,
   productPublishedV2Contract,
   productUnpublishedV1Contract,
   publicSimpleProductContract,
   replaceSimpleProductWorkingCopyContract,
+  sellerProductAccessInactiveErrorContract,
+  sellerProductCursorBoundaryContract,
+  sellerProductCursorContract,
+  sellerProductListContract,
+  sellerProductListValidationErrorContract,
+  sellerProductPageLimitContract,
+  sellerProductStateContract,
   simpleProductDraftContract,
 } from "@sevo/contracts/product/v1";
 import { MEDIA_UPLOAD_PURPOSES, MEDIA_VARIANTS } from "@sevo/contracts/media/v1";
@@ -209,6 +217,101 @@ describe("simple product v1 contract", () => {
     expect(JSON.stringify(unpublished.payload)).not.toMatch(
       /reason|onHand|sku|name|description|image|url/i,
     );
+  });
+});
+
+describe("seller product list v1 contract", () => {
+  const summary = {
+    productId: ids.product,
+    name: "فنجان سرامیکی",
+    primaryMediaId: ids.media,
+    state: "DRAFT" as const,
+    revision: 2,
+    publicationVersion: 0,
+  };
+
+  it("validates stable pagination inputs and the empty page", () => {
+    expect(sellerProductPageLimitContract.parse("20")).toBe(20);
+    for (const invalid of ["0", "51", "1.5", "many"]) {
+      expect(sellerProductPageLimitContract.safeParse(invalid).success).toBe(false);
+    }
+
+    expect(sellerProductStateContract.parse("PUBLISHED")).toBe("PUBLISHED");
+    expect(sellerProductStateContract.safeParse("ARCHIVED").success).toBe(false);
+
+    const boundary = {
+      createdAt: "2026-08-30T10:30:00.000Z",
+      productId: ids.product,
+    };
+    const cursor = Buffer.from(`${boundary.createdAt}|${boundary.productId}`).toString(
+      "base64url",
+    );
+    expect(sellerProductCursorContract.parse(cursor)).toBe(cursor);
+    expect(sellerProductCursorBoundaryContract.parse(boundary)).toEqual(boundary);
+    expect(sellerProductCursorContract.safeParse("not-a-cursor").success).toBe(false);
+    expect(
+      sellerProductCursorBoundaryContract.safeParse({
+        ...boundary,
+        createdAt: "2026-02-30T10:30:00.000Z",
+      }).success,
+    ).toBe(false);
+
+    expect(sellerProductListContract.parse({ items: [], nextCursor: null })).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+  });
+
+  it("keeps seller summaries strict and free of unrelated private data", () => {
+    expect(
+      sellerProductListContract.parse({ items: [summary], nextCursor: null }),
+    ).toEqual({ items: [summary], nextCursor: null });
+
+    for (const privateField of [
+      "viewCount",
+      "likeCount",
+      "bankAccount",
+      "mobile",
+      "buyerId",
+    ]) {
+      expect(
+        sellerProductListContract.safeParse({
+          items: [{ ...summary, [privateField]: "private" }],
+          nextCursor: null,
+        }).success,
+        privateField,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps list failures aligned with the owner error envelope", () => {
+    const base = {
+      version: 1 as const,
+      message: "درخواست قابل انجام نیست.",
+      correlationId: ids.correlation,
+      details: { issues: [] },
+    };
+    expect(
+      sellerProductAccessInactiveErrorContract.parse({
+        ...base,
+        code: "SELLER_ACCESS_INACTIVE",
+      }),
+    ).toMatchObject({ version: 1, details: { issues: [] } });
+    expect(
+      productNotFoundErrorContract.parse({ ...base, code: "PRODUCT_NOT_FOUND" }),
+    ).toMatchObject({ version: 1, details: { issues: [] } });
+    expect(
+      sellerProductListValidationErrorContract.parse({
+        ...base,
+        code: "VALIDATION_ERROR",
+        details: {
+          issues: [{ path: "query.cursor", code: "INVALID_FORMAT" }],
+        },
+      }),
+    ).toMatchObject({
+      version: 1,
+      details: { issues: [{ path: "query.cursor" }] },
+    });
   });
 });
 

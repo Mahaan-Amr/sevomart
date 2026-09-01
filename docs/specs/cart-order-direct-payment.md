@@ -423,13 +423,17 @@ CREATED → DISPATCHED → CONFIRMED | FAILED | REVIEW_REQUIRED
   صریح و اتصال پس از ورود؛
 - `/v1/addresses` و `/v1/addresses/{addressId}` برای نشانی نسخه‌دار؛
 - `/v1/checkout/prepare` و `/v1/orders` برای مرور و ساخت؛
-- `/v1/seller/orders` برای فهرست سفارش‌های قابل اقدام فروشنده.
+- `/v1/seller/orders` برای فهرست سفارش‌های قابل اقدام فروشنده؛
+- `/v1/seller/buyers` برای `ListStoreBuyers.v1` با جست‌وجو، cursor امضاشده و
+  خلاصه ماسک‌شده؛
+- `/v1/seller/orders/{orderId}/delivery-details/reveal` برای مشاهده ممیزی‌شده
+  اطلاعات تحویل همان فروشگاه.
 
 `ordersV1Operations` مرجع اجرایی operationId، method و path مسیرهای موجود این
-نسخه است و fragment OpenAPI مستقیماً از آن ساخته می‌شود. مسیر جزئیات خریدار،
-جزئیات فروشنده و reveal که در نتیجه نهایی این Spec تعریف شده‌اند تا زمان ساخت
-controller و قرارداد پاسخ خود وارد این مرجع و OpenAPI نمی‌شوند؛ ثبت path بدون
-runtime مجاز نیست.
+نسخه است و fragment OpenAPI مستقیماً از آن ساخته می‌شود. مسیرهای فهرست خریداران
+مرتبط و reveal اکنون runtime و قرارداد پاسخ دارند. مسیر جزئیات سفارش خریدار و
+جزئیات عمومی فروشنده تا زمان ساخت controller و قرارداد پاسخ خود وارد این مرجع و
+OpenAPI نمی‌شوند؛ ثبت path بدون runtime مجاز نیست.
 
 رخدادهای سفارش:
 
@@ -437,7 +441,7 @@ runtime مجاز نیست.
 - `OrderPaymentReviewRequired.v1`؛
 - `OrderBecameActionable.v1`.
 
-### پرداخت — `@sevo/contracts/payments/v1`
+### پرداخت — `@sevo/contracts/payments/v1` و `@sevo/contracts/payments/v2`
 
 | قرارداد                    | operationهای عمومی/داخلی                       | خطاهای دامنه اصلی                                                                                                                                           | PII و consistency                                 |
 | -------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -452,10 +456,30 @@ runtime مجاز نیست.
   اعتبارسنجی‌شده؛
 - operation داخلی worker برای claim و تطبیق تلاش‌های نیازمند بررسی، بدون route
   عمومی؛
-- `/v1/platform/payment-reviews` برای صف محدود بررسی عملیاتی عامل دارای مجوز.
+- schema قدیمی صف برای خواندن داده‌های آرشیوی حفظ شده، اما operation و route
+  `/v1/platform/payment-reviews` پس از مهاجرت مصرف‌کننده بازنشسته‌اند تا reveal
+  زمان‌دار دور زده نشود؛
+- `/v2/platform/payment-reviews` برای صف کم‌جزئیات بررسی عملیاتی عامل دارای مجوز.
 
-`paymentsV1Operations` مرجع اجرایی operationId، method و path این routeهاست و
-fragment OpenAPI مستقیماً از همان مرجع ساخته می‌شود.
+صف بررسی پرداخت فقط شناسه پرونده، نوع بررسی، مبلغ، Provider، زمان ورود به صف و
+وجود نیاز به پیگیری را برمی‌گرداند؛ شناسه سفارش، reference و رویدادهای Provider و
+تاریخچه تطبیق در صف نمایش داده نمی‌شوند. آشکارسازی کمینه جزئیات از
+`/v2/platform/payment-reviews/{reviewId}/reveal` به اقدام صریح، دلیل انسانی و
+اجازه دسترسی حساس فعال با scope همان `reviewId` و action برابر
+`REVEAL_MINIMUM` نیاز دارد. مجوز مسئولیت و اجازه زمان‌دار در همان transaction
+خواندن دوباره بررسی و مشاهده در audit دسترسی ثبت می‌شوند؛ لغو یا انقضا fail-closed
+است.
+
+عامل می‌تواند از
+`/v2/platform/payment-reviews/{reviewId}/reconciliation` فقط تطبیق دوباره همان
+تلاش `REVIEW_REQUIRED` را زودتر در صف worker قرار دهد. این operation نتیجه مالی
+نمی‌گیرد و موفق یا ناموفق‌کردن دستی ارائه نمی‌کند؛ گذار فقط پس از نتیجه معتبر
+Provider در مسیر موجود نهایی‌سازی انجام می‌شود. این اقدام نیز به اجازه زمان‌دار
+همان پرونده با action برابر `UPDATE_CASE_STATUS` نیاز دارد و کنترل مسئولیت، ثبت
+audit و جلو انداختن زمان worker در یک transaction انجام می‌شوند.
+
+schema نسخهٔ ۱ فقط برای خواندن داده قدیمی حفظ می‌شود. `paymentsV2Operations`
+تنها مرجع اجرایی و OpenAPI صف کم‌جزئیات، reveal و تطبیق دوباره است.
 
 رخدادهای پرداخت:
 
@@ -576,6 +600,13 @@ export مرکزی بسته قراردادها، design system و پیکربند�
 لازم انجام سفارش می‌بیند. پس از آن خروجی پیش‌فرض ماسک است و reveal دوباره دلیل
 ثبت‌شده، audit با actor/time/order/reason code و `Cache-Control: no-store` می‌خواهد.
 دنبال‌کردن، گفت‌وگوی عادی یا فروشگاه دیگر هیچ دسترسی ایجاد نمی‌کند.
+
+در پیاده‌سازی `ListStoreBuyers.v1`، cursor به فروشگاه و عبارت جست‌وجو bind و با
+کلید مشتق‌شده امضا می‌شود. audit reveal متن آزاد یا PII را کپی نمی‌کند: فقط کد
+بسته دلیل و اثر SHA-256 دلیل را نگه می‌دارد. reveal صریح همیشه دلیل می‌خواهد؛
+بنابراین projection کمینه orders-owned رخدادهای نسخه‌دار fulfillment فقط وضعیت
+نمایشی خلاصه را می‌سازد و منبع مجوز آشکارسازی نیست. جدول ماژول fulfillment
+مستقیماً خوانده نمی‌شود و lag یا نبود projection مجوز fail-open ایجاد نمی‌کند.
 
 ### idempotency و قابلیت پیگیری
 

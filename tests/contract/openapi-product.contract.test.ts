@@ -36,6 +36,7 @@ describe("OpenAPI simple product tracer", () => {
       ["get", "/v1/seller/inventory", "listSellerInventory", true],
       ["put", "/v1/seller/inventory", "replaceInventoryBatch", true],
       ["post", "/v1/seller/products", "createSellerProduct", true],
+      ["get", "/v1/seller/products", "listSellerProducts", true],
       [
         "post",
         "/v1/seller/products/{productId}/images",
@@ -105,6 +106,36 @@ describe("OpenAPI simple product tracer", () => {
     expect(document.paths["/v1/seller/products"].post.parameters).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "If-Match" })]),
     );
+    expect(document.paths["/v1/seller/products"].get.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cursor", required: false }),
+        expect.objectContaining({ name: "limit", required: false }),
+        expect.objectContaining({ name: "state", required: false }),
+      ]),
+    );
+    expect(document.components.schemas).toHaveProperty("SellerProductList");
+    const listOperation = document.paths["/v1/seller/products"].get;
+    for (const [status, schema] of [
+      ["200", "SellerProductList"],
+      ["403", "SellerProductAccessInactiveError"],
+      ["404", "ProductNotFoundError"],
+      ["422", "SellerProductListValidationError"],
+    ] as const) {
+      expect(
+        listOperation.responses[status].content["application/json"].schema,
+      ).toEqual({ $ref: `#/components/schemas/${schema}` });
+    }
+    for (const [name, schema] of [
+      ["cursor", "SellerProductCursor"],
+      ["limit", "SellerProductPageLimit"],
+      ["state", "SellerProductState"],
+    ] as const) {
+      expect(
+        listOperation.parameters.find(
+          (parameter: { name: string }) => parameter.name === name,
+        ).schema,
+      ).toEqual({ $ref: `#/components/schemas/${schema}` });
+    }
 
     for (const [method, path] of [
       ["put", "/v1/seller/products/{productId}/working-copy"],

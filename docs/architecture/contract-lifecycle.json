@@ -79,9 +79,12 @@
       "consumersMigrated": "complete",
       "removable": false,
       "evidence": {
-        "schemas": ["orderContract"],
+        "schemas": ["orderContract", "storeBuyerPageContract"],
         "operations": ["ordersV1Operations"],
-        "events": ["orderBecameActionableV1Contract"]
+        "events": [
+          "orderBecameActionableV1Contract",
+          "orderReportingSnapshotV1Contract"
+        ]
       }
     },
     "@sevo/contracts/payments/v1": {
@@ -96,13 +99,29 @@
         "events": ["directPaymentAttemptConfirmedV1Contract"]
       }
     },
+    "@sevo/contracts/payments/v2": {
+      "owner": "payments",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": ["paymentReviewQueueV2Contract", "paymentReviewDetailV2Contract"],
+        "operations": ["paymentsV2Operations"],
+        "events": []
+      }
+    },
     "@sevo/contracts/fulfillment/v1": {
       "owner": "fulfillment",
       "approved": true,
-      "executable": false,
-      "consumersMigrated": "not-applicable",
+      "executable": true,
+      "consumersMigrated": "complete",
       "removable": false,
-      "evidence": { "schemas": [], "operations": [], "events": [] }
+      "evidence": {
+        "schemas": ["fulfillmentTimelineContract"],
+        "operations": ["fulfillmentV1Operations"],
+        "events": ["fulfillmentAdvancedV1Contract"]
+      }
     },
     "@sevo/contracts/conversations/v1": {
       "owner": "conversations",
@@ -124,8 +143,27 @@
       "removable": false,
       "evidence": {
         "schemas": ["buyerDisputeViewContract"],
-        "operations": ["problemFollowUpV1Operations"],
+        "operations": [],
         "events": ["disputeOpenedV1Contract"]
+      }
+    },
+    "@sevo/contracts/problem-follow-up/v2": {
+      "owner": "problem-follow-up",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "complete",
+      "removable": false,
+      "evidence": {
+        "schemas": [
+          "openDisputeInputV2Contract",
+          "resolveDisputeInputV2Contract",
+          "disputeAuditEntryV2Contract"
+        ],
+        "operations": [
+          "problemFollowUpV1ReadOperations",
+          "problemFollowUpV2Operations"
+        ],
+        "events": []
       }
     },
     "@sevo/contracts/content/v1": {
@@ -182,11 +220,15 @@
     },
     "@sevo/contracts/reporting-analytics/v1": {
       "owner": "reporting-analytics",
-      "approved": false,
-      "executable": false,
-      "consumersMigrated": "not-applicable",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
       "removable": false,
-      "evidence": { "schemas": [], "operations": [], "events": [] }
+      "evidence": {
+        "schemas": ["sellerBasicReportContract"],
+        "operations": ["reportingAnalyticsV1Operations"],
+        "events": []
+      }
     }
   },
   "artifacts": {

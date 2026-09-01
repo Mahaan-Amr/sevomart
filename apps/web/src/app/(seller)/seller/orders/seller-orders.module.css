@@ -16,23 +16,45 @@
   margin: 0 0 24px;
   font-size: 24px;
 }
-.panel ul {
+.orders {
   list-style: none;
   padding: 0;
 }
-.panel li {
+.orders > li {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 12px;
   padding: 16px 0;
   border-bottom: 1px solid var(--color-divider);
 }
-.panel li span {
+.orders > li > a {
+  grid-column: 1 / -1;
+  width: fit-content;
+  color: var(--color-primary-dark);
+  font-weight: 700;
+}
+.orders > li > a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+.orders > li span {
   display: grid;
   gap: 4px;
 }
-.panel small {
+.orders small {
   color: var(--color-muted);
+}
+.buyerSearchLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  margin-block-start: 24px;
+  color: var(--color-primary-dark);
+  font-weight: 700;
+}
+.buyerSearchLink:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
 }
 @media (max-width: 560px) {
   .page {

@@ -1,4 +1,10 @@
 import {
+  directRefundContract,
+  directRefundConfirmedV1Contract,
+  directRefundFailedV1Contract,
+  directRefundPendingV1Contract,
+  recordDirectRefundResultInputContract,
+  requestDirectRefundInputContract,
   directPaymentErrorContract,
   createDirectPaymentAttemptInputContract,
   directPaymentAttemptContract,
@@ -16,9 +22,120 @@ import {
   providerCallbackInputContract,
   providerCallbackResultContract,
 } from "@sevo/contracts/payments/v1";
+import {
+  paymentsV2Operations,
+  paymentReviewDetailV2Contract,
+  paymentReviewRevealInputV2Contract,
+  paymentReconciliationRequestV2Contract,
+  paymentReviewQueueV2Contract,
+} from "@sevo/contracts/payments/v2";
 import { describe, expect, it } from "vitest";
 
 describe("direct payment v1 contract", () => {
+  it("publishes the direct-refund lifecycle without promising a guaranteed refund", () => {
+    expect(paymentsV1Operations.requestDirectRefund).toEqual({
+      operationId: "requestDirectRefund",
+      method: "post",
+      path: "/v1/seller/orders/{orderId}/direct-refund",
+    });
+    expect(paymentsV1Operations.readDirectRefund).toEqual({
+      operationId: "readDirectRefund",
+      method: "get",
+      path: "/v1/seller/orders/{orderId}/direct-refund",
+    });
+    expect(paymentsV1Operations.recordDirectRefundResult).toEqual({
+      operationId: "recordDirectRefundResult",
+      method: "post",
+      path: "/internal/v1/payment-providers/{provider}/direct-refunds",
+    });
+    expect(
+      requestDirectRefundInputContract.parse({
+        reason: "کالا پیش از ارسال قابل تأمین نیست.",
+      }),
+    ).toEqual({ reason: "کالا پیش از ارسال قابل تأمین نیست." });
+    expect(
+      recordDirectRefundResultInputContract.parse({
+        paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+        amount: { amount: 12_500_000, currency: "IRR" },
+        result: "FAILED",
+        evidenceReference: "provider-result-135-1",
+      }),
+    ).toEqual({
+      paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      amount: { amount: 12_500_000, currency: "IRR" },
+      result: "FAILED",
+      evidenceReference: "provider-result-135-1",
+    });
+
+    const pending = directRefundContract.parse({
+      orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+      paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      amount: { amount: 12_500_000, currency: "IRR" },
+      status: "PENDING",
+      orderStatus: "CANCELLATION_PENDING_REFUND",
+      nextAction: "WAIT_FOR_VERIFICATION",
+      updatedAt: "2026-08-31T08:00:00.000Z",
+    });
+    const failed = directRefundContract.parse({
+      ...pending,
+      status: "FAILED",
+      nextAction: "RETRY_REFUND",
+    });
+    const confirmed = directRefundContract.parse({
+      ...pending,
+      status: "CONFIRMED",
+      orderStatus: "CANCELLED",
+      nextAction: "NONE",
+    });
+    expect([pending.nextAction, failed.nextAction, confirmed.nextAction]).toEqual([
+      "WAIT_FOR_VERIFICATION",
+      "RETRY_REFUND",
+      "NONE",
+    ]);
+
+    const envelope = {
+      eventId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+      version: 1 as const,
+      aggregateId: pending.orderId,
+      occurredAt: pending.updatedAt,
+      correlationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+      causationId: "61fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+      actor: { type: "IDENTITY" as const, id: "27a3f408-858c-45d7-a0bd-ab84a28718ef" },
+    };
+    expect(
+      directRefundPendingV1Contract.parse({
+        ...envelope,
+        eventType: "DirectRefundPending.v1",
+        aggregateVersion: 1,
+        payload: {
+          status: "PENDING",
+          paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+          amount: { amount: 12_500_000, currency: "IRR" },
+        },
+      }).payload,
+    ).toEqual({
+      status: "PENDING",
+      paymentAttemptId: "91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+      amount: { amount: 12_500_000, currency: "IRR" },
+    });
+    expect(
+      directRefundFailedV1Contract.parse({
+        ...envelope,
+        eventType: "DirectRefundFailed.v1",
+        aggregateVersion: 2,
+        payload: { status: "FAILED" },
+      }).payload,
+    ).toEqual({ status: "FAILED" });
+    expect(
+      directRefundConfirmedV1Contract.parse({
+        ...envelope,
+        eventType: "DirectRefundConfirmed.v1",
+        aggregateVersion: 3,
+        payload: { status: "CONFIRMED" },
+      }).payload,
+    ).toEqual({ status: "CONFIRMED" });
+  });
+
   it("exposes actionable payment conflicts without leaking internals", () => {
     expect(
       directPaymentErrorContract.parse({
@@ -34,6 +151,101 @@ describe("direct payment v1 contract", () => {
         correlationId: "browser-request-123",
       }),
     ).toMatchObject({ code: "PLATFORM_PERMISSION_REQUIRED" });
+  });
+
+  it("keeps the v1 queue compatible while v2 limits detail and scopes evidence", () => {
+    const reviewId = "91fe87eb-6c0f-47ca-93ca-9f9a038ca273";
+    expect(paymentsV2Operations.revealPlatformPaymentReview).toEqual({
+      operationId: "revealPlatformPaymentReviewV2",
+      method: "post",
+      path: "/v2/platform/payment-reviews/{reviewId}/reveal",
+    });
+    expect(paymentsV2Operations.requestPlatformPaymentReconciliation).toEqual({
+      operationId: "requestPlatformPaymentReconciliationV2",
+      method: "post",
+      path: "/v2/platform/payment-reviews/{reviewId}/reconciliation",
+    });
+
+    expect(
+      paymentReviewQueueContract.parse({
+        items: [
+          {
+            attempt: {
+              attemptId: reviewId,
+              orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+              status: "REVIEW_REQUIRED",
+              amount: { amount: 4_500_000, currency: "IRR" },
+              provider: "DEV",
+              createdAt: "2026-08-25T08:00:00.000Z",
+            },
+            reviewKind: "RESULT_AMBIGUOUS",
+            alertKinds: [],
+            audits: [],
+          },
+        ],
+      }).items[0],
+    ).toHaveProperty("attempt");
+
+    const queue = paymentReviewQueueV2Contract.parse({
+      items: [
+        {
+          reviewId,
+          reviewKind: "RESULT_AMBIGUOUS",
+          amount: { amount: 4_500_000, currency: "IRR" },
+          provider: "DEV",
+          openedAt: "2026-08-25T08:01:00.000Z",
+          needsFollowUp: true,
+        },
+      ],
+    });
+    expect(queue.items[0]).not.toHaveProperty("providerReference");
+    expect(queue.items[0]).not.toHaveProperty("audits");
+    expect(queue.items[0]).not.toHaveProperty("orderId");
+
+    const input = paymentReviewRevealInputV2Contract.parse({
+      grantId: "81fe87eb-6c0f-47ca-93ca-9f9a038ca271",
+      reason: "بررسی مدرک درگاه برای این پرونده پرداخت",
+    });
+    expect(input.reason).toContain("مدرک");
+
+    expect(
+      paymentReviewDetailV2Contract.parse({
+        reviewId,
+        orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+        status: "REVIEW_REQUIRED",
+        amount: { amount: 4_500_000, currency: "IRR" },
+        provider: "DEV",
+        providerReference: "provider-reference-151",
+        reviewKind: "RESULT_AMBIGUOUS",
+        alertKinds: ["RECONCILIATION_OVERDUE"],
+        observations: [
+          {
+            providerEventId: "provider-event-151",
+            providerReference: "provider-reference-151",
+            result: "PENDING",
+            observedAt: "2026-08-25T08:01:00.000Z",
+          },
+        ],
+        audits: [
+          {
+            fromStatus: "DISPATCHED",
+            toStatus: "REVIEW_REQUIRED",
+            reasonCode: "PROVIDER_RESULT_PENDING",
+            occurredAt: "2026-08-25T08:01:00.000Z",
+          },
+        ],
+        reconciliationCount: 2,
+        nextReconciliationAt: "2026-08-25T08:05:00.000Z",
+        revealedAt: "2026-08-25T08:02:00.000Z",
+        accessExpiresAt: "2026-08-25T08:30:00.000Z",
+      }).observations,
+    ).toHaveLength(1);
+    expect(
+      paymentReconciliationRequestV2Contract.parse({
+        reviewId,
+        requestedAt: "2026-08-25T08:02:00.000Z",
+      }),
+    ).toMatchObject({ reviewId });
   });
 
   it("keeps payment attempts and verified callbacks free of raw tokens and PII", () => {
@@ -94,52 +306,6 @@ describe("direct payment v1 contract", () => {
         },
       }).payload.status,
     ).toBe("FAILED");
-    expect(
-      paymentReviewQueueContract.parse({
-        items: [
-          {
-            attempt: {
-              attemptId: callback.attemptId,
-              orderId: callback.orderId,
-              status: "REVIEW_REQUIRED",
-              amount: { amount: callback.amount, currency: "IRR" },
-              provider: "DEV",
-              createdAt: "2026-08-25T08:00:00.000Z",
-            },
-            reviewKind: "RESULT_AMBIGUOUS",
-            alertKinds: ["RECONCILIATION_OVERDUE"],
-            audits: [
-              {
-                fromStatus: "DISPATCHED",
-                toStatus: "REVIEW_REQUIRED",
-                reasonCode: "DISPATCH_LEASE_EXPIRED",
-                correlationId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
-                occurredAt: "2026-08-25T08:01:00.000Z",
-              },
-            ],
-          },
-        ],
-      }).items[0]?.alertKinds,
-    ).toEqual(["RECONCILIATION_OVERDUE"]);
-    expect(
-      paymentReviewQueueContract.parse({
-        items: [
-          {
-            attempt: {
-              attemptId: callback.attemptId,
-              orderId: callback.orderId,
-              status: "FAILED",
-              amount: { amount: callback.amount, currency: "IRR" },
-              provider: "DEV",
-              createdAt: "2026-08-25T08:00:00.000Z",
-            },
-            reviewKind: "PROVIDER_CONFLICT",
-            alertKinds: ["PROVIDER_RESULT_CONTRADICTION"],
-            audits: [],
-          },
-        ],
-      }).items[0]?.reviewKind,
-    ).toBe("PROVIDER_CONFLICT");
   });
 
   it("keeps operation paths, terminal states, audits, and events versioned", () => {

@@ -14,16 +14,19 @@ export function AddToCart({
     available: boolean;
   }>;
 }) {
-  const initialVariant = variants.find((variant) => variant.available) ?? variants[0]!;
-  const [variantId, setVariantId] = useState(initialVariant.variantId);
+  const singleVariant = variants.length === 1 ? variants[0] : undefined;
+  const [variantId, setVariantId] = useState(singleVariant?.variantId ?? "");
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [replacementRevision, setReplacementRevision] = useState<number>();
-  const selectedVariant =
-    variants.find((variant) => variant.variantId === variantId) ?? initialVariant;
+  const selectedVariant = variants.find((variant) => variant.variantId === variantId);
 
   async function add() {
+    if (!selectedVariant) {
+      setMessage("ابتدا گونه کالا را انتخاب کنید.");
+      return;
+    }
     setPending(true);
     setMessage("");
     try {
@@ -62,7 +65,7 @@ export function AddToCart({
   }
 
   async function replaceStore() {
-    if (replacementRevision === undefined) return;
+    if (replacementRevision === undefined || !selectedVariant) return;
     setPending(true);
     try {
       const response = await fetch("/api/cart/store-replacement", {
@@ -96,10 +99,18 @@ export function AddToCart({
     <div className={styles.cartAction}>
       {variants.length > 1 ? (
         <>
-          <div className={styles.selectedOffer} aria-live="polite">
-            <span>قیمت گونه انتخاب‌شده</span>
-            <strong>{selectedVariant.priceLabel}</strong>
-            <span>{selectedVariant.available ? "موجود" : "ناموجود"}</span>
+          <div className={styles.selectedOffer} role="status" aria-live="polite">
+            {selectedVariant ? (
+              <>
+                <span>قیمت گونه انتخاب‌شده</span>
+                <strong>{selectedVariant.priceLabel}</strong>
+                <span>{selectedVariant.available ? "موجود" : "ناموجود"}</span>
+              </>
+            ) : (
+              <span className={styles.selectionHint}>
+                برای دیدن قیمت و موجودی، گونه را انتخاب کنید.
+              </span>
+            )}
           </div>
           <label htmlFor="cart-variant">گونه</label>
           <select
@@ -108,6 +119,9 @@ export function AddToCart({
             onChange={(event) => setVariantId(event.target.value)}
             disabled={pending}
           >
+            <option value="" disabled>
+              انتخاب گونه
+            </option>
             {variants.map((variant) => (
               <option key={variant.variantId} value={variant.variantId}>
                 {variant.label}
@@ -122,7 +136,7 @@ export function AddToCart({
         id="cart-quantity"
         value={quantity}
         onChange={(event) => setQuantity(Number(event.target.value))}
-        disabled={!selectedVariant.available || pending}
+        disabled={!selectedVariant?.available || pending}
       >
         {[1, 2, 3, 4, 5].map((value) => (
           <option key={value} value={value}>
@@ -134,13 +148,15 @@ export function AddToCart({
         <button
           type="button"
           onClick={add}
-          disabled={!selectedVariant.available || pending}
+          disabled={!selectedVariant?.available || pending}
         >
           {pending
             ? "در حال افزودن…"
-            : selectedVariant.available
-              ? "افزودن به سبد"
-              : "فعلاً ناموجود"}
+            : !selectedVariant
+              ? "گونه را انتخاب کنید"
+              : selectedVariant.available
+                ? "افزودن به سبد"
+                : "فعلاً ناموجود"}
         </button>
       ) : null}
       {message ? <p role="status">{message}</p> : null}

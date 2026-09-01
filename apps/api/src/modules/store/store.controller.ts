@@ -37,9 +37,16 @@ import {
   StoreService,
   StoreSlugConflictError,
 } from "./application/store.service";
-import { PUBLIC_STORE_FOLLOWING_READER, STORE_SERVICE } from "./store.tokens";
+import {
+  PUBLIC_ACTIVE_PRODUCT_COUNT_READER,
+  PUBLIC_STORE_FOLLOWING_READER,
+  STORE_SERVICE,
+} from "./store.tokens";
 import { StoreIdempotencyConflictError, StoreRevisionConflictError } from "./public";
-import type { PublicStoreFollowingReader } from "./public";
+import type {
+  PublicActiveProductCountReader,
+  PublicStoreFollowingReader,
+} from "./public";
 
 @ApiExcludeController()
 @Controller("v1")
@@ -50,6 +57,8 @@ export class StoreController {
     private readonly sessions: IdentitySessionReader,
     @Inject(PUBLIC_STORE_FOLLOWING_READER)
     private readonly following: PublicStoreFollowingReader,
+    @Inject(PUBLIC_ACTIVE_PRODUCT_COUNT_READER)
+    private readonly activeProducts: PublicActiveProductCountReader,
   ) {}
 
   @Get("seller/store/draft")
@@ -163,11 +172,15 @@ export class StoreController {
     const session = token
       ? await this.sessions.readActiveIdentitySession(token)
       : undefined;
-    const following = await this.following.readPublicStoreFollowing(
-      storeIdContract.parse(store.id),
-      session ? identityIdContract.parse(session.actor.identityId) : undefined,
-      store.publishedAt,
-    );
+    const storeId = storeIdContract.parse(store.id);
+    const [following, activeProductCount] = await Promise.all([
+      this.following.readPublicStoreFollowing(
+        storeId,
+        session ? identityIdContract.parse(session.actor.identityId) : undefined,
+        store.publishedAt,
+      ),
+      this.activeProducts.readActiveProductCount(storeId),
+    ]);
     response.header(
       "cache-control",
       session ? "private, no-store" : "public, max-age=30, must-revalidate",
@@ -176,6 +189,7 @@ export class StoreController {
     if (following.etag) response.header("etag", following.etag);
     return {
       ...store,
+      activeProductCount,
       followerCount: following.followerCount,
       ...(following.viewer ? { viewer: following.viewer } : {}),
     };

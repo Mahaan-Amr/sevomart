@@ -55,9 +55,11 @@ SEVO_DEMO_FINGERPRINT=<fingerprint> docker compose --profile demo run --rm demo-
 
 ## lifecycle پایهٔ QA
 
-این Issue فقط محیط disposable و guardهای lifecycle را می‌سازد؛ factory دادهٔ کمینه و اتصال
-آن به runnerهای سناریو در [ایجاد factory سناریوهای QA ایزوله](https://github.com/Mahaan-Amr/sevomart/issues/162)
-می‌آید. ساخت محیط به profile و run id صریح نیاز دارد،
+محیط disposable و guardهای lifecycle، پایهٔ
+[factory سناریوهای QA ایزوله](isolated-qa-scenarios.md) هستند. استفاده مستقیم از فرمان‌های
+زیر برای بررسی و بازیابی عملیاتی باقی می‌ماند؛ تست‌های سناریومحور باید interface نسخه‌دار
+`withQaScenario` را مصرف کنند تا run id، namespace، ساعت ثابت، داده کمینه و teardown خودکار
+داشته باشند. ساخت محیط به profile و run id صریح نیاز دارد،
 پورت‌های آزاد را از Docker می‌گیرد و fingerprint تازه را گزارش می‌کند:
 
 ```bash
