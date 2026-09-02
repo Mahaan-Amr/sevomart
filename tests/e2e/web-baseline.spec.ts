@@ -25,7 +25,10 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   ).toBeVisible();
   await expect(navigation.getByRole("link", { name: "گفت‌وگوها" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "دنبال‌شده‌ها" })).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "سفارش‌ها" })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "سفارش‌ها" })).toHaveAttribute(
+    "href",
+    "/orders",
+  );
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page, "header a, nav a, summary");
   await page.keyboard.press("Tab");
@@ -70,15 +73,14 @@ test("discovery renders public feed data and recovers from a failed request", as
   });
   await page.goto("/");
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
-    "کالاها بارگیری نشدند",
+    "فید فعلاً آماده نیست",
   );
   fail = false;
   await page.getByRole("button", { name: "تلاش دوباره" }).click();
   await expect(page.getByRole("list", { name: "کالاهای تازه" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /فنجان دست‌ساز/ })).toHaveAttribute(
-    "href",
-    /\/s\/khane-sofal\/products\/0d113616/,
-  );
+  await expect(
+    page.getByRole("link", { name: "فنجان دست‌ساز", exact: true }),
+  ).toHaveAttribute("href", /\/s\/khane-sofal\/products\/0d113616/);
 });
 
 test("legacy addresses preserve the checkout return destination through login", async ({
@@ -157,7 +159,7 @@ test("old payment receipts redirect to their canonical result with a usable way 
 test("unknown and retired prototype routes provide Persian recovery without demo content", async ({
   page,
 }) => {
-  for (const path of ["/not-a-sevo-page", "/prototype/discovery", "/orders"]) {
+  for (const path of ["/not-a-sevo-page", "/prototype/discovery"]) {
     const response = await page.goto(path);
     expect(response?.status()).toBe(404);
     await expect(
