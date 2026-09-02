@@ -28,6 +28,7 @@ import {
   PostgresInventoryAuthoring,
 } from "../modules/inventory/composition";
 import type {
+  BuyerDisputeMediaAccess,
   ConversationMediaAccess,
   DisputeMediaAccess,
   PurchaseExperienceMediaAccess,
@@ -93,6 +94,7 @@ function createApiCompositionContext(
   let conversationMediaAccess: ConversationMediaAccess = async () => false;
   let disputeMediaAccess: DisputeMediaAccess = async () => false;
   let purchaseExperienceMediaAccess: PurchaseExperienceMediaAccess = async () => false;
+  let buyerDisputeMediaAccess: BuyerDisputeMediaAccess = async () => false;
   return {
     authorizeConversationMedia: (input: Parameters<ConversationMediaAccess>[0]) =>
       conversationMediaAccess(input),
@@ -109,6 +111,11 @@ function createApiCompositionContext(
     ) => purchaseExperienceMediaAccess(input),
     setPurchaseExperienceMediaAccess: (access: PurchaseExperienceMediaAccess) => {
       purchaseExperienceMediaAccess = access;
+    },
+    authorizeBuyerDisputeMedia: (input: Parameters<BuyerDisputeMediaAccess>[0]) =>
+      buyerDisputeMediaAccess(input),
+    setBuyerDisputeMediaAccess: (access: BuyerDisputeMediaAccess) => {
+      buyerDisputeMediaAccess = access;
     },
     checkoutRepository,
     contentRepository,
@@ -164,6 +171,7 @@ export const canonicalApiModuleRegistry: readonly {
       authorizeConversationMedia,
       authorizeDisputeMedia,
       authorizePurchaseExperienceMedia,
+      authorizeBuyerDisputeMedia,
     }) =>
       MediaModule.register(
         environment,
@@ -178,6 +186,7 @@ export const canonicalApiModuleRegistry: readonly {
         authorizeConversationMedia,
         authorizeDisputeMedia,
         authorizePurchaseExperienceMedia,
+        authorizeBuyerDisputeMedia,
       ),
   },
   {
@@ -297,6 +306,7 @@ export const canonicalApiModuleRegistry: readonly {
       identityOptions,
       platformAgentSessions,
       setDisputeMediaAccess,
+      setBuyerDisputeMediaAccess,
       storeRepository,
     }) =>
       ProblemFollowUpModule.register(environment, {
@@ -310,6 +320,7 @@ export const canonicalApiModuleRegistry: readonly {
           (await storeRepository.findBySellerId(identityId))?.id,
         createAccessTransactionContext: createOpaquePlatformAccessTransactionContext,
         onMediaAccessReady: setDisputeMediaAccess,
+        onBuyerDisputeMediaAccessReady: setBuyerDisputeMediaAccess,
       }),
   },
   {

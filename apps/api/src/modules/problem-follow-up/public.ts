@@ -1,5 +1,9 @@
 import type { FulfillmentOrderSnapshot } from "@sevo/contracts/fulfillment/v1";
 import type {
+  BuyerDisputeEvidenceReadInput,
+  BuyerDisputeEvidenceReadResult,
+} from "@sevo/contracts/media/v1";
+import type {
   buyerDisputeViewContract,
   buyerDisputePageContract,
   platformDisputeQueueContract,
@@ -156,6 +160,9 @@ export interface ProblemFollowUpStoreResolver {
 }
 
 export interface ProblemFollowUpEvidenceRead {
+  isReadyBuyerEvidence(
+    input: BuyerDisputeEvidenceReadInput,
+  ): Promise<BuyerDisputeEvidenceReadResult>;
   isReadySellerEvidence(input: {
     identityId: string;
     disputeId: string;

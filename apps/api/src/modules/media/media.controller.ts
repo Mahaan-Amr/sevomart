@@ -14,6 +14,9 @@ import {
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
+  BUYER_DISPUTE_MEDIA_MAX_ITEMS,
+  buyerDisputeMediaContextIdContract,
+  buyerDisputeMediaUploadPurpose,
   conversationMediaContextIdContract,
   MEDIA_UPLOAD_ACCEPTED_TYPES,
   MEDIA_UPLOAD_MAX_BYTES,
@@ -37,6 +40,10 @@ import {
   type IdentitySessionReader,
 } from "../identity-access/public";
 import {
+  BUYER_DISPUTE_MEDIA,
+  BuyerDisputeMediaIdempotencyConflictError,
+  BuyerDisputeMediaLimitError,
+  type BuyerDisputeMedia,
   CONVERSATION_MEDIA_ACCESS,
   type ConversationMediaAccess,
   DISPUTE_MEDIA_ACCESS,
@@ -85,6 +92,8 @@ export class MediaController {
     private readonly sessions: IdentitySessionReader,
     @Inject(PUBLISHED_MEDIA_ACCESS)
     private readonly isPublishedMedia: PublishedMediaAccess,
+    @Inject(BUYER_DISPUTE_MEDIA)
+    private readonly buyerDisputeMedia: BuyerDisputeMedia,
     @Inject(PURCHASE_EXPERIENCE_MEDIA)
     private readonly purchaseExperienceMedia: PurchaseExperienceMedia,
     @Inject(PURCHASE_EXPERIENCE_MEDIA_ACCESS)
@@ -92,6 +101,33 @@ export class MediaController {
     @Inject(SELLER_UPLOAD_RATE_LIMITER)
     private readonly uploadRateLimiter: SellerUploadRateLimiter,
   ) {}
+
+  @Post("buyer-dispute-media/:contextId")
+  async uploadBuyerDisputeEvidence(
+    @Param("contextId") rawContextId: string,
+    @Headers("idempotency-key") rawIdempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ) {
+    const identityId = await requireIdentity(request, this.sessions);
+    const contextId = buyerDisputeMediaContextIdContract.safeParse(rawContextId);
+    const idempotencyKey =
+      mediaUploadIdempotencyKeyContract.safeParse(rawIdempotencyKey);
+    if (!idempotencyKey.success) {
+      throw mediaError(request.id, "PRECONDITION_REQUIRED");
+    }
+    const context = contextId.success
+      ? await this.buyerDisputeMedia.readUploadContext(contextId.data)
+      : undefined;
+    if (!context || context.identityId !== identityId) {
+      throw mediaNotFound(request.id);
+    }
+    return this.uploadOwnedMedia(
+      request,
+      contextId.data,
+      buyerDisputeMediaUploadPurpose,
+      idempotencyKey.data,
+    );
+  }
 
   @Post("purchase-experience-media/:contextId")
   async uploadPurchaseExperienceImage(
@@ -238,7 +274,18 @@ export class MediaController {
     } as const;
     let storedId = id;
     try {
-      if (purpose === purchaseExperienceMediaUploadPurpose) {
+      if (purpose === buyerDisputeMediaUploadPurpose) {
+        const stored = await this.storage.putBuyerDisputeMedia({
+          object,
+          contextId: buyerDisputeMediaContextIdContract.parse(ownerReferenceId),
+          idempotencyKey: mediaUploadIdempotencyKeyContract.parse(idempotencyKey),
+          requestHash: createHash("sha256")
+            .update(`${ownerReferenceId}:${object.checksum}`)
+            .digest("hex"),
+          maxItems: BUYER_DISPUTE_MEDIA_MAX_ITEMS,
+        });
+        storedId = mediaIdContract.parse(stored.key);
+      } else if (purpose === purchaseExperienceMediaUploadPurpose) {
         const stored = await this.storage.putPurchaseExperienceMedia({
           object,
           contextId: purchaseExperienceMediaContextIdContract.parse(ownerReferenceId),
@@ -256,7 +303,13 @@ export class MediaController {
       if (error instanceof PurchaseExperienceMediaLimitError) {
         throw mediaError(request.id, "TOO_MANY_FILES");
       }
+      if (error instanceof BuyerDisputeMediaLimitError) {
+        throw mediaError(request.id, "TOO_MANY_FILES");
+      }
       if (error instanceof PurchaseExperienceMediaIdempotencyConflictError) {
+        throw mediaError(request.id, "IDEMPOTENCY_CONFLICT");
+      }
+      if (error instanceof BuyerDisputeMediaIdempotencyConflictError) {
         throw mediaError(request.id, "IDEMPOTENCY_CONFLICT");
       }
       throw error;
@@ -290,6 +343,23 @@ export class MediaController {
         }))
       )
         throw mediaNotFound(request.id);
+    } else if (media.purpose === buyerDisputeMediaUploadPurpose) {
+      const identityId = await requireIdentity(request, this.sessions);
+      const contextId = buyerDisputeMediaContextIdContract.safeParse(
+        media.ownerReferenceId,
+      );
+      const context = contextId.success
+        ? await this.storage.readBuyerDisputeUploadContext(contextId.data, {
+            includeExpired: true,
+          })
+        : undefined;
+      if (
+        !context ||
+        media.ownerIdentityId !== identityId ||
+        context.identityId !== identityId
+      ) {
+        throw mediaNotFound(request.id);
+      }
     } else if (
       media.purpose === purchaseExperienceMediaUploadPurpose &&
       !publiclyReadable

@@ -2,16 +2,24 @@ import { randomUUID } from "node:crypto";
 
 import type { RuntimeEnvironment } from "@sevo/config";
 import {
+  buyerDisputeMediaContextIdContract,
   purchaseExperienceMediaContextIdContract,
+  type BuyerDisputeMediaContextId,
   type MediaVariant,
   type PurchaseExperienceMediaContextId,
 } from "@sevo/contracts/media/v1";
 import { orderItemIdContract, type OrderItemId } from "@sevo/contracts/orders/v1";
-import { identityIdContract } from "@sevo/contracts/platform/v1";
+import {
+  identityIdContract,
+  orderIdContract,
+  type OrderId,
+} from "@sevo/contracts/platform/v1";
 import { Client } from "minio";
 import postgres, { type Sql } from "postgres";
 
 import {
+  BuyerDisputeMediaIdempotencyConflictError,
+  BuyerDisputeMediaLimitError,
   type MediaStorage,
   type MediaMetadata,
   PurchaseExperienceMediaIdempotencyConflictError,
@@ -27,6 +35,7 @@ import {
 type PurchaseExperienceWrite = Parameters<
   MediaStorage["putPurchaseExperienceMedia"]
 >[0];
+type BuyerDisputeWrite = Parameters<MediaStorage["putBuyerDisputeMedia"]>[0];
 
 type MediaRow = {
   key: string;
@@ -103,6 +112,52 @@ export class PostgresMinioMediaStorage implements MediaStorage {
     };
   }
 
+  async issueBuyerDisputeUploadContext(input: {
+    identityId: ReturnType<typeof identityIdContract.parse>;
+    orderId: OrderId;
+    expiresAt: Date;
+  }) {
+    const contextId = buyerDisputeMediaContextIdContract.parse(randomUUID());
+    const [row] = await this.#sql<Array<{ contextId: string; expiresAt: Date }>>`
+      insert into media_buyer_dispute_upload_contexts
+        (id, identity_id, order_id, expires_at)
+      values (${contextId}, ${input.identityId}, ${input.orderId}, ${input.expiresAt})
+      on conflict (identity_id, order_id) do update
+        set expires_at = greatest(
+          media_buyer_dispute_upload_contexts.expires_at,
+          excluded.expires_at
+        )
+      returning id as "contextId", expires_at as "expiresAt"
+    `;
+    return {
+      contextId: buyerDisputeMediaContextIdContract.parse(row!.contextId),
+      expiresAt: row!.expiresAt,
+    };
+  }
+
+  async readBuyerDisputeUploadContext(
+    contextId: BuyerDisputeMediaContextId,
+    options: { includeExpired?: boolean } = {},
+  ) {
+    const [row] = await this.#sql<
+      Array<{ identityId: string; orderId: string; expiresAt: Date }>
+    >`
+      select identity_id as "identityId", order_id as "orderId",
+        expires_at as "expiresAt"
+      from media_buyer_dispute_upload_contexts
+      where id = ${contextId}::uuid
+        and (${options.includeExpired ?? false} or expires_at > now())
+      limit 1
+    `;
+    return row
+      ? {
+          ...row,
+          identityId: identityIdContract.parse(row.identityId),
+          orderId: orderIdContract.parse(row.orderId),
+        }
+      : undefined;
+  }
+
   async readPurchaseExperienceUploadContext(
     contextId: PurchaseExperienceMediaContextId,
     options: { includeExpired?: boolean } = {},
@@ -169,6 +224,50 @@ export class PostgresMinioMediaStorage implements MediaStorage {
         return this.#requireMetadata(outcome.mediaId);
       }
       throw new Error("Purchase experience media write returned no outcome");
+    } catch (error) {
+      await this.#removeObjects(uploadedKeys);
+      throw error;
+    }
+  }
+
+  async putBuyerDisputeMedia(input: BuyerDisputeWrite): Promise<MediaMetadata> {
+    await this.#ensureBucket();
+    const originalKey = `media/${input.object.key}/original`;
+    const preflightReplay = await this.#sql.begin((sql) =>
+      this.#checkBuyerDisputeWrite(sql, input),
+    );
+    if (preflightReplay) return this.#requireMetadata(preflightReplay);
+    const uploadedKeys = await this.#uploadObjects(input.object, originalKey);
+    try {
+      const outcome = await this.#sql.begin(async (sql) => {
+        const replayMediaId = await this.#checkBuyerDisputeWrite(sql, input);
+        if (replayMediaId) return { kind: "replay", mediaId: replayMediaId } as const;
+        await this.#insertMedia(sql, input.object, originalKey);
+        await sql`
+          insert into media_buyer_dispute_upload_idempotency
+            (context_id, idempotency_key, request_hash, media_id)
+          values
+            (${input.contextId}, ${input.idempotencyKey}, ${input.requestHash},
+             ${input.object.key})
+        `;
+        return {
+          kind: "created",
+          metadata: {
+            key: input.object.key,
+            purpose: input.object.purpose,
+            contentType: input.object.contentType,
+            checksum: input.object.checksum,
+            width: input.object.width,
+            height: input.object.height,
+            ownerIdentityId: input.object.ownerIdentityId,
+            ownerReferenceId: input.object.ownerReferenceId,
+            visibility: input.object.visibility,
+          },
+        } as const;
+      });
+      if (outcome.kind === "created") return outcome.metadata;
+      await this.#removeObjects(uploadedKeys);
+      return this.#requireMetadata(outcome.mediaId);
     } catch (error) {
       await this.#removeObjects(uploadedKeys);
       throw error;
@@ -301,6 +400,40 @@ export class PostgresMinioMediaStorage implements MediaStorage {
         and owner_reference_id = ${input.contextId}::uuid
     `;
     if (count >= input.maxItems) throw new PurchaseExperienceMediaLimitError();
+    return undefined;
+  }
+
+  async #checkBuyerDisputeWrite(
+    sql: Sql,
+    input: BuyerDisputeWrite,
+  ): Promise<string | undefined> {
+    const [context] = await sql<Array<{ identityId: string }>>`
+      select identity_id as "identityId"
+      from media_buyer_dispute_upload_contexts
+      where id = ${input.contextId}::uuid and expires_at > now()
+      for update
+    `;
+    if (!context || context.identityId !== input.object.ownerIdentityId) {
+      throw new Error("Buyer dispute media context is unavailable");
+    }
+    const [replay] = await sql<Array<{ requestHash: string; mediaId: string }>>`
+      select request_hash as "requestHash", media_id as "mediaId"
+      from media_buyer_dispute_upload_idempotency
+      where context_id = ${input.contextId}::uuid
+        and idempotency_key = ${input.idempotencyKey}
+    `;
+    if (replay) {
+      if (replay.requestHash !== input.requestHash) {
+        throw new BuyerDisputeMediaIdempotencyConflictError();
+      }
+      return replay.mediaId;
+    }
+    const [{ count = 0 } = {}] = await sql<Array<{ count: number }>>`
+      select count(*)::int as count from media_assets
+      where purpose = 'BUYER_DISPUTE_EVIDENCE'
+        and owner_reference_id = ${input.contextId}::uuid
+    `;
+    if (count >= input.maxItems) throw new BuyerDisputeMediaLimitError();
     return undefined;
   }
 

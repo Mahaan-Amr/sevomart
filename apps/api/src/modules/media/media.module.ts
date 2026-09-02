@@ -4,6 +4,8 @@ import type { RuntimeEnvironment } from "@sevo/config";
 import { FakeObjectStorage } from "./testing/fake-object-storage";
 import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media-storage";
 import {
+  BUYER_DISPUTE_MEDIA,
+  type BuyerDisputeMediaAccess,
   CONVERSATION_MEDIA_ACCESS,
   CONVERSATION_ATTACHMENT_READER,
   DISPUTE_EVIDENCE_READER,
@@ -19,6 +21,7 @@ import {
   type PublishedMediaAccess,
   type PurchaseExperienceMediaAccess,
 } from "./public";
+import { BuyerDisputeMediaService } from "./buyer-dispute-media";
 import { PurchaseExperienceMediaService } from "./purchase-experience-media";
 import { MediaAttachmentReader } from "./media-attachment-reader";
 import { MediaDisputeEvidenceReader } from "./media-dispute-evidence-reader";
@@ -34,6 +37,7 @@ export class MediaModule {
     conversationMediaAccess: ConversationMediaAccess = async () => false,
     disputeMediaAccess: DisputeMediaAccess = async () => false,
     purchaseExperienceMediaAccess: PurchaseExperienceMediaAccess = async () => false,
+    buyerDisputeMediaAccess: BuyerDisputeMediaAccess = async () => false,
   ): DynamicModule {
     const configuredStorage =
       storage ??
@@ -61,6 +65,13 @@ export class MediaModule {
         },
         { provide: MEDIA_STORAGE, useValue: configuredStorage },
         {
+          provide: BUYER_DISPUTE_MEDIA,
+          useValue: new BuyerDisputeMediaService(
+            configuredStorage,
+            buyerDisputeMediaAccess,
+          ),
+        },
+        {
           provide: PURCHASE_EXPERIENCE_MEDIA,
           useValue: new PurchaseExperienceMediaService(configuredStorage),
         },
@@ -72,6 +83,7 @@ export class MediaModule {
       ],
       exports: [
         MEDIA_STORAGE,
+        BUYER_DISPUTE_MEDIA,
         PURCHASE_EXPERIENCE_MEDIA,
         CONVERSATION_ATTACHMENT_READER,
         DISPUTE_EVIDENCE_READER,

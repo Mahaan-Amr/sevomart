@@ -1,4 +1,7 @@
 import type {
+  BuyerDisputeMediaContextId,
+  BuyerDisputeEvidenceReadInput,
+  BuyerDisputeEvidenceReadResult,
   ConversationAttachmentInput,
   ConversationAttachmentResult,
   MediaUploadPurpose,
@@ -9,6 +12,7 @@ import type {
 } from "@sevo/contracts/media/v1";
 import type { OrderItemId } from "@sevo/contracts/orders/v1";
 import type { IdentityId } from "@sevo/contracts/platform/v1";
+import type { OrderId } from "@sevo/contracts/platform/v1";
 
 export type StoredMediaVariant = {
   key: string;
@@ -71,6 +75,22 @@ export interface MediaStorage {
     requestHash: string;
     maxItems: number;
   }): Promise<MediaMetadata>;
+  issueBuyerDisputeUploadContext(input: {
+    identityId: IdentityId;
+    orderId: OrderId;
+    expiresAt: Date;
+  }): Promise<{ contextId: BuyerDisputeMediaContextId; expiresAt: Date }>;
+  readBuyerDisputeUploadContext(
+    contextId: BuyerDisputeMediaContextId,
+    options?: { includeExpired?: boolean },
+  ): Promise<{ identityId: IdentityId; orderId: OrderId; expiresAt: Date } | undefined>;
+  putBuyerDisputeMedia(input: {
+    object: StoredMedia;
+    contextId: BuyerDisputeMediaContextId;
+    idempotencyKey: MediaUploadIdempotencyKey;
+    requestHash: string;
+    maxItems: number;
+  }): Promise<MediaMetadata>;
 }
 
 /** @deprecated Use the module-owned MediaStorage port. */
@@ -80,7 +100,25 @@ export type StoredMediaPurpose =
   | MediaUploadPurpose
   | "CONVERSATION_ATTACHMENT"
   | "DISPUTE_EVIDENCE"
-  | "PURCHASE_EXPERIENCE_IMAGE";
+  | "PURCHASE_EXPERIENCE_IMAGE"
+  | "BUYER_DISPUTE_EVIDENCE";
+export const BUYER_DISPUTE_MEDIA = Symbol("BUYER_DISPUTE_MEDIA");
+export type BuyerDisputeMediaAccess = (input: {
+  identityId: IdentityId;
+  orderId: OrderId;
+}) => Promise<boolean>;
+export interface BuyerDisputeMedia {
+  issueUploadContext(input: {
+    identityId: IdentityId;
+    orderId: OrderId;
+  }): Promise<{ contextId: BuyerDisputeMediaContextId; expiresAt: string }>;
+  readUploadContext(
+    contextId: BuyerDisputeMediaContextId,
+  ): Promise<{ identityId: IdentityId; orderId: OrderId; expiresAt: Date } | undefined>;
+}
+export class BuyerDisputeMediaAccessDeniedError extends Error {}
+export class BuyerDisputeMediaLimitError extends Error {}
+export class BuyerDisputeMediaIdempotencyConflictError extends Error {}
 export const PURCHASE_EXPERIENCE_MEDIA = Symbol("PURCHASE_EXPERIENCE_MEDIA");
 export const PURCHASE_EXPERIENCE_MEDIA_ACCESS = Symbol(
   "PURCHASE_EXPERIENCE_MEDIA_ACCESS",
@@ -124,6 +162,9 @@ export interface ConversationAttachmentReader {
   ): Promise<ConversationAttachmentResult>;
 }
 export interface DisputeEvidenceReader {
+  isReadyBuyerEvidence(
+    input: BuyerDisputeEvidenceReadInput,
+  ): Promise<BuyerDisputeEvidenceReadResult>;
   isReadySellerEvidence(input: {
     identityId: string;
     disputeId: string;

@@ -38,6 +38,15 @@ describe("content media composition", () => {
       async putPurchaseExperienceMedia() {
         throw new Error("not used");
       },
+      async issueBuyerDisputeUploadContext() {
+        throw new Error("not used");
+      },
+      async readBuyerDisputeUploadContext() {
+        return undefined;
+      },
+      async putBuyerDisputeMedia() {
+        throw new Error("not used");
+      },
     };
 
     const purchaseExperienceMedia: PurchaseExperienceMedia = {

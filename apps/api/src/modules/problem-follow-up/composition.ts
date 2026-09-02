@@ -16,6 +16,7 @@ import {
 } from "../identity-access/public";
 import {
   DISPUTE_EVIDENCE_READER,
+  type BuyerDisputeMediaAccess,
   type DisputeEvidenceReader,
   type DisputeMediaAccess,
 } from "../media/public";
@@ -41,6 +42,7 @@ export class ProblemFollowUpModule {
       ) => OpaquePlatformAccessTransactionContext;
       repository?: ProblemFollowUpRepository;
       onMediaAccessReady?: (access: DisputeMediaAccess) => void;
+      onBuyerDisputeMediaAccessReady?: (access: BuyerDisputeMediaAccess) => void;
     },
   ): DynamicModule {
     return {
@@ -83,6 +85,14 @@ export class ProblemFollowUpModule {
                 return false;
               }
             });
+            options.onBuyerDisputeMediaAccessReady?.(async ({ identityId, orderId }) =>
+              Boolean(
+                await options.fulfillment.readOrderSnapshot({
+                  buyerId: identityId,
+                  orderId,
+                }),
+              ),
+            );
             return new ProblemFollowUpService(
               repository,
               {

@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  buyerDisputeMediaContextIdContract,
   purchaseExperienceMediaContextIdContract,
+  type BuyerDisputeMediaContextId,
   type MediaUploadIdempotencyKey,
   type MediaVariant,
   type PurchaseExperienceMediaContextId,
 } from "@sevo/contracts/media/v1";
 import type { OrderItemId } from "@sevo/contracts/orders/v1";
-import type { IdentityId } from "@sevo/contracts/platform/v1";
+import type { IdentityId, OrderId } from "@sevo/contracts/platform/v1";
 import {
+  BuyerDisputeMediaIdempotencyConflictError,
+  BuyerDisputeMediaLimitError,
   type ObjectStoragePort,
   PurchaseExperienceMediaIdempotencyConflictError,
   PurchaseExperienceMediaLimitError,
@@ -23,6 +27,14 @@ export class FakeObjectStorage implements ObjectStoragePort {
     { identityId: IdentityId; orderItemId: OrderItemId; expiresAt: Date }
   >();
   readonly #purchaseIdempotency = new Map<
+    string,
+    { requestHash: string; mediaId: string }
+  >();
+  readonly #buyerDisputeContexts = new Map<
+    BuyerDisputeMediaContextId,
+    { identityId: IdentityId; orderId: OrderId; expiresAt: Date }
+  >();
+  readonly #buyerDisputeIdempotency = new Map<
     string,
     { requestHash: string; mediaId: string }
   >();
@@ -106,6 +118,26 @@ export class FakeObjectStorage implements ObjectStoragePort {
     return { contextId, expiresAt: input.expiresAt };
   }
 
+  async issueBuyerDisputeUploadContext(input: {
+    identityId: IdentityId;
+    orderId: OrderId;
+    expiresAt: Date;
+  }) {
+    const contextId = buyerDisputeMediaContextIdContract.parse(randomUUID());
+    this.#buyerDisputeContexts.set(contextId, input);
+    return { contextId, expiresAt: input.expiresAt };
+  }
+
+  async readBuyerDisputeUploadContext(
+    contextId: BuyerDisputeMediaContextId,
+    options: { includeExpired?: boolean } = {},
+  ) {
+    const context = this.#buyerDisputeContexts.get(contextId);
+    return context && (options.includeExpired || context.expiresAt > new Date())
+      ? context
+      : undefined;
+  }
+
   async readPurchaseExperienceUploadContext(
     contextId: PurchaseExperienceMediaContextId,
     options: { includeExpired?: boolean } = {},
@@ -139,6 +171,39 @@ export class FakeObjectStorage implements ObjectStoragePort {
     if (count >= input.maxItems) throw new PurchaseExperienceMediaLimitError();
     await this.put(input.object);
     this.#purchaseIdempotency.set(replayKey, {
+      requestHash: input.requestHash,
+      mediaId: input.object.key,
+    });
+    return (await this.inspect(input.object.key))!;
+  }
+
+  async putBuyerDisputeMedia(input: {
+    object: StoredMedia;
+    contextId: BuyerDisputeMediaContextId;
+    idempotencyKey: MediaUploadIdempotencyKey;
+    requestHash: string;
+    maxItems: number;
+  }) {
+    const context = await this.readBuyerDisputeUploadContext(input.contextId);
+    if (!context || context.identityId !== input.object.ownerIdentityId) {
+      throw new Error("Buyer dispute media context is unavailable");
+    }
+    const replayKey = `${input.contextId}:${input.idempotencyKey}`;
+    const replay = this.#buyerDisputeIdempotency.get(replayKey);
+    if (replay) {
+      if (replay.requestHash !== input.requestHash) {
+        throw new BuyerDisputeMediaIdempotencyConflictError();
+      }
+      return (await this.inspect(replay.mediaId))!;
+    }
+    const count = [...this.#objects.values()].filter(
+      (item) =>
+        item.purpose === "BUYER_DISPUTE_EVIDENCE" &&
+        item.ownerReferenceId === input.contextId,
+    ).length;
+    if (count >= input.maxItems) throw new BuyerDisputeMediaLimitError();
+    await this.put(input.object);
+    this.#buyerDisputeIdempotency.set(replayKey, {
       requestHash: input.requestHash,
       mediaId: input.object.key,
     });

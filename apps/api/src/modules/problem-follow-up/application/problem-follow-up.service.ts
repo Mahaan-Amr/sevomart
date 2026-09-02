@@ -74,6 +74,23 @@ export class ProblemFollowUpService {
     if (openedAt.getTime() > anchor.getTime() + days * DAY_MS) {
       throw new ProblemFollowUpFault("WINDOW_CLOSED");
     }
+    if (
+      !this.evidence ||
+      !(
+        await Promise.all(
+          input.evidence.map(({ evidenceId, kind }) =>
+            this.evidence!.isReadyBuyerEvidence({
+              identityId: actorId,
+              orderId: input.orderId,
+              evidenceId,
+              kind,
+            }),
+          ),
+        )
+      ).every((result) => result === "READY")
+    ) {
+      throw new ProblemFollowUpFault("VALIDATION_ERROR");
+    }
     return this.repository.open({
       actorId,
       storeId: snapshot.storeId,

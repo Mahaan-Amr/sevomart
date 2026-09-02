@@ -14,6 +14,42 @@ import type { OpenApiContributor } from "../public";
 
 const operations = [
   {
+    operationId: "uploadBuyerDisputeEvidence",
+    method: "post",
+    path: "/v1/buyer-dispute-media/{contextId}",
+    tag: "media",
+    auth: "identity-session",
+    pathParameter: {
+      name: "contextId",
+      schema: "BuyerDisputeMediaContextId",
+      example: mediaV1Examples.BuyerDisputeMediaContextId,
+    },
+    headerParameters: [
+      {
+        name: "Idempotency-Key",
+        schema: "MediaUploadIdempotencyKey",
+        example: "buyer-dispute-image-1",
+        required: true,
+      },
+    ],
+    request: {
+      schema: "BuyerDisputeMediaUploadInput",
+      example: mediaV1Examples.BuyerDisputeMediaUploadInput,
+      contentType: "multipart/form-data",
+    },
+    responses: [
+      { status: 201, schema: "MediaReference" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "MediaNotFoundError" },
+      { status: 409, schema: "ValidationError" },
+      { status: 413, schema: "ValidationError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 428, schema: "ValidationError" },
+      { status: 429, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "uploadPurchaseExperienceMedia",
     method: "post",
     path: "/v1/purchase-experience-media/{contextId}",
@@ -168,6 +204,7 @@ export const contribute_media_openApi: OpenApiContributor = (document) => {
     "MediaUploadInput",
     "ConversationMediaUploadInput",
     "PurchaseExperienceMediaUploadInput",
+    "BuyerDisputeMediaUploadInput",
   ]) {
     const mediaUploadSchema = composed.components?.schemas?.[name] as {
       properties?: Record<string, Record<string, unknown>>;

@@ -10,6 +10,50 @@ const storeId = "00000000-0000-4000-8000-000000000003" as never;
 const evidenceId = "00000000-0000-4000-8000-000000000004";
 
 describe("ProblemFollowUpService", () => {
+  it("rejects buyer evidence that is not private and bound to the same order", async () => {
+    const open = vi.fn();
+    const service = new ProblemFollowUpService(
+      {
+        replayOpen: vi.fn().mockResolvedValue(undefined),
+        open,
+      } as unknown as ProblemFollowUpRepository,
+      { readActiveIdentitySession: vi.fn().mockResolvedValue({ identityId: buyerId }) },
+      {
+        readOrderSnapshot: vi.fn().mockResolvedValue({
+          version: 1,
+          orderId,
+          buyerId,
+          storeId,
+          status: "DELIVERED",
+          shippedAt: "2026-08-20T09:00:00.000Z",
+          deliveredAt: "2026-08-29T09:00:00.000Z",
+        }),
+      },
+      () => new Date("2026-08-30T09:00:00.000Z"),
+      undefined,
+      undefined,
+      undefined,
+      {
+        isReadySellerEvidence: vi.fn(),
+        isReadyBuyerEvidence: vi.fn().mockResolvedValue("NOT_READY"),
+      },
+    );
+
+    await expect(
+      service.open(
+        { sessionToken: "buyer-session", correlationId: evidenceId },
+        {
+          orderId,
+          category: "DAMAGED",
+          description: "کالا هنگام تحویل آسیب‌دیده بود و تصویر بسته‌بندی ثبت شد.",
+          evidence: [{ evidenceId, kind: "IMAGE" }],
+        },
+        "open-dispute-invalid-evidence",
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it("opens a delivered-order dispute for its buyer inside the seven-day window", async () => {
     const open = vi.fn().mockResolvedValue({ disputeId: "saved" });
     const repository = {
@@ -31,6 +75,13 @@ describe("ProblemFollowUpService", () => {
         }),
       },
       () => new Date("2026-08-30T09:00:00.000Z"),
+      undefined,
+      undefined,
+      undefined,
+      {
+        isReadyBuyerEvidence: vi.fn().mockResolvedValue("READY"),
+        isReadySellerEvidence: vi.fn(),
+      },
     );
 
     await service.open(
@@ -150,7 +201,10 @@ describe("ProblemFollowUpService", () => {
       { isActiveSeller: vi.fn().mockResolvedValue(true) },
       { resolveStore: vi.fn().mockResolvedValue(storeId) },
       undefined,
-      { isReadySellerEvidence: vi.fn().mockResolvedValue(false) },
+      {
+        isReadyBuyerEvidence: vi.fn(),
+        isReadySellerEvidence: vi.fn().mockResolvedValue(false),
+      },
     );
 
     await expect(

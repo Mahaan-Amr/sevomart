@@ -53,6 +53,12 @@ const policies = {
     canonicalVariant: "attachment-preview",
     variants: attachmentPreview,
   },
+  BUYER_DISPUTE_EVIDENCE: {
+    requiresOwnerReference: true,
+    visibilityCanChange: false,
+    canonicalVariant: "attachment-preview",
+    variants: attachmentPreview,
+  },
   PURCHASE_EXPERIENCE_IMAGE: {
     requiresOwnerReference: true,
     visibilityCanChange: false,
