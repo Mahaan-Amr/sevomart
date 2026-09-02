@@ -54,6 +54,18 @@ export const purchaseExperienceMediaUploadInputContract = z
 export const buyerDisputeMediaUploadInputContract = z
   .object({ file: z.string().min(1) })
   .strict();
+export const buyerDisputeMediaContextInputContract = z
+  .object({ orderId: orderIdContract })
+  .strict();
+export const buyerDisputeMediaContextContract = z
+  .object({
+    contextId: buyerDisputeMediaContextIdContract,
+    expiresAt: z.iso.datetime({ offset: true }),
+    maxItems: z.literal(BUYER_DISPUTE_MEDIA_MAX_ITEMS),
+    maxBytesPerItem: z.literal(MEDIA_UPLOAD_MAX_BYTES),
+    uploadUrl: z.string().regex(/^\/v1\/buyer-dispute-media\/[0-9a-f-]{36}$/),
+  })
+  .strict();
 export const buyerDisputeEvidenceReadInputContract = z
   .object({
     identityId: identityIdContract,
@@ -105,6 +117,8 @@ export const mediaV1Schemas = {
   PurchaseExperienceMediaUploadInput: purchaseExperienceMediaUploadInputContract,
   PurchaseExperienceMediaContextId: purchaseExperienceMediaContextIdContract,
   BuyerDisputeMediaUploadInput: buyerDisputeMediaUploadInputContract,
+  BuyerDisputeMediaContextInput: buyerDisputeMediaContextInputContract,
+  BuyerDisputeMediaContext: buyerDisputeMediaContextContract,
   BuyerDisputeMediaContextId: buyerDisputeMediaContextIdContract,
   BuyerDisputeEvidenceReadInput: buyerDisputeEvidenceReadInputContract,
   BuyerDisputeEvidenceReadResult: buyerDisputeEvidenceReadResultContract,
@@ -125,6 +139,16 @@ export const mediaV1Examples = {
   PurchaseExperienceMediaUploadInput: { file: "(binary)" },
   PurchaseExperienceMediaContextId: "70000000-0000-4000-8000-000000000001",
   BuyerDisputeMediaUploadInput: { file: "(binary)" },
+  BuyerDisputeMediaContextInput: {
+    orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+  },
+  BuyerDisputeMediaContext: {
+    contextId: "71000000-0000-4000-8000-000000000001",
+    expiresAt: "2026-08-27T09:00:00.000Z",
+    maxItems: BUYER_DISPUTE_MEDIA_MAX_ITEMS,
+    maxBytesPerItem: MEDIA_UPLOAD_MAX_BYTES,
+    uploadUrl: "/v1/buyer-dispute-media/71000000-0000-4000-8000-000000000001",
+  },
   BuyerDisputeMediaContextId: "71000000-0000-4000-8000-000000000001",
   BuyerDisputeEvidenceReadInput: {
     identityId: "10000000-0000-4000-8000-000000000001",
@@ -162,6 +186,7 @@ export type PurchaseExperienceMediaContextId = z.infer<
 export type BuyerDisputeMediaContextId = z.infer<
   typeof buyerDisputeMediaContextIdContract
 >;
+export type BuyerDisputeMediaContext = z.infer<typeof buyerDisputeMediaContextContract>;
 export type BuyerDisputeEvidenceReadInput = z.infer<
   typeof buyerDisputeEvidenceReadInputContract
 >;

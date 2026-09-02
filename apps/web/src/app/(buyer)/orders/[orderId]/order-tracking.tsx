@@ -21,6 +21,7 @@ import { newConversationHref } from "../../../../lib/conversation-navigation";
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import { presentBuyerOrderState } from "../../../../lib/buyer-order-presentation";
 import { readPurchaseExperienceEligibility } from "../../../../lib/purchase-experience-client";
+import { BuyerDisputePanel } from "./buyer-dispute-panel";
 import styles from "./order-tracking.module.css";
 
 type BuyerDispute = ReturnType<typeof buyerDisputePageContract.parse>["items"][number];
@@ -401,15 +402,20 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             <p role="status">
               وضعیت پرونده اختلاف اکنون در دسترس نیست؛ کمی بعد دوباره تلاش کنید.
             </p>
-          ) : dispute ? (
-            <p>
-              پرونده اختلاف با وضعیت «{disputeStatusLabel(dispute.status)}» در{" "}
-              {formatDate(dispute.openedAt)} ثبت شده است.
-            </p>
           ) : supplementalState.dispute === "LOADING" ? (
             <p role="status">در حال دریافت وضعیت اختلاف…</p>
+          ) : !dispute && supplementalState.fulfillment === "ERROR" ? (
+            <p role="status">
+              امکان بررسی مهلت ثبت اختلاف اکنون در دسترس نیست؛ کمی بعد وضعیت ارسال را
+              دوباره دریافت کنید.
+            </p>
           ) : (
-            <p>برای این سفارش پرونده اختلافی ثبت نشده است.</p>
+            <BuyerDisputePanel
+              orderId={orderId}
+              fulfillment={fulfillment}
+              dispute={dispute}
+              onOpened={setDispute}
+            />
           )}
           {supplementalState.refund === "ERROR" ? (
             <p role="status">
@@ -436,9 +442,9 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             <p>بازپرداختی برای این سفارش ثبت نشده است.</p>
           )}
           <p>
-            اگر سفارش نرسیده، آسیب‌دیده یا مغایر است، گفت‌وگوی مرتبط با سفارش را شروع
-            کنید. اگر مشکل حل نشد، مدارک همان زمینه برای ثبت پرونده اختلاف استفاده
-            می‌شود.
+            {dispute
+              ? "برای هماهنگی مستقیم با فروشگاه، گفت‌وگوی همین سفارش را باز کنید؛ سابقه رسمی پرونده در بالا می‌ماند."
+              : "اگر هنوز برای حل مشکل به هماهنگی نیاز دارید، گفت‌وگوی همین سفارش را باز کنید."}
           </p>
           <Link className={styles.secondaryLink} href={conversationHref}>
             گفت‌وگو درباره سفارش
@@ -516,19 +522,6 @@ function refundStatusLabel(status: DirectRefund["status"]) {
     } as const
   )[status];
 }
-function disputeStatusLabel(status: BuyerDispute["status"]) {
-  return (
-    {
-      DRAFT: "ثبت اولیه",
-      SUBMITTED: "ثبت‌شده",
-      AWAITING_SELLER_RESPONSE: "در انتظار پاسخ فروشگاه",
-      UNDER_REVIEW: "در حال بررسی",
-      RESOLVED: "نتیجه ثبت شده",
-      CLOSED: "بسته شده",
-    } as const
-  )[status];
-}
-
 function orderTransitionLabel(
   reason: BuyerOrderSnapshot["timeline"][number]["reasonCode"],
 ) {

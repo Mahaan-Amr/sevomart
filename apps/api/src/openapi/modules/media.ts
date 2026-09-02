@@ -14,6 +14,24 @@ import type { OpenApiContributor } from "../public";
 
 const operations = [
   {
+    operationId: "issueBuyerDisputeMediaContext",
+    method: "post",
+    path: "/v1/buyer-dispute-media-contexts",
+    tag: "media",
+    auth: "identity-session",
+    request: {
+      schema: "BuyerDisputeMediaContextInput",
+      example: mediaV1Examples.BuyerDisputeMediaContextInput,
+    },
+    responses: [
+      { status: 201, schema: "BuyerDisputeMediaContext" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "MediaNotFoundError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "uploadBuyerDisputeEvidence",
     method: "post",
     path: "/v1/buyer-dispute-media/{contextId}",

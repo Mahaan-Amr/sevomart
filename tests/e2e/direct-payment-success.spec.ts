@@ -192,16 +192,72 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
     await page.getByRole("button", { name: "کپی کد" }).click();
     await expect(page.getByRole("button", { name: "کپی شد" })).toBeVisible();
     await page.getByText("اختلاف و بازپرداخت").click();
+    await expect(page.getByText(/می‌توانید مشکل این سفارش را ثبت کنید/)).toBeVisible();
+    const openDisputeButton = page.getByRole("button", { name: "ثبت مشکل" });
+    await openDisputeButton.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByLabel("مشکل سفارش")).toBeFocused();
+    await page
+      .getByLabel("چه اتفاقی افتاده است؟")
+      .fill(
+        "کالا هنگام تحویل آسیب‌دیده بود و برای بررسی، تصویر بسته‌بندی را ثبت می‌کنم.",
+      );
+    await page.getByLabel("یک تصویر از مدرک").setInputFiles({
+      name: "evidence.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+    await expect(page.getByText("یک تصویر برای ثبت انتخاب شد.")).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+    await assertMinimumContrast(
+      page.locator("form label, form small, form button, form select, form textarea"),
+    );
+    await page.getByRole("button", { name: "ثبت پرونده اختلاف" }).click();
+    await expect(page.getByText("پرونده ثبت شده است.")).toBeVisible();
+    await expect(page.getByText("در انتظار پاسخ فروشگاه")).toBeVisible();
     await expect(
-      page.getByText("برای این سفارش پرونده اختلافی ثبت نشده است."),
+      page.getByText("سوو گزارش و تخلف را پیگیری می‌کند.", { exact: false }),
     ).toBeVisible();
+    await expect(page.getByText(/مدرک خصوصی ثبت شده است/)).toBeVisible();
+    await expect(
+      page.locator("#problem-title").locator("xpath=..").locator("img"),
+    ).toHaveCount(0);
+    const [savedDispute] = await sql<
+      Array<{ disputeId: string; evidenceCount: number }>
+    >`
+      select disputes.id as "disputeId",
+        jsonb_array_length(disputes.contributions->0->'evidence')::int as "evidenceCount"
+      from problem_disputes disputes
+      where disputes.order_id = ${ids.order}
+    `;
+    expect(savedDispute).toMatchObject({ evidenceCount: 1 });
+    const [privateEvidence] = await sql<Array<{ visibility: string }>>`
+      select assets.visibility
+      from media_assets assets
+      join media_buyer_dispute_upload_contexts contexts
+        on contexts.id = assets.owner_reference_id
+      where contexts.order_id = ${ids.order}
+    `;
+    expect(privateEvidence).toEqual({ visibility: "PRIVATE" });
+    await mkdir("docs/delivery/issue-157", { recursive: true });
+    await page.screenshot({
+      path: `docs/delivery/issue-157/buyer-dispute-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
     await expect(
       page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
     ).toBeVisible();
     await page.reload();
     await expect(page.getByRole("heading", { name: "سفارش ارسال شد" })).toBeVisible();
     await assertNoHorizontalOverflow(page);
-    await assertMinimumContrast(page.locator("main h1, main h2, main p, main a"));
+    await assertMinimumContrast(
+      page.locator(
+        "main h1, main h2, main p, main a, main button, main label, main select, main textarea, main input",
+      ),
+    );
     const back = page.getByRole("link", { name: "همه سفارش‌ها" });
     await focusByTab(page, back);
     await expect(back).toHaveCSS("outline-style", "solid");
@@ -243,6 +299,11 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       await expect(
         unrelatedPage.getByText("این سفارش پیدا نشد یا به هویت سوو شما تعلق ندارد."),
       ).toBeVisible();
+      const deniedContext = await unrelatedPage.request.post(
+        "/api/buyer/dispute-media-contexts",
+        { data: { orderId: ids.order } },
+      );
+      expect(deniedContext.status()).toBe(404);
     } finally {
       await unrelatedContext.close();
     }

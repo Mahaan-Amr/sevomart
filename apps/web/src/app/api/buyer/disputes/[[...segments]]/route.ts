@@ -9,3 +9,11 @@ export async function GET(
   const { segments = [] } = await context.params;
   return proxyBuyerDisputeRequest(request, segments);
 }
+
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ segments?: string[] }> },
+) {
+  const { segments = [] } = await context.params;
+  return proxyBuyerDisputeRequest(request, segments);
+}

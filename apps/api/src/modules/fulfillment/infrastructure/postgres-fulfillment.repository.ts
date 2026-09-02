@@ -56,7 +56,6 @@ export class PostgresFulfillmentRepository implements FulfillmentRepository {
       from fulfillment_orders orders
       join fulfillment_timeline_entries entries on entries.order_id = orders.order_id
       where orders.order_id = ${orderId}
-        and orders.status in ('SHIPPED', 'DELIVERED')
       group by orders.store_id, orders.status
     `;
     const row = rows[0];
@@ -65,7 +64,7 @@ export class PostgresFulfillmentRepository implements FulfillmentRepository {
       storeId: storeIdContract.parse(row.storeId),
       shippedAt: row.shippedAt.toISOString(),
     };
-    return row.status === "DELIVERED" && row.deliveredAt
+    return row.deliveredAt
       ? {
           ...common,
           status: "DELIVERED" as const,

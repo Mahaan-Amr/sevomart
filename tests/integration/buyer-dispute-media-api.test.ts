@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   BUYER_DISPUTE_MEDIA_MAX_ITEMS,
+  buyerDisputeMediaContextContract,
   mediaReferenceContract,
 } from "@sevo/contracts/media/v1";
 import { identityIdContract, orderIdContract } from "@sevo/contracts/platform/v1";
@@ -62,23 +63,43 @@ async function signIn(server: FastifyInstance, mobile: string) {
 }
 
 it("uploads and privately previews real buyer dispute evidence with safe retry", async () => {
+  let authorizedBuyerId: string | undefined;
+  let authorizedOrderId: string | undefined;
   const fixture = await createMediaTestApp(
     { ...apiTestEnvironment, DEV_OTP_TEST_MOBILES: undefined },
     async () => false,
     async () => false,
     async () => false,
-    async () => true,
+    async ({ identityId, orderId }) =>
+      identityId === authorizedBuyerId && orderId === authorizedOrderId,
   );
   apps.push(fixture);
   const server = fixture.app.getHttpAdapter().getInstance();
   const buyer = await signIn(server, "09123456789");
   const other = await signIn(server, "09123456780");
   const orderId = orderIdContract.parse(randomUUID());
+  authorizedBuyerId = buyer.identityId;
+  authorizedOrderId = orderId;
   const media = fixture.app.get<BuyerDisputeMedia>(BUYER_DISPUTE_MEDIA);
-  const context = await media.issueUploadContext({
-    identityId: buyer.identityId,
-    orderId,
+  const issued = await server.inject({
+    method: "POST",
+    url: "/v1/buyer-dispute-media-contexts",
+    headers: { cookie: buyer.cookie },
+    payload: { orderId },
   });
+  expect(issued.statusCode).toBe(201);
+  expect(issued.headers["cache-control"]).toBe("no-store");
+  const context = buyerDisputeMediaContextContract.parse(issued.json());
+  expect(
+    (
+      await server.inject({
+        method: "POST",
+        url: "/v1/buyer-dispute-media-contexts",
+        headers: { cookie: other.cookie },
+        payload: { orderId },
+      })
+    ).statusCode,
+  ).toBe(404);
 
   const upload = (
     cookie: string,
@@ -135,9 +156,12 @@ it("uploads and privately previews real buyer dispute evidence with safe retry",
     }),
   ).resolves.toBe("READY");
 
+  const limitOrderId = orderIdContract.parse(randomUUID());
+  authorizedBuyerId = other.identityId;
+  authorizedOrderId = limitOrderId;
   const limitContext = await media.issueUploadContext({
     identityId: other.identityId,
-    orderId: orderIdContract.parse(randomUUID()),
+    orderId: limitOrderId,
   });
   const uploadForLimit = (idempotencyKey: string) =>
     server.inject({

@@ -283,6 +283,15 @@ describe("fulfillment producer persistence", () => {
       shippedAt: "2026-08-30T10:00:00.000Z",
       deliveredAt: "2026-08-30T10:00:00.000Z",
     });
+    await sql`
+      update fulfillment_orders
+      set status = 'CANCELLATION_PENDING_REFUND'
+      where order_id = ${orderId}
+    `;
+    await expect(repository.readOrderSnapshot(orderId)).resolves.toMatchObject({
+      status: "DELIVERED",
+      deliveredAt: "2026-08-30T10:00:00.000Z",
+    });
 
     await expect(
       repository.replayAdvance({

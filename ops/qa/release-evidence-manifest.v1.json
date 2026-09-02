@@ -204,10 +204,17 @@
       "additionalScenarios": ["concurrency", "idempotency"],
       "reviewRisk": "high",
       "tests": {
-        "unit": ["tests/unit/problem-follow-up-controller.test.ts"],
+        "unit": [
+          "apps/api/src/modules/problem-follow-up/application/problem-follow-up.service.unit.test.ts",
+          "apps/web/src/app/(buyer)/orders/[orderId]/buyer-dispute-panel.unit.test.ts",
+          "apps/web/src/lib/buyer-dispute-client.unit.test.ts"
+        ],
         "contract": ["tests/contract/problem-follow-up-v2.contract.test.ts"],
-        "integration": ["tests/integration/problem-follow-up-producer.test.ts"],
-        "e2e": ["tests/e2e/platform-dispute-review.spec.ts"]
+        "integration": [
+          "tests/integration/buyer-dispute-media-api.test.ts",
+          "tests/integration/problem-follow-up-producer.test.ts"
+        ],
+        "e2e": ["tests/e2e/direct-payment-success.spec.ts"]
       }
     },
     {

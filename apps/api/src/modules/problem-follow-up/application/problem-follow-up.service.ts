@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
-  DISPUTE_DELIVERED_OPEN_WINDOW_DAYS,
   DISPUTE_SELLER_FIRST_RESPONSE_HOURS,
-  DISPUTE_SHIPPED_OPEN_WINDOW_DAYS,
   disputeIdContract,
   problemFollowUpCursorContract,
   problemFollowUpIdempotencyKeyContract,
@@ -16,8 +14,13 @@ import {
   resolveDisputeInputV2Contract,
   respondToDisputeInputV2Contract,
 } from "@sevo/contracts/problem-follow-up/v2";
-import { identityIdContract } from "@sevo/contracts/platform/v1";
+import {
+  identityIdContract,
+  type IdentityId,
+  type OrderId,
+} from "@sevo/contracts/platform/v1";
 import { PlatformAgentSessionUnauthorizedError } from "../../identity-access/public";
+import { isBuyerDisputeWindowOpen } from "./buyer-dispute-eligibility";
 
 import {
   ProblemFollowUpFault,
@@ -32,7 +35,6 @@ import {
   type SensitiveAccessInput,
 } from "../public";
 
-const DAY_MS = 24 * 60 * 60 * 1_000;
 const HOUR_MS = 60 * 60 * 1_000;
 
 export class ProblemFollowUpService {
@@ -58,22 +60,8 @@ export class ProblemFollowUpService {
       requestHash,
     });
     if (replay) return replay;
-    const snapshot = await this.fulfillment.readOrderSnapshot({
-      orderId: input.orderId,
-      buyerId: actorId,
-    });
-    if (!snapshot) throw new ProblemFollowUpFault("NOT_FOUND");
+    const snapshot = await this.requireEligibleOrder(actorId, input.orderId);
     const openedAt = this.now();
-    const anchor = new Date(
-      snapshot.status === "DELIVERED" ? snapshot.deliveredAt : snapshot.shippedAt,
-    );
-    const days =
-      snapshot.status === "DELIVERED"
-        ? DISPUTE_DELIVERED_OPEN_WINDOW_DAYS
-        : DISPUTE_SHIPPED_OPEN_WINDOW_DAYS;
-    if (openedAt.getTime() > anchor.getTime() + days * DAY_MS) {
-      throw new ProblemFollowUpFault("WINDOW_CLOSED");
-    }
     if (
       !this.evidence ||
       !(
@@ -277,6 +265,18 @@ export class ProblemFollowUpService {
     const session = await this.sessions.readActiveIdentitySession(token);
     if (!session) throw new ProblemFollowUpFault("UNAUTHENTICATED");
     return identityIdContract.parse(session.identityId);
+  }
+
+  private async requireEligibleOrder(actorId: IdentityId, orderId: OrderId) {
+    const snapshot = await this.fulfillment.readOrderSnapshot({
+      orderId,
+      buyerId: actorId,
+    });
+    if (!snapshot) throw new ProblemFollowUpFault("NOT_FOUND");
+    if (!isBuyerDisputeWindowOpen(snapshot, this.now())) {
+      throw new ProblemFollowUpFault("WINDOW_CLOSED");
+    }
+    return snapshot;
   }
 
   private parseKey(value: unknown) {

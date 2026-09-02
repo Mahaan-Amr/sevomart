@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  Body,
   Controller,
   Get,
   Headers,
   HttpException,
+  HttpCode,
   HttpStatus,
   Inject,
   Param,
@@ -15,7 +17,9 @@ import {
 import { ApiExcludeController } from "@nestjs/swagger";
 import {
   BUYER_DISPUTE_MEDIA_MAX_ITEMS,
+  buyerDisputeMediaContextContract,
   buyerDisputeMediaContextIdContract,
+  buyerDisputeMediaContextInputContract,
   buyerDisputeMediaUploadPurpose,
   conversationMediaContextIdContract,
   MEDIA_UPLOAD_ACCEPTED_TYPES,
@@ -41,6 +45,7 @@ import {
 } from "../identity-access/public";
 import {
   BUYER_DISPUTE_MEDIA,
+  BuyerDisputeMediaAccessDeniedError,
   BuyerDisputeMediaIdempotencyConflictError,
   BuyerDisputeMediaLimitError,
   type BuyerDisputeMedia,
@@ -101,6 +106,38 @@ export class MediaController {
     @Inject(SELLER_UPLOAD_RATE_LIMITER)
     private readonly uploadRateLimiter: SellerUploadRateLimiter,
   ) {}
+
+  @Post("buyer-dispute-media-contexts")
+  @HttpCode(HttpStatus.CREATED)
+  async issueBuyerDisputeMediaContext(
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    const identityId = identityIdContract.parse(
+      await requireIdentity(request, this.sessions),
+    );
+    const input = buyerDisputeMediaContextInputContract.safeParse(body);
+    if (!input.success) throw mediaError(request.id, "REQUIRED");
+    try {
+      const context = await this.buyerDisputeMedia.issueUploadContext({
+        identityId,
+        orderId: input.data.orderId,
+      });
+      return buyerDisputeMediaContextContract.parse({
+        ...context,
+        maxItems: BUYER_DISPUTE_MEDIA_MAX_ITEMS,
+        maxBytesPerItem: MEDIA_UPLOAD_MAX_BYTES,
+        uploadUrl: `/v1/buyer-dispute-media/${context.contextId}`,
+      });
+    } catch (error) {
+      if (error instanceof BuyerDisputeMediaAccessDeniedError) {
+        throw mediaNotFound(request.id);
+      }
+      throw error;
+    }
+  }
 
   @Post("buyer-dispute-media/:contextId")
   async uploadBuyerDisputeEvidence(

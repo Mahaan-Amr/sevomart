@@ -23,6 +23,7 @@ const contractSchemas = {
 };
 
 const frozenConsumerOperations = [
+  ["post", "/v1/buyer-dispute-media-contexts", "identity", [201, 401, 404, 422, 500]],
   [
     "post",
     "/v1/buyer-dispute-media/{contextId}",
@@ -220,7 +221,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "bdf5898b742ae3f249e171b9698a8f6bbd305a4c9acf6a94d32c8d5fa3c49416",
+      "35a808a26d0fb84dff23d7056ae4040efcaff478992e4c7941807da4663039e7",
     );
   });
 
