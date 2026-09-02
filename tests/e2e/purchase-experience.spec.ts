@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { directSettlementDisclosure } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
+import sharp from "sharp";
 
 import {
   paymentBuyerTestMobiles,
   visualProjectIndex,
 } from "../helpers/visual-projects";
+import { assertMinimumContrast } from "../helpers/visual-assertions";
 
 test("eligible buyer retries once and publishes one verified purchase experience", async ({
   page,
@@ -175,6 +177,46 @@ test("eligible buyer retries once and publishes one verified purchase experience
       }
       return route.continue();
     });
+    const mediaContextKeys: string[] = [];
+    await page.route(/\/api\/purchase-experiences\/media-contexts$/, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      mediaContextKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      return route.continue();
+    });
+    const mediaUploadKeys: string[] = [];
+    let mediaValidationRejectionsRemaining = 4;
+    let expiredMediaContext = false;
+    let expiredMediaUploadKey = "";
+    await page.route(/\/api\/purchase-experience-media\/[0-9a-f-]+$/, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const uploadKey = route.request().headers()["idempotency-key"] ?? "";
+      mediaUploadKeys.push(uploadKey);
+      if (mediaValidationRejectionsRemaining > 0) {
+        mediaValidationRejectionsRemaining -= 1;
+        return route.fulfill({
+          status: 422,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "VALIDATION_ERROR",
+            message: "فایل تصویر خراب است یا کامل خوانده نمی‌شود.",
+            details: { issues: [{ field: "media", code: "CORRUPT_IMAGE" }] },
+          }),
+        });
+      }
+      if (!expiredMediaContext) {
+        expiredMediaContext = true;
+        expiredMediaUploadKey = uploadKey;
+        return route.fulfill({
+          status: 410,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "MEDIA_NOT_FOUND",
+            message: "مهلت بارگذاری تصویر تمام شده است. دوباره تلاش کنید.",
+          }),
+        });
+      }
+      return route.continue();
+    });
 
     const returnTo = `/orders/${orderId}`;
     await page.goto(returnTo);
@@ -194,14 +236,116 @@ test("eligible buyer retries once and publishes one verified purchase experience
     await page
       .getByLabel("توضیح شما (اختیاری)")
       .fill("کالا دقیقاً مطابق توضیح رسید و بسته‌بندی مرتب بود. ".repeat(8));
+    const imageInput = page.getByLabel("افزودن تصویر");
+    await page.getByLabel("توضیح شما (اختیاری)").focus();
+    await page.keyboard.press("Tab");
+    await expect(imageInput).toBeFocused();
+    await expect(imageInput.locator("..")).toHaveCSS("outline-style", "solid");
+    await imageInput.setInputFiles({
+      name: "not-an-image.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("not an image"),
+    });
+    await expect(
+      page.getByText("فقط تصویر JPEG، PNG یا WebP انتخاب کنید."),
+    ).toBeVisible();
+    await expect(page.getByRole("listitem")).toHaveCount(0);
+    await imageInput.setInputFiles({
+      name: "too-large.png",
+      mimeType: "image/png",
+      buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
+    });
+    await expect(
+      page.getByText("حجم هر تصویر باید حداکثر ۱۰ مگابایت باشد."),
+    ).toBeVisible();
+    const experienceImage = await sharp({
+      create: {
+        width: 32,
+        height: 32,
+        channels: 4,
+        background: { r: 164, g: 20, b: 57, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+    await imageInput.setInputFiles(
+      [1, 2, 3, 4].map((number) => ({
+        name: `server-invalid-${number}.png`,
+        mimeType: "image/png",
+        buffer: Buffer.from(`invalid image ${number}`),
+      })),
+    );
+    await assertMinimumContrast(imageInput.locator(".."));
+    await page.getByRole("button", { name: "ثبت تجربه خرید" }).click();
+    await expect(
+      page.getByText("فایل تصویر خراب است یا کامل خوانده نمی‌شود."),
+    ).toHaveCount(4);
+    for (const number of [1, 2, 3, 4]) {
+      await page
+        .getByRole("listitem")
+        .filter({ hasText: `server-invalid-${number}.png` })
+        .getByRole("button", { name: "حذف" })
+        .click();
+    }
+    await expect(page.getByRole("listitem")).toHaveCount(0);
+    await expect(imageInput).toBeEnabled();
+    await imageInput.setInputFiles({
+      name: "experience.png",
+      mimeType: "image/png",
+      buffer: experienceImage,
+    });
+    await expect(page.getByText("آماده بارگذاری است.")).toBeVisible();
+    await imageInput.setInputFiles(
+      [1, 2, 3, 4].map((number) => ({
+        name: `extra-${number}.png`,
+        mimeType: "image/png",
+        buffer: experienceImage,
+      })),
+    );
+    await expect(
+      page.getByText("حداکثر چهار تصویر می‌توانید اضافه کنید."),
+    ).toBeVisible();
+    const selectedImages = page.getByRole("list", {
+      name: "تصاویر انتخاب‌شده",
+    });
+    await expect(selectedImages.getByRole("listitem")).toHaveCount(4);
+    await expect(selectedImages.getByText("extra-4.png")).toHaveCount(0);
+    for (const number of [1, 2, 3]) {
+      await selectedImages
+        .getByRole("listitem")
+        .filter({ hasText: `extra-${number}.png` })
+        .getByRole("button", { name: "حذف" })
+        .click();
+    }
+    await expect(selectedImages.getByRole("listitem")).toHaveCount(1);
+    await assertMinimumContrast(imageInput.locator(".."));
+    await assertMinimumContrast(page.getByText("آماده بارگذاری است."));
 
     await page.getByRole("button", { name: "ثبت تجربه خرید" }).click();
     await expect(
-      page.getByText("ارتباط با سرور کامل نشد. دوباره تلاش کنید.", {
-        exact: true,
-      }),
+      page.getByText("مهلت بارگذاری تصویر تمام شده است. دوباره تلاش کنید."),
     ).toBeVisible();
+    await page.getByRole("button", { name: "تلاش دوباره" }).click();
+    await expect(page.getByText("تصویر آماده است.")).toBeVisible();
+    expect(expiredMediaUploadKey).toBeTruthy();
+    expect(
+      mediaUploadKeys.filter((uploadKey) => uploadKey === expiredMediaUploadKey),
+    ).toHaveLength(2);
+    expect(mediaContextKeys).toHaveLength(3);
+    expect(mediaContextKeys[0]).toBeTruthy();
+    expect(new Set(mediaContextKeys).size).toBe(1);
+
     await page.getByRole("button", { name: "ثبت تجربه خرید" }).click();
+    await expect(
+      page.getByText(
+        "ثبت کامل تأیید نشد. برای جلوگیری از ثبت تکراری، همین اطلاعات را دوباره ارسال کنید.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole("radio", { name: "۵" })).toBeDisabled();
+    await expect(page.getByLabel("توضیح شما (اختیاری)")).toBeDisabled();
+    await expect(imageInput).toBeDisabled();
+    await page.getByRole("button", { name: "تلاش دوباره برای ثبت" }).click();
     await expect(page.getByText("منتشر شد", { exact: true })).toBeVisible();
     expect(requestKeys).toHaveLength(2);
     expect(requestKeys[0]).toBeTruthy();
@@ -213,15 +357,21 @@ test("eligible buyer retries once and publishes one verified purchase experience
     await expect(experienceAction).toHaveCount(0);
 
     const [experience] = await sql<
-      Array<{ experienceId: string; source: string; moderationState: string }>
+      Array<{
+        experienceId: string;
+        source: string;
+        moderationState: string;
+        mediaIds: string[];
+      }>
     >`
       select id as "experienceId", source,
-        moderation_state as "moderationState"
+        moderation_state as "moderationState", media_ids as "mediaIds"
       from content_purchase_experiences where order_item_id = ${orderItemId}
     `;
     expect(experience).toMatchObject({
       source: "VERIFIED_PURCHASE",
       moderationState: "PUBLISHED",
+      mediaIds: [expect.any(String)],
     });
     const feed = await page.request.get(
       `http://127.0.0.1:${process.env.SEVO_E2E_API_PORT ?? "3109"}/v2/products/${productId}/purchase-experiences`,
@@ -248,6 +398,20 @@ test("eligible buyer retries once and publishes one verified purchase experience
         exact: false,
       }),
     ).toBeVisible();
+    const publicExperienceImage = page.getByRole("img", {
+      name: "تصویر تجربه خرید ۱",
+    });
+    await expect(publicExperienceImage).toBeVisible();
+    await expect
+      .poll(() =>
+        publicExperienceImage.evaluate(
+          (image) =>
+            image instanceof HTMLImageElement &&
+            image.complete &&
+            image.naturalWidth > 0,
+        ),
+      )
+      .toBe(true);
     await expect(page.getByText(/میانگین [۰-۹]/)).toHaveCount(0);
     await sql`
       insert into content_purchase_experiences

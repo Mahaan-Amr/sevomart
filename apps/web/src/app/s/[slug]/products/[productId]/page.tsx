@@ -167,7 +167,7 @@ function PurchaseExperiences({
                     <img
                       key={mediaId}
                       src={`/api/store/media/${mediaId}`}
-                      alt={`تصویر تجربه خرید ${index + 1}`}
+                      alt={`تصویر تجربه خرید ${(index + 1).toLocaleString("fa-IR")}`}
                     />
                   ))}
                 </div>
