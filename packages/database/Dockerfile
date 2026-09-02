@@ -9,6 +9,7 @@ FROM base AS dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/database/package.json packages/database/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/observability/package.json packages/observability/package.json
 COPY packages/outbox/package.json packages/outbox/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store,sharing=locked pnpm install --frozen-lockfile \
   && pnpm --filter @sevo/database deploy --prod --legacy /runtime

@@ -264,9 +264,12 @@ export class PostgresCheckoutRepository
         orders.store_id as "storeId", items.product_id as "productId"
       from order_items items
       join order_orders orders on orders.id = items.order_id
+      join order_fulfillment_status_projections fulfillment
+        on fulfillment.order_id = orders.id
       where items.id = ${parsed.data.orderItemId}
         and orders.identity_id = ${parsed.data.buyerId}
         and orders.status = 'PAID'
+        and fulfillment.status = 'DELIVERED'
       limit 1
     `;
     return orderPurchaseExperienceEligibilityDecisionContract.parse(

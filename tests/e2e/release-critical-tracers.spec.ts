@@ -41,6 +41,8 @@ test("traces seller approval and publication through discovery, follow, payment 
     await expectProductInFeed(buyer, "/v1/me/feeds/following", product.productId);
     const orderId = await completeBuyerPayment(buyer, product.variantId);
     await expectSellerActionableOrder(seller, orderId);
+    await deliverOrder(seller, orderId);
+    await waitForDeliveredOrderProjection(orderId);
     await publishPurchaseExperienceWithMedia(buyer, guest, orderId);
   } finally {
     await Promise.all([
@@ -376,6 +378,65 @@ async function expectSellerActionableOrder(seller: APIRequestContext, orderId: s
   expect((await response.json()).orders).toEqual(
     expect.arrayContaining([expect.objectContaining({ orderId })]),
   );
+}
+
+async function deliverOrder(seller: APIRequestContext, orderId: string) {
+  await waitForFulfillmentOrder(orderId);
+  for (const data of [
+    { targetStatus: "PREPARING" },
+    {
+      targetStatus: "SHIPPED",
+      shipping: { method: "پست پیشتاز", trackingCode: "1641641640" },
+    },
+    { targetStatus: "DELIVERED" },
+  ]) {
+    await expectOk(
+      await seller.post(`/v1/seller/orders/${orderId}/fulfillment/advance`, {
+        headers: { "idempotency-key": randomUUID() },
+        data,
+      }),
+      200,
+    );
+  }
+}
+
+async function waitForFulfillmentOrder(orderId: string) {
+  const sql = postgres(requiredDatabaseUrl(), { max: 1 });
+  try {
+    await expect
+      .poll(
+        async () => {
+          const [row] = await sql<Array<{ status: string }>>`
+            select status from fulfillment_orders where order_id = ${orderId}
+          `;
+          return row?.status;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe("ACTION_REQUIRED");
+  } finally {
+    await sql.end();
+  }
+}
+
+async function waitForDeliveredOrderProjection(orderId: string) {
+  const sql = postgres(requiredDatabaseUrl(), { max: 1 });
+  try {
+    await expect
+      .poll(
+        async () => {
+          const [row] = await sql<Array<{ status: string }>>`
+            select status from order_fulfillment_status_projections
+            where order_id = ${orderId}
+          `;
+          return row?.status;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe("DELIVERED");
+  } finally {
+    await sql.end();
+  }
 }
 
 async function signIn(context: APIRequestContext, mobile: string, platform = false) {

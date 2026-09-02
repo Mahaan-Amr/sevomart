@@ -18,7 +18,7 @@
   color: var(--color-primary);
 }
 .eyebrow {
-  margin: 28px 0 6px;
+  margin: 24px 0 8px;
   color: var(--color-muted);
   overflow-wrap: anywhere;
 }
@@ -58,7 +58,7 @@
 }
 .form button {
   min-height: 48px;
-  padding: 10px 18px;
+  padding: 12px 16px;
   border: 0;
   border-radius: 14px;
   background: var(--color-primary);
@@ -66,7 +66,7 @@
   font: inherit;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 120ms ease;
+  transition: transform 180ms cubic-bezier(0.22, 0.8, 0.28, 1);
 }
 .form button:hover:not(:disabled) {
   transform: translateY(-1px);
@@ -85,7 +85,7 @@
 
 .result {
   margin-top: 24px;
-  padding-top: 20px;
+  padding-top: 24px;
   border-top: 1px solid var(--color-divider);
 }
 .result h2 {
@@ -94,7 +94,7 @@
 }
 .result dl {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .result dl div {
   display: flex;
@@ -118,11 +118,11 @@
     padding: 16px 8px;
   }
   .panel {
-    padding: 18px 14px;
+    padding: 16px;
   }
   .result dl div {
     display: grid;
-    gap: 2px;
+    gap: 4px;
   }
   .result dd {
     text-align: start;

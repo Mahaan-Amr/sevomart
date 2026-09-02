@@ -156,6 +156,15 @@ version gap/buffer ماندگار و شکست تکراری rebuild در
 بر اساس تبدیل استاندارد نام و unit در OTLP-to-Prometheus هستند و deployment باید
 فایل را در rule loader مانیتورینگ بارگذاری کند.
 
+پایش عملیاتی مشترک MVP نیز ruleهای پرداخت مبهم، بازیابی hold منقضی، شکست دائمی
+تحویل outbox، poison event و backlog یا lag خارج از حد را در
+`ops/alerts/mvp-operations.prometheus.yml` نگه می‌دارد. worker پرداخت شمار aggregate
+موارد باز reconciliation و تعداد holdهای بازیابی‌شده را صادر می‌کند و هر مصرف‌کننده
+outbox شمار pending/poison و قدیمی‌ترین lag خودش را با برچسب کم‌دامنه
+`consumer_name` گزارش می‌دهد. این metricها نباید payload یا شناسهٔ خریدار، سفارش،
+event و correlation را به label تبدیل کنند. deployment باید این فایل را نیز کنار
+ruleهای projection در rule loader مانیتورینگ بارگذاری کند.
+
 metrics با همان پشتهٔ موجود OpenTelemetry و exporter استاندارد OTLP صادر می‌شوند؛
 وابستگی‌های مستقیم `@opentelemetry/api`، `sdk-metrics` و
 `exporter-metrics-otlp-http` هم‌نسخه با SDK موجود، تحت مجوز Apache-2.0 و بدون

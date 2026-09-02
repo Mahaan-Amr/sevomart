@@ -2,10 +2,23 @@ import { getMeter } from "@sevo/observability";
 
 import type { WorkerHandler } from "../public";
 
-type RunRecovery = (signal: AbortSignal) => Promise<void>;
+type PaymentRecoveryResult = {
+  recovered: number;
+  reconciliationClaimed: boolean;
+  openOverdueReconciliations: number;
+};
+
+type RunRecovery = (signal: AbortSignal) => Promise<PaymentRecoveryResult>;
 
 const paymentRecoveryFailureMetric = getMeter("sevo.payments.recovery").createCounter(
   "sevo_payment_recovery_failures_total",
+);
+const paymentRecoveryMeter = getMeter("sevo.payments.operations");
+const expiredHoldRecoveryMetric = paymentRecoveryMeter.createCounter(
+  "sevo.payment.expired_holds.recovered",
+);
+const ambiguousPaymentMetric = paymentRecoveryMeter.createGauge(
+  "sevo.payment.ambiguous.overdue",
 );
 
 export function startPaymentRecoveryPoller(
@@ -29,7 +42,11 @@ export function startPaymentRecoveryPoller(
     while (!stopped) {
       activeRequest = new AbortController();
       try {
-        await runRecovery(activeRequest.signal);
+        const result = await runRecovery(activeRequest.signal);
+        if (result.recovered > 0) {
+          expiredHoldRecoveryMetric.add(result.recovered);
+        }
+        ambiguousPaymentMetric.record(result.openOverdueReconciliations);
         consecutiveFailures = 0;
       } catch (error: unknown) {
         if (!stopped) {
@@ -76,6 +93,7 @@ const paymentRecoveryWorker: WorkerHandler = {
       if (!response.ok) {
         throw new Error(`Payment recovery failed with ${response.status}`);
       }
+      return (await response.json()) as PaymentRecoveryResult;
     });
   },
 };

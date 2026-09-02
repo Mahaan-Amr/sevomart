@@ -5,6 +5,7 @@ import {
   type EventActorV1,
   type EventEnvelopeV1,
 } from "@sevo/contracts/platform/v1";
+import { getMeter } from "@sevo/observability";
 import postgres from "postgres";
 import type { JSONValue, Sql } from "postgres";
 
@@ -52,8 +53,23 @@ type DurableOutboxWorkerOptions = {
   retryDelaysMs?: readonly number[];
   maxAttempts?: number;
   pollIntervalMs?: number;
+  healthIntervalMs?: number;
   log?: (record: Readonly<Record<string, unknown>>) => void;
 };
+
+const outboxMeter = getMeter("sevo.outbox.operations");
+const outboxDeliveryFailureMetric = outboxMeter.createCounter(
+  "sevo.outbox.delivery.failures",
+);
+const outboxPendingMetric = outboxMeter.createGauge(
+  "sevo.outbox.consumer.pending_events",
+);
+const outboxPoisonMetric = outboxMeter.createGauge(
+  "sevo.outbox.consumer.poison_events",
+);
+const outboxLagMetric = outboxMeter.createGauge("sevo.outbox.consumer.lag", {
+  unit: "ms",
+});
 
 type OutboxDatabaseRow = {
   eventId: string;
@@ -236,11 +252,13 @@ export class DurableOutboxWorker {
   readonly #retryDelaysMs: readonly number[];
   readonly #maxAttempts: number;
   readonly #pollIntervalMs: number;
+  readonly #healthIntervalMs: number;
   readonly #log: (record: Readonly<Record<string, unknown>>) => void;
   #loop?: Promise<void>;
   #stopping = false;
   #closed = false;
   #wake?: () => void;
+  #nextHealthCheckAt = 0;
 
   constructor(databaseUrl: string, options: DurableOutboxWorkerOptions) {
     if (Object.keys(options.handlers).length === 0) {
@@ -262,6 +280,7 @@ export class DurableOutboxWorker {
     this.#retryDelaysMs = options.retryDelaysMs ?? [1_000, 5_000, 30_000, 120_000];
     this.#maxAttempts = options.maxAttempts ?? 5;
     this.#pollIntervalMs = options.pollIntervalMs ?? 250;
+    this.#healthIntervalMs = options.healthIntervalMs ?? 15_000;
     this.#log =
       options.log ??
       ((record) => {
@@ -278,9 +297,14 @@ export class DurableOutboxWorker {
   }
 
   async runOnce(): Promise<OutboxRunResult> {
+    await this.#recordOperationalHealth();
     const claimed = await this.claimNext();
-    if (!claimed) return "idle";
-    return this.processClaim(claimed);
+    if (!claimed) {
+      return (await this.#consumeNextArchived()) ? "processed" : "idle";
+    }
+    const result = await this.processClaim(claimed);
+    if (result === "failed") await this.#recordOperationalHealth(true);
+    return result;
   }
 
   async claimNext(): Promise<ClaimedOutboxEvent | undefined> {
@@ -384,6 +408,11 @@ export class DurableOutboxWorker {
         attemptCount: claimed.attemptCount,
         errorKind,
       });
+      outboxDeliveryFailureMetric.add(1, {
+        consumer_name: this.#consumerName,
+        event_type: claimed.event.eventType,
+        permanent,
+      });
       return permanent ? "failed" : "retry";
     }
   }
@@ -414,6 +443,74 @@ export class DurableOutboxWorker {
         });
       }
       if (result === "idle" && !this.#stopping) await this.#waitForPoll();
+    }
+  }
+
+  async #recordOperationalHealth(force = false): Promise<void> {
+    const now = this.#now().getTime();
+    if (!force && now < this.#nextHealthCheckAt) return;
+    const backlog = await readOutboxConsumerBacklog(this.#sql, {
+      consumerName: this.#consumerName,
+      eventTypes: this.#eventTypes,
+    });
+    const attributes = { consumer_name: this.#consumerName };
+    outboxPendingMetric.record(backlog.pendingEvents, attributes);
+    outboxPoisonMetric.record(backlog.poisonEvents, attributes);
+    outboxLagMetric.record(backlog.lagMs, attributes);
+    this.#nextHealthCheckAt = now + this.#healthIntervalMs;
+  }
+
+  async #consumeNextArchived(): Promise<boolean> {
+    try {
+      return await this.#sql.begin(async (sql) => {
+        const rows = await sql<OutboxDatabaseRow[]>`
+          select event.event_id as "eventId", event.envelope_version as version,
+            event.event_type as "eventType", event.aggregate_id as "aggregateId",
+            event.aggregate_version as "aggregateVersion",
+            event.occurred_at as "occurredAt",
+            event.correlation_id as "correlationId",
+            event.causation_id as "causationId", event.actor_type as "actorType",
+            event.actor_id as "actorId", event.payload,
+            event.attempt_count as "attemptCount"
+          from platform_outbox_events event
+          where event.event_type in ${sql(this.#eventTypes)}
+            and event.status in ('PROCESSED', 'FAILED')
+            and not exists (
+              select 1 from platform_outbox_consumptions consumption
+              where consumption.consumer_name = ${this.#consumerName}
+                and consumption.event_id = event.event_id
+            )
+          order by event.created_at, event.event_id
+          for update skip locked
+          limit 1
+        `;
+        const row = rows[0];
+        if (!row) return false;
+        const handler = this.#handlers[row.eventType];
+        if (!handler) throw new Error("Outbox catch-up handler is not registered");
+        await sql`
+          insert into platform_outbox_consumptions
+            (consumer_name, event_id, consumed_at)
+          values (${this.#consumerName}, ${row.eventId}, ${this.#now()})
+          on conflict (consumer_name, event_id) do nothing
+        `;
+        await handler(storedOutboxEvent(row), sql);
+        return true;
+      });
+    } catch (error) {
+      const errorKind = error instanceof Error ? error.name : "UnknownError";
+      outboxDeliveryFailureMetric.add(1, {
+        consumer_name: this.#consumerName,
+        delivery_path: "catchup",
+        permanent: false,
+      });
+      this.#log({
+        level: "warn",
+        message: "outbox_consumer_catchup_failed",
+        consumerName: this.#consumerName,
+        errorKind,
+      });
+      return false;
     }
   }
 
