@@ -10,12 +10,13 @@ groups:
         annotations:
           summary: An ambiguous payment has exceeded the reconciliation window
 
-      - alert: SevoExpiredPaymentHoldRecovered
-        expr: increase(sevo_payment_expired_holds_recovered_total[5m]) > 0
+      - alert: SevoExpiredPaymentHoldUnrecovered
+        expr: sevo_payment_expired_holds_unrecovered > 0
+        for: 30s
         labels:
-          severity: warning
+          severity: critical
         annotations:
-          summary: An expired payment hold required automatic recovery
+          summary: An expired payment hold remains unrecovered after its lease
 
       - alert: SevoOutboxDeliveryFailure
         expr: increase(sevo_outbox_delivery_failures_total{permanent="true"}[5m]) > 0
@@ -39,3 +40,11 @@ groups:
           severity: critical
         annotations:
           summary: An operational outbox consumer backlog exceeds its limit
+
+      - alert: SevoFulfillmentBacklog
+        expr: sevo_fulfillment_backlog_orders > 100 or sevo_fulfillment_backlog_oldest_age_milliseconds > 1800000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Actionable or preparing fulfillment orders exceed their backlog SLO

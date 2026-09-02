@@ -12,6 +12,7 @@ describe("payment recovery poller", () => {
       return {
         recovered: 0,
         reconciliationClaimed: false,
+        unrecoveredExpiredHolds: 0,
         openOverdueReconciliations: 0,
       };
     }, 1);

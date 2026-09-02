@@ -86,6 +86,7 @@ export interface InventoryAuthoring {
     transaction: InventoryTransactionContext,
     command: Readonly<{ reservationId: string; expiredAt: Date }>,
   ): Promise<boolean>;
+  countExpiredPaymentHolds(now: Date): Promise<number>;
   holdReservationForPayment(
     transaction: InventoryTransactionContext,
     command: Readonly<{

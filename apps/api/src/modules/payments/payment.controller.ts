@@ -494,6 +494,7 @@ export class InternalPaymentRecoveryController {
   async run(@Headers("x-sevo-worker-secret") secret: string | undefined): Promise<{
     recovered: number;
     reconciliationClaimed: boolean;
+    unrecoveredExpiredHolds: number;
     openOverdueReconciliations: number;
   }> {
     if (!sameSecret(secret, this.environment.PAYMENT_RECOVERY_SECRET)) {

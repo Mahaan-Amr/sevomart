@@ -1,6 +1,8 @@
-import { expect, test } from "../helpers/release-playwright";
+import { randomUUID } from "node:crypto";
 
-import { seedUnderReviewDisputeFixture } from "../../apps/api/src/modules/problem-follow-up/problem-follow-up-test-fixture";
+import { expect, test } from "../helpers/release-playwright";
+import postgres from "postgres";
+
 import {
   assertMinimumContrast,
   assertNoHorizontalOverflow,
@@ -87,8 +89,45 @@ test("a dispute agent requests timed access and records an audited result", asyn
 });
 
 async function seedDispute() {
-  return seedUnderReviewDisputeFixture(
-    databaseUrl,
-    "بسته هنگام تحویل آسیب داشت و تصویر وضعیت کالا برای بررسی ثبت شده است. ".repeat(8),
-  );
+  const fixture = {
+    id: randomUUID(),
+    orderId: randomUUID(),
+    buyerId: randomUUID(),
+    sellerId: randomUUID(),
+    storeId: randomUUID(),
+    buyerText:
+      "بسته هنگام تحویل آسیب داشت و تصویر وضعیت کالا برای بررسی ثبت شده است. ".repeat(
+        8,
+      ),
+  };
+  const openedAt = new Date();
+  const respondedAt = new Date(openedAt.getTime() + 1_000);
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    await sql`
+      insert into problem_disputes
+        (id, order_id, buyer_identity_id, store_id, status, category,
+         opened_at, deadline_kind, deadline_at, contributions, outcome,
+         version, updated_at)
+      values
+        (${fixture.id}, ${fixture.orderId}, ${fixture.buyerId}, ${fixture.storeId},
+         'UNDER_REVIEW', 'DAMAGED', ${openedAt}, null, null, ${sql.json([
+           {
+             authorKind: "BUYER",
+             text: fixture.buyerText,
+             evidence: [],
+             submittedAt: openedAt.toISOString(),
+           },
+           {
+             authorKind: "SELLER",
+             text: "پاسخ فروشنده برای بررسی پلتفرم ثبت شد.",
+             evidence: [],
+             submittedAt: respondedAt.toISOString(),
+           },
+         ])}, null, 2, ${respondedAt})
+    `;
+  } finally {
+    await sql.end();
+  }
+  return fixture;
 }

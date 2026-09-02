@@ -156,14 +156,19 @@ version gap/buffer ماندگار و شکست تکراری rebuild در
 بر اساس تبدیل استاندارد نام و unit در OTLP-to-Prometheus هستند و deployment باید
 فایل را در rule loader مانیتورینگ بارگذاری کند.
 
-پایش عملیاتی مشترک MVP نیز ruleهای پرداخت مبهم، بازیابی hold منقضی، شکست دائمی
-تحویل outbox، poison event و backlog یا lag خارج از حد را در
+پایش عملیاتی مشترک MVP نیز ruleهای پرداخت مبهم، hold منقضیِ بازیابی‌نشده، شکست
+دائمی تحویل outbox، poison event، backlog یا lag outbox و backlog fulfillment را در
 `ops/alerts/mvp-operations.prometheus.yml` نگه می‌دارد. worker پرداخت شمار aggregate
-موارد باز reconciliation و تعداد holdهای بازیابی‌شده را صادر می‌کند و هر مصرف‌کننده
-outbox شمار pending/poison و قدیمی‌ترین lag خودش را با برچسب کم‌دامنه
-`consumer_name` گزارش می‌دهد. این metricها نباید payload یا شناسهٔ خریدار، سفارش،
-event و correlation را به label تبدیل کنند. deployment باید این فایل را نیز کنار
-ruleهای projection در rule loader مانیتورینگ بارگذاری کند.
+موارد باز reconciliation و holdهای منقضی‌ای را صادر می‌کند که پس از lease همچنان
+فعال مانده‌اند. هر مصرف‌کننده outbox وضعیت تحویل مستقل و durable خود را با
+`READY/LEASED/PROCESSED/FAILED`، attempt، backoff و خطای نهایی نگه می‌دارد و شمار
+pending/poison و قدیمی‌ترین lag خودش را با برچسب کم‌دامنه `consumer_name` گزارش
+می‌دهد. worker fulfillment نیز شمار سفارش‌های `ACTION_REQUIRED/PREPARING` و سن
+قدیمی‌ترین آن‌ها را بدون شناسه یا payload گزارش می‌کند. SLO عملیاتی fulfillment
+حداکثر ۱۰۰ سفارش و ۳۰ دقیقه سن است؛ عبور پیوستهٔ دو دقیقه‌ای alert بحرانی می‌سازد.
+این metricها نباید payload یا شناسهٔ خریدار، سفارش، event و correlation را به label
+تبدیل کنند. deployment باید این فایل را نیز کنار ruleهای projection در rule loader
+مانیتورینگ بارگذاری کند.
 
 metrics با همان پشتهٔ موجود OpenTelemetry و exporter استاندارد OTLP صادر می‌شوند؛
 وابستگی‌های مستقیم `@opentelemetry/api`، `sdk-metrics` و

@@ -14,7 +14,8 @@
     "@sevo/config": "workspace:*",
     "@sevo/contracts": "workspace:*",
     "@sevo/observability": "workspace:*",
-    "@sevo/outbox": "workspace:*"
+    "@sevo/outbox": "workspace:*",
+    "postgres": "3.4.7"
   },
   "devDependencies": {
     "tsx": "4.23.12"

@@ -12,7 +12,10 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { PostgresFulfillmentRepository } from "../../apps/api/src/modules/fulfillment/composition";
-import { projectActionableOrder } from "../../apps/worker/src/modules/fulfillment/index";
+import {
+  projectActionableOrder,
+  readFulfillmentOperationalBacklog,
+} from "../../apps/worker/src/modules/fulfillment/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
@@ -249,6 +252,19 @@ describe("fulfillment producer persistence", () => {
         },
       ],
     });
+  });
+
+  it("reports actionable orders and the age of the oldest fulfillment backlog", async () => {
+    const event = actionableEvent();
+    await sql.begin((transaction) => projectActionableOrder(event, transaction));
+
+    const backlog = await readFulfillmentOperationalBacklog(
+      sql,
+      new Date("2026-08-30T10:00:00.000Z"),
+    );
+
+    expect(backlog.pendingOrders).toBeGreaterThanOrEqual(1);
+    expect(backlog.oldestAgeMs).toBeGreaterThanOrEqual(60 * 60 * 1_000);
   });
 
   it("persists sequential transitions, shipment and replay in one audit timeline", async () => {
