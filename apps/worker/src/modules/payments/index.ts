@@ -5,6 +5,7 @@ import type { WorkerHandler } from "../public";
 type PaymentRecoveryResult = {
   recovered: number;
   reconciliationClaimed: boolean;
+  unrecoveredExpiredHolds: number;
   openOverdueReconciliations: number;
 };
 
@@ -14,8 +15,8 @@ const paymentRecoveryFailureMetric = getMeter("sevo.payments.recovery").createCo
   "sevo_payment_recovery_failures_total",
 );
 const paymentRecoveryMeter = getMeter("sevo.payments.operations");
-const expiredHoldRecoveryMetric = paymentRecoveryMeter.createCounter(
-  "sevo.payment.expired_holds.recovered",
+const expiredHoldMetric = paymentRecoveryMeter.createGauge(
+  "sevo.payment.expired_holds.unrecovered",
 );
 const ambiguousPaymentMetric = paymentRecoveryMeter.createGauge(
   "sevo.payment.ambiguous.overdue",
@@ -43,9 +44,7 @@ export function startPaymentRecoveryPoller(
       activeRequest = new AbortController();
       try {
         const result = await runRecovery(activeRequest.signal);
-        if (result.recovered > 0) {
-          expiredHoldRecoveryMetric.add(result.recovered);
-        }
+        expiredHoldMetric.record(result.unrecoveredExpiredHolds);
         ambiguousPaymentMetric.record(result.openOverdueReconciliations);
         consecutiveFailures = 0;
       } catch (error: unknown) {

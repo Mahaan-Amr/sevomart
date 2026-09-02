@@ -475,8 +475,11 @@ describe("successful direct payment transaction seam", () => {
     await sql`update inventory_reservations set expires_at = now() - interval '1 second' where id = ${ids.reservation}`;
     expect(await orders.expirePendingOrders(new Date())).toBe(0);
     await sql`update payment_attempts set dispatch_lease_until = now() - interval '1 second' where id = ${attempt.attemptId}`;
+    await sql`update inventory_reservations set hold_lease_until = now() - interval '1 second' where id = ${ids.reservation}`;
 
+    expect(await payments.countUnrecoveredExpiredHolds(new Date())).toBe(1);
     expect(await payments.recoverExpiredAttempts(new Date(), correlationId)).toBe(1);
+    expect(await payments.countUnrecoveredExpiredHolds(new Date())).toBe(0);
     const reviewed = await payments.readAttemptForBuyer(
       ids.buyer as never,
       attempt.attemptId,

@@ -627,8 +627,9 @@ describe("store following HTTP API with PostgreSQL", () => {
 
     const verification = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const [receipt, count, storedEvent] = await Promise.all([
-      verification`
-        select event_id from platform_outbox_consumptions
+      verification<Array<{ status: string; attemptCount: number }>>`
+        select status, attempt_count as "attemptCount"
+        from platform_outbox_consumptions
         where consumer_name = 'discovery-follower-count-v1'
           and event_id = ${event.eventId}
       `,
@@ -640,7 +641,7 @@ describe("store following HTTP API with PostgreSQL", () => {
         select status from platform_outbox_events where event_id = ${event.eventId}
       `,
     ]);
-    expect(receipt).toHaveLength(0);
+    expect(receipt).toEqual([{ status: "FAILED", attemptCount: 1 }]);
     expect(count).toHaveLength(0);
     expect(storedEvent).toEqual([{ status: "FAILED" }]);
     const catchUpLogs: Array<Readonly<Record<string, unknown>>> = [];
@@ -652,10 +653,10 @@ describe("store following HTTP API with PostgreSQL", () => {
     expect(catchUpLogs).toContainEqual(
       expect.objectContaining({
         level: "error",
-        message: "discovery_projection_catchup_failed",
+        message: "discovery_projection_catchup_completed",
         projection: "follower-count",
-        eventType: "StoreFollowActivated.v1",
-        errorKind: "Error",
+        replayedEventCount: 0,
+        poisonEventCount: 1,
       }),
     );
     const rebuildLogs: Array<Readonly<Record<string, unknown>>> = [];

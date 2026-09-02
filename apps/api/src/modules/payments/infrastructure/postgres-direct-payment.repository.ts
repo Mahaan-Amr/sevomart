@@ -748,6 +748,10 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     return row?.count ?? 0;
   }
 
+  async countUnrecoveredExpiredHolds(now: Date) {
+    return this.inventory.countExpiredPaymentHolds(now);
+  }
+
   async markDispatchUnknown(
     attemptId: Parameters<DirectPaymentRepository["markDispatchUnknown"]>[0],
     correlationId: string,

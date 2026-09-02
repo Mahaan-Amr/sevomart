@@ -160,6 +160,7 @@ export async function rebuildDiscoveryFollowerCountProjection(
         group by identity_id
       `;
       const replayedEventCount = await replayOutboxEventHistory(transaction, {
+        consumerName: "discovery-follower-count-v1",
         eventTypes: followerCountEventTypes,
         handler: (event, replaySql) =>
           event.eventType === "IdentityStatusChanged.v1"

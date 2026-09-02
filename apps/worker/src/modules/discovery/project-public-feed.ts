@@ -441,6 +441,7 @@ export async function rebuildDiscoveryPublicFeedProjection(
       await transaction`delete from discovery_product_feed_projections`;
       await transaction`delete from discovery_store_feed_projections`;
       const replayedEventCount = await replayOutboxEventHistory(transaction, {
+        consumerName: "discovery-public-feed-v1",
         eventTypes: discoveryFeedProjectionEventTypes,
         handler: dispatchDiscoveryProjectionEvent,
       });

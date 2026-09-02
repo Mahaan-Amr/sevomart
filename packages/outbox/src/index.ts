@@ -104,7 +104,10 @@ export async function readOutboxConsumerBacklog(
   const rows = await sql<OutboxConsumerBacklog[]>`
     select
       count(*)::int as "pendingEvents",
-      count(*) filter (where event.status = 'FAILED')::int as "poisonEvents",
+      count(*) filter (
+        where consumption.status = 'FAILED'
+          or (consumption.event_id is null and event.status = 'FAILED')
+      )::int as "poisonEvents",
       least(2147483647, greatest(0, coalesce(floor(extract(epoch from
         (clock_timestamp() - min(event.occurred_at))) * 1000), 0)))::int as "lagMs"
     from platform_outbox_events event
@@ -112,7 +115,7 @@ export async function readOutboxConsumerBacklog(
       on consumption.event_id = event.event_id
      and consumption.consumer_name = ${scope.consumerName}
     where event.event_type in ${sql(scope.eventTypes)}
-      and consumption.event_id is null
+      and consumption.status is distinct from 'PROCESSED'
   `;
   return rows[0] ?? { pendingEvents: 0, poisonEvents: 0, lagMs: 0 };
 }
@@ -122,6 +125,7 @@ export async function replayOutboxEventHistory(
   options: {
     eventTypes: readonly string[];
     handler: OutboxEventHandler;
+    consumerName?: string;
   },
 ): Promise<number> {
   const archived = await sql<OutboxDatabaseRow[]>`
@@ -135,7 +139,31 @@ export async function replayOutboxEventHistory(
     where event_type in ${sql(options.eventTypes)}
     order by occurred_at, aggregate_version, event_id
   `;
-  for (const row of archived) await options.handler(storedOutboxEvent(row), sql);
+  for (const row of archived) {
+    await options.handler(storedOutboxEvent(row), sql);
+    if (options.consumerName) {
+      // Failed deliveries cannot be claimed by live workers. Rebuild can safely
+      // repair those receipts without waiting on a live handler's leased row.
+      await sql`
+        update platform_outbox_consumptions
+        set status = 'PROCESSED', consumed_at = now(),
+          last_error = null, failed_at = null
+        where consumer_name = ${options.consumerName}
+          and event_id = ${row.eventId} and status = 'FAILED'
+      `;
+      await sql`
+        insert into platform_outbox_consumptions
+          (consumer_name, event_id, consumed_at)
+        select ${options.consumerName}, ${row.eventId}, now()
+        where not exists (
+          select 1 from platform_outbox_consumptions
+          where consumer_name = ${options.consumerName}
+            and event_id = ${row.eventId}
+        )
+        on conflict (consumer_name, event_id) do nothing
+      `;
+    }
+  }
   return archived.length;
 }
 
@@ -148,77 +176,38 @@ export async function catchUpOutboxConsumer(
     log?: (record: Readonly<Record<string, unknown>>) => void;
   },
 ): Promise<{ replayedEventCount: number; poisonEventCount: number }> {
-  const eventTypes = Object.keys(options.handlers);
-  if (eventTypes.length === 0) {
+  if (Object.keys(options.handlers).length === 0) {
     throw new Error("Outbox catch-up requires at least one event handler");
   }
-  const sql = postgres(databaseUrl, { max: 1 });
+  const worker = new DurableOutboxWorker(databaseUrl, {
+    consumerName: options.consumerName,
+    handlers: options.handlers,
+    healthIntervalMs: Number.POSITIVE_INFINITY,
+    log: options.log,
+  });
   let replayedEventCount = 0;
-  let poisonEventCount = 0;
   try {
     for (let index = 0; index < (options.limit ?? 1_000); index += 1) {
-      let claimed: Pick<OutboxDatabaseRow, "eventId" | "eventType"> | undefined;
-      try {
-        const replayed = await sql.begin(async (transaction) => {
-          const rows = await transaction<OutboxDatabaseRow[]>`
-            select event_id as "eventId", envelope_version as version,
-              event_type as "eventType", aggregate_id as "aggregateId",
-              aggregate_version as "aggregateVersion", occurred_at as "occurredAt",
-              correlation_id as "correlationId", causation_id as "causationId",
-              actor_type as "actorType", actor_id as "actorId", payload,
-              attempt_count as "attemptCount"
-            from platform_outbox_events event
-            where event.event_type in ${transaction(eventTypes)}
-              and event.status in ('PROCESSED', 'FAILED')
-              and not exists (
-                select 1 from platform_outbox_consumptions consumption
-                where consumption.consumer_name = ${options.consumerName}
-                  and consumption.event_id = event.event_id
-              )
-            order by event.created_at, event.event_id
-            for update skip locked
-            limit 1
-          `;
-          const row = rows[0];
-          if (!row) return false;
-          claimed = row;
-          const handler = options.handlers[row.eventType];
-          if (!handler) throw new Error("Outbox catch-up handler is not registered");
-          await transaction`
-            insert into platform_outbox_consumptions
-              (consumer_name, event_id, consumed_at)
-            values (${options.consumerName}, ${row.eventId}, now())
-            on conflict (consumer_name, event_id) do nothing
-          `;
-          await handler(storedOutboxEvent(row), transaction);
-          return true;
-        });
-        if (!replayed) break;
+      const result = await worker.runOnce();
+      if (result === "idle") break;
+      if (result === "processed") {
         replayedEventCount += 1;
-      } catch (error) {
-        poisonEventCount += 1;
-        const errorKind = error instanceof Error ? error.name : "UnknownError";
-        if (claimed) {
-          await sql`
-            update platform_outbox_events
-            set status = 'FAILED', attempt_count = attempt_count + 1,
-              last_error = ${errorKind}, failed_at = now()
-            where event_id = ${claimed.eventId}
-          `;
-        }
-        options.log?.({
-          level: "error",
-          message: "outbox_consumer_catchup_failed",
-          consumerName: options.consumerName,
-          eventType: claimed?.eventType,
-          errorKind,
-        });
+      } else if (result === "failed") {
         break;
       }
     }
-    return { replayedEventCount, poisonEventCount };
+    const sql = postgres(databaseUrl, { max: 1 });
+    try {
+      const backlog = await readOutboxConsumerBacklog(sql, {
+        consumerName: options.consumerName,
+        eventTypes: Object.keys(options.handlers),
+      });
+      return { replayedEventCount, poisonEventCount: backlog.poisonEvents };
+    } finally {
+      await sql.end();
+    }
   } finally {
-    await sql.end();
+    await worker.close();
   }
 }
 
@@ -299,9 +288,7 @@ export class DurableOutboxWorker {
   async runOnce(): Promise<OutboxRunResult> {
     await this.#recordOperationalHealth();
     const claimed = await this.claimNext();
-    if (!claimed) {
-      return (await this.#consumeNextArchived()) ? "processed" : "idle";
-    }
+    if (!claimed) return "idle";
     const result = await this.processClaim(claimed);
     if (result === "failed") await this.#recordOperationalHealth(true);
     return result;
@@ -310,36 +297,58 @@ export class DurableOutboxWorker {
   async claimNext(): Promise<ClaimedOutboxEvent | undefined> {
     const now = this.#now();
     const leaseExpiresAt = new Date(now.getTime() + this.#leaseDurationMs);
-    const rows = await this.#sql.begin(
-      (sql) => sql<OutboxDatabaseRow[]>`
-      with candidate as (
-        select event_id
-        from platform_outbox_events
-        where event_type in ${sql(this.#eventTypes)}
-          and (
-            (status = 'READY' and available_at <= ${now})
-            or (status = 'LEASED' and lease_expires_at <= ${now})
+    const rows = await this.#sql.begin(async (sql) => {
+      await sql`
+        insert into platform_outbox_consumptions
+          (consumer_name, event_id, status, available_at, consumed_at)
+        select ${this.#consumerName}, event.event_id, 'READY', event.available_at, null
+        from platform_outbox_events event
+        where event.event_type in ${sql(this.#eventTypes)}
+          and not exists (
+            select 1 from platform_outbox_consumptions delivery
+            where delivery.consumer_name = ${this.#consumerName}
+              and delivery.event_id = event.event_id
           )
-        order by available_at, created_at
-        for update skip locked
+        order by event.created_at, event.event_id
         limit 1
-      )
-      update platform_outbox_events event
-      set status = 'LEASED', lease_owner = ${this.#workerId},
-        lease_expires_at = ${leaseExpiresAt}, attempt_count = attempt_count + 1
-      from candidate
-      where event.event_id = candidate.event_id
-      returning event.event_id as "eventId", event.envelope_version as version,
-        event.event_type as "eventType",
-        event.aggregate_id as "aggregateId",
-        event.aggregate_version as "aggregateVersion",
-        event.occurred_at as "occurredAt",
-        event.correlation_id as "correlationId",
-        event.causation_id as "causationId", event.actor_type as "actorType",
-        event.actor_id as "actorId", event.payload,
-        event.attempt_count as "attemptCount"
-    `,
-    );
+        on conflict (consumer_name, event_id) do nothing
+      `;
+      return sql<OutboxDatabaseRow[]>`
+        with candidate as (
+          select delivery.consumer_name, delivery.event_id
+          from platform_outbox_consumptions delivery
+          join platform_outbox_events event on event.event_id = delivery.event_id
+          where delivery.consumer_name = ${this.#consumerName}
+            and event.event_type in ${sql(this.#eventTypes)}
+            and (
+              (delivery.status = 'READY' and delivery.available_at <= ${now})
+              or (delivery.status = 'LEASED' and delivery.lease_expires_at <= ${now})
+            )
+          order by delivery.available_at, event.created_at, event.event_id
+          for update of delivery skip locked
+          limit 1
+        ), leased as (
+          update platform_outbox_consumptions delivery
+          set status = 'LEASED', lease_owner = ${this.#workerId},
+            lease_expires_at = ${leaseExpiresAt},
+            attempt_count = delivery.attempt_count + 1,
+            last_error = null, failed_at = null
+          from candidate
+          where delivery.consumer_name = candidate.consumer_name
+            and delivery.event_id = candidate.event_id
+          returning delivery.event_id, delivery.attempt_count
+        )
+        select event.event_id as "eventId", event.envelope_version as version,
+          event.event_type as "eventType", event.aggregate_id as "aggregateId",
+          event.aggregate_version as "aggregateVersion",
+          event.occurred_at as "occurredAt", event.correlation_id as "correlationId",
+          event.causation_id as "causationId", event.actor_type as "actorType",
+          event.actor_id as "actorId", event.payload,
+          leased.attempt_count as "attemptCount"
+        from leased
+        join platform_outbox_events event on event.event_id = leased.event_id
+      `;
+    });
     const row = rows[0];
     if (!row) return undefined;
     return {
@@ -353,14 +362,27 @@ export class DurableOutboxWorker {
     const handler = this.#handlers[claimed.event.eventType];
     if (!handler) throw new Error("Outbox handler is not registered");
     return this.#sql.begin(async (sql) => {
-      const receipt = await sql<Array<{ eventId: string }>>`
-        insert into platform_outbox_consumptions (consumer_name, event_id, consumed_at)
-        values (${this.#consumerName}, ${claimed.event.eventId}, ${this.#now()})
-        on conflict (consumer_name, event_id) do nothing
-        returning event_id as "eventId"
+      const deliveries = await sql<Array<{ eventId: string }>>`
+        select event_id as "eventId"
+        from platform_outbox_consumptions
+        where consumer_name = ${this.#consumerName}
+          and event_id = ${claimed.event.eventId}
+          and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+          and attempt_count = ${claimed.attemptCount}
+        for update
       `;
-      if (!receipt[0]) return false;
+      if (!deliveries[0]) return false;
       await handler(claimed.event, sql);
+      await sql`
+        update platform_outbox_consumptions
+        set status = 'PROCESSED', consumed_at = ${this.#now()},
+          lease_owner = null, lease_expires_at = null,
+          last_error = null, failed_at = null
+        where consumer_name = ${this.#consumerName}
+          and event_id = ${claimed.event.eventId}
+          and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+          and attempt_count = ${claimed.attemptCount}
+      `;
       return true;
     });
   }
@@ -369,15 +391,17 @@ export class DurableOutboxWorker {
     await this.#sql`
       update platform_outbox_events
       set status = 'PROCESSED', processed_at = ${this.#now()},
-        lease_owner = null, lease_expires_at = null, last_error = null
+        lease_owner = null, lease_expires_at = null, last_error = null,
+        attempt_count = greatest(attempt_count, ${claimed.attemptCount})
       where event_id = ${claimed.event.eventId}
-        and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+        and status <> 'FAILED'
     `;
   }
 
   async processClaim(claimed: ClaimedOutboxEvent): Promise<OutboxRunResult> {
     try {
-      await this.consumeClaim(claimed);
+      const consumed = await this.consumeClaim(claimed);
+      if (!consumed) return "idle";
       await this.acknowledgeClaim(claimed);
       return "processed";
     } catch (error) {
@@ -390,12 +414,22 @@ export class DurableOutboxWorker {
       const availableAt = new Date(this.#now().getTime() + delay);
       const errorKind = error instanceof Error ? error.name : "UnknownError";
       await this.#sql`
-        update platform_outbox_events
+        update platform_outbox_consumptions
         set status = ${permanent ? "FAILED" : "READY"},
           available_at = ${availableAt}, lease_owner = null, lease_expires_at = null,
           last_error = ${errorKind}, failed_at = ${permanent ? this.#now() : null}
-        where event_id = ${claimed.event.eventId}
+        where consumer_name = ${this.#consumerName}
+          and event_id = ${claimed.event.eventId}
           and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+          and attempt_count = ${claimed.attemptCount}
+      `;
+      await this.#sql`
+        update platform_outbox_events
+        set status = case when ${permanent} then 'FAILED' else status end,
+          attempt_count = greatest(attempt_count, ${claimed.attemptCount}),
+          last_error = ${errorKind},
+          failed_at = case when ${permanent} then ${this.#now()} else failed_at end
+        where event_id = ${claimed.event.eventId}
       `;
       this.#log({
         level: permanent ? "error" : "warn",
@@ -458,60 +492,6 @@ export class DurableOutboxWorker {
     outboxPoisonMetric.record(backlog.poisonEvents, attributes);
     outboxLagMetric.record(backlog.lagMs, attributes);
     this.#nextHealthCheckAt = now + this.#healthIntervalMs;
-  }
-
-  async #consumeNextArchived(): Promise<boolean> {
-    try {
-      return await this.#sql.begin(async (sql) => {
-        const rows = await sql<OutboxDatabaseRow[]>`
-          select event.event_id as "eventId", event.envelope_version as version,
-            event.event_type as "eventType", event.aggregate_id as "aggregateId",
-            event.aggregate_version as "aggregateVersion",
-            event.occurred_at as "occurredAt",
-            event.correlation_id as "correlationId",
-            event.causation_id as "causationId", event.actor_type as "actorType",
-            event.actor_id as "actorId", event.payload,
-            event.attempt_count as "attemptCount"
-          from platform_outbox_events event
-          where event.event_type in ${sql(this.#eventTypes)}
-            and event.status in ('PROCESSED', 'FAILED')
-            and not exists (
-              select 1 from platform_outbox_consumptions consumption
-              where consumption.consumer_name = ${this.#consumerName}
-                and consumption.event_id = event.event_id
-            )
-          order by event.created_at, event.event_id
-          for update skip locked
-          limit 1
-        `;
-        const row = rows[0];
-        if (!row) return false;
-        const handler = this.#handlers[row.eventType];
-        if (!handler) throw new Error("Outbox catch-up handler is not registered");
-        await sql`
-          insert into platform_outbox_consumptions
-            (consumer_name, event_id, consumed_at)
-          values (${this.#consumerName}, ${row.eventId}, ${this.#now()})
-          on conflict (consumer_name, event_id) do nothing
-        `;
-        await handler(storedOutboxEvent(row), sql);
-        return true;
-      });
-    } catch (error) {
-      const errorKind = error instanceof Error ? error.name : "UnknownError";
-      outboxDeliveryFailureMetric.add(1, {
-        consumer_name: this.#consumerName,
-        delivery_path: "catchup",
-        permanent: false,
-      });
-      this.#log({
-        level: "warn",
-        message: "outbox_consumer_catchup_failed",
-        consumerName: this.#consumerName,
-        errorKind,
-      });
-      return false;
-    }
   }
 
   async #waitForPoll(): Promise<void> {
