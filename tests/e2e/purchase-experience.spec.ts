@@ -164,6 +164,11 @@ test("eligible buyer retries once and publishes one verified purchase experience
       values (${orderItemId}, ${orderId}, ${variantId}, ${productId},
         'کالای تأییدشده', 1, 1000, 1)
     `;
+    await sql`
+      insert into order_fulfillment_status_projections
+        (order_id, status, version, accepted_event_id, updated_at)
+      values (${orderId}, 'DELIVERED', 4, ${randomUUID()}, now())
+    `;
     orderCreated = true;
 
     const requestKeys: string[] = [];
@@ -458,6 +463,7 @@ test("eligible buyer retries once and publishes one verified purchase experience
       select identity_id from identity_login_methods where mobile = ${mobile}
     )`;
     if (orderCreated) {
+      await sql`delete from order_fulfillment_status_projections where order_id = ${orderId}`;
       await sql`delete from order_items where order_id = ${orderId}`;
       await sql`delete from order_orders where id = ${orderId}`;
       await sql`delete from order_checkout_preparations where checkout_revision = ${checkoutId}`;

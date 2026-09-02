@@ -278,6 +278,30 @@ describe("durable outbox worker", () => {
     expect(rows).toEqual([{ status: "PROCESSED", attemptCount: 2, lastError: null }]);
   });
 
+  it("delivers one event to every live registered consumer", async () => {
+    const event = probeEvent("OutboxSharedConsumerProbe.v1", new Date().toISOString());
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await enqueueOutboxEvent(sql, event);
+    await sql.end();
+    const consumed: string[] = [];
+    const createWorker = (consumerName: string) =>
+      new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, {
+        consumerName,
+        handlers: {
+          "OutboxSharedConsumerProbe.v1": async () => {
+            consumed.push(consumerName);
+          },
+        },
+      });
+    const first = createWorker("shared-consumer-first");
+    const second = createWorker("shared-consumer-second");
+    workers.push(first, second);
+
+    expect(await first.runOnce()).toBe("processed");
+    expect(await second.runOnce()).toBe("processed");
+    expect(consumed).toEqual(["shared-consumer-first", "shared-consumer-second"]);
+  });
+
   it("recovers an expired lease after restart without applying the domain result twice", async () => {
     const event = storePublishedV1Contract.parse({
       version: 1,

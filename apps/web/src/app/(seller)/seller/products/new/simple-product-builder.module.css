@@ -13,9 +13,7 @@
   border: 1px solid var(--color-border-primary-soft);
   border-radius: 22px;
   background: var(--color-surface);
-  box-shadow:
-    8px 8px 22px var(--shadow-neutral),
-    -8px -8px 22px var(--shadow-highlight);
+  box-shadow: var(--elevation-raised);
 }
 
 .header,
@@ -61,7 +59,7 @@
   border: 1px solid var(--color-border-primary);
   border-radius: 12px;
   background: var(--color-background);
-  box-shadow: inset 3px 3px 7px var(--shadow-neutral-soft);
+  box-shadow: var(--elevation-pressed);
   color: var(--color-text);
   font: inherit;
 }
@@ -108,7 +106,7 @@
 .choiceActive {
   background: var(--color-cover-start);
   color: var(--color-primary-dark);
-  box-shadow: inset 3px 3px 7px var(--shadow-neutral-soft);
+  box-shadow: var(--elevation-pressed);
   font-weight: 600;
 }
 
@@ -141,7 +139,7 @@
 
 .axis legend,
 .variant legend {
-  padding: 0 6px;
+  padding: 0 8px;
   color: var(--color-primary-dark);
   font-size: 13px;
   font-weight: 600;
@@ -251,7 +249,7 @@
 .primaryButton {
   background: var(--color-primary);
   color: var(--color-on-primary);
-  box-shadow: 0 6px 14px var(--shadow-primary);
+  box-shadow: var(--elevation-action);
 }
 
 .primaryButton:disabled {
@@ -309,7 +307,7 @@
   gap: 16px;
   border-radius: 18px;
   background: var(--color-background);
-  box-shadow: inset 4px 4px 10px var(--shadow-neutral-soft);
+  box-shadow: var(--elevation-pressed);
 }
 
 .preview img {

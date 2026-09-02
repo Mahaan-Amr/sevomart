@@ -117,6 +117,7 @@ describe("successful direct payment transaction seam", () => {
     await sql`delete from platform_outbox_events where aggregate_id = ${ids.order} or aggregate_id in (select id from payment_attempts where order_id = ${ids.order})`;
     await sql`delete from payment_attempts where order_id = ${ids.order}`;
     await sql`delete from order_state_transitions where order_id = ${ids.order}`;
+    await sql`delete from order_fulfillment_status_projections where order_id = ${ids.order}`;
     await sql`delete from inventory_reservation_lines where reservation_id = ${ids.reservation}`;
     await sql`delete from inventory_reservations where id = ${ids.reservation}`;
     await sql`delete from order_items where order_id = ${ids.order}`;
@@ -199,7 +200,7 @@ describe("successful direct payment transaction seam", () => {
     }
   });
 
-  it("confirms only the matching buyer item after payment succeeds", async () => {
+  it("confirms only the matching buyer item after payment and delivery succeed", async () => {
     const input = orderPurchaseExperienceEligibilityInputContract.parse({
       buyerId: ids.buyer,
       orderItemId: ids.item,
@@ -212,6 +213,17 @@ describe("successful direct payment transaction seam", () => {
     await sql`
       update order_orders set status = 'PAID', paid_at = now()
       where id = ${ids.order}
+    `;
+    await expect(orders.readPurchaseExperienceEligibility(input)).resolves.toEqual({
+      eligible: false,
+      reason: "NOT_ELIGIBLE",
+    });
+
+    await sql`
+      insert into order_fulfillment_status_projections
+        (order_id, status, version, accepted_event_id, updated_at)
+      values (${ids.order}, 'DELIVERED', 4,
+        'b0000000-0000-4000-8000-000000000011', now())
     `;
     await expect(orders.readPurchaseExperienceEligibility(input)).resolves.toEqual({
       eligible: true,

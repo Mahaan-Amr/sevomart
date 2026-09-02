@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@sevo/contracts": "workspace:*",
+    "@sevo/observability": "workspace:*",
     "postgres": "3.4.7"
   }
 }

@@ -203,6 +203,9 @@ importers:
       '@sevo/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@sevo/observability':
+        specifier: workspace:*
+        version: link:../observability
       postgres:
         specifier: 3.4.7
         version: 3.4.7

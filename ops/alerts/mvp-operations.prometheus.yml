@@ -1,0 +1,41 @@
+groups:
+  - name: sevo-mvp-operations
+    interval: 15s
+    rules:
+      - alert: SevoAmbiguousPaymentOverdue
+        expr: sevo_payment_ambiguous_overdue > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: An ambiguous payment has exceeded the reconciliation window
+
+      - alert: SevoExpiredPaymentHoldRecovered
+        expr: increase(sevo_payment_expired_holds_recovered_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: An expired payment hold required automatic recovery
+
+      - alert: SevoOutboxDeliveryFailure
+        expr: increase(sevo_outbox_delivery_failures_total{permanent="true"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: An outbox event exhausted its delivery retries
+
+      - alert: SevoOutboxPoisonEvent
+        expr: max(sevo_outbox_consumer_poison_events) > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: An outbox consumer has an unconsumed poison event
+
+      - alert: SevoOperationalBacklog
+        expr: max(sevo_outbox_consumer_pending_events) > 100 or max(sevo_outbox_consumer_lag_milliseconds) > 60000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: An operational outbox consumer backlog exceeds its limit

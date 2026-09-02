@@ -221,6 +221,7 @@ export interface DirectPaymentRepository {
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt | undefined>;
   recoverExpiredAttempts(now: Date, correlationId: string): Promise<number>;
+  countOpenOverdueReconciliations(): Promise<number>;
   markDispatchUnknown(
     attemptId: PaymentAttemptId,
     correlationId: string,

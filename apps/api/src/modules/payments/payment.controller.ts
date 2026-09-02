@@ -491,9 +491,11 @@ export class InternalPaymentRecoveryController {
   ) {}
 
   @Post("run")
-  async run(
-    @Headers("x-sevo-worker-secret") secret: string | undefined,
-  ): Promise<{ recovered: number; reconciliationClaimed: boolean }> {
+  async run(@Headers("x-sevo-worker-secret") secret: string | undefined): Promise<{
+    recovered: number;
+    reconciliationClaimed: boolean;
+    openOverdueReconciliations: number;
+  }> {
     if (!sameSecret(secret, this.environment.PAYMENT_RECOVERY_SECRET)) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }

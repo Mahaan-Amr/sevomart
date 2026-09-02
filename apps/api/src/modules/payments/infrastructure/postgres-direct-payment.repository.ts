@@ -739,6 +739,15 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
     });
   }
 
+  async countOpenOverdueReconciliations() {
+    const [row] = await this.#sql<Array<{ count: number }>>`
+      select count(*)::int as count
+      from payment_operational_alerts
+      where kind = 'RECONCILIATION_OVERDUE' and status = 'OPEN'
+    `;
+    return row?.count ?? 0;
+  }
+
   async markDispatchUnknown(
     attemptId: Parameters<DirectPaymentRepository["markDispatchUnknown"]>[0],
     correlationId: string,

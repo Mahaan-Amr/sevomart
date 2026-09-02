@@ -7,7 +7,7 @@
   padding: 24px;
   border-radius: 20px;
   background: var(--color-surface);
-  box-shadow: inset 4px 4px 10px var(--shadow-neutral-soft);
+  box-shadow: var(--elevation-pressed);
 }
 
 .state h1,
