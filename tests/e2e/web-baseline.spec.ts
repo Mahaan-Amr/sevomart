@@ -78,10 +78,9 @@ test("discovery renders public feed data and recovers from a failed request", as
   fail = false;
   await page.getByRole("button", { name: "تلاش دوباره" }).click();
   await expect(page.getByRole("list", { name: "کالاهای تازه" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /فنجان دست‌ساز/ })).toHaveAttribute(
-    "href",
-    /\/s\/khane-sofal\/products\/0d113616/,
-  );
+  await expect(
+    page.getByRole("link", { name: "فنجان دست‌ساز", exact: true }),
+  ).toHaveAttribute("href", /\/s\/khane-sofal\/products\/0d113616/);
 });
 
 test("legacy addresses preserve the checkout return destination through login", async ({

@@ -174,7 +174,7 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     await expect(discoveryList).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 10_000 });
   await expect(
-    page.getByRole("link", { name: feedProducts[0]!.name, exact: true }),
+    page.getByRole("link", { name: "فنجان دنبال‌شده 1", exact: true }),
   ).toBeVisible();
   await page.goto(`/s/${slug}?source=discovery#store-actions`);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
