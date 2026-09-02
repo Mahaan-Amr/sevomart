@@ -170,6 +170,23 @@ pending/poison و قدیمی‌ترین lag خودش را با برچسب کم�
 تبدیل کنند. deployment باید این فایل را نیز کنار ruleهای projection در rule loader
 مانیتورینگ بارگذاری کند.
 
+شکست خود sweep پرداخت نیز با counter موجود
+`sevo_payment_recovery_failures_total` هشدار بحرانی مستقل دارد؛ پاسخ خطا حفظ می‌شود
+و gauge قدیمی نباید به‌عنوان نشانهٔ سلامت تفسیر شود. catch-up و worker زنده از همان
+بودجهٔ پنج تلاش و backoff استفاده می‌کنند. rebuild صریح، receiptهای شکست‌خورده و
+رخدادهای فاقد receipt را تنها پس از replay موفق در همان transaction پردازش‌شده
+ثبت می‌کند؛ delivery در حال اجرا دست‌کاری نمی‌شود و شکست rebuild همهٔ تغییرات را
+rollback می‌کند.
+
+برای عبور ایمن از production audit در پیگیری Issue 164، patchهای موجود
+`fastify@5.12.1`، `fast-uri@3.1.6/4.1.3` و `mysql2@3.23.1` تثبیت شدند.
+این‌ها ارتقای وابستگی‌های موجود و دارای مجوز MIT هستند، نه سرویس یا دامنهٔ تازه.
+overrideهای fast-uri در major قبلی هر مصرف‌کننده باقی می‌مانند. دلایل امنیتی:
+[URI host confusion](https://github.com/advisories/GHSA-5jgf-p345-68v8)،
+[Fastify validation](https://github.com/advisories/GHSA-w2qp-rph6-63g4) و
+[MySQL2 decompression limit](https://github.com/advisories/GHSA-rgwj-5xj2-c3m3).
+lockfile، audit و تست‌های موجود سازگاری مسیر Docker و native را کنترل می‌کنند.
+
 metrics با همان پشتهٔ موجود OpenTelemetry و exporter استاندارد OTLP صادر می‌شوند؛
 وابستگی‌های مستقیم `@opentelemetry/api`، `sdk-metrics` و
 `exporter-metrics-otlp-http` هم‌نسخه با SDK موجود، تحت مجوز Apache-2.0 و بدون

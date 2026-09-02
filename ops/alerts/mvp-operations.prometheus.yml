@@ -2,6 +2,13 @@ groups:
   - name: sevo-mvp-operations
     interval: 15s
     rules:
+      - alert: SevoPaymentRecoverySweepFailure
+        expr: increase(sevo_payment_recovery_failures_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Payment recovery failed and its hold or reconciliation observations may be stale
+
       - alert: SevoAmbiguousPaymentOverdue
         expr: sevo_payment_ambiguous_overdue > 0
         for: 30s

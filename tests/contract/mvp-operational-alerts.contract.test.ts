@@ -17,6 +17,9 @@ describe("MVP operational alerts", () => {
     ) as { groups?: Array<{ rules?: AlertRule[] }> };
     const rules = document.groups?.flatMap((group) => group.rules ?? []) ?? [];
     const byName = new Map(rules.map((rule) => [rule.alert, rule]));
+    expect(byName.get("SevoPaymentRecoverySweepFailure")?.expr).toContain(
+      "sevo_payment_recovery_failures_total",
+    );
 
     expect(byName.get("SevoAmbiguousPaymentOverdue")).toMatchObject({
       expr: "sevo_payment_ambiguous_overdue > 0",
@@ -40,7 +43,7 @@ describe("MVP operational alerts", () => {
     expect(byName.get("SevoFulfillmentBacklog")?.expr).toContain(
       "sevo_fulfillment_backlog_oldest_age_milliseconds",
     );
-    expect(rules).toHaveLength(6);
+    expect(rules).toHaveLength(7);
 
     const metricSources = [
       readFileSync("apps/worker/src/modules/payments/index.ts", "utf8"),
@@ -48,6 +51,7 @@ describe("MVP operational alerts", () => {
       readFileSync("apps/worker/src/modules/fulfillment/index.ts", "utf8"),
     ].join("\n");
     for (const metric of [
+      "sevo_payment_recovery_failures_total",
       "sevo.payment.ambiguous.overdue",
       "sevo.payment.expired_holds.unrecovered",
       "sevo.fulfillment.backlog.orders",

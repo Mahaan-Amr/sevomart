@@ -125,6 +125,7 @@ export async function replayOutboxEventHistory(
   options: {
     eventTypes: readonly string[];
     handler: OutboxEventHandler;
+    consumerName?: string;
   },
 ): Promise<number> {
   const archived = await sql<OutboxDatabaseRow[]>`
@@ -138,7 +139,31 @@ export async function replayOutboxEventHistory(
     where event_type in ${sql(options.eventTypes)}
     order by occurred_at, aggregate_version, event_id
   `;
-  for (const row of archived) await options.handler(storedOutboxEvent(row), sql);
+  for (const row of archived) {
+    await options.handler(storedOutboxEvent(row), sql);
+    if (options.consumerName) {
+      // Failed deliveries cannot be claimed by live workers. Rebuild can safely
+      // repair those receipts without waiting on a live handler's leased row.
+      await sql`
+        update platform_outbox_consumptions
+        set status = 'PROCESSED', consumed_at = now(),
+          last_error = null, failed_at = null
+        where consumer_name = ${options.consumerName}
+          and event_id = ${row.eventId} and status = 'FAILED'
+      `;
+      await sql`
+        insert into platform_outbox_consumptions
+          (consumer_name, event_id, consumed_at)
+        select ${options.consumerName}, ${row.eventId}, now()
+        where not exists (
+          select 1 from platform_outbox_consumptions
+          where consumer_name = ${options.consumerName}
+            and event_id = ${row.eventId}
+        )
+        on conflict (consumer_name, event_id) do nothing
+      `;
+    }
+  }
   return archived.length;
 }
 
@@ -157,8 +182,6 @@ export async function catchUpOutboxConsumer(
   const worker = new DurableOutboxWorker(databaseUrl, {
     consumerName: options.consumerName,
     handlers: options.handlers,
-    maxAttempts: 1,
-    retryDelaysMs: [0],
     healthIntervalMs: Number.POSITIVE_INFINITY,
     log: options.log,
   });
@@ -345,6 +368,7 @@ export class DurableOutboxWorker {
         where consumer_name = ${this.#consumerName}
           and event_id = ${claimed.event.eventId}
           and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+          and attempt_count = ${claimed.attemptCount}
         for update
       `;
       if (!deliveries[0]) return false;
@@ -357,6 +381,7 @@ export class DurableOutboxWorker {
         where consumer_name = ${this.#consumerName}
           and event_id = ${claimed.event.eventId}
           and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+          and attempt_count = ${claimed.attemptCount}
       `;
       return true;
     });
@@ -396,6 +421,7 @@ export class DurableOutboxWorker {
         where consumer_name = ${this.#consumerName}
           and event_id = ${claimed.event.eventId}
           and status = 'LEASED' and lease_owner = ${claimed.leaseOwner}
+          and attempt_count = ${claimed.attemptCount}
       `;
       await this.#sql`
         update platform_outbox_events

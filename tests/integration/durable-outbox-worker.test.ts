@@ -478,6 +478,121 @@ describe("durable outbox worker", () => {
     expect(receipts).toEqual([{ count: 1 }]);
   });
 
+  it("reclaims an unfinished expired lease and rejects the stale claim", async () => {
+    let now = new Date();
+    const event = probeEvent("OutboxLeaseRestartProbe.v1", now.toISOString());
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await enqueueOutboxEvent(sql, event);
+    await sql.end();
+    let applied = 0;
+    const options = {
+      consumerName: "lease-restart-probe",
+      workerId: randomUUID(),
+      now: () => now,
+      leaseDurationMs: 100,
+      handlers: {
+        [event.eventType]: async () => {
+          applied += 1;
+        },
+      },
+    };
+    const first = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, options);
+    workers.push(first);
+    const stale = await first.claimNext();
+    expect(stale).toBeDefined();
+    await first.close();
+    now = new Date(now.getTime() + 101);
+    const restarted = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, options);
+    workers.push(restarted);
+    const current = await restarted.claimNext();
+    expect(current?.attemptCount).toBe(2);
+    expect(await restarted.processClaim(stale!)).toBe("idle");
+    expect(applied).toBe(0);
+    expect(await restarted.processClaim(current!)).toBe("processed");
+    expect(applied).toBe(1);
+  });
+
+  it("gives simultaneous same-consumer workers only one claim for an event", async () => {
+    const event = probeEvent("OutboxConcurrentClaimProbe.v1", new Date().toISOString());
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await enqueueOutboxEvent(sql, event);
+    await sql.end();
+    const options = {
+      consumerName: "concurrent-claim-probe",
+      handlers: { [event.eventType]: async () => undefined },
+    };
+    const first = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, options);
+    const second = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, options);
+    workers.push(first, second);
+    const claims = await Promise.all([first.claimNext(), second.claimNext()]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    const winner = claims[0] ? first : second;
+    expect(await winner.processClaim(claims.find(Boolean)!)).toBe("processed");
+  });
+
+  it("preserves retry budget during catch-up and repairs terminal receipts in rebuild", async () => {
+    const event = probeEvent("OutboxCatchupRepairProbe.v1", new Date().toISOString());
+    const consumerName = "catchup-repair-probe";
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await enqueueOutboxEvent(sql, event);
+      const failingHandler: OutboxEventHandler = async () => {
+        throw new Error("probe");
+      };
+      const result = await catchUpOutboxConsumer(apiTestEnvironment.DATABASE_URL, {
+        consumerName,
+        handlers: { [event.eventType]: failingHandler },
+        log: () => undefined,
+      });
+      expect(result).toEqual({ replayedEventCount: 0, poisonEventCount: 0 });
+      expect(
+        await sql`select status, attempt_count from platform_outbox_consumptions
+        where consumer_name = ${consumerName}`,
+      ).toMatchObject([{ status: "READY", attempt_count: 1 }]);
+      await sql`update platform_outbox_consumptions set available_at = now()
+        where consumer_name = ${consumerName}`;
+      const worker = new DurableOutboxWorker(apiTestEnvironment.DATABASE_URL, {
+        consumerName,
+        handlers: { [event.eventType]: failingHandler },
+        maxAttempts: 2,
+        log: () => undefined,
+      });
+      workers.push(worker);
+      expect(await worker.runOnce()).toBe("failed");
+      await expect(
+        sql.begin((transaction) =>
+          replayOutboxEventHistory(transaction, {
+            consumerName,
+            eventTypes: [event.eventType],
+            handler: failingHandler,
+          }),
+        ),
+      ).rejects.toThrow("probe");
+      expect(
+        await readOutboxConsumerBacklog(sql, {
+          consumerName,
+          eventTypes: [event.eventType],
+        }),
+      ).toMatchObject({ poisonEvents: 1 });
+      await sql.begin((transaction) =>
+        replayOutboxEventHistory(transaction, {
+          consumerName,
+          eventTypes: [event.eventType],
+          handler: async () => undefined,
+        }),
+      );
+      expect(
+        await readOutboxConsumerBacklog(sql, {
+          consumerName,
+          eventTypes: [event.eventType],
+        }),
+      ).toEqual({ pendingEvents: 0, poisonEvents: 0, lagMs: 0 });
+      expect(await worker.runOnce()).toBe("idle");
+    } finally {
+      await sql.end();
+    }
+  });
+
   it("marks a permanently failing delivery as observable after bounded retries", async () => {
     const event = {
       ...eventEnvelopeV1Contract.parse({
