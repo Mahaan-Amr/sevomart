@@ -114,8 +114,10 @@ async function captureAtViewport(
     "RTL content must fit the measured viewport",
   ).toBeLessThanOrEqual(geometry.width);
   expect(
-    violations.filter(({ impact }) => impact === "serious" || impact === "critical"),
-    "Release accessibility scan must have no serious or critical violations",
+    [...violations, ...incomplete].filter(
+      ({ impact }) => impact === "serious" || impact === "critical",
+    ),
+    "Release accessibility scan must have no unresolved serious or critical findings",
   ).toEqual([]);
   testInfo.annotations.push({
     type: "release-cell",

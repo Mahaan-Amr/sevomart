@@ -2,7 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 import baseConfig from "./playwright.config";
 
-const webkitSmoke = /(?:guest-cart-login|direct-payment-success)\.spec\.ts/;
+const webkitSmoke =
+  /(?:guest-cart-login|direct-payment-success|login-hydration)\.spec\.ts/;
 const releaseRunId = process.env.SEVO_RELEASE_RUN_ID ?? "manual";
 const releaseOutput = `output/release-evidence/${process.env.GITHUB_SHA ?? "local"}/${releaseRunId}`;
 const chromiumChannel = process.env.SEVO_RELEASE_CHROMIUM_CHANNEL;

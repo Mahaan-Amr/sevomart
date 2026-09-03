@@ -5,6 +5,7 @@ import {
   writeFileSync,
   existsSync,
   rmSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -109,6 +110,23 @@ it("rejects an attachment outside the owned run without deleting it", async () =
     JSON.parse(readFileSync(resolve(outputDir, "playwright-results.json"), "utf8"))
       .errors,
   ).not.toHaveLength(0);
+});
+
+it("rejects an outside alias into the owned run without deleting its target", async () => {
+  const { root, outputDir, test, reporter } = fixture();
+  const raw = resolve(outputDir, "keep.txt");
+  writeFileSync(raw, "keep");
+  const alias = resolve(root, "outside-alias");
+  symlinkSync(outputDir, alias, "junction");
+  test.results[0]!.attachments.push({
+    name: "error-context",
+    path: resolve(alias, "keep.txt"),
+    contentType: "text/plain",
+  });
+  await expect(reporter.onEnd({ status: "passed" })).resolves.toEqual({
+    status: "failed",
+  });
+  expect(readFileSync(raw, "utf8")).toBe("keep");
 });
 
 it("keeps unexecuted tests in the report instead of silently dropping them", async () => {

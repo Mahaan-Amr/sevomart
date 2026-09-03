@@ -108,14 +108,17 @@ export default class ReleaseReporter {
     const selected = [];
     for (const attachment of attachments) {
       // The framework may write DOM/error snapshots even with trace/video disabled.
-      // Remove only files whose real paths remain inside this owned run directory.
+      // Both the supplied path and its real target must stay inside the owned run.
       if (attachment.path && existsSync(attachment.path)) {
         try {
-          const file = realpathSync(attachment.path);
+          const suppliedPath = resolve(attachment.path);
+          if (!suppliedPath.startsWith(`${this.outputDir}${sep}`))
+            throw new Error("Outside owned output");
+          const file = realpathSync(suppliedPath);
           const root = realpathSync(this.outputDir);
           if (!file.startsWith(`${root}${sep}`))
             throw new Error("Outside owned output");
-          unlinkSync(attachment.path);
+          unlinkSync(suppliedPath);
         } catch {
           this.errors.push({ message: "Raw attachment cleanup failed" });
         }

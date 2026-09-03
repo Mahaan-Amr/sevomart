@@ -58,6 +58,7 @@ test("guest signs in with the visible development OTP, returns to the prior acti
 
 test("login is fully reachable by keyboard with a visible focus", async ({ page }) => {
   await page.goto("/seller/login");
+  await expect(page.getByLabel("شماره موبایل")).toBeEditable();
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("شماره موبایل")).toBeFocused();
   await expect(page.getByLabel("شماره موبایل")).toHaveCSS("outline-style", "solid");

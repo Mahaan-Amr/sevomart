@@ -220,7 +220,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
   );
   return (
     <article className={styles.page}>
-      <Link className={styles.back} href="/orders">
+      <Link className={styles.back} href="/orders" tabIndex={0}>
         همه سفارش‌ها
       </Link>
       <header className={styles.hero}>
@@ -247,7 +247,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
 
       <details className={styles.disclosure} open>
         <summary id="snapshot-title">خلاصه ثبت‌شده سفارش</summary>
-        <div className={styles.disclosureBody} aria-labelledby="snapshot-title">
+        <section className={styles.disclosureBody} aria-labelledby="snapshot-title">
           <ul className={styles.items}>
             {order.items.map((item) => {
               const experienceState =
@@ -332,12 +332,12 @@ export function OrderTracking({ orderId }: { orderId: string }) {
               سوو گزارش مشکل و تخلف را پیگیری می‌کند، اما بازپرداخت را تضمین نمی‌کند.
             </p>
           </div>
-        </div>
+        </section>
       </details>
 
       <details className={styles.disclosure} open>
         <summary id="tracking-title">رهگیری و خط زمانی</summary>
-        <div className={styles.disclosureBody} aria-labelledby="tracking-title">
+        <section className={styles.disclosureBody} aria-labelledby="tracking-title">
           <h3>وضعیت سفارش</h3>
           <ol className={styles.timeline}>
             <li>
@@ -392,12 +392,12 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           ) : (
             <p>پس از تأیید پرداخت، آماده‌سازی و ارسال در این بخش ثبت می‌شود.</p>
           )}
-        </div>
+        </section>
       </details>
 
       <details className={styles.disclosure}>
         <summary id="problem-title">اختلاف و بازپرداخت</summary>
-        <div className={styles.disclosureBody} aria-labelledby="problem-title">
+        <section className={styles.disclosureBody} aria-labelledby="problem-title">
           {supplementalState.dispute === "ERROR" ? (
             <p role="status">
               وضعیت پرونده اختلاف اکنون در دسترس نیست؛ کمی بعد دوباره تلاش کنید.
@@ -449,7 +449,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
           <Link className={styles.secondaryLink} href={conversationHref}>
             گفت‌وگو درباره سفارش
           </Link>
-        </div>
+        </section>
       </details>
     </article>
   );

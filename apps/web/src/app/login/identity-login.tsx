@@ -30,7 +30,12 @@ export function IdentityLogin({
   const [challengeId, setChallengeId] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
+  const [ready, setReady] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setReady(true);
+  }, []);
 
   useEffect(() => {
     if (step === "code") codeInput.current?.focus();
@@ -135,7 +140,7 @@ export function IdentityLogin({
             type="button"
             className={styles.signOut}
             onClick={signOut}
-            disabled={pending}
+            disabled={!ready || pending}
           >
             {pending ? "در حال خروج…" : "خروج"}
           </button>
@@ -166,12 +171,13 @@ export function IdentityLogin({
               inputMode="numeric"
               autoComplete="tel"
               dir="ltr"
+              disabled={!ready}
               value={mobile}
               onChange={(event) => setMobile(event.target.value)}
               aria-describedby={message ? "login-message" : undefined}
             />
             <StatusMessage message={message} />
-            <button type="submit" disabled={pending}>
+            <button type="submit" disabled={!ready || pending}>
               {pending ? "در حال دریافت…" : "دریافت کد"}
             </button>
           </form>
