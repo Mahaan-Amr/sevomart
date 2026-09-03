@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { assertCleanCandidate } from "./qa/candidate-source.mjs";
 
 import {
   createReleaseEvidencePlan,
@@ -48,6 +49,7 @@ try {
     const options = parseOptions(rawArguments);
     const input = JSON.parse(readFileSync(required(options, "--input"), "utf8"));
     validateRepositoryBindings(input.candidate);
+    assertCleanCandidate(input.candidate.sha);
     writeJson(required(options, "--output"), finalizeReleaseEvidence(manifest, input));
   } else {
     throw new Error("Usage: release-evidence <validate|plan|finalize> [options]");

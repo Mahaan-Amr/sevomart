@@ -6,6 +6,7 @@ import {
   type Page,
 } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   buyerConversationTestMobiles,
@@ -178,6 +179,11 @@ test("seller answers one private thread without duplicate effects and gets a saf
     await expect(page.getByText(sellerReply, { exact: true })).toHaveCount(1);
     expect(idempotencyKeys).toHaveLength(2);
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-conversations:recovery",
+      name: "seller-conversation-thread",
+      sensitiveRegions: [],
+    });
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "broken.png",

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
@@ -8,8 +8,18 @@ import {
   assertReleaseCandidateCoverage,
   assertReleaseCandidateReport,
 } from "./qa/release-candidate-report.mjs";
+import { assertQaScenarioProcessEnvironment } from "./qa/scenario-environment.mjs";
+import { assertCleanCandidate } from "./qa/candidate-source.mjs";
+import { createQaScenarioFactory } from "./qa/scenario-factory.v1.mjs";
+import { createQaScenarioLifecycle } from "./qa/scenario-lifecycle.mjs";
 
-const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+assertQaScenarioProcessEnvironment({
+  ...process.env,
+  SEVO_RUNTIME_ENV: process.env.SEVO_RUNTIME_ENV ?? "test",
+  OTP_PROVIDER: process.env.OTP_PROVIDER ?? "dev",
+});
+
+const sha = assertCleanCandidate();
 const migration = readdirSync(resolve("packages/database/prisma/migrations"), {
   withFileTypes: true,
 })
@@ -31,35 +41,59 @@ assertNoForbiddenTestMarkers(candidateTestFiles(manifest), (file) =>
 
 for (const runNumber of [1, 2]) {
   const runId = `candidate-${runNumber}`;
-  const environment = {
-    ...process.env,
-    GITHUB_SHA: sha,
-    SEVO_RELEASE_CANDIDATE: "1",
-    SEVO_RELEASE_RUN_ID: runId,
-  };
-  for (const script of ["test:unit", "test:contract", "test:integration"]) {
-    const layerResult = runPnpm(script, environment);
-    if (layerResult !== 0) process.exit(layerResult);
-  }
-  const result = spawnSync(
-    process.execPath,
-    ["scripts/run-e2e-tests.mjs", "--config", "playwright.release.config.ts"],
-    { encoding: "utf8", env: environment, stdio: "inherit" },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  mkdirSync(resolve(outputRoot, runId));
+  const lifecycle = createQaScenarioLifecycle();
+  let ownedTarget;
+  const factory = createQaScenarioFactory({
+    lifecycle: {
+      async up(environmentRunId) {
+        ownedTarget = await lifecycle.up(environmentRunId);
+        return ownedTarget;
+      },
+      down: lifecycle.down,
+    },
+  });
+  const receipt = await factory.withScenario(
+    {
+      name: `release-${runNumber}`,
+      fixedTime: new Date().toISOString(),
+      build: () => null,
+    },
+    async (scenario) => {
+      const environment = {
+        ...scenario.environment,
+        SEVO_E2E_ISOLATED: "1",
+        GITHUB_SHA: sha,
+        SEVO_RELEASE_CANDIDATE: "1",
+        SEVO_RELEASE_RUN_ID: runId,
+        ...(process.env.SEVO_RELEASE_CHROMIUM_CHANNEL
+          ? { SEVO_RELEASE_CHROMIUM_CHANNEL: process.env.SEVO_RELEASE_CHROMIUM_CHANNEL }
+          : {}),
+      };
+      for (const script of ["test:unit", "test:contract", "test:integration"]) {
+        const layerResult = runPnpm(script, environment);
+        if (layerResult !== 0) throw new Error(`Candidate ${runId} failed ${script}`);
+      }
+      const result = spawnSync(
+        process.execPath,
+        ["scripts/run-e2e-tests.mjs", "--config", "playwright.release.config.ts"],
+        { encoding: "utf8", env: environment, stdio: "inherit" },
+      );
+      if (result.error) throw result.error;
+      if (result.status !== 0)
+        throw new Error(`Candidate ${runId} failed browser tests`);
 
-  const reportPath = resolve(outputRoot, runId, "playwright-results.json");
-  const reportBytes = readFileSync(reportPath);
-  const report = JSON.parse(reportBytes.toString("utf8"));
-  assertReleaseCandidateReport(report);
-  assertReleaseCandidateCoverage(report, manifest);
-  writeFileSync(
-    resolve(outputRoot, runId, "receipt.v1.json"),
-    `${JSON.stringify(
-      {
+      const reportPath = resolve(outputRoot, runId, "playwright-results.json");
+      const reportBytes = readFileSync(reportPath);
+      const report = JSON.parse(reportBytes.toString("utf8"));
+      assertReleaseCandidateReport(report);
+      const cells = assertReleaseCandidateCoverage(report, manifest);
+      assertCleanCandidate(sha);
+      return {
         contractVersion: 1,
         runId,
+        environmentRunId: scenario.runId,
+        environmentFingerprint: ownedTarget.fingerprint,
         sha,
         migration,
         seedVersion,
@@ -70,15 +104,19 @@ for (const runNumber of [1, 2]) {
         unexpectedConsoleErrors: 0,
         unexpectedPageErrors: 0,
         unexpectedNetworkErrors: 0,
-        cells: receiptCells(manifest),
+        cells,
         report: {
           ref: reportPath,
           sha256: createHash("sha256").update(reportBytes).digest("hex"),
         },
-      },
-      null,
-      2,
-    )}\n`,
+      };
+    },
+  );
+  // A passing receipt is written only after the owned environment was torn down.
+  assertCleanCandidate(sha);
+  writeFileSync(
+    resolve(outputRoot, runId, "receipt.v1.json"),
+    `${JSON.stringify(receipt, null, 2)}\n`,
     { flag: "wx" },
   );
 }
@@ -92,20 +130,6 @@ function runPnpm(script, environment) {
   });
   if (result.error) throw result.error;
   return result.status ?? 1;
-}
-
-function receiptCells(candidateManifest) {
-  return candidateManifest.journeys.flatMap((journey) =>
-    [
-      ...candidateManifest.scenarios.required,
-      ...(journey.additionalScenarios ?? []),
-    ].map((scenario) => ({
-      cellId: `${journey.id}:${scenario}`,
-      browsers: journey.browsers,
-      viewports: candidateManifest.coverage.viewports,
-      testLayers: journey.tests,
-    })),
-  );
 }
 
 function candidateTestFiles(candidateManifest) {

@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertMinimumContrast,
@@ -12,7 +13,7 @@ import {
 test("an access manager grants and immediately revokes a responsibility", async ({
   context,
   page,
-}) => {
+}, testInfo) => {
   await establishPlatformAgentSession(context, ["ACCESS_ADMINISTRATION"]);
   const recipientId = await establishPlatformAgentRecipient();
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -59,6 +60,11 @@ test("an access manager grants and immediately revokes a responsibility", async 
   expect(reducedDuration).toBeLessThan(0.001);
   await assertMinimumContrast(page.getByRole("tab"));
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "platform-access-emergency-lifecycle:success",
+    name: "platform-access",
+    sensitiveRegions: [],
+  });
 });
 
 test("two managers complete emergency approval, activation, closure, and audit", async ({

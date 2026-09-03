@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -167,6 +168,11 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await expect(page.getByLabel("موجودی گونه اصلی")).toHaveValue("3");
   await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
   await expect(page.getByRole("heading", { name: "پیش‌نمایش کالا" })).toBeVisible();
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "seller-product:success",
+    name: "seller-product-preview",
+    sensitiveRegions: [],
+  });
   await expect(page.getByText("۴۴۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "برگشت و ویرایش" }).click();
   await page.getByRole("radio", { name: "چندگونه" }).click();

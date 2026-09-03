@@ -1,6 +1,7 @@
 import { expect, request as createRequest, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -77,7 +78,7 @@ test.beforeAll(async ({ browserName }, testInfo) => {
 
 test("a guest reads a published empty storefront from the real API", async ({
   page,
-}) => {
+}, testInfo) => {
   const externalRequests: string[] = [];
   page.on("request", (request) => {
     if (new URL(request.url()).hostname !== "127.0.0.1") {
@@ -106,6 +107,11 @@ test("a guest reads a published empty storefront from the real API", async ({
     /\/conversations\/new\?kind=STORE/,
   );
   expect(externalRequests).toEqual([]);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-storefront:empty",
+    name: "storefront-empty",
+    sensitiveRegions: [],
+  });
 });
 
 test("draft and unknown slugs expose no private store data", async ({ page }) => {
@@ -275,6 +281,12 @@ test("the storefront reflows without clipping at an effective 200% zoom", async 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("region", { name: "پیش از سفارش بدانید" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-storefront:success",
+    name: "storefront-custom",
+    sensitiveRegions: [],
+    zoom: 2,
+  });
 });
 
 test("essential text and actions meet minimum contrast", async ({ page }) => {
@@ -311,7 +323,7 @@ test("motion is useful when allowed and removed when reduced", async ({ page }) 
 });
 
 for (const state of ["default", "custom", "loading", "error"] as const) {
-  test(`${state} has a deterministic visual baseline`, async ({ page }) => {
+  test(`${state} has a deterministic visual baseline`, async ({ page }, testInfo) => {
     const path =
       state === "default"
         ? `/s/${stores.defaultSlug}`
@@ -324,6 +336,11 @@ for (const state of ["default", "custom", "loading", "error"] as const) {
       `storefront-${state}.png`,
       deterministicScreenshotOptions,
     );
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: `buyer-storefront:${state === "loading" ? "loading" : state === "error" ? "provider-server-failure" : "success"}`,
+      name: `storefront-${state}`,
+      sensitiveRegions: [],
+    });
   });
 }
 

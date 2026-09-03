@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertMinimumContrast,
@@ -19,7 +20,7 @@ test.beforeEach(async ({ context }) => {
 
 test("keeps violation evidence masked until an audited case-scoped reveal", async ({
   page,
-}) => {
+}, testInfo) => {
   let revealHeaders: Record<string, string> = {};
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.route("**/api/platform/violations**", async (route) => {
@@ -80,6 +81,11 @@ test("keeps violation evidence masked until an audited case-scoped reveal", asyn
     page.getByRole("heading", { name: "پرونده‌های تخلف نیازمند بررسی" }),
   );
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "platform-violation-review:success",
+    name: "platform-violation-review",
+    sensitiveRegions: [page.locator("main img, main video")],
+  });
 });
 
 test("does not expose the violation route or navigation without its responsibility", async ({

@@ -67,3 +67,87 @@ function reportWith(results: Array<{ status: string; retry: number }>) {
     ],
   };
 }
+
+it("does not infer scenario or zoom evidence from a passing file in every project", () => {
+  const manifest = {
+    scenarios: { required: ["success", "recovery"] },
+    coverage: { viewports: ["360x800", "390x844", "768x1024", "1440x900", "zoom-200"] },
+    journeys: [
+      {
+        id: "buyer-sign-in",
+        browsers: ["chromium"],
+        tests: { e2e: ["tests/e2e/login.spec.ts"] },
+      },
+    ],
+  };
+  const report = {
+    suites: [
+      {
+        specs: [
+          {
+            file: "tests/e2e/login.spec.ts",
+            tests: ["360x800", "390x844", "768x1024", "1440x900"].map((viewport) => ({
+              projectName: `chromium-${viewport}`,
+              expectedStatus: "passed",
+              results: [{ status: "passed", retry: 0 }],
+            })),
+          },
+        ],
+      },
+    ],
+  };
+  expect(() => assertReleaseCandidateCoverage(report, manifest)).toThrow(
+    /measured evidence/,
+  );
+});
+
+it("receipts only explicit successful scenario measurements and rejects a mislabeled viewport", () => {
+  const manifest = {
+    scenarios: { required: ["success"] },
+    coverage: { viewports: ["360x800", "390x844", "768x1024", "1440x900", "zoom-200"] },
+    journeys: [
+      {
+        id: "buyer-sign-in",
+        browsers: ["chromium"],
+        tests: { e2e: ["tests/e2e/login.spec.ts"] },
+      },
+    ],
+  };
+  const tests = [
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ].map(({ width, height }) => ({
+    projectName: `chromium-${width}x${height}`,
+    expectedStatus: "passed",
+    results: [{ status: "passed", retry: 0 }],
+    annotations: [1, 2].map((zoom) => ({
+      type: "release-cell",
+      description: JSON.stringify({
+        cellId: "buyer-sign-in:success",
+        width: width / zoom,
+        height: height / zoom,
+        zoom,
+      }),
+    })),
+  }));
+  const report = { suites: [{ specs: [{ file: "tests/e2e/login.spec.ts", tests }] }] };
+  expect(assertReleaseCandidateCoverage(report, manifest)).toEqual([
+    {
+      cellId: "buyer-sign-in:success",
+      browsers: ["chromium"],
+      viewports: ["360x800", "zoom-200", "390x844", "768x1024", "1440x900"],
+      testLayers: { e2e: ["tests/e2e/login.spec.ts"] },
+    },
+  ]);
+  tests[3].annotations[0].description = JSON.stringify({
+    cellId: "buyer-sign-in:success",
+    width: 390,
+    height: 844,
+    zoom: 1,
+  });
+  expect(() => assertReleaseCandidateCoverage(report, manifest)).toThrow(
+    /Invalid measured viewport/,
+  );
+});

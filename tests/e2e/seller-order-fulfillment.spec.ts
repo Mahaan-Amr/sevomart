@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -165,6 +166,11 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
       page.getByRole("heading", { name: "تحویل سفارش ثبت شد" }),
     ).toBeFocused();
     await assertNoHorizontalOverflow(page);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-fulfillment:success",
+      name: "seller-fulfillment",
+      sensitiveRegions: [],
+    });
 
     await page.reload();
     await expect(

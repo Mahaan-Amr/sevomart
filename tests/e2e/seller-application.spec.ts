@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { expect, test, type BrowserContext } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertMinimumContrast,
@@ -48,6 +49,11 @@ test("applicant keeps a Persian RTL draft across a return and sees the next step
   const continueButton = page.getByRole("button", { name: "ادامه" });
   await expect(firstField).toBeFocused();
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "seller-application:empty",
+    name: "seller-application",
+    sensitiveRegions: [],
+  });
   await assertMinimumContrast(continueButton);
   expect(
     Number.parseFloat(

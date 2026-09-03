@@ -95,6 +95,112 @@ describe("release evidence plan", () => {
       /mandatory scenarios/,
     );
   });
+
+  it("does not count one execution twice under different fingerprints", () => {
+    const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
+      now: new Date("2026-09-01T08:00:00.000Z"),
+    });
+    const run = completeRun(plan, 1);
+    const duplicate = structuredClone(run);
+    duplicate.environmentFingerprint = "2".repeat(32);
+    expect(() =>
+      finalize({
+        ...plan,
+        approvals: ["Mahaan-Amr", "ferpheri"],
+        runs: [run, duplicate],
+      }),
+    ).toThrow(/unique run/);
+  });
+
+  it("treats GitHub login case and surrounding whitespace as the same reviewer", () => {
+    const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
+      now: new Date("2026-09-01T08:00:00.000Z"),
+    });
+    const runs = [completeRun(plan, 1), completeRun(plan, 2)];
+    runs[0].observations[0].reviewer = " mahaan-amr ";
+    expect(() =>
+      finalize({ ...plan, approvals: ["Mahaan-Amr", "ferpheri"], runs }),
+    ).toThrow(/independent reviewer/);
+  });
+
+  it("does not count an author's differently-cased login as a second approval", () => {
+    const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
+      now: new Date("2026-09-01T08:00:00.000Z"),
+    });
+    expect(() =>
+      finalize({
+        ...plan,
+        approvals: ["Mahaan-Amr", " mahaan-amr "],
+        runs: [completeRun(plan, 1), completeRun(plan, 2)],
+      }),
+    ).toThrow(/both developers/);
+  });
+
+  it("refuses to approve an evidence pack after its retention window", () => {
+    const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
+      now: new Date("2026-09-01T08:00:00.000Z"),
+    });
+    expect(() =>
+      finalizeReleaseEvidence(
+        manifest,
+        {
+          ...plan,
+          approvals: ["Mahaan-Amr", "ferpheri"],
+          runs: [completeRun(plan, 1), completeRun(plan, 2)],
+        },
+        {
+          now: new Date("2026-10-01T08:00:00.000Z"),
+          verifyArtifact: () => true,
+          readReceipt: (artifact) => artifact.content,
+        },
+      ),
+    ).toThrow(/expired/);
+  });
+
+  it("checks the underlying browser report digest instead of trusting its receipt", () => {
+    const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
+      now: new Date("2026-09-01T08:00:00.000Z"),
+    });
+    const runs = [completeRun(plan, 1), completeRun(plan, 2)];
+    expect(() =>
+      finalizeReleaseEvidence(
+        manifest,
+        {
+          ...plan,
+          approvals: ["Mahaan-Amr", "ferpheri"],
+          runs,
+        },
+        {
+          now: new Date("2026-09-01T12:00:00.000Z"),
+          verifyArtifact: (artifact) =>
+            artifact.ref !== "output/1/playwright-results.json",
+          readReceipt: (artifact) => artifact.content,
+        },
+      ),
+    ).toThrow(/browser report/);
+  });
+
+  it("binds each disposable fingerprint to its execution receipt", () => {
+    const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
+      now: new Date("2026-09-01T08:00:00.000Z"),
+    });
+    const runs = [completeRun(plan, 1), completeRun(plan, 2)];
+    runs[0].environmentFingerprint = "unrelated-fingerprint";
+    expect(() =>
+      finalize({ ...plan, approvals: ["Mahaan-Amr", "ferpheri"], runs }),
+    ).toThrow(/receipt did not pass/);
+  });
+
+  it("rechecks the browser report instead of accepting invented receipt cells", () => {
+    const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
+      now: new Date("2026-09-01T08:00:00.000Z"),
+    });
+    const runs = [completeRun(plan, 1), completeRun(plan, 2)];
+    runs[0].receipt.content.report.content.suites = [];
+    expect(() =>
+      finalize({ ...plan, approvals: ["Mahaan-Amr", "ferpheri"], runs }),
+    ).toThrow(/report is empty/);
+  });
 });
 
 function candidateMetadata() {
@@ -132,6 +238,7 @@ function completeRun(
   const receiptContent = {
     contractVersion: 1,
     runId: `candidate-${runNumber}`,
+    environmentFingerprint: `${String(runNumber).repeat(32)}`,
     sha: plan.candidate.sha,
     migration: plan.candidate.migration,
     seedVersion: plan.candidate.seedVersion,
@@ -142,6 +249,11 @@ function completeRun(
     unexpectedConsoleErrors: 0,
     unexpectedPageErrors: 0,
     unexpectedNetworkErrors: 0,
+    report: {
+      ref: `output/${runNumber}/playwright-results.json`,
+      sha256: "d".repeat(64),
+      content: browserReport(plan),
+    },
     cells: plan.cells.map((cell) => ({
       cellId: cell.cellId,
       browsers: cell.browsers,
@@ -197,7 +309,49 @@ function completeRun(
 
 function finalize(evidence: ReturnType<typeof createReleaseEvidencePlan>) {
   return finalizeReleaseEvidence(manifest, evidence, {
+    now: new Date("2026-09-01T12:00:00.000Z"),
     verifyArtifact: () => true,
     readReceipt: (artifact) => artifact.content,
   });
+}
+
+function browserReport(plan: ReturnType<typeof createReleaseEvidencePlan>) {
+  return {
+    suites: [
+      {
+        specs: plan.cells.flatMap((cell) =>
+          cell.testLayers.e2e.map((file) => ({
+            file,
+            tests: cell.browsers.flatMap((browser) =>
+              (browser === "webkit"
+                ? [
+                    [390, 844],
+                    [1440, 900],
+                  ]
+                : [
+                    [360, 800],
+                    [390, 844],
+                    [768, 1024],
+                    [1440, 900],
+                  ]
+              ).map(([width, height]) => ({
+                projectName: `${browser}-${width}x${height}`,
+                expectedStatus: "passed",
+                results: [{ status: "passed", retry: 0 }],
+                annotations: [1, 2].map((zoom) => ({
+                  type: "release-cell",
+                  description: JSON.stringify({
+                    cellId: cell.cellId,
+                    width: width / zoom,
+                    height: height / zoom,
+                    zoom,
+                  }),
+                })),
+              })),
+            ),
+          })),
+        ),
+      },
+    ],
+  };
 }

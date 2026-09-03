@@ -66,31 +66,34 @@ export const test = base.extend<{ releaseCandidateGuard: void }>({
       const networkErrors: string[] = [];
       const externalRequests: string[] = [];
       page.on("console", (message) => {
-        if (message.type() === "error") consoleErrors.push(message.text());
+        if (message.type() === "error") consoleErrors.push("console.error");
       });
-      page.on("pageerror", (error) => pageErrors.push(error.message));
+      page.on("pageerror", () => pageErrors.push("unhandled page error"));
       page.on("requestfailed", (request) => {
-        networkErrors.push(`${request.method()} ${request.url()}`);
+        networkErrors.push(`${request.method()} request failed`);
       });
       page.on("response", (response) => {
         const request = response.request();
         const pathname = new URL(response.url()).pathname;
         const expected = expectedCandidateResponses.some(
           (entry) =>
+            testInfo.annotations.some(
+              (annotation) =>
+                annotation.type === "release-expected-response" &&
+                annotation.description === entry.scenario,
+            ) &&
             entry.status === response.status() &&
             entry.method === request.method() &&
             entry.path.test(pathname),
         );
         if (response.status() >= 400 && !expected) {
-          networkErrors.push(
-            `${response.status()} ${request.method()} ${response.url()}`,
-          );
+          networkErrors.push(`${response.status()} ${request.method()}`);
         }
       });
       page.on("request", (request) => {
         const hostname = new URL(request.url()).hostname;
         if (!["127.0.0.1", "localhost"].includes(hostname)) {
-          externalRequests.push(`${request.method()} ${request.url()}`);
+          externalRequests.push(`${request.method()} external request`);
         }
       });
 

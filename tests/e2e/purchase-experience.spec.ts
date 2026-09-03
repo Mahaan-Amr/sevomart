@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/release-playwright";
 import { directSettlementDisclosure } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
 import sharp from "sharp";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   paymentBuyerTestMobiles,
@@ -418,6 +419,11 @@ test("eligible buyer retries once and publishes one verified purchase experience
       )
       .toBe(true);
     await expect(page.getByText(/میانگین [۰-۹]/)).toHaveCount(0);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-purchase-experience:success",
+      name: "purchase-experience",
+      sensitiveRegions: [publicExperienceImage],
+    });
     await sql`
       insert into content_purchase_experiences
         (id, buyer_identity_id, order_item_id, store_id, product_id,

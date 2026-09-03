@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 import { conversationsV1Examples } from "@sevo/contracts/conversations/v1";
 
 import {
@@ -42,9 +43,10 @@ test("buyer conversations recover from loading failure and expose the empty list
   expect(
     await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches),
   ).toBe(true);
-  await page.screenshot({
-    path: testInfo.outputPath("buyer-conversations-empty.png"),
-    fullPage: true,
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-conversations:recovery",
+    name: "buyer-conversations-empty",
+    sensitiveRegions: [],
   });
 });
 
@@ -101,9 +103,10 @@ test("buyer reads a long Persian thread and retries one unsent message without d
   expect(sentKeys[1]).toBe(sentKeys[0]);
   await assertNoHorizontalOverflow(page);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({
-    path: testInfo.outputPath("buyer-conversation-thread.png"),
-    fullPage: true,
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-conversations:success",
+    name: "buyer-conversation-thread",
+    sensitiveRegions: [],
   });
 });
 

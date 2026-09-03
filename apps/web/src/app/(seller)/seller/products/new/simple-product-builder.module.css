@@ -8,6 +8,8 @@
 .workspace {
   display: grid;
   width: min(100%, 540px);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   padding: 24px;
   border: 1px solid var(--color-border-primary-soft);
@@ -19,6 +21,7 @@
 .header,
 .actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -304,6 +307,8 @@
 .preview {
   overflow: hidden;
   display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   border-radius: 18px;
   background: var(--color-background);
@@ -319,6 +324,8 @@
 
 .preview div {
   display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
   gap: 8px;
   padding: 0 16px 16px;
 }

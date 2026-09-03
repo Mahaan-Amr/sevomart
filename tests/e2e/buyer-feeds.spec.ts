@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/release-playwright";
 import { discoveryV1Examples } from "@sevo/contracts/discovery/v1";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -22,7 +23,6 @@ function feedItem(position: number, store = "خانه سفال") {
 test("discovery and following keep independent cursor and scroll state", async ({
   page,
 }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   const firstItems = Array.from({ length: 18 }, (_, index) => feedItem(index + 1));
   await page.route("**/api/store/media/*", (route) =>
@@ -79,9 +79,10 @@ test("discovery and following keep independent cursor and scroll state", async (
   expect(
     await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches),
   ).toBe(true);
-  await page.screenshot({
-    path: testInfo.outputPath("following-mobile.png"),
-    fullPage: true,
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-following:success",
+    name: "buyer-following",
+    sensitiveRegions: [],
   });
 
   const discoveryTab = page.getByRole("link", { name: "کشف", exact: true });
@@ -99,6 +100,11 @@ test("discovery and following keep independent cursor and scroll state", async (
   await discoveryTab.press("Enter");
   await expect(page.getByRole("listitem")).toHaveCount(19);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(discoveryScroll);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-discovery:success",
+    name: "buyer-discovery",
+    sensitiveRegions: [],
+  });
 });
 
 test("following asks a guest to sign in and cancellation restores discovery", async ({

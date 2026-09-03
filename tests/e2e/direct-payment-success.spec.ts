@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import { expect, test } from "../helpers/release-playwright";
 import postgres from "postgres";
@@ -19,6 +19,7 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
   browser,
   page,
 }, testInfo) => {
+  test.setTimeout(90_000); // Includes payment, tracking and dispute accessibility scans.
   const mobile = paymentBuyerTestMobiles[visualProjectIndex(testInfo.project.name)]!;
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
@@ -169,6 +170,11 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       ),
     );
     await expect(page.getByRole("heading", { name: "پرداخت تأیید شد" })).toBeVisible();
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-payment:success",
+      name: "buyer-payment-result",
+      sensitiveRegions: [],
+    });
     const ownerRead = await page.context().request.get(`/api/orders/${ids.order}`);
     expect(ownerRead.status()).toBe(200);
     expect(ownerRead.headers()["cache-control"]).toBe("no-store");
@@ -242,10 +248,10 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       where contexts.order_id = ${ids.order}
     `;
     expect(privateEvidence).toEqual({ visibility: "PRIVATE" });
-    await mkdir("docs/delivery/issue-157", { recursive: true });
-    await page.screenshot({
-      path: `docs/delivery/issue-157/buyer-dispute-${testInfo.project.name}.png`,
-      fullPage: true,
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-dispute:success",
+      name: "buyer-dispute",
+      sensitiveRegions: [page.locator("main img, main video, main dd")],
     });
     await expect(
       page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
@@ -269,10 +275,10 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
             Number.parseFloat(getComputedStyle(element).transitionDuration) || 0,
         ),
     ).toBeLessThanOrEqual(0.01);
-    await mkdir("docs/delivery/issue-148", { recursive: true });
-    await page.screenshot({
-      path: `docs/delivery/issue-148/order-tracking-${testInfo.project.name}.png`,
-      fullPage: true,
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-order-tracking:success",
+      name: "buyer-order-tracking",
+      sensitiveRegions: [page.locator("main img, main video, main dd")],
     });
     expect(
       await sql`select count(*)::int as count from payment_attempts where order_id = ${ids.order}`,

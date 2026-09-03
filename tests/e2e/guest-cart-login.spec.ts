@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -18,6 +19,7 @@ import {
 test("guest adds a product, signs in and continues the same cart", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(90_000); // Includes separate accessibility scans at each purchase step.
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = guestCartTestMobiles[projectIndex]!;
   const databaseUrl =
@@ -138,6 +140,11 @@ test("guest adds a product, signs in and continues the same cart", async ({
 
   await page.goto(`/s/${slug}/products/${ids.product}`);
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-product-cart:success",
+    name: "buyer-product",
+    sensitiveRegions: [],
+  });
   await expect(page.getByText("تا هفت روز امکان درخواست مرجوعی دارید.")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "پرسیدن درباره این کالا" }),
@@ -148,6 +155,11 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("link", { name: "دیدن سبد" }).click();
 
   await expect(page.getByRole("heading", { name: "سبد شما" })).toBeVisible();
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-product-cart:success",
+    name: "buyer-cart",
+    sensitiveRegions: [],
+  });
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
   await expect(page.getByText("تعداد ۲")).toBeVisible();
   await page.reload();
@@ -169,6 +181,11 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-sign-in:empty",
+    name: "buyer-login",
+    sensitiveRegions: [],
+  });
   await page.getByLabel("شماره موبایل").fill(mobile);
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
@@ -248,6 +265,11 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
   await expect(page).toHaveURL(/\/checkout\/review$/);
   await expect(page.getByRole("heading", { name: "تسویه مستقیم" })).toBeVisible();
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-address-checkout:success",
+    name: "buyer-checkout-review",
+    sensitiveRegions: [page.locator("main dd")],
+  });
   await expect(page.getByText("بازپرداخت را تضمین نمی‌کند.")).toBeVisible();
   const stockSql = postgres(databaseUrl, { max: 1 });
   try {

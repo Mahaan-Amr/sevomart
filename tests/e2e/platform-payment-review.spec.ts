@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertMinimumContrast,
@@ -12,7 +13,7 @@ const grantId = "81fe87eb-6c0f-47ca-93ca-9f9a038ca271";
 test("payment review stays low-detail until an audited reveal and never offers a manual outcome", async ({
   context,
   page,
-}) => {
+}, testInfo) => {
   await establishPlatformAgentSession(context, ["PAYMENT_REVIEW"]);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.route("**/api/platform/payment-reviews**", async (route) => {
@@ -106,4 +107,9 @@ test("payment review stays low-detail until an audited reveal and never offers a
     page.getByText(/نتیجه فقط پس از پاسخ معتبر درگاه تغییر می‌کند/),
   ).toBeVisible();
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "platform-payment-review:success",
+    name: "platform-payment-review",
+    sensitiveRegions: [page.getByText(/provider-reference|provider-event/)],
+  });
 });
