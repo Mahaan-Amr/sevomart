@@ -126,6 +126,7 @@ it("receipts only explicit successful scenario measurements and rejects a mislab
       type: "release-cell",
       description: JSON.stringify({
         cellId: "buyer-sign-in:success",
+        browser: "chromium",
         width: width / zoom,
         height: height / zoom,
         zoom,
@@ -143,8 +144,19 @@ it("receipts only explicit successful scenario measurements and rejects a mislab
   ]);
   tests[3].annotations[0].description = JSON.stringify({
     cellId: "buyer-sign-in:success",
+    browser: "chromium",
     width: 390,
     height: 844,
+    zoom: 1,
+  });
+  expect(() => assertReleaseCandidateCoverage(report, manifest)).toThrow(
+    /Invalid measured viewport/,
+  );
+  tests[3].annotations[0].description = JSON.stringify({
+    cellId: "buyer-sign-in:success",
+    browser: "webkit",
+    width: 1440,
+    height: 900,
     zoom: 1,
   });
   expect(() => assertReleaseCandidateCoverage(report, manifest)).toThrow(

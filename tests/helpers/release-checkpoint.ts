@@ -41,7 +41,15 @@ async function captureAtViewport(
   }
   const viewport = page.viewportSize();
   if (!viewport) throw new Error("Release checkpoints require a measured viewport");
-  const measurement = { cellId: options.cellId, ...viewport, zoom: options.zoom ?? 1 };
+  const browser = page.context().browser()?.browserType().name();
+  if (browser !== "chromium" && browser !== "webkit")
+    throw new Error("Unsupported release browser engine");
+  const measurement = {
+    cellId: options.cellId,
+    browser,
+    ...viewport,
+    zoom: options.zoom ?? 1,
+  };
   const name = `${options.name}-${measurement.zoom}x`;
   await expect(page.locator("html")).toHaveAttribute("lang", "fa");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");

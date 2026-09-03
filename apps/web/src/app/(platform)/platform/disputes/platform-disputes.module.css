@@ -244,7 +244,7 @@
   }
 
   .reviewLayout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .queue {
@@ -259,6 +259,26 @@
 
   .case {
     padding: 16px;
+  }
+
+  .accessPanel,
+  .accessPanel form,
+  .actionForm,
+  .details,
+  .timeline {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-wrap: anywhere;
+  }
+
+  .timeline article > div,
+  .details dl div {
+    flex-wrap: wrap;
+  }
+
+  .case input,
+  .case textarea,
+  .case select {
+    min-width: 0;
   }
 }
 

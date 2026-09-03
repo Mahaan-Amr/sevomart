@@ -34,6 +34,7 @@ test("seller acts from the operational home and reads a private basic report", a
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByRole("link", { name: "ادامه کار" })).toBeVisible();
 
   const identities = await sql<Array<{ identityId: string }>>`
     select identity_id as "identityId"

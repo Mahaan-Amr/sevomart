@@ -35,10 +35,7 @@ export default defineConfig(baseConfig, {
     trace: "off",
     video: "off",
   },
-  reporter: [
-    ["json", { outputFile: `${releaseOutput}/playwright-results.json` }],
-    ["html", { open: "never", outputFolder: `${releaseOutput}/playwright-report` }],
-  ],
+  reporter: [["./scripts/qa/release-reporter.mjs", { outputDir: releaseOutput }]],
   projects: [
     ...(baseConfig.projects ?? []).map((project) => ({
       ...project,
@@ -49,6 +46,7 @@ export default defineConfig(baseConfig, {
       testMatch: webkitSmoke,
       use: {
         ...devices["Desktop Safari"],
+        browserName: "webkit",
         viewport: { width: 390, height: 844 },
         locale: "fa-IR",
         timezoneId: "Asia/Tehran",
@@ -59,6 +57,7 @@ export default defineConfig(baseConfig, {
       testMatch: webkitSmoke,
       use: {
         ...devices["Desktop Safari"],
+        browserName: "webkit",
         viewport: { width: 1440, height: 900 },
         locale: "fa-IR",
         timezoneId: "Asia/Tehran",

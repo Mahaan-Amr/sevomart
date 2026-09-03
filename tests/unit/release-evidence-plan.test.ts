@@ -342,6 +342,7 @@ function browserReport(plan: ReturnType<typeof createReleaseEvidencePlan>) {
                   type: "release-cell",
                   description: JSON.stringify({
                     cellId: cell.cellId,
+                    browser,
                     width: width / zoom,
                     height: height / zoom,
                     zoom,

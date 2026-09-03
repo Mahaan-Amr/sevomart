@@ -63,9 +63,11 @@ test("discovery and following keep independent cursor and scroll state", async (
   await page.getByRole("button", { name: "دیدن کالاهای بیشتر" }).click();
   await expect(page.getByRole("listitem")).toHaveCount(19);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const followingTab = page.getByRole("link", { name: "دنبال‌شده‌ها" });
+  await followingTab.scrollIntoViewIfNeeded();
   const discoveryScroll = await page.evaluate(() => window.scrollY);
 
-  await page.getByRole("link", { name: "دنبال‌شده‌ها" }).click();
+  await followingTab.click();
   await expect(page.getByRole("heading", { name: "دنبال‌شده‌ها" })).toBeVisible();
   await expect(
     page.getByRole("link", {
@@ -163,6 +165,7 @@ test("returning from product detail restores the loaded feed, scroll, and origin
   const origin = page.getByRole("link", { name: "کالای تازه 19", exact: true });
   await origin.scrollIntoViewIfNeeded();
   const savedScroll = await page.evaluate(() => window.scrollY);
+  expect(savedScroll).toBeGreaterThan(0);
   await origin.evaluate((element: HTMLAnchorElement) => element.click());
   await expect(page).toHaveURL(/\/products\/00000019-/);
   await page.goBack();

@@ -77,11 +77,6 @@ export const test = base.extend<{ releaseCandidateGuard: void }>({
         const pathname = new URL(response.url()).pathname;
         const expected = expectedCandidateResponses.some(
           (entry) =>
-            testInfo.annotations.some(
-              (annotation) =>
-                annotation.type === "release-expected-response" &&
-                annotation.description === entry.scenario,
-            ) &&
             entry.status === response.status() &&
             entry.method === request.method() &&
             entry.path.test(pathname),

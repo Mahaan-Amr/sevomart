@@ -60,6 +60,7 @@ export function assertReleaseCandidateCoverage(report, manifest) {
           const zoom = measurement.zoom;
           if (
             !project ||
+            measurement.browser !== project[1] ||
             ![1, 2].includes(zoom) ||
             measurement.width !== Math.floor(Number(project[2]) / zoom) ||
             measurement.height !== Math.floor(Number(project[3]) / zoom)
