@@ -1,4 +1,4 @@
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
@@ -18,6 +18,7 @@ import {
 test("seller builds, refreshes, previews and publishes a minimal store", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "store-validation");
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = storeBuilderTestMobiles[projectIndex];
   if (!mobile)

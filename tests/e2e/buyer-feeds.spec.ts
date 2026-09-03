@@ -1,4 +1,9 @@
-import { expect, test } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  test,
+} from "../helpers/release-playwright";
 import { discoveryV1Examples } from "@sevo/contracts/discovery/v1";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
@@ -111,7 +116,8 @@ test("discovery and following keep independent cursor and scroll state", async (
 
 test("following asks a guest to sign in and cancellation restores discovery", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "following-sign-in");
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
       json: {
@@ -139,7 +145,8 @@ test("following asks a guest to sign in and cancellation restores discovery", as
 
 test("returning from product detail restores the loaded feed, scroll, and origin focus", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateFailure(testInfo, "media-fallback");
   const firstItems = Array.from({ length: 18 }, (_, index) => feedItem(index + 1));
   await page.route("**/api/store/media/*", (route) => route.abort());
   await page.route("**/api/discovery*", (route) =>
@@ -246,7 +253,8 @@ test("loading is announced without layout shift and empty feeds keep distinct gu
 
 test("following errors use safe code-based guidance and keep private data out of login resume", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "following-auth-recovery");
   let followingRead = 0;
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
@@ -297,7 +305,8 @@ test("following errors use safe code-based guidance and keep private data out of
 
 test("a stale following cursor replaces the old snapshot instead of merging it", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "following-cursor-recovery");
   let initialReads = 0;
   await page.route("**/api/following*", (route) => {
     if (route.request().url().includes("cursor=stale-following")) {
@@ -332,7 +341,8 @@ test("a stale following cursor replaces the old snapshot instead of merging it",
 
 test("sales content stays distinct, purchasable, and human when media or stock fails", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateFailure(testInfo, "media-fallback");
   await page.emulateMedia({ reducedMotion: "reduce" });
   const item = {
     ...feedItem(41),

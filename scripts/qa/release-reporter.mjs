@@ -84,7 +84,10 @@ export default class ReleaseReporter {
     const guard = attachments.find(
       (attachment) => attachment.name === "release-candidate-guard",
     );
-    if (!guard?.body) return null;
+    if (!guard?.body) {
+      this.errors.push({ message: "Missing browser guard summary" });
+      return null;
+    }
     try {
       const raw = JSON.parse(guard.body.toString("utf8"));
       const counts = Object.fromEntries(

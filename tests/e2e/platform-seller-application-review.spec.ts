@@ -1,4 +1,4 @@
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
@@ -270,7 +270,8 @@ test("keeps an empty queue when an older case detail arrives late", async ({
 
 test("retries an unchanged decision with the same idempotency key", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "platform-review-recovery");
   let application = sellerApplication();
   const attemptedKeys: string[] = [];
   await page.route("**/api/platform/seller-applications**", async (route) => {
@@ -446,7 +447,8 @@ test("platform agent confirms approval before the initial store is created", asy
 
 test("keeps the committed approval clear when the queue refresh fails", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "platform-review-recovery");
   const application = sellerApplication();
   let approved = false;
   await page.route("**/api/platform/seller-applications**", async (route) => {

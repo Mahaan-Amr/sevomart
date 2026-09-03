@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateFailure, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
@@ -17,6 +17,7 @@ import {
 test("seller finds variants and safely adjusts inventory with Persian numbers", async ({
   page,
 }, testInfo) => {
+  expectCandidateFailure(testInfo, "inventory-ambiguous-result");
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = sellerInventoryTestMobiles[projectIndex]!;
   const databaseUrl =

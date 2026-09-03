@@ -68,7 +68,7 @@ test("an access manager grants and immediately revokes a responsibility", async 
 });
 
 test("two managers complete emergency approval, activation, closure, and audit", async ({
-  browser,
+  newCandidateContext,
   context,
   page,
 }) => {
@@ -76,10 +76,10 @@ test("two managers complete emergency approval, activation, closure, and audit",
     "ACCESS_ADMINISTRATION",
     "ACCESS_AUDIT_REVIEW",
   ]);
-  const approverContext = await browser.newContext();
+  const approverContext = await newCandidateContext();
   await establishPlatformAgentSession(approverContext, ["ACCESS_ADMINISTRATION"]);
   const approverPage = await approverContext.newPage();
-  const reviewerContext = await browser.newContext();
+  const reviewerContext = await newCandidateContext();
   await establishPlatformAgentSession(reviewerContext, [
     "ACCESS_ADMINISTRATION",
     "ACCESS_AUDIT_REVIEW",
@@ -164,7 +164,7 @@ test("two managers complete emergency approval, activation, closure, and audit",
 });
 
 test("an independent manager rejects a pending sensitive request", async ({
-  browser,
+  newCandidateContext,
   context,
   page,
 }) => {
@@ -172,7 +172,7 @@ test("an independent manager rejects a pending sensitive request", async ({
     "ACCESS_ADMINISTRATION",
     "PAYMENT_REVIEW",
   ]);
-  const reviewerContext = await browser.newContext();
+  const reviewerContext = await newCandidateContext();
   await establishPlatformAgentSession(reviewerContext, [
     "ACCESS_ADMINISTRATION",
     "ACCESS_AUDIT_REVIEW",

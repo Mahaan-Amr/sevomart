@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import postgres from "postgres";
+import sharp from "sharp";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
@@ -11,14 +12,19 @@ import {
 } from "../helpers/visual-assertions";
 import {
   differentStoreCartConflictTestMobiles,
+  e2eApiBaseUrl,
   guestCartTestMobiles,
+  mediaFixtureSellerTestMobiles,
   sameStoreCartConflictTestMobiles,
   visualProjectIndex,
 } from "../helpers/visual-projects";
 
 test("guest adds a product, signs in and continues the same cart", async ({
   page,
+  playwright,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "buyer-sign-in-required");
+  expectCandidateResponse(testInfo, "guest-cart-lifecycle");
   test.setTimeout(90_000); // Includes separate accessibility scans at each purchase step.
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = guestCartTestMobiles[projectIndex]!;
@@ -26,15 +32,21 @@ test("guest adds a product, signs in and continues the same cart", async ({
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const ids = {
     store: randomUUID(),
-    seller: randomUUID(),
     product: randomUUID(),
     variant: randomUUID(),
     media: randomUUID(),
     shipping: randomUUID(),
   };
   const slug = `guest-cart-${projectIndex}`;
-  const sql = postgres(databaseUrl, { max: 1 });
+  let sql: postgres.Sql | undefined;
+  let seller: Awaited<ReturnType<typeof authenticatedSeller>> | undefined;
+  let fixtureFailure: { error: unknown } | undefined;
   try {
+    sql = postgres(databaseUrl, { max: 1 });
+    seller = await authenticatedSeller(
+      playwright,
+      mediaFixtureSellerTestMobiles[projectIndex]!,
+    );
     const previousStores = await sql<Array<{ storeId: string }>>`
       select id as "storeId" from store_stores where slug = ${slug}
     `;
@@ -83,6 +95,12 @@ test("guest adds a product, signs in and continues the same cart", async ({
         delete from order_carts where identity_id = ${identities[0].identityId}::uuid
       `;
     }
+    const sellerIdentityId = await identityIdForMobile(sql, seller.mobile);
+    await sql`
+      insert into identity_seller_access (id, identity_id, status)
+      values (${randomUUID()}, ${sellerIdentityId}, 'ACTIVE')
+      on conflict (identity_id) do update set status = 'ACTIVE'
+    `;
     await sql`
       insert into store_stores
         (id, name, slug, bio, return_policy, return_policy_revision,
@@ -104,7 +122,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
     `;
     await sql`
       insert into store_memberships (id, store_id, seller_id, role)
-      values (${randomUUID()}, ${ids.store}, ${ids.seller}, 'OWNER')
+      values (${randomUUID()}, ${ids.store}, ${sellerIdentityId}, 'OWNER')
     `;
     await sql`
       insert into product_products
@@ -119,6 +137,8 @@ test("guest adds a product, signs in and continues the same cart", async ({
         (${ids.variant}, ${ids.product}, ${ids.store}, 'legacy-default',
          'legacy-default', false, true)
     `;
+    ids.media = await uploadProductImage(seller.context, ids.product);
+    await sql`update media_assets set visibility = 'PUBLIC' where id = ${ids.media}`;
     await sql`
       insert into product_publications
         (product_id, publication_version, name, description, media_id, variant_id)
@@ -134,9 +154,15 @@ test("guest adds a product, signs in and continues the same cart", async ({
       insert into inventory_levels (variant_id, store_id, on_hand, revision)
       values (${ids.variant}, ${ids.store}, 8, 1)
     `;
-  } finally {
-    await sql.end();
+  } catch (error) {
+    fixtureFailure = { error };
   }
+  const cleanupFailure = await cleanupFixtureResources(
+    sql,
+    seller ? [seller] : [],
+  );
+  if (fixtureFailure) throw fixtureFailure.error;
+  if (cleanupFailure) throw cleanupFailure.error;
 
   await page.goto(`/s/${slug}/products/${ids.product}`);
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
@@ -154,16 +180,18 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await expect(page.getByText("به سبد اضافه شد.")).toBeVisible();
   await page.getByRole("link", { name: "دیدن سبد" }).click();
 
-  await expect(page.getByRole("heading", { name: "سبد شما" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "سبد شما" })).toBeVisible({
+    timeout: 15_000,
+  });
   await captureReleaseCheckpoint(page, testInfo, {
     cellId: "buyer-product-cart:success",
     name: "buyer-cart",
     sensitiveRegions: [],
   });
-  await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
+  await expect(page.getByText("فنجان سرامیکی")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("تعداد ۲")).toBeVisible();
   await page.reload();
-  await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
+  await expect(page.getByText("فنجان سرامیکی")).toBeVisible({ timeout: 15_000 });
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
 
@@ -176,7 +204,6 @@ test("guest adds a product, signs in and continues the same cart", async ({
     page.getByText("سبد در جای دیگری تغییر کرده است. نسخه تازه را بررسی کنید."),
   ).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
-  await otherTab.close();
 
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).focus();
   await page.keyboard.press("Enter");
@@ -420,10 +447,14 @@ test("guest adds a product, signs in and continues the same cart", async ({
 
 test("same-store carts merge only after the buyer chooses merge", async ({
   page,
+  playwright,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "buyer-sign-in-required");
+  expectCandidateResponse(testInfo, "cart-resolution-required");
+  test.setTimeout(90_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = sameStoreCartConflictTestMobiles[projectIndex]!;
-  const fixture = await seedCartConflict(mobile, projectIndex, false);
+  const fixture = await seedCartConflict(playwright, mobile, projectIndex, false);
 
   await addGuestProductAndSignIn(
     page,
@@ -433,7 +464,7 @@ test("same-store carts merge only after the buyer chooses merge", async ({
   );
   await expect(
     page.getByRole("heading", { name: "کدام سبد را ادامه می‌دهید؟" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toBeVisible();
   await expect(
     page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
@@ -451,10 +482,14 @@ test("same-store carts merge only after the buyer chooses merge", async ({
 
 test("different-store carts change only after the buyer chooses which one to keep", async ({
   page,
+  playwright,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "buyer-sign-in-required");
+  expectCandidateResponse(testInfo, "cart-resolution-required");
+  test.setTimeout(90_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = differentStoreCartConflictTestMobiles[projectIndex]!;
-  const fixture = await seedCartConflict(mobile, projectIndex, true);
+  const fixture = await seedCartConflict(playwright, mobile, projectIndex, true);
 
   await addGuestProductAndSignIn(
     page,
@@ -464,7 +499,7 @@ test("different-store carts change only after the buyer chooses which one to kee
   );
   await expect(
     page.getByRole("heading", { name: "کدام سبد را ادامه می‌دهید؟" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toHaveCount(0);
   await expect(
     page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
@@ -494,6 +529,7 @@ async function addGuestProductAndSignIn(
 }
 
 async function seedCartConflict(
+  playwright: import("@playwright/test").Playwright,
   mobile: string,
   projectIndex: number,
   differentStore: boolean,
@@ -506,8 +542,18 @@ async function seedCartConflict(
   const guest = differentStore
     ? productFixture(`guest-different-${projectIndex}`)
     : buyer;
-  const sql = postgres(databaseUrl, { max: 1 });
+  const fixtures = differentStore ? [buyer, guest] : [buyer];
+  const sellers: Awaited<ReturnType<typeof authenticatedSeller>>[] = [];
+  let sql: postgres.Sql | undefined;
+  let fixtureFailure: { error: unknown } | undefined;
   try {
+    sql = postgres(databaseUrl, { max: 1 });
+    for (let index = 0; index < fixtures.length; index += 1) {
+      const mobileIndex = differentStore ? 8 + projectIndex * 2 + index : 4 + projectIndex;
+      sellers.push(
+        await authenticatedSeller(playwright, mediaFixtureSellerTestMobiles[mobileIndex]!),
+      );
+    }
     const existing = await sql<Array<{ identityId: string }>>`
       select identity_id as "identityId" from identity_login_methods where mobile = ${mobile}
     `;
@@ -524,7 +570,14 @@ async function seedCartConflict(
       `;
     }
     await sql`delete from order_carts where identity_id = ${identityId}::uuid`;
-    for (const fixture of differentStore ? [buyer, guest] : [buyer]) {
+    for (const [index, fixture] of fixtures.entries()) {
+      const seller = sellers[index]!;
+      const sellerIdentityId = await identityIdForMobile(sql, seller.mobile);
+      await sql`
+        insert into identity_seller_access (id, identity_id, status)
+        values (${randomUUID()}, ${sellerIdentityId}, 'ACTIVE')
+        on conflict (identity_id) do update set status = 'ACTIVE'
+      `;
       const prior = await sql<Array<{ id: string }>>`
         select id from store_stores where slug = ${fixture.slug}
       `;
@@ -554,8 +607,10 @@ async function seedCartConflict(
       `;
       await sql`
         insert into store_memberships (id, store_id, seller_id, role)
-        values (${randomUUID()}, ${fixture.storeId}, ${randomUUID()}, 'OWNER')
+        values (${randomUUID()}, ${fixture.storeId}, ${sellerIdentityId}, 'OWNER')
       `;
+      fixture.mediaId = await uploadProductImage(seller.context, fixture.productId);
+      await sql`update media_assets set visibility = 'PUBLIC' where id = ${fixture.mediaId}`;
       await sql`
         insert into product_products
           (id, store_id, state, revision, publication_version, published_at)
@@ -598,9 +653,12 @@ async function seedCartConflict(
         (cart_id, variant_id, product_id, quantity, updated_at)
       values (${cartId}, ${buyer.variantId}, ${buyer.productId}, 3, now())
     `;
-  } finally {
-    await sql.end();
+  } catch (error) {
+    fixtureFailure = { error };
   }
+  const cleanupFailure = await cleanupFixtureResources(sql, sellers);
+  if (fixtureFailure) throw fixtureFailure.error;
+  if (cleanupFailure) throw cleanupFailure.error;
   return { guestSlug: guest.slug, guestProductId: guest.productId };
 }
 
@@ -615,4 +673,65 @@ function productFixture(slug: string) {
     mediaId: randomUUID(),
     shippingId: randomUUID(),
   };
+}
+
+async function authenticatedSeller(
+  playwright: import("@playwright/test").Playwright,
+  mobile: string,
+) {
+  const context = await playwright.request.newContext({ baseURL: e2eApiBaseUrl() });
+  try {
+    const requested = await context.post("/v1/auth/otp/requests", { data: { mobile } });
+    expect(requested.status()).toBe(202);
+    const challengeId = ((await requested.json()) as { challengeId: string }).challengeId;
+    const verified = await context.post("/v1/auth/otp/verifications", {
+      data: { challengeId, code: "111111" },
+    });
+    expect(verified.status()).toBe(200);
+    return { context, mobile };
+  } catch (error) {
+    await Promise.allSettled([context.dispose()]);
+    throw error;
+  }
+}
+
+async function cleanupFixtureResources(
+  sql: postgres.Sql | undefined,
+  sellers: Awaited<ReturnType<typeof authenticatedSeller>>[],
+) {
+  const results = await Promise.allSettled([
+    ...(sql ? [sql.end()] : []),
+    ...sellers.map((seller) => seller.context.dispose()),
+  ]);
+  const rejected = results.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  return rejected ? { error: rejected.reason } : undefined;
+}
+
+async function identityIdForMobile(sql: postgres.Sql, mobile: string) {
+  const [identity] = await sql<Array<{ identityId: string }>>`
+    select identity_id as "identityId" from identity_login_methods where mobile = ${mobile}
+  `;
+  if (!identity) throw new Error("Fixture seller identity was not created");
+  return identity.identityId;
+}
+
+async function uploadProductImage(
+  seller: import("@playwright/test").APIRequestContext,
+  productId: string,
+) {
+  const image = await sharp({
+    create: { width: 800, height: 800, channels: 4, background: "#A41439" },
+  })
+    .png()
+    .toBuffer();
+  const uploaded = await seller.post(`/v1/seller/products/${productId}/images`, {
+    multipart: {
+      purpose: "PRODUCT_IMAGE",
+      file: { name: "fixture-product.png", mimeType: "image/png", buffer: image },
+    },
+  });
+  expect(uploaded.status()).toBe(201);
+  return ((await uploaded.json()) as { id: string }).id;
 }

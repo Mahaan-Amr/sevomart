@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "سوو",
   description: "فروشگاه‌ها و کالاهای تازه در سوو",
   manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon.svg" },
 };
 
 export const viewport: Viewport = {

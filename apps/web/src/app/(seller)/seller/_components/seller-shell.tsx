@@ -6,18 +6,17 @@ import { usePathname } from "next/navigation";
 import styles from "./seller-shell.module.css";
 
 const destinations = [
-  { href: "/seller", label: "خانه", icon: "⌂" },
-  { href: "/seller/orders", label: "سفارش‌ها", icon: "□" },
+  { href: "/seller", label: "خانه" },
+  { href: "/seller/orders", label: "سفارش‌ها" },
   {
     href: "/seller/disputes",
     label: "پرونده‌های اختلاف",
-    icon: "!",
     desktopOnly: true,
   },
-  { href: "/seller/products", label: "کالاها", icon: "◇" },
-  { href: "/seller/content", label: "محتوا", icon: "▣" },
-  { href: "/seller/inventory", label: "موجودی", icon: "≡" },
-  { href: "/seller/store", label: "فروشگاه", icon: "○" },
+  { href: "/seller/products", label: "کالاها" },
+  { href: "/seller/content", label: "محتوا" },
+  { href: "/seller/inventory", label: "موجودی" },
+  { href: "/seller/store", label: "فروشگاه" },
 ] as const;
 
 export function SellerShell({ children }: { children: React.ReactNode }) {
@@ -72,7 +71,6 @@ function SellerNavigationLinks({
           }
           aria-current={active ? "page" : undefined}
         >
-          <span aria-hidden="true">{destination.icon}</span>
           <span>{destination.label}</span>
         </Link>
       );

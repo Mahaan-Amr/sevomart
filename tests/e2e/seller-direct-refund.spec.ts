@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 
 import {
   assertInteractiveTargets,
@@ -17,6 +17,7 @@ import { createSellerWorkspaceFixture } from "../helpers/seller-workspace-fixtur
 test("seller requests cancellation while refund stays pending trusted verification", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "direct-refund-empty");
   const index = visualProjectIndex(testInfo.project.name);
   const mobile = sellerRefundTestMobiles[index]!;
   const orderId = randomUUID();
@@ -102,6 +103,7 @@ test("seller requests cancellation while refund stays pending trusted verificati
 test("provider failure stays unsuccessful until a valid retry succeeds", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "direct-refund-recovery");
   const index = visualProjectIndex(testInfo.project.name);
   const mobile = sellerRefundRecoveryTestMobiles[index]!;
   const orderId = randomUUID();

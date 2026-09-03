@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
@@ -18,6 +18,7 @@ import { createSellerWorkspaceFixture } from "../helpers/seller-workspace-fixtur
 test("seller sees the nearest deadline and submits one store-scoped response", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "dispute-conflict");
   const index = visualProjectIndex(testInfo.project.name);
   await page.emulateMedia({ reducedMotion: "reduce" });
   const fixture = await createSellerWorkspaceFixture(page, {

@@ -140,6 +140,14 @@ it("keeps unexecuted tests in the report instead of silently dropping them", asy
   expect(report.errors).not.toHaveLength(0);
 });
 
+it("rejects an executed release test without a browser guard summary", async () => {
+  const { reporter } = fixture();
+  await expect(reporter.onEnd({ status: "passed" })).resolves.toEqual({
+    status: "failed",
+  });
+  expect(reporter.errors).toContainEqual({ message: "Missing browser guard summary" });
+});
+
 it("retains a digest-bound selected image and whitelists its summary fields", async () => {
   const { outputDir, test, reporter } = fixture();
   const screenshot = Buffer.from(
@@ -172,6 +180,18 @@ it("retains a digest-bound selected image and whitelists its summary fields", as
   };
   test.results[0]!.status = "passed";
   test.results[0]!.attachments.push(
+    {
+      name: "release-candidate-guard",
+      contentType: "application/json",
+      body: Buffer.from(
+        JSON.stringify({
+          consoleErrors: [],
+          pageErrors: [],
+          networkErrors: [],
+          externalRequests: [],
+        }),
+      ),
+    },
     {
       name: "login-1x-selected-screenshot",
       contentType: "image/png",

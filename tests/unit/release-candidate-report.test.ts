@@ -6,6 +6,13 @@ import {
   assertReleaseCandidateReport,
 } from "../../scripts/qa/release-candidate-report.mjs";
 
+const cleanBrowserActivity = {
+  consoleErrors: 0,
+  pageErrors: 0,
+  networkErrors: 0,
+  externalRequests: 0,
+};
+
 it("accepts one-pass candidate results and rejects skip or retry", () => {
   const passed = reportWith([{ status: "passed", retry: 0 }]);
   expect(assertReleaseCandidateReport(passed)).toBe(passed);
@@ -20,6 +27,12 @@ it("accepts one-pass candidate results and rejects skip or retry", () => {
       ]),
     ),
   ).toThrow(/skip, retry or failure/);
+});
+
+it("rejects a passing candidate result without a browser guard summary", () => {
+  const report = reportWith([{ status: "passed", retry: 0 }]);
+  delete report.suites[0]!.specs[0]!.tests[0]!.results[0]!.browserActivity;
+  expect(() => assertReleaseCandidateReport(report)).toThrow(/browser guard/);
 });
 
 it("rejects forbidden markers and missing browser projects", () => {
@@ -51,7 +64,19 @@ it("rejects forbidden markers and missing browser projects", () => {
   );
 });
 
-function reportWith(results: Array<{ status: string; retry: number }>) {
+function reportWith(results: Array<{
+  status: string;
+  retry: number;
+  browserActivity?: Record<string, number>;
+}>) {
+  for (const result of results) {
+    result.browserActivity ??= {
+      consoleErrors: 0,
+      pageErrors: 0,
+      networkErrors: 0,
+      externalRequests: 0,
+    };
+  }
   return {
     errors: [],
     suites: [
@@ -89,7 +114,7 @@ it("does not infer scenario or zoom evidence from a passing file in every projec
             tests: ["360x800", "390x844", "768x1024", "1440x900"].map((viewport) => ({
               projectName: `chromium-${viewport}`,
               expectedStatus: "passed",
-              results: [{ status: "passed", retry: 0 }],
+              results: [{ status: "passed", retry: 0, browserActivity: cleanBrowserActivity }],
             })),
           },
         ],
@@ -121,7 +146,7 @@ it("receipts only explicit successful scenario measurements and rejects a mislab
   ].map(({ width, height }) => ({
     projectName: `chromium-${width}x${height}`,
     expectedStatus: "passed",
-    results: [{ status: "passed", retry: 0 }],
+    results: [{ status: "passed", retry: 0, browserActivity: cleanBrowserActivity }],
     annotations: [1, 2].map((zoom) => ({
       type: "release-cell",
       description: JSON.stringify({

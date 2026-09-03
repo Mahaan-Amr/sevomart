@@ -1,6 +1,19 @@
 import { defineConfig, devices } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 import baseConfig from "./playwright.config";
+
+const manifest = JSON.parse(
+  readFileSync(new URL("./ops/qa/release-evidence-manifest.v1.json", import.meta.url), "utf8"),
+) as { journeys: Array<{ tests: { e2e: string[] } }> };
+
+const releaseTestFiles = new RegExp(
+  `(?:${[
+    ...new Set(manifest.journeys.flatMap((journey) => journey.tests.e2e)),
+  ]
+    .map((file) => file.split("/").at(-1)!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|")})$`,
+);
 
 const webkitSmoke =
   /(?:guest-cart-login|direct-payment-success|login-hydration)\.spec\.ts/;
@@ -40,6 +53,7 @@ export default defineConfig(baseConfig, {
   projects: [
     ...(baseConfig.projects ?? []).map((project) => ({
       ...project,
+      testMatch: releaseTestFiles,
       use: { ...project.use, channel: chromiumChannel },
     })),
     {

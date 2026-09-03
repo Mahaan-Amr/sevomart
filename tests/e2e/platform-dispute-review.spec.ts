@@ -14,12 +14,12 @@ const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
 
 test("a dispute agent requests timed access and records an audited result", async ({
-  browser,
+  newCandidateContext,
   context,
   page,
 }, testInfo) => {
   const agent = await establishPlatformAgentSession(context, ["DISPUTE_REVIEW"]);
-  const managerContext = await browser.newContext();
+  const managerContext = await newCandidateContext();
   await establishPlatformAgentSession(managerContext, ["ACCESS_ADMINISTRATION"]);
   const managerPage = await managerContext.newPage();
   const dispute = await seedDispute();

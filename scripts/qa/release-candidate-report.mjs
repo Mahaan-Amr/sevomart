@@ -15,6 +15,15 @@ export function assertReleaseCandidateReport(report) {
         `Release candidate contains skip, retry or failure: ${candidate.title}`,
       );
     }
+    const browserActivity = candidate.results[0].browserActivity;
+    if (
+      !browserActivity ||
+      ["consoleErrors", "pageErrors", "networkErrors", "externalRequests"].some(
+        (key) => !Number.isInteger(browserActivity[key]) || browserActivity[key] !== 0,
+      )
+    ) {
+      throw new Error(`Release candidate has no clean browser guard: ${candidate.title}`);
+    }
   }
   return report;
 }

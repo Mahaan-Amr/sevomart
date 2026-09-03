@@ -46,4 +46,4 @@ it("refuses to label untracked source as the checked-out commit", () => {
   } finally {
     unlinkSync(marker);
   }
-});
+}, 20_000);

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  test,
+} from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
@@ -18,6 +23,8 @@ import {
 test("seller publishes a two-axis product that a guest sees on the storefront", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "product-validation");
+  expectCandidateFailure(testInfo, "product-network-recovery");
   test.setTimeout(120_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = productTracerTestMobiles[projectIndex]!;

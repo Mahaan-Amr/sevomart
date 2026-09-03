@@ -1,5 +1,6 @@
 import {
   expect,
+  expectCandidateResponse,
   request as apiRequest,
   test,
   type Locator,
@@ -26,6 +27,7 @@ const apiBaseUrl = `http://127.0.0.1:${process.env.SEVO_E2E_API_PORT ?? "3109"}`
 test("seller answers one private thread without duplicate effects and gets a safe way back", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "conversation-recovery");
   const index = visualProjectIndex(testInfo.project.name);
   const sellerMobile = sellerConversationTestMobiles[index]!;
   const buyerMobile = buyerConversationTestMobiles[index]!;

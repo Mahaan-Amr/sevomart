@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  test,
+} from "../helpers/release-playwright";
 import { directSettlementDisclosure } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
 import sharp from "sharp";
@@ -15,6 +20,8 @@ import { assertMinimumContrast } from "../helpers/visual-assertions";
 test("eligible buyer retries once and publishes one verified purchase experience", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "purchase-media-validation");
+  expectCandidateFailure(testInfo, "purchase-submit-retry");
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });

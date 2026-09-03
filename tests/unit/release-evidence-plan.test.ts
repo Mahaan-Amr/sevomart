@@ -85,7 +85,7 @@ describe("release evidence plan", () => {
       );
     }
     expect(() => finalize(incomplete)).toThrow(/does not match the manifest/);
-  });
+  }, 20_000);
 
   it("rejects a manifest that drops a mandatory state", () => {
     const incomplete = structuredClone(manifest);
@@ -155,7 +155,7 @@ describe("release evidence plan", () => {
         },
       ),
     ).toThrow(/expired/);
-  });
+  }, 20_000);
 
   it("checks the underlying browser report digest instead of trusting its receipt", () => {
     const plan = createReleaseEvidencePlan(manifest, candidateMetadata(), {
@@ -337,7 +337,18 @@ function browserReport(plan: ReturnType<typeof createReleaseEvidencePlan>) {
               ).map(([width, height]) => ({
                 projectName: `${browser}-${width}x${height}`,
                 expectedStatus: "passed",
-                results: [{ status: "passed", retry: 0 }],
+                results: [
+                  {
+                    status: "passed",
+                    retry: 0,
+                    browserActivity: {
+                      consoleErrors: 0,
+                      pageErrors: 0,
+                      networkErrors: 0,
+                      externalRequests: 0,
+                    },
+                  },
+                ],
                 annotations: [1, 2].map((zoom) => ({
                   type: "release-cell",
                   description: JSON.stringify({

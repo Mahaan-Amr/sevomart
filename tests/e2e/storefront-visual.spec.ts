@@ -1,4 +1,9 @@
-import { expect, request as createRequest, test } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateFailure,
+  request as createRequest,
+  test,
+} from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
@@ -223,7 +228,8 @@ test("keyboard order, focus, and interactive targets stay usable", async ({ page
 
 test("the storefront shows stopped sales content without a purchase action", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateFailure(testInfo, "media-fallback");
   await page.route("**/api/sales-content*", (route) => {
     const storeId = new URL(route.request().url()).searchParams.get("storeIds");
     return route.fulfill({
