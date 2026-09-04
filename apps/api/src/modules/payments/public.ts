@@ -51,6 +51,10 @@ export interface DirectRefundRepository {
     command: DirectRefundCommandBase & { input: RequestDirectRefundInput },
   ): Promise<DirectRefund>;
   readForSeller(storeId: StoreId, orderId: OrderId): Promise<DirectRefund | undefined>;
+  readForBuyer(
+    identityId: IdentityId,
+    orderId: OrderId,
+  ): Promise<DirectRefund | undefined>;
   recordResult(
     command: Readonly<{
       orderId: OrderId;
@@ -75,6 +79,7 @@ export interface DirectRefundService {
     idempotencyKey: unknown,
   ): Promise<DirectRefund>;
   read(request: DirectRefundRequest, orderId: unknown): Promise<DirectRefund>;
+  readBuyer(request: DirectRefundRequest, orderId: unknown): Promise<DirectRefund>;
   applyProviderResult(
     provider: string,
     input: unknown,
@@ -216,6 +221,8 @@ export interface DirectPaymentRepository {
     attemptId: PaymentAttemptId,
   ): Promise<DirectPaymentAttempt | undefined>;
   recoverExpiredAttempts(now: Date, correlationId: string): Promise<number>;
+  countUnrecoveredExpiredHolds(now: Date): Promise<number>;
+  countOpenOverdueReconciliations(): Promise<number>;
   markDispatchUnknown(
     attemptId: PaymentAttemptId,
     correlationId: string,

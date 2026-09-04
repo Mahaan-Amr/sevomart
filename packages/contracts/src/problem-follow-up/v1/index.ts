@@ -257,6 +257,11 @@ export const violationCaseStatusContract = z.enum([
 ]);
 
 export const problemFollowUpV1Operations = {
+  listBuyerDisputes: {
+    operationId: "listBuyerDisputes",
+    method: "get",
+    path: "/v1/buyer/disputes",
+  },
   openDispute: {
     operationId: "openDispute",
     method: "post",

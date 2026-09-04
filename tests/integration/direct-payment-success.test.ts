@@ -3,10 +3,12 @@ import {
   orderConversationEligibilityInputContract,
   orderPurchaseExperienceEligibilityInputContract,
   orderTerminalStatuses,
+  directSettlementDisclosure,
 } from "@sevo/contracts/orders/v1";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PostgresInventoryAuthoring } from "../../apps/api/src/modules/inventory/composition";
+import { createApiApp } from "../../apps/api/src/create-app";
 import { PostgresCheckoutRepository } from "../../apps/api/src/modules/orders/composition";
 import { createOrderPaymentTransactionContext } from "../../apps/api/src/modules/orders/public";
 import { DirectPaymentApplicationService } from "../../apps/api/src/modules/payments/application/direct-payment.service";
@@ -27,6 +29,40 @@ const ids = {
   order: "60000000-0000-4000-8000-000000000006",
   reservation: "70000000-0000-4000-8000-000000000007",
   item: "a0000000-0000-4000-8000-000000000010",
+};
+
+const reviewSnapshot = {
+  checkoutRevision: ids.checkout,
+  expiresAt: "2026-08-24T20:10:00.000Z",
+  cart: { cartId: ids.cart, revision: 1 },
+  store: { storeId: ids.store, name: "خانه فنجان" },
+  items: [
+    {
+      productId: "90000000-0000-4000-8000-000000000009",
+      variantId: ids.variant,
+      name: "فنجان سرامیکی",
+      quantity: 1,
+      publicationVersion: 1,
+      unitPrice: { amount: 4_500_000, currency: "IRR" },
+      lineTotal: { amount: 4_500_000, currency: "IRR" },
+    },
+  ],
+  shippingMethod: {
+    id: "80000000-0000-4000-8000-000000000008",
+    revision: 1,
+    code: "PICKUP",
+    label: "تحویل حضوری",
+    fee: { amount: 0, currency: "IRR" },
+    estimatedDeliveryText: "هماهنگی با فروشگاه",
+    requiresDeliveryAddress: false,
+  },
+  returnPolicy: {
+    revision: 1,
+    text: "تا هفت روز امکان درخواست مرجوعی دارید.",
+  },
+  subtotal: { amount: 4_500_000, currency: "IRR" },
+  total: { amount: 4_500_000, currency: "IRR" },
+  settlement: { mode: "DIRECT", disclosure: directSettlementDisclosure },
 };
 
 describe("successful direct payment transaction seam", () => {
@@ -81,6 +117,7 @@ describe("successful direct payment transaction seam", () => {
     await sql`delete from platform_outbox_events where aggregate_id = ${ids.order} or aggregate_id in (select id from payment_attempts where order_id = ${ids.order})`;
     await sql`delete from payment_attempts where order_id = ${ids.order}`;
     await sql`delete from order_state_transitions where order_id = ${ids.order}`;
+    await sql`delete from order_fulfillment_status_projections where order_id = ${ids.order}`;
     await sql`delete from inventory_reservation_lines where reservation_id = ${ids.reservation}`;
     await sql`delete from inventory_reservations where id = ${ids.reservation}`;
     await sql`delete from order_items where order_id = ${ids.order}`;
@@ -93,7 +130,7 @@ describe("successful direct payment transaction seam", () => {
     await sql`insert into inventory_levels (variant_id, store_id, on_hand, revision) values (${ids.variant}, ${ids.store}, 2, 1)`;
     await sql`insert into order_carts (id, store_id, identity_id, status, revision, expires_at) values (${ids.cart}, ${ids.store}, ${ids.buyer}, 'CONVERTED', 1, now() + interval '1 day')`;
     await sql`insert into order_checkout_preparations (checkout_revision, identity_id, cart_id, cart_revision, shipping_method_id, shipping_revision, policy_revision, snapshot, expires_at) values (${ids.checkout}, ${ids.buyer}, ${ids.cart}, 1, '80000000-0000-4000-8000-000000000008', 1, 1, '{}', now() + interval '1 day')`;
-    await sql`insert into order_orders (id, identity_id, store_id, checkout_revision, reservation_id, status, total_amount, currency, reservation_expires_at, review_snapshot) values (${ids.order}, ${ids.buyer}, ${ids.store}, ${ids.checkout}, ${ids.reservation}, 'PENDING_PAYMENT', 4500000, 'IRR', now() + interval '15 minutes', ${sql.json({ store: { name: "خانه فنجان" }, items: [] })})`;
+    await sql`insert into order_orders (id, identity_id, store_id, checkout_revision, reservation_id, status, total_amount, currency, reservation_expires_at, review_snapshot) values (${ids.order}, ${ids.buyer}, ${ids.store}, ${ids.checkout}, ${ids.reservation}, 'PENDING_PAYMENT', 4500000, 'IRR', now() + interval '15 minutes', ${sql.json(reviewSnapshot)})`;
     await sql`insert into order_items (id, order_id, variant_id, product_id, name, quantity, unit_price_amount, publication_version) values (${ids.item}, ${ids.order}, ${ids.variant}, '90000000-0000-4000-8000-000000000009', 'فنجان سرامیکی', 1, 4500000, 1)`;
     await sql`insert into inventory_reservations (id, order_id, store_id, status, expires_at) values (${ids.reservation}, ${ids.order}, ${ids.store}, 'ACTIVE', now() + interval '15 minutes')`;
     await sql`insert into inventory_reservation_lines (reservation_id, variant_id, quantity) values (${ids.reservation}, ${ids.variant}, 1)`;
@@ -115,7 +152,55 @@ describe("successful direct payment transaction seam", () => {
     expect(await orders.checkConversationOrder(input)).toBe(true);
   });
 
-  it("confirms only the matching buyer item after payment succeeds", async () => {
+  it("reads buyer order snapshots without exposing another identity's order", async () => {
+    await expect(orders.listBuyerOrders(ids.buyer as never)).resolves.toMatchObject({
+      items: [
+        {
+          orderId: ids.order,
+          store: { storeId: ids.store, name: "خانه فنجان" },
+          status: "PENDING_PAYMENT",
+          itemCount: 1,
+        },
+      ],
+    });
+    await expect(
+      orders.readBuyerOrder(ids.buyer as never, ids.order as never),
+    ).resolves.toMatchObject({
+      orderId: ids.order,
+      settlement: { mode: "DIRECT" },
+      returnPolicy: reviewSnapshot.returnPolicy,
+      items: [
+        {
+          orderItemId: ids.item,
+          productId: reviewSnapshot.items[0].productId,
+          name: "فنجان سرامیکی",
+          quantity: 1,
+        },
+      ],
+    });
+    await expect(
+      orders.readBuyerOrder(
+        "ffffffff-ffff-4fff-8fff-ffffffffffff" as never,
+        ids.order as never,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("keeps buyer order HTTP reads authenticated and no-store", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    const server = app.getHttpAdapter().getInstance();
+    try {
+      for (const url of ["/v1/orders", `/v1/orders/${ids.order}`]) {
+        const response = await server.inject({ method: "GET", url });
+        expect(response.statusCode).toBe(401);
+        expect(response.headers["cache-control"]).toBe("no-store");
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("confirms only the matching buyer item after payment and delivery succeed", async () => {
     const input = orderPurchaseExperienceEligibilityInputContract.parse({
       buyerId: ids.buyer,
       orderItemId: ids.item,
@@ -128,6 +213,17 @@ describe("successful direct payment transaction seam", () => {
     await sql`
       update order_orders set status = 'PAID', paid_at = now()
       where id = ${ids.order}
+    `;
+    await expect(orders.readPurchaseExperienceEligibility(input)).resolves.toEqual({
+      eligible: false,
+      reason: "NOT_ELIGIBLE",
+    });
+
+    await sql`
+      insert into order_fulfillment_status_projections
+        (order_id, status, version, accepted_event_id, updated_at)
+      values (${ids.order}, 'DELIVERED', 4,
+        'b0000000-0000-4000-8000-000000000011', now())
     `;
     await expect(orders.readPurchaseExperienceEligibility(input)).resolves.toEqual({
       eligible: true,
@@ -379,8 +475,11 @@ describe("successful direct payment transaction seam", () => {
     await sql`update inventory_reservations set expires_at = now() - interval '1 second' where id = ${ids.reservation}`;
     expect(await orders.expirePendingOrders(new Date())).toBe(0);
     await sql`update payment_attempts set dispatch_lease_until = now() - interval '1 second' where id = ${attempt.attemptId}`;
+    await sql`update inventory_reservations set hold_lease_until = now() - interval '1 second' where id = ${ids.reservation}`;
 
+    expect(await payments.countUnrecoveredExpiredHolds(new Date())).toBe(1);
     expect(await payments.recoverExpiredAttempts(new Date(), correlationId)).toBe(1);
+    expect(await payments.countUnrecoveredExpiredHolds(new Date())).toBe(0);
     const reviewed = await payments.readAttemptForBuyer(
       ids.buyer as never,
       attempt.attemptId,

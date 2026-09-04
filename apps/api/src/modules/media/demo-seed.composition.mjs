@@ -46,15 +46,15 @@ export function createMediaDemoSeedAdapter(environment = process.env) {
         `;
         await sql`
           insert into media_assets
-            (id, owner_seller_id, owner_reference_id, purpose, original_object_key,
+            (id, owner_identity_id, owner_reference_id, purpose, original_object_key,
              original_mime_type, original_size, original_checksum, width, height,
              visibility, created_at)
-          values (${object.id}, ${object.ownerSellerId}, ${object.ownerReferenceId},
+          values (${object.id}, ${object.ownerIdentityId}, ${object.ownerReferenceId},
             'PRODUCT_IMAGE', ${object.objectKey}, ${object.mimeType},
             ${object.bytes.length}, ${object.checksum}, ${object.width}, ${object.height},
             'PUBLIC', ${baseline.atDaysAgo(20)})
           on conflict (id) do update set original_object_key = excluded.original_object_key,
-            owner_seller_id = excluded.owner_seller_id,
+            owner_identity_id = excluded.owner_identity_id,
             owner_reference_id = excluded.owner_reference_id,
             original_mime_type = excluded.original_mime_type,
             original_size = excluded.original_size,
@@ -141,7 +141,7 @@ async function materializeObjects(manifest, baseline) {
       return {
         key,
         id: baseline.ids.id(key),
-        ownerSellerId: baseline.ids.id(baseline.ownerKey(ownerStore)),
+        ownerIdentityId: baseline.ids.id(baseline.ownerKey(ownerStore)),
         ownerReferenceId: baseline.ids.id(resource.key),
         objectKey: `demo/${baseline.ids.id(`${resource.key}.media`)}/${checksum}/original`,
         variantKeys: {

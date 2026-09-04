@@ -2,9 +2,9 @@
 
 model MediaAsset {
   id                String         @id @db.Uuid
-  ownerSellerId     String         @map("owner_seller_id") @db.Uuid
+  ownerIdentityId   String         @map("owner_identity_id") @db.Uuid
   ownerReferenceId  String?        @map("owner_reference_id") @db.Uuid
-  purpose           String         @db.VarChar(24)
+  purpose           String         @db.VarChar(32)
   originalObjectKey String         @map("original_object_key") @db.VarChar(255)
   originalMimeType  String         @map("original_mime_type") @db.VarChar(32)
   originalSize      Int            @map("original_size")
@@ -15,7 +15,7 @@ model MediaAsset {
   createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   variants          MediaVariant[]
 
-  @@index([ownerSellerId, createdAt])
+  @@index([ownerIdentityId, createdAt])
   @@map("media_assets")
 }
 
@@ -32,4 +32,50 @@ model MediaVariant {
 
   @@unique([mediaId, name])
   @@map("media_variants")
+}
+
+model MediaPurchaseExperienceUploadContext {
+  id          String   @id @db.Uuid
+  identityId  String   @map("identity_id") @db.Uuid
+  orderItemId String   @map("order_item_id") @db.Uuid
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([identityId, orderItemId], map: "media_purchase_experience_context_identity_order_unique")
+  @@index([expiresAt], map: "media_purchase_experience_context_expiry_idx")
+  @@map("media_purchase_experience_upload_contexts")
+}
+
+model MediaPurchaseExperienceUploadIdempotency {
+  contextId      String   @map("context_id") @db.Uuid
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  mediaId        String   @map("media_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([contextId, idempotencyKey])
+  @@map("media_purchase_experience_upload_idempotency")
+}
+
+model MediaBuyerDisputeUploadContext {
+  id         String   @id @db.Uuid
+  identityId String   @map("identity_id") @db.Uuid
+  orderId    String   @map("order_id") @db.Uuid
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([identityId, orderId], map: "media_buyer_dispute_context_identity_order_unique")
+  @@index([expiresAt], map: "media_buyer_dispute_context_expiry_idx")
+  @@map("media_buyer_dispute_upload_contexts")
+}
+
+model MediaBuyerDisputeUploadIdempotency {
+  contextId      String   @map("context_id") @db.Uuid
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  mediaId        String   @map("media_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([contextId, idempotencyKey])
+  @@map("media_buyer_dispute_upload_idempotency")
 }

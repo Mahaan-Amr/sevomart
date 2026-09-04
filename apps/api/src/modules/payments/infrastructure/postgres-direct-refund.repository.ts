@@ -157,6 +157,24 @@ export class PostgresDirectRefundRepository implements DirectRefundRepository {
     return rows[0] ? mapRefund(rows[0]) : undefined;
   }
 
+  async readForBuyer(
+    identityId: Parameters<DirectRefundRepository["readForBuyer"]>[0],
+    orderId: Parameters<DirectRefundRepository["readForBuyer"]>[1],
+  ) {
+    if (!(await this.orders.readBuyerPaymentState(identityId, orderId))) {
+      return undefined;
+    }
+    const rows = await this.#sql<RefundRow[]>`
+      select refund.order_id as "orderId", refund.store_id as "storeId",
+        refund.payment_attempt_id as "paymentAttemptId", refund.amount::float8 as amount,
+        refund.provider, refund.requested_by as "requestedBy", refund.status,
+        refund.version, refund.updated_at as "updatedAt"
+      from payment_direct_refunds refund
+      where refund.order_id = ${orderId}
+    `;
+    return rows[0] ? mapRefund(rows[0]) : undefined;
+  }
+
   async recordResult(command: Parameters<DirectRefundRepository["recordResult"]>[0]) {
     return this.#sql.begin(async (sql) => {
       const replay = await claimIdempotency(

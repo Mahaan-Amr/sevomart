@@ -16,8 +16,9 @@ dependency، متغیر محیطی، پورت یا رفتار runtime تازه �
   نسخه همچنان `IMAGE | VIDEO` است و تصمیم مثبت تجربه خرید همچنان
   `fulfillmentStatus: DELIVERED` می‌خواهد؛ این wire shape درجا محدود نشده است.
 - `@sevo/contracts/content/v2` به‌صورت افزایشی کنار v1 منتشر می‌شود و رفتار اجرایی
-  موجود را صریح می‌کند: رسانه فروش فقط `IMAGE` است و eligibility تجربه خرید از
-  خرید `CONFIRMED` متعلق به Orders می‌آید، بدون ادعای وضعیت انجام سفارش.
+  موجود را صریح می‌کند: رسانه فروش فقط `IMAGE` است و eligibility تجربه خرید تنها
+  برای قلم سفارش پرداخت‌شده‌ای مثبت است که رخداد واقعی fulfillment آن به
+  `DELIVERED` رسیده و در projection متعلق به Orders ثبت شده باشد.
 - طبق [تصمیم صریح مالک محصول برای سازگاری #139](https://github.com/Mahaan-Amr/sevomart/issues/139#issuecomment-5467642696)،
   v1 در پنجره سازگاری فقط artifact منتشرشده و غیرقابل‌اجرا است. operation descriptor،
   schema، example و aliasهای عمومی آن برای مصرف‌کننده package باقی می‌مانند، اما route
@@ -25,7 +26,9 @@ dependency، متغیر محیطی، پورت یا رفتار runtime تازه �
   بنابراین نه موفقیت ویدیوی فاقد producer واقعی و نه eligibility تحویل فاقد evidence
   مالک تبلیغ نمی‌شود. حذف artifactهای v1 به migration و تصمیم جداگانه نیاز دارد.
 - مصرف‌کننده runtime، OpenAPI و آزمون‌های HTTP به pathهای v2 مهاجرت کرده‌اند. endpoint
-  v2 از تصمیم مالک Orders برای خرید `CONFIRMED` استفاده می‌کند.
+  v2 از تصمیم مالک Orders استفاده می‌کند؛ Orders وضعیت fulfillment را از جدول مالک
+  fulfillment نمی‌خواند و projection خودش را فقط با `FulfillmentAdvanced.v1`
+  idempotent و نسخه‌محور به‌روز می‌کند.
 - `OrderItemId` فقط در قرارداد مالک Orders تعریف می‌شود؛ Content همان schema و type
   را re-export می‌کند و شناسه موازی نمی‌سازد.
 - محتوای فروش حداقل یک و حداکثر ده `productId` یکتا می‌پذیرد.
@@ -65,9 +68,10 @@ pathهای v2 با operationId، نشست هویت،
 [[ساخت] پیاده‌سازی producer محتوای فروش و تجربه خرید](https://github.com/Mahaan-Amr/sevomart/issues/139)
 اضافه شده‌اند. نشست هویت و `Idempotency-Key` الزامی‌اند و write، audit، پاسخ replay
 و outbox در یک transaction ثبت می‌شوند. یکتایی تجربه خرید با `orderItemId` در
-persistence enforce می‌شود. eligibility خرید تأییدشده از port متعلق به سفارش
+persistence enforce می‌شود. eligibility خرید تحویل‌شده از port متعلق به سفارش
 `OrderPurchaseExperienceEligibilityRead` می‌آید. adapter production فقط قلم همان
-خریدار در سفارش `PAID` را `CONFIRMED` می‌داند و وضعیت دیگر را تفسیر نمی‌کند.
+خریدار در سفارش `PAID` را که projection fulfillment آن `DELIVERED` است eligible
+می‌داند؛ نبود projection، وضعیت‌های پیش از تحویل و رخداد stale نتیجه منفی دارند.
 
 تصمیم عمومی‌بودن media منتشرشده content متعلق به content است. read هم‌زمان
 `ContentPublishedMediaRead` فقط media محتوای فروش فعال یا تجربه خرید با moderation

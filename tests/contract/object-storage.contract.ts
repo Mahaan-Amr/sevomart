@@ -27,7 +27,7 @@ export function runObjectStorageContract(
             height: 1,
           },
         ],
-        ownerSellerId: "seller-test",
+        ownerIdentityId: "seller-test",
         visibility: "PRIVATE" as const,
       };
 
@@ -63,7 +63,7 @@ export function runObjectStorageContract(
             height: 1,
           },
         ],
-        ownerSellerId: "seller-test",
+        ownerIdentityId: "seller-test",
         visibility: "PRIVATE",
       });
 
@@ -92,14 +92,14 @@ export function runObjectStorageContract(
             height: 1,
           },
         ],
-        ownerSellerId: "seller-test",
+        ownerIdentityId: "seller-test",
         visibility: "PRIVATE",
       });
 
       await storage.makePublic("media/publication", "seller-test");
 
       expect(await storage.get("media/publication")).toMatchObject({
-        ownerSellerId: "seller-test",
+        ownerIdentityId: "seller-test",
         visibility: "PUBLIC",
       });
     });
@@ -124,7 +124,7 @@ export function runObjectStorageContract(
             height: 1,
           },
         ],
-        ownerSellerId: "seller-test",
+        ownerIdentityId: "seller-test",
         visibility: "PRIVATE",
       });
 
@@ -156,7 +156,7 @@ export function runObjectStorageContract(
             height: 1,
           },
         ],
-        ownerSellerId: "seller-test",
+        ownerIdentityId: "seller-test",
         visibility: "PRIVATE",
       });
       await storage.makePublic("media/unpublished", "seller-test");
@@ -182,7 +182,7 @@ export function runConversationAttachmentStorageContract(
   describe(`${name} private attachment contract`, () => {
     const attachment = (): StoredMedia => ({
       key: randomUUID(),
-      ownerSellerId: randomUUID(),
+      ownerIdentityId: randomUUID(),
       ownerReferenceId: randomUUID(),
       purpose: "CONVERSATION_ATTACHMENT",
       contentType: "image/png",
@@ -217,13 +217,13 @@ export function runConversationAttachmentStorageContract(
       await storage.put(media);
       const reader = new MediaAttachmentReader(storage);
       const input = conversationAttachmentInputContract.parse({
-        identityId: media.ownerSellerId,
+        identityId: media.ownerIdentityId,
         conversationId: media.ownerReferenceId,
         mediaId: media.key,
       });
       expect(await reader.checkConversationAttachment(input)).toBe("READY");
       await expect(
-        storage.makePublic(media.key, media.ownerSellerId),
+        storage.makePublic(media.key, media.ownerIdentityId),
       ).rejects.toThrow();
       expect((await storage.inspect(media.key))?.visibility).toBe("PRIVATE");
       for (const field of ["identityId", "conversationId", "mediaId"] as const)
@@ -243,7 +243,7 @@ export function runConversationAttachmentStorageContract(
       await storage.put(media);
       const reader = new MediaAttachmentReader(storage);
       const input = conversationAttachmentInputContract.parse({
-        identityId: media.ownerSellerId,
+        identityId: media.ownerIdentityId,
         conversationId: media.ownerReferenceId,
         mediaId: media.key,
       });

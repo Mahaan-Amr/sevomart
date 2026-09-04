@@ -14,7 +14,10 @@ export function proxyOrdersRequest(request: Request, segments: readonly string[]
   return proxyJsonApiRequest(request, segments, {
     basePath: "/v1/orders",
     isAllowed: (parts) =>
-      parts.length === 0 || (parts.length === 2 && parts[1] === "payment-attempts"),
+      parts.length === 0 ||
+      parts.length === 1 ||
+      (parts.length === 2 &&
+        ["payment-attempts", "fulfillment", "direct-refund"].includes(parts[1] ?? "")),
     responseHeaders: ["content-type", "retry-after", "x-correlation-id"],
     noStore: true,
   });

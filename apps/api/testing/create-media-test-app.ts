@@ -11,7 +11,9 @@ import { MediaModule } from "../src/modules/media/composition";
 import { PostgresMinioMediaStorage } from "../src/modules/media/infrastructure/postgres-minio-media-storage";
 import type {
   ConversationMediaAccess,
+  BuyerDisputeMediaAccess,
   DisputeMediaAccess,
+  PurchaseExperienceMediaAccess,
 } from "../src/modules/media/public";
 
 class MediaTestModule {}
@@ -21,6 +23,8 @@ export async function createMediaTestApp(
   environment: RuntimeEnvironment,
   access: ConversationMediaAccess,
   disputeAccess: DisputeMediaAccess = async () => false,
+  purchaseExperienceAccess: PurchaseExperienceMediaAccess = async () => false,
+  buyerDisputeAccess: BuyerDisputeMediaAccess = async () => false,
 ) {
   const storage = new PostgresMinioMediaStorage(environment);
   const adapter = new FastifyAdapter({ logger: false });
@@ -41,6 +45,8 @@ export async function createMediaTestApp(
           async () => false,
           access,
           disputeAccess,
+          purchaseExperienceAccess,
+          buyerDisputeAccess,
         ),
       ],
     },

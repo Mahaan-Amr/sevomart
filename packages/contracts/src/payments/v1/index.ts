@@ -11,6 +11,11 @@ import {
 } from "../../platform/v1/index";
 
 export const paymentsV1Operations = {
+  readBuyerDirectRefund: {
+    operationId: "readBuyerDirectRefund",
+    method: "get",
+    path: "/v1/orders/{orderId}/direct-refund",
+  },
   createDirectPaymentAttempt: {
     operationId: "createDirectPaymentAttempt",
     method: "post",

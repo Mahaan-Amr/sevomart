@@ -28,8 +28,10 @@ import {
   PostgresInventoryAuthoring,
 } from "../modules/inventory/composition";
 import type {
+  BuyerDisputeMediaAccess,
   ConversationMediaAccess,
   DisputeMediaAccess,
+  PurchaseExperienceMediaAccess,
 } from "../modules/media/public";
 import { MediaModule } from "../modules/media/composition";
 import { NotificationsModule } from "../modules/notifications/composition";
@@ -91,6 +93,8 @@ function createApiCompositionContext(
 
   let conversationMediaAccess: ConversationMediaAccess = async () => false;
   let disputeMediaAccess: DisputeMediaAccess = async () => false;
+  let purchaseExperienceMediaAccess: PurchaseExperienceMediaAccess = async () => false;
+  let buyerDisputeMediaAccess: BuyerDisputeMediaAccess = async () => false;
   return {
     authorizeConversationMedia: (input: Parameters<ConversationMediaAccess>[0]) =>
       conversationMediaAccess(input),
@@ -101,6 +105,17 @@ function createApiCompositionContext(
       disputeMediaAccess(input),
     setDisputeMediaAccess: (access: DisputeMediaAccess) => {
       disputeMediaAccess = access;
+    },
+    authorizePurchaseExperienceMedia: (
+      input: Parameters<PurchaseExperienceMediaAccess>[0],
+    ) => purchaseExperienceMediaAccess(input),
+    setPurchaseExperienceMediaAccess: (access: PurchaseExperienceMediaAccess) => {
+      purchaseExperienceMediaAccess = access;
+    },
+    authorizeBuyerDisputeMedia: (input: Parameters<BuyerDisputeMediaAccess>[0]) =>
+      buyerDisputeMediaAccess(input),
+    setBuyerDisputeMediaAccess: (access: BuyerDisputeMediaAccess) => {
+      buyerDisputeMediaAccess = access;
     },
     checkoutRepository,
     contentRepository,
@@ -155,6 +170,8 @@ export const canonicalApiModuleRegistry: readonly {
       contentRepository,
       authorizeConversationMedia,
       authorizeDisputeMedia,
+      authorizePurchaseExperienceMedia,
+      authorizeBuyerDisputeMedia,
     }) =>
       MediaModule.register(
         environment,
@@ -168,6 +185,8 @@ export const canonicalApiModuleRegistry: readonly {
         },
         authorizeConversationMedia,
         authorizeDisputeMedia,
+        authorizePurchaseExperienceMedia,
+        authorizeBuyerDisputeMedia,
       ),
   },
   {
@@ -287,6 +306,7 @@ export const canonicalApiModuleRegistry: readonly {
       identityOptions,
       platformAgentSessions,
       setDisputeMediaAccess,
+      setBuyerDisputeMediaAccess,
       storeRepository,
     }) =>
       ProblemFollowUpModule.register(environment, {
@@ -300,6 +320,7 @@ export const canonicalApiModuleRegistry: readonly {
           (await storeRepository.findBySellerId(identityId))?.id,
         createAccessTransactionContext: createOpaquePlatformAccessTransactionContext,
         onMediaAccessReady: setDisputeMediaAccess,
+        onBuyerDisputeMediaAccessReady: setBuyerDisputeMediaAccess,
       }),
   },
   {
@@ -310,11 +331,13 @@ export const canonicalApiModuleRegistry: readonly {
       environment,
       productRepository,
       checkoutRepository,
+      setPurchaseExperienceMediaAccess,
     }) =>
       ContentModule.register(environment, {
         products: productRepository,
         purchases: createOrderPurchaseEligibilityRead(checkoutRepository),
         repository: contentRepository,
+        onMediaAccessReady: setPurchaseExperienceMediaAccess,
       }),
   },
   {

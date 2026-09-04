@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 
 import { BuyerShell } from "../buyer-shell";
+import { FeedWorkspace } from "./feed-workspace";
 
 export default function BrowseLayout({ children }: { children: ReactNode }) {
   return (
@@ -11,7 +12,9 @@ export default function BrowseLayout({ children }: { children: ReactNode }) {
         </main>
       }
     >
-      <BuyerShell>{children}</BuyerShell>
+      <FeedWorkspace>
+        <BuyerShell>{children}</BuyerShell>
+      </FeedWorkspace>
     </Suspense>
   );
 }

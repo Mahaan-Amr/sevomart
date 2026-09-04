@@ -25,12 +25,32 @@ describe("OpenAPI executable content contract", () => {
     for (const operation of Object.values(contentV2Operations)) {
       const published = document.paths[operation.path]?.[operation.method];
       expect(published?.operationId).toBe(operation.operationId);
-      expect(published?.security).toEqual([{ identitySession: [] }]);
-      expect(published?.parameters).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ name: "Idempotency-Key", required: true }),
-        ]),
-      );
+      if (
+        operation.operationId === "readProductPurchaseExperiencesV2" ||
+        operation.operationId === "readPublicSalesContentV2"
+      ) {
+        expect(published?.security).toEqual([]);
+      } else {
+        expect(published?.security).toEqual([{ identitySession: [] }]);
+      }
+      if (operation.operationId === "readPublicSalesContentV2") {
+        expect(published?.parameters).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "storeIds", required: true }),
+          ]),
+        );
+        expect(published?.parameters).not.toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Idempotency-Key" }),
+          ]),
+        );
+      } else if (operation.method === "post") {
+        expect(published?.parameters).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Idempotency-Key", required: true }),
+          ]),
+        );
+      }
     }
     expect(document.components.schemas).toEqual(
       expect.objectContaining({
@@ -43,6 +63,11 @@ describe("OpenAPI executable content contract", () => {
         PublishSalesContentInputV2: expect.any(Object),
         PurchaseExperienceEligibilityDecisionV2: expect.any(Object),
         PublishPurchaseExperienceInputV2: expect.any(Object),
+        ProductPurchaseExperiences: expect.any(Object),
+        CreatePurchaseExperienceMediaContextInput: expect.any(Object),
+        PurchaseExperienceMediaContext: expect.any(Object),
+        PublicSalesContentFeedV2: expect.any(Object),
+        PublicSalesContentStoreIdsV2: expect.any(Object),
       }),
     );
     expect(document.components.schemas.PublishSalesContentInput).toBeUndefined();

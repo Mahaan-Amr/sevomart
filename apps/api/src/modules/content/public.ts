@@ -1,13 +1,16 @@
 import type {
-  ContentError,
   OrderItemId,
   PurchaseExperience,
   SalesContent,
 } from "@sevo/contracts/content/v1";
 import type {
+  ProductPurchaseExperiences,
+  ContentErrorV2,
+  PublicSalesContentFeedV2,
   PublishPurchaseExperienceInputV2,
   PublishSalesContentInputV2,
   PurchaseExperienceEligibilityDecisionV2,
+  PurchaseExperienceMediaContext,
 } from "@sevo/contracts/content/v2";
 import type { MediaId } from "@sevo/contracts/media/v1";
 import type { IdentityId, ProductId, StoreId } from "@sevo/contracts/platform/v1";
@@ -20,7 +23,7 @@ export type ContentRequest = Readonly<{
 }>;
 
 export class ContentFault extends Error {
-  constructor(readonly code: ContentError["code"] | "UNAUTHENTICATED") {
+  constructor(readonly code: ContentErrorV2["code"] | "UNAUTHENTICATED") {
     super(code);
   }
 }
@@ -42,6 +45,15 @@ export interface ContentProductRead {
 }
 export interface ContentMediaRead {
   readOwnedKind(mediaId: MediaId, identityId: IdentityId): Promise<"IMAGE" | undefined>;
+  issuePurchaseExperienceUploadContext(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+  }): Promise<PurchaseExperienceMediaContext>;
+  arePurchaseExperienceImagesReady(input: {
+    identityId: IdentityId;
+    orderItemId: OrderItemId;
+    mediaIds: readonly MediaId[];
+  }): Promise<boolean>;
 }
 export interface PurchaseEligibilityRead {
   readEligibility(input: {
@@ -80,6 +92,13 @@ export interface ContentRepository {
   publishPurchaseExperience(
     command: PublishPurchaseExperienceCommand,
   ): Promise<PurchaseExperience>;
+  hasPurchaseExperience(orderItemId: OrderItemId): Promise<boolean>;
+  readProductPurchaseExperiences(
+    productId: ProductId,
+  ): Promise<ProductPurchaseExperiences>;
+  readPublicSalesContent(
+    storeIds: readonly StoreId[],
+  ): Promise<PublicSalesContentFeedV2>;
 }
 
 export interface ContentPublishedMediaRead {

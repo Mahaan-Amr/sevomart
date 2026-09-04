@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "../helpers/release-playwright";
 import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import postgres from "postgres";
 
@@ -174,7 +174,9 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     await expect(discoveryList).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 10_000 });
   await expect(
-    page.locator(`a[href="/s/${slug}/products/${feedProducts[0]!.productId}"]`),
+    page.locator(`a[href="/s/${slug}/products/${feedProducts[0]!.productId}"]`, {
+      hasText: "فنجان دنبال‌شده 1",
+    }),
   ).toBeVisible();
   await page.goto(`/s/${slug}?source=discovery#store-actions`);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");

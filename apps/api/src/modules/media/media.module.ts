@@ -4,6 +4,8 @@ import type { RuntimeEnvironment } from "@sevo/config";
 import { FakeObjectStorage } from "./testing/fake-object-storage";
 import { PostgresMinioMediaStorage } from "./infrastructure/postgres-minio-media-storage";
 import {
+  BUYER_DISPUTE_MEDIA,
+  type BuyerDisputeMediaAccess,
   CONVERSATION_MEDIA_ACCESS,
   CONVERSATION_ATTACHMENT_READER,
   DISPUTE_EVIDENCE_READER,
@@ -11,11 +13,16 @@ import {
   type ConversationMediaAccess,
   type DisputeMediaAccess,
   MEDIA_STORAGE,
+  PURCHASE_EXPERIENCE_MEDIA,
+  PURCHASE_EXPERIENCE_MEDIA_ACCESS,
   PUBLISHED_MEDIA_ACCESS,
   SELLER_UPLOAD_RATE_LIMITER,
   type MediaStorage,
   type PublishedMediaAccess,
+  type PurchaseExperienceMediaAccess,
 } from "./public";
+import { BuyerDisputeMediaService } from "./buyer-dispute-media";
+import { PurchaseExperienceMediaService } from "./purchase-experience-media";
 import { MediaAttachmentReader } from "./media-attachment-reader";
 import { MediaDisputeEvidenceReader } from "./media-dispute-evidence-reader";
 import { MediaController } from "./media.controller";
@@ -29,6 +36,8 @@ export class MediaModule {
     publishedMediaAccess: PublishedMediaAccess = async () => false,
     conversationMediaAccess: ConversationMediaAccess = async () => false,
     disputeMediaAccess: DisputeMediaAccess = async () => false,
+    purchaseExperienceMediaAccess: PurchaseExperienceMediaAccess = async () => false,
+    buyerDisputeMediaAccess: BuyerDisputeMediaAccess = async () => false,
   ): DynamicModule {
     const configuredStorage =
       storage ??
@@ -43,6 +52,10 @@ export class MediaModule {
         { provide: CONVERSATION_MEDIA_ACCESS, useValue: conversationMediaAccess },
         { provide: DISPUTE_MEDIA_ACCESS, useValue: disputeMediaAccess },
         {
+          provide: PURCHASE_EXPERIENCE_MEDIA_ACCESS,
+          useValue: purchaseExperienceMediaAccess,
+        },
+        {
           provide: CONVERSATION_ATTACHMENT_READER,
           useValue: new MediaAttachmentReader(configuredStorage),
         },
@@ -51,13 +64,30 @@ export class MediaModule {
           useValue: new MediaDisputeEvidenceReader(configuredStorage),
         },
         { provide: MEDIA_STORAGE, useValue: configuredStorage },
+        {
+          provide: BUYER_DISPUTE_MEDIA,
+          useValue: new BuyerDisputeMediaService(
+            configuredStorage,
+            buyerDisputeMediaAccess,
+          ),
+        },
+        {
+          provide: PURCHASE_EXPERIENCE_MEDIA,
+          useValue: new PurchaseExperienceMediaService(configuredStorage),
+        },
         { provide: PUBLISHED_MEDIA_ACCESS, useValue: publishedMediaAccess },
         {
           provide: SELLER_UPLOAD_RATE_LIMITER,
           useValue: new SellerUploadRateLimiter(),
         },
       ],
-      exports: [MEDIA_STORAGE, CONVERSATION_ATTACHMENT_READER, DISPUTE_EVIDENCE_READER],
+      exports: [
+        MEDIA_STORAGE,
+        BUYER_DISPUTE_MEDIA,
+        PURCHASE_EXPERIENCE_MEDIA,
+        CONVERSATION_ATTACHMENT_READER,
+        DISPUTE_EVIDENCE_READER,
+      ],
     };
   }
 }

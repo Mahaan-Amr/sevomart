@@ -7,6 +7,7 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Param,
   Post,
   Req,
   Res,
@@ -16,6 +17,7 @@ import {
   createOrderInputContract,
   prepareCheckoutInputContract,
 } from "@sevo/contracts/orders/v1";
+import { orderIdContract } from "@sevo/contracts/platform/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { requireIdentity } from "../../http/identity-session";
@@ -45,6 +47,39 @@ export class CheckoutController {
     @Inject(IDENTITY_SESSION_READER)
     private readonly sessions: IdentitySessionReader,
   ) {}
+
+  @Get("orders")
+  async listBuyerOrders(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    const identityId = await requireIdentity(request, this.sessions);
+    return this.checkout.listBuyerOrders(identityId);
+  }
+
+  @Get("orders/:orderId")
+  async readBuyerOrder(
+    @Param("orderId") orderId: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header("cache-control", "no-store");
+    const identityId = await requireIdentity(request, this.sessions);
+    const parsedOrderId = orderIdContract.safeParse(orderId);
+    const order = parsedOrderId.success
+      ? await this.checkout.readBuyerOrder(identityId, parsedOrderId.data)
+      : undefined;
+    if (order) return order;
+    throw new HttpException(
+      {
+        code: "ORDER_NOT_FOUND",
+        message: "این سفارش پیدا نشد یا به هویت سوو شما تعلق ندارد.",
+        correlationId: request.id,
+      },
+      HttpStatus.NOT_FOUND,
+    );
+  }
 
   @Get("checkout/options")
   async options(

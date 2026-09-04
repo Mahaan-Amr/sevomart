@@ -11,6 +11,15 @@ export class PaymentRecoveryRunner {
   async runOnce(now = new Date()) {
     const recovered = await this.repository.recoverExpiredAttempts(now, randomUUID());
     const reconciliationClaimed = await this.service.reconcileNext(now, randomUUID());
-    return { recovered, reconciliationClaimed };
+    const unrecoveredExpiredHolds =
+      await this.repository.countUnrecoveredExpiredHolds(now);
+    const openOverdueReconciliations =
+      await this.repository.countOpenOverdueReconciliations();
+    return {
+      recovered,
+      reconciliationClaimed,
+      unrecoveredExpiredHolds,
+      openOverdueReconciliations,
+    };
   }
 }

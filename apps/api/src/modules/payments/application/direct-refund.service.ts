@@ -57,6 +57,18 @@ export class DirectRefundApplicationService implements DirectRefundService {
     return refund;
   }
 
+  async readBuyer(request: DirectRefundRequest, orderIdInput: unknown) {
+    if (!request.sessionToken) throw new DirectRefundFault("UNAUTHENTICATED");
+    const session = await this.sessions.readActiveIdentitySession(request.sessionToken);
+    if (!session) throw new DirectRefundFault("UNAUTHENTICATED");
+    const identityId = identityIdContract.parse(session.identityId);
+    const orderId = orderIdContract.safeParse(orderIdInput);
+    if (!orderId.success) throw new DirectRefundFault("REFUND_NOT_FOUND");
+    const refund = await this.repository.readForBuyer(identityId, orderId.data);
+    if (!refund) throw new DirectRefundFault("REFUND_NOT_FOUND");
+    return refund;
+  }
+
   async applyProviderResult(
     provider: string,
     input: unknown,

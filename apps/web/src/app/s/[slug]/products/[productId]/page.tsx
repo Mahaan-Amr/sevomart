@@ -1,3 +1,4 @@
+import type { ProductPurchaseExperiences } from "@sevo/contracts/content/v2";
 import type { PublicProduct, PublicSimpleProduct } from "@sevo/contracts/product/v1";
 import { notFound } from "next/navigation";
 
@@ -107,10 +108,75 @@ export default async function PublicProductPage({
           <p className={styles.payment}>
             روش پرداخت پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
+          <PurchaseExperiences
+            feed={result.experiences}
+            retryHref={`/s/${slug}/products/${productId}`}
+          />
         </section>
         <footer>ساخته‌شده با سوو</footer>
       </article>
     </main>
+  );
+}
+
+function PurchaseExperiences({
+  feed,
+  retryHref,
+}: {
+  feed: ProductPurchaseExperiences | undefined;
+  retryHref: string;
+}) {
+  if (!feed) {
+    return (
+      <section className={styles.experiences} aria-labelledby="experiences-title">
+        <h2 id="experiences-title">تجربه‌های خرید</h2>
+        <p role="status">تجربه‌ها فعلاً دریافت نشدند.</p>
+        <a href={retryHref}>تلاش دوباره</a>
+      </section>
+    );
+  }
+  const { summary, experiences } = feed;
+  return (
+    <section className={styles.experiences} aria-labelledby="experiences-title">
+      <div className={styles.experienceHeading}>
+        <h2 id="experiences-title">تجربه‌های خرید</h2>
+        <p>
+          {summary.verifiedPurchaseCount.toLocaleString("fa-IR")} خرید تأییدشده
+          {summary.averageRating === null
+            ? "؛ برای نمایش میانگین هنوز نمونه کافی نیست."
+            : ` · میانگین ${summary.averageRating.toLocaleString("fa-IR")} از ۵`}
+        </p>
+      </div>
+      {experiences.length === 0 ? (
+        <p>هنوز تجربه‌ای برای این کالا منتشر نشده است.</p>
+      ) : (
+        <ul className={styles.experienceList}>
+          {experiences.map((experience) => (
+            <li key={experience.experienceId}>
+              <div className={styles.experienceMeta}>
+                <strong>امتیاز {experience.rating.toLocaleString("fa-IR")} از ۵</strong>
+                <span>خرید تأییدشده</span>
+              </div>
+              {experience.text ? <p>{experience.text}</p> : null}
+              {experience.mediaIds.length > 0 ? (
+                <div
+                  className={styles.experienceMedia}
+                  aria-label="تصویرهای تجربه خرید"
+                >
+                  {experience.mediaIds.map((mediaId, index) => (
+                    <img
+                      key={mediaId}
+                      src={`/api/store/media/${mediaId}`}
+                      alt={`تصویر تجربه خرید ${(index + 1).toLocaleString("fa-IR")}`}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

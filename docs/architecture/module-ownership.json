@@ -98,6 +98,10 @@
     "problem_follow_up_idempotency_records": "problem-follow-up",
     "media_assets": "media",
     "media_variants": "media",
+    "media_purchase_experience_upload_contexts": "media",
+    "media_purchase_experience_upload_idempotency": "media",
+    "media_buyer_dispute_upload_contexts": "media",
+    "media_buyer_dispute_upload_idempotency": "media",
     "platform_outbox_events": "platform",
     "platform_outbox_consumptions": "platform",
     "platform_data_environment": "platform",
@@ -118,7 +122,12 @@
     "content_product_states": "content",
     "content_purchase_experiences": "content",
     "content_idempotency_records": "content",
-    "content_audits": "content"
+    "content_audits": "content",
+    "content_public_sales_contents": "content",
+    "content_public_sales_content_products": "content",
+    "content_public_sales_content_status": "content",
+    "content_public_product_states": "content",
+    "content_public_store_states": "content"
   },
   "contracts": {
     "@sevo/contracts/platform/v1": "platform",

@@ -1,11 +1,14 @@
 import {
   Controller,
+  Get,
   Headers,
   HttpCode,
   HttpException,
   HttpStatus,
   Inject,
+  Param,
   Post,
+  Query,
   Req,
 } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
@@ -41,6 +44,52 @@ export class ContentController {
     return this.respond(request, () =>
       this.content.publishPurchaseExperience(this.context(request), request.body, key),
     );
+  }
+
+  @Get("v2/purchase-experiences/eligibility/:orderItemId")
+  readPurchaseExperienceEligibilityV2(
+    @Req() request: FastifyRequest,
+    @Param("orderItemId") orderItemId: string,
+  ) {
+    return this.respond(request, () =>
+      this.content.readPurchaseExperienceEligibility(
+        this.context(request),
+        orderItemId,
+      ),
+    );
+  }
+
+  @Post("v2/purchase-experiences/media-contexts")
+  @HttpCode(HttpStatus.CREATED)
+  createPurchaseExperienceMediaContextV2(
+    @Req() request: FastifyRequest,
+    @Headers("idempotency-key") key: string | undefined,
+  ) {
+    return this.respond(request, () =>
+      this.content.createPurchaseExperienceMediaContext(
+        this.context(request),
+        request.body,
+        key,
+      ),
+    );
+  }
+
+  @Get("v2/products/:productId/purchase-experiences")
+  readProductPurchaseExperiencesV2(
+    @Req() request: FastifyRequest,
+    @Param("productId") productId: string,
+  ) {
+    return this.respond(request, () =>
+      this.content.readProductPurchaseExperiences(productId),
+    );
+  }
+
+  @Get("v2/sales-content")
+  readPublicSalesContentV2(
+    @Req() request: FastifyRequest,
+    @Query("storeIds") storeIds: string | undefined,
+  ) {
+    return this.respond(request, () => this.content.readPublicSalesContent(storeIds));
   }
 
   private context(request: FastifyRequest) {
@@ -85,6 +134,7 @@ function contentHttpError(correlationId: string, code: string, status: number) {
   const messages: Record<string, string> = {
     NO_ACTIVE_PRODUCT: "حداقل یک کالای فعال از همین فروشگاه انتخاب کنید.",
     FORBIDDEN: "اجازه انتشار در این زمینه را ندارید.",
+    INVALID_QUERY: "شناسه فروشگاه‌ها را درست وارد کنید و دوباره تلاش کنید.",
     NOT_ELIGIBLE: "این خرید هنوز شرایط ثبت تجربه را ندارد.",
     ALREADY_SUBMITTED: "برای این خرید قبلاً تجربه ثبت شده است.",
     IDEMPOTENCY_CONFLICT: "این شناسه درخواست قبلاً با اطلاعات دیگری استفاده شده است.",

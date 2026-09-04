@@ -62,6 +62,17 @@ const disputePathParameter = {
 
 const operations = [
   {
+    ...problemFollowUpV1ReadOperations.listBuyerDisputes,
+    tag: "problem-follow-up",
+    auth: "identity-session",
+    queryParameters: paginationQuery,
+    responses: [
+      { status: 200, schema: "BuyerDisputePage" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...problemFollowUpV2Operations.openDispute,
     tag: "problem-follow-up",
     auth: "identity-session",

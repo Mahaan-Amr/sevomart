@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/release-playwright";
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 
 import {

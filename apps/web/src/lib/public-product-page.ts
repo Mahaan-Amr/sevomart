@@ -1,3 +1,4 @@
+import { productPurchaseExperiencesContract } from "@sevo/contracts/content/v2";
 import {
   publicProductContract,
   publicSimpleProductContract,
@@ -11,7 +12,7 @@ export async function readPublicProductPage(
 ) {
   try {
     const encodedSlug = encodeURIComponent(slug);
-    const [productResponse, storeResponse] = await Promise.all([
+    const [productResponse, storeResponse, experiences] = await Promise.all([
       fetch(
         `${apiBaseUrl}/v1/stores/${encodedSlug}/products/${encodeURIComponent(productId)}`,
         {
@@ -23,6 +24,21 @@ export async function readPublicProductPage(
         cache: "no-store",
         headers: { "x-correlation-id": crypto.randomUUID() },
       }),
+      fetch(
+        `${apiBaseUrl}/v2/products/${encodeURIComponent(productId)}/purchase-experiences`,
+        {
+          cache: "no-store",
+          headers: { "x-correlation-id": crypto.randomUUID() },
+        },
+      )
+        .then(async (response) => {
+          if (!response.ok) return undefined;
+          const parsed = productPurchaseExperiencesContract.safeParse(
+            await response.json(),
+          );
+          return parsed.success ? parsed.data : undefined;
+        })
+        .catch(() => undefined),
     ]);
     if (productResponse.status === 404 || storeResponse.status === 404) {
       return { state: "not-found" } as const;
@@ -39,6 +55,7 @@ export async function readPublicProductPage(
       state: "ready" as const,
       product: multivariant.success ? multivariant.data : simple.data!,
       store: store.data,
+      experiences,
     };
   } catch {
     return { state: "error" } as const;

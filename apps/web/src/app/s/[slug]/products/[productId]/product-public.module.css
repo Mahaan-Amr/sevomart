@@ -216,6 +216,89 @@
   line-height: 1.8;
 }
 
+.experiences {
+  display: grid;
+  gap: 12px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.experiences h2,
+.experiences p {
+  margin: 0;
+}
+
+.experiences h2 {
+  font-size: 18px;
+}
+
+.experiences > a {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.experienceHeading {
+  display: grid;
+  gap: 4px;
+}
+
+.experienceHeading p {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.experienceList {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.experienceList > li {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding-block: 12px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.experienceList p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.experienceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.experienceMeta strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.experienceMeta span {
+  color: var(--color-primary-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.experienceMedia {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.experienceMedia img {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
 .conversation {
   display: inline-flex;
   min-height: 42px;
@@ -253,7 +336,8 @@
 }
 
 .back:focus-visible,
-.conversation:focus-visible {
+.conversation:focus-visible,
+.experiences > a:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: -3px;
 }

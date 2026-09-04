@@ -219,7 +219,7 @@ describe("StoreService publication", () => {
         verifiedAt: new Date(),
       }),
       undefined,
-      async () => ({ contentType: "image/webp", ownerSellerId: "seller-1" }),
+      async () => ({ contentType: "image/webp", ownerIdentityId: "seller-1" }),
       async () => {
         events.push("media-public");
       },

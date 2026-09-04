@@ -16,10 +16,12 @@ import {
 } from "../identity-access/public";
 import {
   DISPUTE_EVIDENCE_READER,
+  type BuyerDisputeMediaAccess,
   type DisputeEvidenceReader,
   type DisputeMediaAccess,
 } from "../media/public";
 import { ProblemFollowUpService } from "./application/problem-follow-up.service";
+import { isBuyerDisputeWindowOpen } from "./application/buyer-dispute-eligibility";
 import { PostgresProblemFollowUpRepository } from "./infrastructure/postgres-problem-follow-up.repository";
 import { ProblemFollowUpController } from "./problem-follow-up.controller";
 import {
@@ -41,6 +43,7 @@ export class ProblemFollowUpModule {
       ) => OpaquePlatformAccessTransactionContext;
       repository?: ProblemFollowUpRepository;
       onMediaAccessReady?: (access: DisputeMediaAccess) => void;
+      onBuyerDisputeMediaAccessReady?: (access: BuyerDisputeMediaAccess) => void;
     },
   ): DynamicModule {
     return {
@@ -83,6 +86,17 @@ export class ProblemFollowUpModule {
                 return false;
               }
             });
+            options.onBuyerDisputeMediaAccessReady?.(
+              async ({ identityId, orderId }) => {
+                const snapshot = await options.fulfillment.readOrderSnapshot({
+                  buyerId: identityId,
+                  orderId,
+                });
+                return Boolean(
+                  snapshot && isBuyerDisputeWindowOpen(snapshot, new Date()),
+                );
+              },
+            );
             return new ProblemFollowUpService(
               repository,
               {

@@ -57,6 +57,18 @@ export class ProblemFollowUpController {
     );
   }
 
+  @Get("v1/buyer/disputes")
+  listBuyer(
+    @Query("cursor") cursor: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    return this.respond(request, response, () =>
+      this.service.listBuyer(this.buyerContext(request), cursor, limit),
+    );
+  }
+
   @Get("v1/seller/disputes")
   listSeller(
     @Query("cursor") cursor: string | undefined,

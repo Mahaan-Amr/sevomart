@@ -9,6 +9,12 @@ describe("payment recovery poller", () => {
     const stop = startPaymentRecoveryPoller(async () => {
       calls.push(calls.length + 1);
       if (calls.length === 1) throw new Error("temporary API failure");
+      return {
+        recovered: 0,
+        reconciliationClaimed: false,
+        unrecoveredExpiredHolds: 0,
+        openOverdueReconciliations: 0,
+      };
     }, 1);
 
     await vi.waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(2));

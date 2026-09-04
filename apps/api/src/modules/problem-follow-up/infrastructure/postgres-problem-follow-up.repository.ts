@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   DISPUTE_REOPEN_WINDOW_DAYS,
   buyerDisputeViewContract,
+  buyerDisputePageContract,
   disputeOpenedV1Contract,
   disputeReopenedV1Contract,
   disputeResolvedV1Contract,
@@ -167,6 +168,13 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
     const row = await readDispute(this.#sql, disputeId, { buyerIdentityId: actorId });
     if (!row) throw new ProblemFollowUpFault("NOT_FOUND");
     return buyerDisputeViewContract.parse(relatedView(row));
+  }
+
+  async listBuyer(actorId: string, query: PageQuery) {
+    const rows = await listDisputes(this.#sql, query, {
+      buyerIdentityId: actorId,
+    });
+    return buyerDisputePageContract.parse(page(rows, query.limit, relatedView));
   }
 
   async listSeller(storeId: string, query: PageQuery) {
@@ -582,7 +590,7 @@ async function lockDispute(sql: Sql, disputeId: string) {
 async function listDisputes(
   sql: Sql,
   query: PageQuery,
-  scope: { storeId?: string } = {},
+  scope: { storeId?: string; buyerIdentityId?: string } = {},
 ) {
   const cursor = decodeCursor(query.cursor);
   return sql<Array<DisputeRow>>`
@@ -593,6 +601,8 @@ async function listDisputes(
     from problem_disputes
     where (${scope.storeId ?? null}::uuid is null or
            store_id = ${scope.storeId ?? null}::uuid)
+      and (${scope.buyerIdentityId ?? null}::uuid is null or
+           buyer_identity_id = ${scope.buyerIdentityId ?? null}::uuid)
       and (${cursor?.occurredAt ?? null}::timestamptz is null or
         (opened_at, id) < (${cursor?.occurredAt ?? null}::timestamptz,
                            ${cursor?.id ?? null}::uuid))

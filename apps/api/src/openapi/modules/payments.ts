@@ -17,6 +17,22 @@ import type { OpenApiContributor } from "../public";
 
 const operations = [
   {
+    ...paymentsV1Operations.readBuyerDirectRefund,
+    tag: "payments",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderId",
+      schema: "OrderId",
+      example: paymentsV1Examples.DirectRefund.orderId,
+    },
+    responses: [
+      { status: 200, schema: "DirectRefund" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "DirectRefundError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...paymentsV1Operations.createDirectPaymentAttempt,
     tag: "payments",
     auth: "identity-session",

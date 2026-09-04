@@ -45,6 +45,32 @@ const idempotencyRetryHeader = {
 
 const operations = [
   {
+    ...ordersV1Operations.listBuyerOrders,
+    tag: "orders",
+    auth: "identity-session",
+    responses: [
+      { status: 200, schema: "BuyerOrderPage", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...ordersV1Operations.readBuyerOrder,
+    tag: "orders",
+    auth: "identity-session",
+    pathParameter: {
+      name: "orderId",
+      schema: "OrderId",
+      example: ordersV1Examples.BuyerOrderSnapshot.orderId,
+    },
+    responses: [
+      { status: 200, schema: "BuyerOrderSnapshot", headers: noStoreHeader },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 404, schema: "BuyerOrderError", headers: noStoreHeader },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...ordersV1Operations.listStoreBuyers,
     tag: "orders",
     auth: "identity-session",

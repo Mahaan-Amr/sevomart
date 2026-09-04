@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 
 import {
+  createPurchaseExperienceMediaContextInputContract,
   contentIdempotencyKeyContract,
+  productPurchaseExperiencesContract,
+  publicSalesContentStoreIdsV2Contract,
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
 } from "@sevo/contracts/content/v2";
-import { identityIdContract } from "@sevo/contracts/platform/v1";
+import { orderItemIdContract } from "@sevo/contracts/orders/v1";
+import { identityIdContract, productIdContract } from "@sevo/contracts/platform/v1";
 
 import { StoreNotSellableError, StoreOwnershipRequiredError } from "../../store/public";
 
@@ -102,22 +106,81 @@ export class ContentService {
     };
     const replay = await this.repository.replayPurchaseExperience(mutation);
     if (replay) return replay;
-    for (const mediaId of input.mediaIds) {
-      if (!(await this.media.readOwnedKind(mediaId, actorId))) {
-        throw new ContentFault("FORBIDDEN");
-      }
-    }
     const eligibility = await this.purchases.readEligibility({
       buyerId: actorId,
       orderItemId: input.orderItemId,
     });
     if (!eligibility.eligible) throw new ContentFault(eligibility.reason);
+    if (
+      !(await this.media.arePurchaseExperienceImagesReady({
+        identityId: actorId,
+        orderItemId: input.orderItemId,
+        mediaIds: input.mediaIds,
+      }))
+    ) {
+      throw new ContentFault("FORBIDDEN");
+    }
     return this.repository.publishPurchaseExperience({
       ...mutation,
       input,
       storeId: eligibility.storeId,
       productId: eligibility.productId,
     });
+  }
+
+  async readPurchaseExperienceEligibility(
+    request: ContentRequest,
+    rawOrderItemId: unknown,
+  ) {
+    const buyerId = await this.requireIdentity(request);
+    const parsedOrderItemId = orderItemIdContract.safeParse(rawOrderItemId);
+    if (!parsedOrderItemId.success) throw new ContentFault("NOT_ELIGIBLE");
+    const eligibility = await this.purchases.readEligibility({
+      buyerId,
+      orderItemId: parsedOrderItemId.data,
+    });
+    if (!eligibility.eligible) return eligibility;
+    if (await this.repository.hasPurchaseExperience(parsedOrderItemId.data)) {
+      return { eligible: false, reason: "ALREADY_SUBMITTED" } as const;
+    }
+    return eligibility;
+  }
+
+  async readProductPurchaseExperiences(rawProductId: unknown) {
+    const productId = productIdContract.safeParse(rawProductId);
+    if (!productId.success) throw new ContentFault("NOT_ELIGIBLE");
+    return productPurchaseExperiencesContract.parse(
+      await this.repository.readProductPurchaseExperiences(productId.data),
+    );
+  }
+
+  async createPurchaseExperienceMediaContext(
+    request: ContentRequest,
+    body: unknown,
+    key: unknown,
+  ) {
+    const actorId = await this.requireIdentity(request);
+    this.requireKey(key);
+    const parsed = createPurchaseExperienceMediaContextInputContract.safeParse(body);
+    if (!parsed.success) throw new ContentFault("NOT_ELIGIBLE");
+    const eligibility = await this.purchases.readEligibility({
+      buyerId: actorId,
+      orderItemId: parsed.data.orderItemId,
+    });
+    if (!eligibility.eligible) throw new ContentFault(eligibility.reason);
+    if (await this.repository.hasPurchaseExperience(parsed.data.orderItemId)) {
+      throw new ContentFault("ALREADY_SUBMITTED");
+    }
+    return this.media.issuePurchaseExperienceUploadContext({
+      identityId: actorId,
+      orderItemId: parsed.data.orderItemId,
+    });
+  }
+
+  async readPublicSalesContent(rawStoreIds: unknown) {
+    const parsed = publicSalesContentStoreIdsV2Contract.safeParse(rawStoreIds);
+    if (!parsed.success) throw new ContentFault("INVALID_QUERY");
+    return this.repository.readPublicSalesContent(parsed.data);
   }
 
   private async requireIdentity(request: ContentRequest) {

@@ -469,6 +469,16 @@ export class PostgresInventoryAuthoring
     return rows.length === 1;
   }
 
+  async countExpiredPaymentHolds(now: Date): Promise<number> {
+    const rows = await this.#sql<Array<{ count: number }>>`
+      select count(*)::int as count
+      from inventory_reservations
+      where status = 'ACTIVE' and payment_attempt_id is not null
+        and hold_lease_until <= ${now}
+    `;
+    return rows[0]?.count ?? 0;
+  }
+
   async holdReservationForPayment(
     transaction: InventoryTransactionContext,
     command: Parameters<InventoryAuthoring["holdReservationForPayment"]>[1],

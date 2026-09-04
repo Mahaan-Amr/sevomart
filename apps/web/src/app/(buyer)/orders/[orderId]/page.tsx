@@ -1,5 +1,6 @@
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { firstParameter } from "../../../../lib/navigation";
+import { OrderTracking } from "./order-tracking";
 
 export default async function OrderReceiptPage({
   params,
@@ -14,6 +15,5 @@ export default async function OrderReceiptPage({
     redirect(
       `/orders/${encodeURIComponent(orderId)}/payment-result?${new URLSearchParams({ attemptId: attempt })}`,
     );
-  // Full order tracking is delivered by the buyer order journey, not this shell.
-  notFound();
+  return <OrderTracking orderId={orderId} />;
 }

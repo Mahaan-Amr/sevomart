@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { identityIdContract } from "./platform/v1/index";
+import { identityIdContract, orderIdContract } from "./platform/v1/index";
 import { createJsonSchemaMap } from "./json-schema";
 
 export const mediaIdContract = z.string().uuid().brand<"MediaId">();
@@ -17,6 +17,22 @@ export const MEDIA_UPLOAD_PURPOSES = [
   "STORE_COVER",
   "PRODUCT_IMAGE",
 ] as const;
+export const purchaseExperienceMediaUploadPurpose =
+  "PURCHASE_EXPERIENCE_IMAGE" as const;
+export const PURCHASE_EXPERIENCE_MEDIA_MAX_ITEMS = 4;
+export const buyerDisputeMediaUploadPurpose = "BUYER_DISPUTE_EVIDENCE" as const;
+export const BUYER_DISPUTE_MEDIA_MAX_ITEMS = 10;
+export const purchaseExperienceMediaContextIdContract = z
+  .uuid()
+  .brand<"PurchaseExperienceMediaContextId">();
+export const buyerDisputeMediaContextIdContract = z
+  .uuid()
+  .brand<"BuyerDisputeMediaContextId">();
+export const mediaUploadIdempotencyKeyContract = z
+  .string()
+  .min(8)
+  .max(128)
+  .regex(/^[A-Za-z0-9._:-]+$/);
 export const MEDIA_VARIANTS = [
   "attachment-preview",
   "logo-small",
@@ -32,6 +48,33 @@ export const mediaUploadInputContract = z.object({
   purpose: mediaUploadPurposeContract,
   file: z.string().min(1),
 });
+export const purchaseExperienceMediaUploadInputContract = z
+  .object({ file: z.string().min(1) })
+  .strict();
+export const buyerDisputeMediaUploadInputContract = z
+  .object({ file: z.string().min(1) })
+  .strict();
+export const buyerDisputeMediaContextInputContract = z
+  .object({ orderId: orderIdContract })
+  .strict();
+export const buyerDisputeMediaContextContract = z
+  .object({
+    contextId: buyerDisputeMediaContextIdContract,
+    expiresAt: z.iso.datetime({ offset: true }),
+    maxItems: z.literal(BUYER_DISPUTE_MEDIA_MAX_ITEMS),
+    maxBytesPerItem: z.literal(MEDIA_UPLOAD_MAX_BYTES),
+    uploadUrl: z.string().regex(/^\/v1\/buyer-dispute-media\/[0-9a-f-]{36}$/),
+  })
+  .strict();
+export const buyerDisputeEvidenceReadInputContract = z
+  .object({
+    identityId: identityIdContract,
+    orderId: orderIdContract,
+    evidenceId: z.uuid(),
+    kind: z.enum(["IMAGE", "DOCUMENT", "MESSAGE_REFERENCE"]),
+  })
+  .strict();
+export const buyerDisputeEvidenceReadResultContract = z.enum(["READY", "NOT_READY"]);
 
 export const mediaReferenceContract = z.object({
   id: mediaIdContract,
@@ -71,6 +114,15 @@ export type ConversationAttachmentResult = z.infer<
 export const mediaV1Schemas = {
   MediaConversationId: conversationMediaContextIdContract,
   ConversationMediaUploadInput: conversationMediaUploadInputContract,
+  PurchaseExperienceMediaUploadInput: purchaseExperienceMediaUploadInputContract,
+  PurchaseExperienceMediaContextId: purchaseExperienceMediaContextIdContract,
+  BuyerDisputeMediaUploadInput: buyerDisputeMediaUploadInputContract,
+  BuyerDisputeMediaContextInput: buyerDisputeMediaContextInputContract,
+  BuyerDisputeMediaContext: buyerDisputeMediaContextContract,
+  BuyerDisputeMediaContextId: buyerDisputeMediaContextIdContract,
+  BuyerDisputeEvidenceReadInput: buyerDisputeEvidenceReadInputContract,
+  BuyerDisputeEvidenceReadResult: buyerDisputeEvidenceReadResultContract,
+  MediaUploadIdempotencyKey: mediaUploadIdempotencyKeyContract,
   MediaId: mediaIdContract,
   MediaUploadInput: mediaUploadInputContract,
   MediaReference: mediaReferenceContract,
@@ -84,6 +136,28 @@ export function createMediaV1JsonSchemas() {
 export const mediaV1Examples = {
   MediaConversationId: "20000000-0000-4000-8000-000000000002",
   ConversationMediaUploadInput: { file: "(binary)" },
+  PurchaseExperienceMediaUploadInput: { file: "(binary)" },
+  PurchaseExperienceMediaContextId: "70000000-0000-4000-8000-000000000001",
+  BuyerDisputeMediaUploadInput: { file: "(binary)" },
+  BuyerDisputeMediaContextInput: {
+    orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+  },
+  BuyerDisputeMediaContext: {
+    contextId: "71000000-0000-4000-8000-000000000001",
+    expiresAt: "2026-08-27T09:00:00.000Z",
+    maxItems: BUYER_DISPUTE_MEDIA_MAX_ITEMS,
+    maxBytesPerItem: MEDIA_UPLOAD_MAX_BYTES,
+    uploadUrl: "/v1/buyer-dispute-media/71000000-0000-4000-8000-000000000001",
+  },
+  BuyerDisputeMediaContextId: "71000000-0000-4000-8000-000000000001",
+  BuyerDisputeEvidenceReadInput: {
+    identityId: "10000000-0000-4000-8000-000000000001",
+    orderId: "47a3f408-858c-45d7-a0bd-ab84a28718ef",
+    evidenceId: "6014fdd4-e393-4100-a037-030b781b6637",
+    kind: "IMAGE",
+  },
+  BuyerDisputeEvidenceReadResult: "READY",
+  MediaUploadIdempotencyKey: "experience-image-1",
   MediaId: "6014fdd4-e393-4100-a037-030b781b6637",
   MediaUploadInput: {
     purpose: "STORE_LOGO",
@@ -106,3 +180,19 @@ export type MediaUploadInput = z.infer<typeof mediaUploadInputContract>;
 export type MediaUploadPurpose = z.infer<typeof mediaUploadPurposeContract>;
 export type MediaVariant = (typeof MEDIA_VARIANTS)[number];
 export type MediaReference = z.infer<typeof mediaReferenceContract>;
+export type PurchaseExperienceMediaContextId = z.infer<
+  typeof purchaseExperienceMediaContextIdContract
+>;
+export type BuyerDisputeMediaContextId = z.infer<
+  typeof buyerDisputeMediaContextIdContract
+>;
+export type BuyerDisputeMediaContext = z.infer<typeof buyerDisputeMediaContextContract>;
+export type BuyerDisputeEvidenceReadInput = z.infer<
+  typeof buyerDisputeEvidenceReadInputContract
+>;
+export type BuyerDisputeEvidenceReadResult = z.infer<
+  typeof buyerDisputeEvidenceReadResultContract
+>;
+export type MediaUploadIdempotencyKey = z.infer<
+  typeof mediaUploadIdempotencyKeyContract
+>;

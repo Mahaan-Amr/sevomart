@@ -98,7 +98,7 @@ export class ProductService {
       const asset = await this.media.inspect(mediaId);
       if (
         !asset ||
-        asset.ownerSellerId !== identityId ||
+        asset.ownerIdentityId !== identityId ||
         asset.ownerReferenceId !== productId ||
         asset.purpose !== "PRODUCT_IMAGE"
       ) {
@@ -128,7 +128,7 @@ export class ProductService {
       const asset = await this.media.inspect(mediaId);
       if (
         !asset ||
-        asset.ownerSellerId !== identityId ||
+        asset.ownerIdentityId !== identityId ||
         asset.ownerReferenceId !== productId ||
         asset.purpose !== "PRODUCT_IMAGE"
       ) {
@@ -232,7 +232,7 @@ export class ProductService {
       }
       const store = await this.stores.requireOwnedSellable(actorId, ownedStore.storeId);
       for (const mediaId of productView.workingCopy!.orderedMediaIds) {
-        await this.media.makePublic(mediaId, identityId);
+        await this.media.makePublic(mediaId, actorId);
       }
       return this.repository.publishProduct(
         productId,
@@ -254,13 +254,13 @@ export class ProductService {
     const asset = await this.media.inspect(mediaId);
     if (
       !asset ||
-      asset.ownerSellerId !== identityId ||
+      asset.ownerIdentityId !== identityId ||
       asset.ownerReferenceId !== productId ||
       asset.purpose !== "PRODUCT_IMAGE"
     ) {
       throw new ProductNotReadyError();
     }
-    await this.media.makePublic(mediaId, identityId);
+    await this.media.makePublic(mediaId, actorId);
     return this.repository.publish(
       productId,
       store.storeId,

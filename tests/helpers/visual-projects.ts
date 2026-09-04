@@ -54,6 +54,10 @@ export const productTracerTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(50 + index),
 );
 
+export const simpleProductTracerTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(54 + index),
+);
+
 export const sellerInventoryTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(156 + index),
 );
@@ -126,6 +130,7 @@ export const allE2eTestMobiles = [
   ...buyerConversationTestMobiles,
   ...otherSellerConversationTestMobiles,
   ...productTracerTestMobiles,
+  ...simpleProductTracerTestMobiles,
   ...sellerInventoryTestMobiles,
   ...sellerRefundTestMobiles,
   ...sellerBuyerTestMobiles,
@@ -144,7 +149,10 @@ export const allE2eTestMobiles = [
 ];
 
 export function visualProjectIndex(projectName: string) {
-  const index = visualViewports.findIndex(({ name }) => name === projectName);
+  const viewportName = projectName.match(/^(?:chromium|webkit)-(\d+x\d+)$/)?.[1];
+  const index = visualViewports.findIndex(({ name }) =>
+    name.endsWith(`-${viewportName}`),
+  );
   if (index === -1) throw new Error(`Unknown visual project ${projectName}`);
   return index;
 }

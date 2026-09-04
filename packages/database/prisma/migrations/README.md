@@ -209,3 +209,13 @@ cross-module foreign key is introduced. Existing orders, fulfillment timelines,
 reservations and inventory levels are unchanged. Corrections use another forward
 migration, and both supported startup paths continue to apply the same
 `prisma migrate deploy` history.
+
+Issue 164 evolves each existing outbox consumption receipt into a durable
+per-consumer delivery state after
+`20260902100000__media__buyer-dispute-evidence`. Existing successful receipts are
+backfilled as `PROCESSED`; new deliveries keep their own lease, bounded attempt count,
+retry deadline and terminal failure without copying event payload or actor data. The
+global event row remains the immutable archive and compatibility summary, while
+consumer health and poison signals use the per-consumer state. The change is additive
+for existing readers and corrections use another forward migration. Docker Compose
+and native startup apply the same migration history.

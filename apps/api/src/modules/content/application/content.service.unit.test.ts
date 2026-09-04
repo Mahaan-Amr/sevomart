@@ -4,6 +4,7 @@ import {
   contentIdContract,
   purchaseExperienceIdContract,
 } from "@sevo/contracts/content/v1";
+import { purchaseExperienceMediaContextContract } from "@sevo/contracts/content/v2";
 import {
   identityIdContract,
   productIdContract,
@@ -36,10 +37,14 @@ function fixture(
     storeFailure?: Error;
     replaySales?: boolean;
     replayPurchase?: boolean;
+    existingExperience?: boolean;
   } = {},
 ) {
   const writes: unknown[] = [];
   const repository: ContentRepository = {
+    async hasPurchaseExperience() {
+      return overrides.existingExperience ?? false;
+    },
     async replaySalesContent() {
       return overrides.replaySales
         ? {
@@ -72,6 +77,19 @@ function fixture(
         experienceId: purchaseExperienceIdContract.parse(randomUUID()),
         source: "VERIFIED_PURCHASE",
         moderationState: "PUBLISHED",
+      };
+    },
+    async readProductPurchaseExperiences(productId) {
+      return {
+        productId,
+        summary: { verifiedPurchaseCount: 2, averageRating: null },
+        experiences: [],
+      };
+    },
+    async readPublicSalesContent() {
+      return {
+        projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+        items: [],
       };
     },
   };
@@ -107,6 +125,23 @@ function fixture(
       return mediaId === ids.media && [ids.seller, ids.buyer].includes(identityId)
         ? "IMAGE"
         : undefined;
+    },
+    async issuePurchaseExperienceUploadContext(input) {
+      void input;
+      return purchaseExperienceMediaContextContract.parse({
+        contextId: "70000000-0000-4000-8000-000000000001",
+        expiresAt: "2026-09-01T12:30:00.000Z",
+        maxItems: 4,
+        maxBytesPerItem: 10 * 1024 * 1024,
+        uploadUrl: "/v1/purchase-experience-media/70000000-0000-4000-8000-000000000001",
+      });
+    },
+    async arePurchaseExperienceImagesReady(input) {
+      return (
+        input.identityId === ids.buyer &&
+        input.orderItemId === ids.orderItem &&
+        input.mediaIds.every((mediaId) => mediaId === ids.media)
+      );
     },
   };
   const purchases: PurchaseEligibilityRead = {
@@ -147,6 +182,14 @@ function fixture(
 }
 
 describe("ContentService", () => {
+  it("rejects malformed public store filters with a query-specific fault", async () => {
+    const { service } = fixture();
+
+    await expect(
+      service.readPublicSalesContent("not-a-store-id"),
+    ).rejects.toMatchObject({ code: "INVALID_QUERY" });
+  });
+
   it("publishes seller content only with owned media and active same-store products", async () => {
     const { service, writes } = fixture();
     const result = await service.publishSalesContent(
@@ -256,6 +299,41 @@ describe("ContentService", () => {
     });
   });
 
+  it("issues an opaque media upload context only after purchase eligibility", async () => {
+    const { service } = fixture();
+    await expect(
+      service.createPurchaseExperienceMediaContext(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        { orderItemId: ids.orderItem },
+        "experience-media-context-1",
+      ),
+    ).resolves.toMatchObject({
+      contextId: "70000000-0000-4000-8000-000000000001",
+      maxItems: 4,
+    });
+
+    const ineligible = fixture({ purchaseEligible: false });
+    await expect(
+      ineligible.service.createPurchaseExperienceMediaContext(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        { orderItemId: ids.orderItem },
+        "experience-media-context-2",
+      ),
+    ).rejects.toMatchObject({ code: "NOT_ELIGIBLE" });
+  });
+
+  it("does not issue another upload context after an experience was submitted", async () => {
+    const { service } = fixture({ existingExperience: true });
+
+    await expect(
+      service.createPurchaseExperienceMediaContext(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        { orderItemId: ids.orderItem },
+        "experience-media-context-after-submit",
+      ),
+    ).rejects.toMatchObject({ code: "ALREADY_SUBMITTED" });
+  });
+
   it("rejects an ineligible purchase and a buyer/body identity mismatch", async () => {
     const { service } = fixture({ purchaseEligible: false });
     const input = {
@@ -300,5 +378,50 @@ describe("ContentService", () => {
       ),
     ).resolves.toMatchObject({ source: "VERIFIED_PURCHASE" });
     expect(writes).toHaveLength(0);
+  });
+
+  it("reads eligibility for the signed-in buyer and reports an existing submission", async () => {
+    const available = fixture();
+    await expect(
+      available.service.readPurchaseExperienceEligibility(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        ids.orderItem,
+      ),
+    ).resolves.toMatchObject({
+      eligible: true,
+      buyerId: ids.buyer,
+      orderItemId: ids.orderItem,
+    });
+
+    const submitted = fixture({ existingExperience: true });
+    await expect(
+      submitted.service.readPurchaseExperienceEligibility(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        ids.orderItem,
+      ),
+    ).resolves.toEqual({ eligible: false, reason: "ALREADY_SUBMITTED" });
+  });
+
+  it("does not reveal another buyer's existing submission", async () => {
+    const nonOwner = fixture({
+      purchaseEligible: false,
+      existingExperience: true,
+    });
+
+    await expect(
+      nonOwner.service.readPurchaseExperienceEligibility(
+        { sessionToken: "buyer", correlationId: randomUUID() },
+        ids.orderItem,
+      ),
+    ).resolves.toEqual({ eligible: false, reason: "NOT_ELIGIBLE" });
+  });
+
+  it("returns a privacy-safe public experience feed", async () => {
+    const { service } = fixture();
+    await expect(service.readProductPurchaseExperiences(ids.product)).resolves.toEqual({
+      productId: ids.product,
+      summary: { verifiedPurchaseCount: 2, averageRating: null },
+      experiences: [],
+    });
   });
 });

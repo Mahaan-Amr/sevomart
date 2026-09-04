@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  buyerOrderPageContract,
+  buyerOrderSnapshotContract,
   orderConversationEligibilityInputContract,
   orderPurchaseExperienceEligibilityDecisionContract,
   orderPurchaseExperienceEligibilityInputContract,
@@ -76,6 +78,139 @@ export class PostgresCheckoutRepository
     this.#sql = postgres(databaseUrl, { max: 5 });
   }
 
+  async listBuyerOrders(
+    identityId: Parameters<CheckoutRepository["listBuyerOrders"]>[0],
+  ) {
+    const rows = await this.#sql<
+      Array<{
+        orderId: string;
+        status: string;
+        totalAmount: number;
+        itemCount: number;
+        review: unknown;
+        createdAt: Date;
+        paidAt: Date | null;
+      }>
+    >`
+      select orders.id as "orderId", orders.status,
+        orders.total_amount::float8 as "totalAmount",
+        count(items.variant_id)::int as "itemCount",
+        orders.review_snapshot as review, orders.created_at as "createdAt",
+        orders.paid_at as "paidAt"
+      from order_orders orders
+      join order_items items on items.order_id = orders.id
+      where orders.identity_id = ${identityId}
+      group by orders.id
+      order by orders.created_at desc, orders.id desc
+    `;
+    return buyerOrderPageContract.parse({
+      items: rows.map((row) => {
+        const review = checkoutPreparationContract.parse(row.review);
+        return {
+          orderId: row.orderId,
+          store: review.store,
+          status: row.status,
+          total: { amount: row.totalAmount, currency: "IRR" },
+          itemCount: row.itemCount,
+          createdAt: row.createdAt.toISOString(),
+          ...(row.paidAt ? { paidAt: row.paidAt.toISOString() } : {}),
+        };
+      }),
+    });
+  }
+
+  async readBuyerOrder(
+    identityId: Parameters<CheckoutRepository["readBuyerOrder"]>[0],
+    orderId: Parameters<CheckoutRepository["readBuyerOrder"]>[1],
+  ) {
+    const rows = await this.#sql<
+      Array<{
+        status: string;
+        review: unknown;
+        reservationExpiresAt: Date;
+        createdAt: Date;
+        paidAt: Date | null;
+      }>
+    >`
+      select status, review_snapshot as review,
+        reservation_expires_at as "reservationExpiresAt",
+        created_at as "createdAt", paid_at as "paidAt"
+      from order_orders
+      where id = ${orderId} and identity_id = ${identityId}
+    `;
+    const row = rows[0];
+    if (!row) return undefined;
+    const review = checkoutPreparationContract.parse(row.review);
+    const [orderItems, transitions] = await Promise.all([
+      this.#sql<Array<{ orderItemId: string; variantId: string }>>`
+        select id as "orderItemId", variant_id as "variantId"
+        from order_items
+        where order_id = ${orderId}
+      `,
+      this.#sql<
+        Array<{
+          fromStatus: string | null;
+          toStatus: string;
+          reasonCode: string;
+          occurredAt: Date;
+        }>
+      >`
+        select from_status as "fromStatus", to_status as "toStatus",
+          reason_code as "reasonCode", occurred_at as "occurredAt"
+        from order_state_transitions
+        where order_id = ${orderId}
+        order by occurred_at, id
+      `,
+    ]);
+    const orderItemIdByVariant = new Map(
+      orderItems.map((item) => [item.variantId, item.orderItemId]),
+    );
+    return buyerOrderSnapshotContract.parse({
+      orderId,
+      status: row.status,
+      store: review.store,
+      items: review.items.map((item) => ({
+        orderItemId: orderItemIdByVariant.get(item.variantId),
+        productId: item.productId,
+        variantId: item.variantId,
+        name: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        lineTotal: item.lineTotal,
+      })),
+      ...(review.address
+        ? {
+            delivery: {
+              recipientName: review.address.recipientName,
+              recipientMobile: review.address.recipientMobile,
+              provinceText: review.address.provinceText,
+              cityText: review.address.cityText,
+              addressLine: review.address.addressLine,
+              ...(review.address.postalCode
+                ? { postalCode: review.address.postalCode }
+                : {}),
+            },
+          }
+        : {}),
+      shippingMethod: {
+        label: review.shippingMethod.label,
+        fee: review.shippingMethod.fee,
+        estimatedDeliveryText: review.shippingMethod.estimatedDeliveryText,
+      },
+      returnPolicy: review.returnPolicy,
+      settlement: { mode: "DIRECT" },
+      subtotal: review.subtotal,
+      total: review.total,
+      reservationExpiresAt: row.reservationExpiresAt.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+      ...(row.paidAt ? { paidAt: row.paidAt.toISOString() } : {}),
+      timeline: transitions.map((transition) => ({
+        ...transition,
+        occurredAt: transition.occurredAt.toISOString(),
+      })),
+    });
+  }
+
   async savePreparation(command: Parameters<CheckoutRepository["savePreparation"]>[0]) {
     const preparation = command.preparation;
     await this.#sql`
@@ -129,9 +264,12 @@ export class PostgresCheckoutRepository
         orders.store_id as "storeId", items.product_id as "productId"
       from order_items items
       join order_orders orders on orders.id = items.order_id
+      join order_fulfillment_status_projections fulfillment
+        on fulfillment.order_id = orders.id
       where items.id = ${parsed.data.orderItemId}
         and orders.identity_id = ${parsed.data.buyerId}
         and orders.status = 'PAID'
+        and fulfillment.status = 'DELIVERED'
       limit 1
     `;
     return orderPurchaseExperienceEligibilityDecisionContract.parse(
