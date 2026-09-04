@@ -4,7 +4,10 @@ import {
   contentIdContract,
   purchaseExperienceIdContract,
 } from "@sevo/contracts/content/v1";
-import { purchaseExperienceMediaContextContract } from "@sevo/contracts/content/v2";
+import {
+  purchaseExperienceMediaContextContract,
+  sellerSalesContentItemV2Contract,
+} from "@sevo/contracts/content/v2";
 import {
   identityIdContract,
   productIdContract,
@@ -26,9 +29,25 @@ const ids = {
   seller: identityIdContract.parse("10000000-0000-4000-8000-000000000002"),
   store: storeIdContract.parse("20000000-0000-4000-8000-000000000001"),
   product: productIdContract.parse("30000000-0000-4000-8000-000000000001"),
+  otherProduct: productIdContract.parse("30000000-0000-4000-8000-000000000002"),
   media: mediaIdContract.parse("40000000-0000-4000-8000-000000000001"),
+  otherMedia: mediaIdContract.parse("40000000-0000-4000-8000-000000000002"),
   orderItem: "50000000-0000-4000-8000-000000000001",
+  content: contentIdContract.parse("60000000-0000-4000-8000-000000000001"),
 };
+
+const sellerContent = sellerSalesContentItemV2Contract.parse({
+  contentId: ids.content,
+  source: "SELLER",
+  moderationState: "PUBLISHED",
+  storeId: ids.store,
+  media: { mediaId: ids.media, kind: "IMAGE" },
+  products: [{ productId: ids.product, publicationVersion: 3, active: true }],
+  active: true,
+  revision: 1,
+  createdAt: "2026-09-01T10:00:00.000Z",
+  updatedAt: "2026-09-01T10:00:00.000Z",
+});
 
 function fixture(
   overrides: {
@@ -62,6 +81,25 @@ function fixture(
             moderationState: "PUBLISHED",
           }
         : undefined;
+    },
+    async replayReplaceSellerSalesContent() {
+      return undefined;
+    },
+    async listSellerSalesContent() {
+      return { storeId: ids.store, items: [sellerContent] };
+    },
+    async readSellerSalesContent({ contentId }) {
+      return contentId === ids.content ? sellerContent : undefined;
+    },
+    async replaceSellerSalesContent(command) {
+      writes.push(command);
+      return sellerSalesContentItemV2Contract.parse({
+        ...sellerContent,
+        media: command.input.media,
+        products: command.products.map((product) => ({ ...product, active: true })),
+        revision: command.input.expectedRevision + 1,
+        updatedAt: "2026-09-02T10:00:00.000Z",
+      });
     },
     async publishSalesContent(command) {
       writes.push(command);
@@ -111,6 +149,7 @@ function fixture(
       storeId: typeof ids.store,
     ) {
       if (overrides.productPublished === false) return undefined;
+      if (productId !== ids.product || storeId !== ids.store) return undefined;
       return { productId, storeId, publicationVersion: 3 };
     },
     async readPublished() {
@@ -167,6 +206,9 @@ function fixture(
       },
     },
     {
+      async readOwnedStore(identityId) {
+        return identityId === ids.seller ? { storeId: ids.store } : undefined;
+      },
       async requireOwnedSellable(identityId, storeId) {
         if (overrides.storeFailure) throw overrides.storeFailure;
         if (identityId !== ids.seller || storeId !== ids.store)
@@ -182,6 +224,81 @@ function fixture(
 }
 
 describe("ContentService", () => {
+  it("lists seller content with explicit product activity", async () => {
+    const { service } = fixture();
+    await expect(
+      service.listSellerSalesContent({
+        sessionToken: "seller",
+        correlationId: randomUUID(),
+      }),
+    ).resolves.toEqual({ storeId: ids.store, items: [sellerContent] });
+  });
+
+  it("replaces owned seller content against its expected revision", async () => {
+    const { service, writes } = fixture();
+    const result = await service.replaceSellerSalesContent(
+      { sessionToken: "seller", correlationId: randomUUID() },
+      ids.content,
+      {
+        expectedRevision: 1,
+        media: { mediaId: ids.media, kind: "IMAGE" },
+        productIds: [ids.product],
+      },
+      "replace-content-1",
+    );
+    expect(result.revision).toBe(2);
+    expect(writes).toEqual([
+      expect.objectContaining({
+        contentId: ids.content,
+        storeId: ids.store,
+        products: [{ productId: ids.product, publicationVersion: 3 }],
+      }),
+    ]);
+  });
+
+  it.each([
+    {
+      boundary: "content owned by another seller",
+      contentId: contentIdContract.parse("60000000-0000-4000-8000-000000000002"),
+      mediaId: ids.media,
+      productId: ids.product,
+      code: "CONTENT_NOT_FOUND",
+    },
+    {
+      boundary: "media owned by another identity",
+      contentId: ids.content,
+      mediaId: ids.otherMedia,
+      productId: ids.product,
+      code: "FORBIDDEN",
+    },
+    {
+      boundary: "active product from another store",
+      contentId: ids.content,
+      mediaId: ids.media,
+      productId: ids.otherProduct,
+      code: "NO_ACTIVE_PRODUCT",
+    },
+  ])(
+    "rejects replace across the $boundary boundary without writing",
+    async (testCase) => {
+      const { service, writes } = fixture();
+
+      await expect(
+        service.replaceSellerSalesContent(
+          { sessionToken: "seller", correlationId: randomUUID() },
+          testCase.contentId,
+          {
+            expectedRevision: 1,
+            media: { mediaId: testCase.mediaId, kind: "IMAGE" },
+            productIds: [testCase.productId],
+          },
+          `replace-boundary-${testCase.code}`,
+        ),
+      ).rejects.toMatchObject({ code: testCase.code });
+      expect(writes).toEqual([]);
+    },
+  );
+
   it("rejects malformed public store filters with a query-specific fault", async () => {
     const { service } = fixture();
 

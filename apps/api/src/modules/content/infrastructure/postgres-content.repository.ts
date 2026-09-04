@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   productPurchaseExperiencesContract,
   publicSalesContentFeedV2Contract,
+  sellerSalesContentItemV2Contract,
+  sellerSalesContentListV2Contract,
 } from "@sevo/contracts/content/v2";
 import {
   purchaseExperienceContract,
@@ -66,6 +68,28 @@ export class PostgresContentRepository implements ContentRepository {
       );
       return replay ? purchaseExperienceContract.parse(replay) : undefined;
     });
+  }
+
+  async replayReplaceSellerSalesContent(command: ContentMutation) {
+    return this.#sql.begin(async (transaction) => {
+      const replay = await this.replay(
+        transaction as unknown as Sql,
+        "ReplaceSellerSalesContent.v2",
+        command,
+      );
+      return replay ? sellerSalesContentItemV2Contract.parse(replay) : undefined;
+    });
+  }
+
+  async listSellerSalesContent(input: { actorId: string; storeId: string }) {
+    return sellerSalesContentListV2Contract.parse({
+      storeId: input.storeId,
+      items: await this.readSellerItems(input.actorId),
+    });
+  }
+
+  async readSellerSalesContent(input: { actorId: string; contentId: string }) {
+    return (await this.readSellerItems(input.actorId, input.contentId))[0];
   }
 
   async hasPurchaseExperience(orderItemId: string) {
@@ -278,6 +302,195 @@ export class PostgresContentRepository implements ContentRepository {
       await this.remember(sql, "PublishSalesContent.v1", command, response);
       return response;
     });
+  }
+
+  async replaceSellerSalesContent(
+    command: Parameters<ContentRepository["replaceSellerSalesContent"]>[0],
+  ) {
+    return this.#sql.begin(async (transaction) => {
+      const sql = transaction as unknown as Sql;
+      const replay = await this.replay(sql, "ReplaceSellerSalesContent.v2", command);
+      if (replay) return sellerSalesContentItemV2Contract.parse(replay);
+      const [current] = await sql<
+        Array<{
+          actorId: string;
+          storeId: string;
+          moderationState: "PUBLISHED" | "HIDDEN";
+          createdAt: Date;
+          revision: number;
+        }>
+      >`
+        select actor_identity_id as "actorId", store_id as "storeId",
+          moderation_state as "moderationState", created_at as "createdAt", revision
+        from content_sales_contents
+        where id = ${command.contentId}
+        for update
+      `;
+      if (
+        !current ||
+        current.actorId !== command.actorId ||
+        current.storeId !== command.storeId
+      ) {
+        throw new ContentFault("CONTENT_NOT_FOUND");
+      }
+      if (current.revision !== command.input.expectedRevision) {
+        throw new ContentFault("REVISION_CONFLICT");
+      }
+      for (const product of [...command.products].sort((left, right) =>
+        left.productId.localeCompare(right.productId),
+      )) {
+        await sql`
+          select pg_advisory_xact_lock(
+            hashtextextended(${`content-product-state:${product.productId}`}, 0)
+          )
+        `;
+        const [projected] = await sql<
+          Array<{ active: boolean; publicationVersion: number }>
+        >`
+          select active, publication_version as "publicationVersion"
+          from content_product_states where product_id = ${product.productId}
+        `;
+        if (
+          projected &&
+          (projected.publicationVersion > product.publicationVersion ||
+            (projected.publicationVersion === product.publicationVersion &&
+              !projected.active))
+        ) {
+          throw new ContentFault("NO_ACTIVE_PRODUCT");
+        }
+      }
+      const updatedAt = new Date().toISOString();
+      const revision = current.revision + 1;
+      await sql`
+        update content_sales_contents
+        set media_id = ${command.input.media.mediaId},
+          media_kind = ${command.input.media.kind}, active = true,
+          revision = ${revision}, updated_at = ${updatedAt}
+        where id = ${command.contentId}
+      `;
+      await sql`
+        delete from content_sales_content_products
+        where content_id = ${command.contentId}
+          and product_id not in ${sql(command.products.map(({ productId }) => productId))}
+      `;
+      for (const product of command.products) {
+        await sql`
+          insert into content_sales_content_products
+            (content_id, product_id, publication_version, active)
+          values (${command.contentId}, ${product.productId},
+            ${product.publicationVersion}, true)
+          on conflict (content_id, product_id) do update set
+            publication_version = excluded.publication_version, active = true
+        `;
+      }
+      await this.audit(
+        sql,
+        "SALES_CONTENT",
+        command.contentId,
+        command,
+        "ReplaceSellerSalesContent.v2",
+      );
+      await enqueueOutboxEvent(
+        sql,
+        salesContentPublishedV1Contract.parse({
+          version: 1,
+          eventId: randomUUID(),
+          eventType: "SalesContentPublished.v1",
+          aggregateId: command.contentId,
+          aggregateVersion: revision,
+          occurredAt: updatedAt,
+          correlationId: command.correlationId,
+          causationId: command.correlationId,
+          actor: { type: "SYSTEM" },
+          payload: {
+            contentId: command.contentId,
+            source: "SELLER",
+            storeId: command.storeId,
+            media: command.input.media,
+            productIds: command.input.productIds,
+            moderationState: "PUBLISHED",
+          },
+        }),
+      );
+      const response = sellerSalesContentItemV2Contract.parse({
+        contentId: command.contentId,
+        source: "SELLER",
+        moderationState: current.moderationState,
+        storeId: command.storeId,
+        media: command.input.media,
+        products: command.products.map((product) => ({ ...product, active: true })),
+        active: true,
+        revision,
+        createdAt: current.createdAt.toISOString(),
+        updatedAt,
+      });
+      await this.remember(sql, "ReplaceSellerSalesContent.v2", command, response);
+      return response;
+    });
+  }
+
+  private async readSellerItems(actorId: string, contentId?: string) {
+    const rows = await this.#sql<
+      Array<{
+        contentId: string;
+        source: "SELLER";
+        moderationState: "PUBLISHED" | "HIDDEN";
+        storeId: string;
+        mediaId: string;
+        mediaKind: "IMAGE";
+        productId: string;
+        publicationVersion: number;
+        productActive: boolean;
+        active: boolean;
+        revision: number;
+        createdAt: Date;
+        updatedAt: Date;
+      }>
+    >`
+      with selected_content as (
+        select id
+        from content_sales_contents
+        where actor_identity_id = ${actorId}
+          and (${contentId ?? null}::uuid is null or id = ${contentId ?? null}::uuid)
+        order by updated_at desc, id desc
+        limit ${contentId ? 1 : 60}
+      )
+      select content.id as "contentId", content.source,
+        content.moderation_state as "moderationState", content.store_id as "storeId",
+        content.media_id as "mediaId", content.media_kind as "mediaKind",
+        product.product_id as "productId",
+        product.publication_version as "publicationVersion",
+        product.active as "productActive", content.active, content.revision,
+        content.created_at as "createdAt", content.updated_at as "updatedAt"
+      from content_sales_contents content
+      join selected_content selected on selected.id = content.id
+      join content_sales_content_products product on product.content_id = content.id
+      order by content.updated_at desc, content.id desc, product.product_id
+    `;
+    const items = new Map<string, Record<string, unknown> & { products: unknown[] }>();
+    for (const row of rows) {
+      const item = items.get(row.contentId) ?? {
+        contentId: row.contentId,
+        source: row.source,
+        moderationState: row.moderationState,
+        storeId: row.storeId,
+        media: { mediaId: row.mediaId, kind: row.mediaKind },
+        products: [],
+        active: row.active,
+        revision: row.revision,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      };
+      item.products.push({
+        productId: row.productId,
+        publicationVersion: row.publicationVersion,
+        active: row.productActive,
+      });
+      items.set(row.contentId, item);
+    }
+    return [...items.values()].map((item) =>
+      sellerSalesContentItemV2Contract.parse(item),
+    );
   }
 
   async publishPurchaseExperience(

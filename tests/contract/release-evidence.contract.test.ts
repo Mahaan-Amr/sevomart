@@ -56,7 +56,7 @@ describe("release evidence v1 contract", () => {
         "--sha",
         currentHead(),
         "--migration",
-        "20260902150000__platform__consumer-delivery-state",
+        "20260905100000__content__seller-sales-content-editing",
         "--seed-version",
         "2",
         "--health-api",

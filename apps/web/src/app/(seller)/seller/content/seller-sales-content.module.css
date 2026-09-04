@@ -1,0 +1,262 @@
+.list,
+.editor {
+  display: grid;
+  width: min(100%, 760px);
+  gap: 20px;
+  margin-inline: auto;
+  padding: 24px 16px 96px;
+}
+
+.list h1,
+.list p,
+.editor h1,
+.editor p {
+  margin: 0;
+}
+
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.headingRow {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.headingRow > div {
+  display: grid;
+  gap: 8px;
+}
+
+.contentList,
+.productChoices,
+.productStates {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.productStates li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.productStates li + li {
+  margin-block-start: 4px;
+}
+
+.contentList li {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding-block: 16px;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.contentList img,
+.preview {
+  width: 88px;
+  height: 88px;
+  border-radius: 16px;
+  background: var(--color-background);
+  object-fit: cover;
+}
+
+.preview {
+  width: min(100%, 360px);
+  height: auto;
+  max-height: 420px;
+  aspect-ratio: 4 / 5;
+}
+
+.itemText {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.itemText span {
+  overflow-wrap: anywhere;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.itemText .active {
+  color: var(--color-success);
+}
+
+.itemText .inactive {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.primary,
+.secondary,
+.fileButton,
+.textButton,
+.failure button {
+  display: inline-grid;
+  width: fit-content;
+  min-height: 44px;
+  place-items: center;
+  padding: 8px 16px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primary {
+  border: 0;
+  background: var(--color-primary);
+  box-shadow: var(--elevation-action);
+  color: var(--color-on-primary);
+}
+
+.secondary,
+.fileButton,
+.failure button {
+  border: 1px solid var(--color-border-primary);
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.textButton {
+  border: 0;
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.primary:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.editor form,
+.editor fieldset {
+  display: grid;
+  gap: 12px;
+}
+
+.editor form {
+  gap: 24px;
+}
+
+.editor fieldset {
+  margin: 0;
+  padding: 20px 0;
+  border: 0;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.editor legend {
+  padding: 0;
+  font-weight: 700;
+}
+
+.editor small {
+  color: var(--color-muted);
+}
+
+.fileButton input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.productChoices label {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  border-block-end: 1px solid var(--color-divider);
+  cursor: pointer;
+}
+
+.productChoices .stoppedChoice {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.productChoices input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--color-primary);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.empty,
+.failure {
+  padding-block: 24px;
+  border-block: 1px solid var(--color-divider);
+}
+
+.failure {
+  display: grid;
+  width: min(100%, 680px);
+  gap: 12px;
+  margin: 48px auto;
+  padding-inline: 16px;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.fileButton:focus-within,
+.textButton:focus-visible,
+.failure button:focus-visible,
+.productChoices input:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .list,
+  .editor {
+    padding-block: 48px;
+  }
+}
+
+@media (max-width: 560px) {
+  .headingRow {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .contentList li {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .contentList img {
+    width: 72px;
+    height: 72px;
+  }
+
+  .contentList li > a {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list *,
+  .editor * {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -15,6 +15,7 @@ const destinations = [
     desktopOnly: true,
   },
   { href: "/seller/products", label: "کالاها", icon: "◇" },
+  { href: "/seller/content", label: "محتوا", icon: "▣" },
   { href: "/seller/inventory", label: "موجودی", icon: "≡" },
   { href: "/seller/store", label: "فروشگاه", icon: "○" },
 ] as const;

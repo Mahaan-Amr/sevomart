@@ -8,6 +8,8 @@ import {
   publicSalesContentStoreIdsV2Contract,
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
+  replaceSellerSalesContentInputV2Contract,
+  sellerSalesContentItemV2Contract,
   purchaseExperienceEligibilityDecisionV2Contract,
 } from "@sevo/contracts/content/v2";
 import { describe, expect, it } from "vitest";
@@ -94,7 +96,45 @@ describe("content v2 contract", () => {
         method: "get",
         path: "/v2/sales-content",
       },
+      listSellerSalesContent: {
+        operationId: "listSellerSalesContentV2",
+        method: "get",
+        path: "/v2/seller/sales-content",
+      },
+      readSellerSalesContent: {
+        operationId: "readSellerSalesContentV2",
+        method: "get",
+        path: "/v2/seller/sales-content/{contentId}",
+      },
+      replaceSellerSalesContent: {
+        operationId: "replaceSellerSalesContentV2",
+        method: "put",
+        path: "/v2/seller/sales-content/{contentId}",
+      },
     });
+  });
+
+  it("describes seller editing with a revision and explicit stopped-product state", () => {
+    const item = sellerSalesContentItemV2Contract.parse({
+      contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+      source: "SELLER",
+      moderationState: "PUBLISHED",
+      storeId: ids.store,
+      media: { mediaId: ids.media, kind: "IMAGE" },
+      products: [{ productId: ids.product, publicationVersion: 2, active: false }],
+      active: false,
+      revision: 3,
+      createdAt: "2026-09-01T08:30:00.000Z",
+      updatedAt: "2026-09-02T08:30:00.000Z",
+    });
+    expect(item.products[0]?.active).toBe(false);
+    expect(
+      replaceSellerSalesContentInputV2Contract.parse({
+        expectedRevision: item.revision,
+        media: item.media,
+        productIds: [ids.product],
+      }),
+    ).toMatchObject({ expectedRevision: 3, productIds: [ids.product] });
   });
 
   it("withholds a public average until three verified rated purchases exist", () => {

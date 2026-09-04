@@ -219,3 +219,10 @@ global event row remains the immutable archive and compatibility summary, while
 consumer health and poison signals use the per-consumer state. The change is additive
 for existing readers and corrections use another forward migration. Docker Compose
 and native startup apply the same migration history.
+
+Issue 154 additively versions seller sales-content aggregates after
+`20260902150000__platform__consumer-delivery-state`. Existing rows start at revision one
+and preserve their creation time as the initial update time. Seller list/read and
+optimistic replacement use these fields; no cross-module foreign key or external
+dependency is introduced. Docker Compose and native startup apply the same migration
+history, and deployed corrections use another forward migration.

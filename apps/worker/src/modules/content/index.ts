@@ -104,11 +104,16 @@ export const projectPublicSalesContent: OutboxEventHandler = async (event, sql) 
           moderation_state = excluded.moderation_state,
           media_id = excluded.media_id, media_kind = excluded.media_kind,
           aggregate_version = excluded.aggregate_version,
-          published_at = excluded.published_at, updated_at = excluded.updated_at
+          updated_at = excluded.updated_at
       where content_public_sales_contents.aggregate_version < excluded.aggregate_version
       returning content_id as "contentId"
     `;
     if (applied.length === 0) return;
+    await sql`
+      delete from content_public_sales_content_products
+      where content_id = ${content.payload.contentId}
+        and product_id not in ${sql(content.payload.productIds)}
+    `;
     for (const productId of [...content.payload.productIds].sort()) {
       await sql`
         select pg_advisory_xact_lock(

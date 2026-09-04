@@ -44,6 +44,57 @@ const v2Operations = [
     responses: [{ status: 201, schema: "SalesContent" }, ...publishingErrorResponses],
   },
   {
+    ...contentV2Operations.listSellerSalesContent,
+    tag: "content",
+    auth: "identity-session",
+    responses: [
+      { status: 200, schema: "SellerSalesContentListV2" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "ContentErrorV2" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...contentV2Operations.readSellerSalesContent,
+    tag: "content",
+    auth: "identity-session",
+    pathParameter: {
+      name: "contentId",
+      schema: "ContentId",
+      example: contentV2Examples.SellerSalesContentItemV2.contentId,
+    },
+    responses: [
+      { status: 200, schema: "SellerSalesContentItemV2" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "ContentErrorV2" },
+      { status: 404, schema: "ContentErrorV2" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...contentV2Operations.replaceSellerSalesContent,
+    ...authenticatedPublishing,
+    pathParameter: {
+      name: "contentId",
+      schema: "ContentId",
+      example: contentV2Examples.SellerSalesContentItemV2.contentId,
+    },
+    request: {
+      schema: "ReplaceSellerSalesContentInputV2",
+      example: contentV2Examples.ReplaceSellerSalesContentInputV2,
+    },
+    responses: [
+      { status: 200, schema: "SellerSalesContentItemV2" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "ContentErrorV2" },
+      { status: 404, schema: "ContentErrorV2" },
+      { status: 409, schema: "ContentErrorV2" },
+      { status: 422, schema: "ContentErrorV2" },
+      { status: 428, schema: "ContentErrorV2" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...contentV2Operations.publishPurchaseExperience,
     ...authenticatedPublishing,
     request: {
@@ -127,6 +178,7 @@ const responseMetadata = {
     201: "Content published",
     401: "Identity session is missing or invalid",
     403: "This identity cannot publish for the requested context",
+    404: "The requested sales content is unavailable to this seller",
     409: "The idempotency key or submission conflicts with existing content",
     422: "The linked product or purchase is not eligible",
     428: "Idempotency precondition is missing",
