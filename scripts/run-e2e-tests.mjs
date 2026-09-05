@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 
+import { ensureE2eBucket } from "../apps/api/scripts/e2e-object-storage.mjs";
+
 const onWindows = process.platform === "win32";
 const managesLocalInfrastructure = !process.env.DATABASE_URL;
 const composeProject = "sevomart-e2e";
@@ -55,6 +57,10 @@ try {
     if (infrastructureStatus === 0) {
       infrastructureStatus = runCompose(["up", "-d", "--wait", "postgres", "minio"]);
     }
+  }
+
+  if (infrastructureStatus === 0) {
+    await ensureE2eBucket(e2eEnvironment);
   }
 
   testStatus =
