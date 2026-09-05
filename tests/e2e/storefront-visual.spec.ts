@@ -1,6 +1,7 @@
 import {
   expect,
   expectCandidateFailure,
+  expectCandidateResponse,
   request as createRequest,
   test,
 } from "../helpers/release-playwright";
@@ -119,7 +120,11 @@ test("a guest reads a published empty storefront from the real API", async ({
   });
 });
 
-test("draft and unknown slugs expose no private store data", async ({ page }) => {
+test("draft and unknown slugs expose no private store data", async ({
+  page,
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "storefront-not-found");
+  expectCandidateResponse(testInfo, "storefront-not-found");
   for (const slug of [stores.draftSlug, `unknown-${stores.draftSlug}`]) {
     const response = await page.goto(`/s/${slug}`);
     expect(response?.status()).toBe(404);
@@ -128,7 +133,8 @@ test("draft and unknown slugs expose no private store data", async ({ page }) =>
   }
 });
 
-test("stopping publication gives guests a human 404", async ({ page }) => {
+test("stopping publication gives guests a human 404", async ({ page }, testInfo) => {
+  expectCandidateResponse(testInfo, "storefront-not-found");
   const context = await authenticatedSellerContext(stores.defaultMobile);
   const current = await context.get("/v1/seller/store/draft");
   expect(current.ok()).toBe(true);

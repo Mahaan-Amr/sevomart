@@ -214,6 +214,12 @@ const expectedCandidateResponses = [
     scenario: "guest-cart-lifecycle",
   },
   {
+    status: 404,
+    method: "GET",
+    path: /^\/s\/[^/]+$/,
+    scenario: "storefront-not-found",
+  },
+  {
     status: 409,
     method: "POST",
     path: /^\/api\/cart\/attach$/,
