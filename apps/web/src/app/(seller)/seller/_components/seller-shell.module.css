@@ -92,9 +92,14 @@
 }
 
 @media (max-width: 260px) {
+  .content {
+    padding-block-end: 0;
+  }
+
   .mobileNavigation {
-    grid-template-columns: repeat(6, 52px);
-    overflow-x: auto;
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 8px;
   }
 }
 

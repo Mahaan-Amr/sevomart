@@ -71,6 +71,7 @@
 }
 
 .tabs button {
+  flex: none;
   padding: 8px 16px;
   background: transparent;
   white-space: nowrap;
@@ -81,6 +82,14 @@
   background: var(--color-cover-start);
   box-shadow: var(--elevation-pressed);
   color: var(--color-primary-dark);
+}
+
+@media (max-width: 260px) {
+  .tabs {
+    align-items: stretch;
+    flex-direction: column;
+    overflow-x: visible;
+  }
 }
 
 .message,

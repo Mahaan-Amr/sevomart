@@ -175,7 +175,7 @@ export function SellerConversationThread({
 
   return (
     <>
-      <div className={styles.messageRegion} aria-label="پیام‌های گفت‌وگو">
+      <div className={styles.messageRegion} role="region" aria-label="پیام‌های گفت‌وگو">
         {nextCursor ? (
           <button
             className={styles.loadOlder}

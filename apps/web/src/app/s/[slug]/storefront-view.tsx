@@ -207,9 +207,7 @@ export function ReadyStorefront({
       />
       {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">
-          <span className={styles.emptyMark} aria-hidden="true">
-            ✦
-          </span>
+          <span className={styles.emptyMark} aria-hidden="true" />
           <h2 id="empty-title">هنوز کالایی منتشر نشده</h2>
           <p>فروشنده در حال آماده‌کردن اولین کالاهاست.</p>
         </section>

@@ -28,6 +28,8 @@ test("seller answers one private thread without duplicate effects and gets a saf
   page,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "conversation-recovery");
+  expectCandidateResponse(testInfo, "conversation-recovery");
+  expectCandidateResponse(testInfo, "conversation-media-validation");
   const index = visualProjectIndex(testInfo.project.name);
   const sellerMobile = sellerConversationTestMobiles[index]!;
   const buyerMobile = buyerConversationTestMobiles[index]!;
@@ -50,6 +52,16 @@ test("seller answers one private thread without duplicate effects and gets a saf
     await page.getByLabel("کد شش‌رقمی").fill("111111");
     await page.getByRole("button", { name: "ورود" }).click();
 
+    await expect
+      .poll(async () => {
+        const sellerRows = await sql<Array<{ identityId: string }>>`
+          select identity_id as "identityId"
+          from identity_login_methods
+          where mobile = ${sellerMobile}
+        `;
+        return sellerRows[0]?.identityId;
+      })
+      .toBeTruthy();
     const sellerRows = await sql<Array<{ identityId: string }>>`
       select identity_id as "identityId"
       from identity_login_methods

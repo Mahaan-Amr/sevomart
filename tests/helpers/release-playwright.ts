@@ -64,6 +64,12 @@ const expectedCandidateResponses = [
     scenario: "conversation-recovery",
   },
   {
+    status: 422,
+    method: "POST",
+    path: /^\/api\/conversations\/.*\/media$/,
+    scenario: "conversation-media-validation",
+  },
+  {
     status: 409,
     method: "POST",
     path: /^\/api\/seller\/disputes\/.*\/response$/,
