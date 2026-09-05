@@ -305,8 +305,8 @@ function createCandidateObserver(testInfo: TestInfo) {
     networkErrors: [] as string[],
     externalRequests: [] as string[],
   };
-  const consumedResponses = new Map<number, number>();
-  const consumedFailures = new Map<number, number>();
+  const consumedResponses = new Map<string, number>();
+  const consumedFailures = new Map<string, number>();
   const observedContexts = new WeakSet<BrowserContext>();
   const observedPages = new WeakSet<Page>();
 
@@ -444,7 +444,7 @@ export function candidateRequestFailureIsExpected(
   method: string,
   pathname: string,
   annotations: Array<{ type: string; description?: string }>,
-  consumed?: Map<number, number>,
+  consumed?: Map<string, number>,
 ) {
   const index = expectedCandidateFailures.findIndex(
     (entry) =>
@@ -458,7 +458,6 @@ export function candidateRequestFailureIsExpected(
     annotations,
     "release-expected-failure",
     scenario,
-    index,
     consumed,
   );
 }
@@ -468,7 +467,7 @@ export function candidateResponseIsExpected(
   method: string,
   pathname: string,
   annotations: Array<{ type: string; description?: string }>,
-  consumed?: Map<number, number>,
+  consumed?: Map<string, number>,
 ) {
   const index = expectedCandidateResponses.findIndex(
     (entry) =>
@@ -483,7 +482,6 @@ export function candidateResponseIsExpected(
     annotations,
     "release-expected-response",
     scenario,
-    index,
     consumed,
   );
 }
@@ -493,12 +491,13 @@ export function requestFailureIsNavigationCancellation(
   reason: string,
   url?: string,
 ) {
-  const parsedUrl = url === undefined ? undefined : new URL(url);
-  const cancelledRouteTransition = parsedUrl?.searchParams.has("_rsc") ?? false;
+  const cancelledRouteTransition =
+    url !== undefined && new URL(url).searchParams.has("_rsc");
   return (
-    ((isNavigationRequest || cancelledRouteTransition) &&
-      /^(?:Load cancelled|NS_BINDING_ABORTED|net::ERR_ABORTED)$/.test(reason)) ||
-    reason === "Load request cancelled"
+    (isNavigationRequest || cancelledRouteTransition) &&
+    /^(?:Load cancelled|Load request cancelled|NS_BINDING_ABORTED|net::ERR_ABORTED)$/.test(
+      reason,
+    )
   );
 }
 
@@ -510,7 +509,7 @@ export function pageErrorIsWebKitLocalFetchCancellation(
   return (
     browserName === "webkit" &&
     errorName === "Fetch API cannot load http" &&
-    /^\/(?:127\.0\.0\.1|localhost):\d+\/[^\s]* due to access control checks\.$/.test(
+    /^\/(?:127\.0\.0\.1|localhost):\d+\/[^\s?]*(?:\?[^\s]*_rsc=[^\s]*) due to access control checks\.$/.test(
       message,
     )
   );
@@ -527,15 +526,14 @@ function consumeAnnotatedExpectation(
   annotations: Array<{ type: string; description?: string }>,
   type: "release-expected-response" | "release-expected-failure",
   scenario: string,
-  index: number,
-  consumed?: Map<number, number>,
+  consumed?: Map<string, number>,
 ) {
   const allowance = annotationCount(annotations, type, scenario);
   if (allowance === 0) return false;
   if (!consumed) return true;
-  const used = consumed.get(index) ?? 0;
+  const used = consumed.get(scenario) ?? 0;
   if (used >= allowance) return false;
-  consumed.set(index, used + 1);
+  consumed.set(scenario, used + 1);
   return true;
 }
 
@@ -551,8 +549,8 @@ function annotationCount(
 
 export function missingCandidateExpectations(
   annotations: Array<{ type: string; description?: string }>,
-  consumedResponses: Map<number, number>,
-  consumedFailures: Map<number, number>,
+  consumedResponses: Map<string, number>,
+  consumedFailures: Map<string, number>,
 ) {
   const missing: string[] = [];
   for (const [type, entries, consumed] of [
@@ -562,11 +560,7 @@ export function missingCandidateExpectations(
     const scenarios = new Set(entries.map((entry) => entry.scenario));
     for (const scenario of scenarios) {
       const expected = annotationCount(annotations, type, scenario);
-      const observed = entries.reduce(
-        (total, entry, index) =>
-          entry.scenario === scenario ? total + (consumed.get(index) ?? 0) : total,
-        0,
-      );
+      const observed = consumed.get(scenario) ?? 0;
       for (let count = observed; count < expected; count += 1) {
         missing.push(
           `${type === "release-expected-response" ? "response" : "failure"} ${scenario}`,

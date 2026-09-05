@@ -58,12 +58,19 @@ describe("release browser guard policy", () => {
         "Load request cancelled",
         "http://127.0.0.1:3110/_next/static/chunks/app.js",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       requestFailureIsNavigationCancellation(
         false,
         "Load request cancelled",
         "http://127.0.0.1:3110/api/orders",
+      ),
+    ).toBe(false);
+    expect(
+      requestFailureIsNavigationCancellation(
+        false,
+        "Load request cancelled",
+        "http://127.0.0.1:3110/cart?_rsc=fixture",
       ),
     ).toBe(true);
     expect(
@@ -89,7 +96,7 @@ describe("release browser guard policy", () => {
         "Fetch API cannot load http",
         "/localhost:3110/api/discovery due to access control checks.",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       pageErrorIsWebKitLocalFetchCancellation(
         "chromium",
@@ -195,6 +202,15 @@ describe("release browser guard policy", () => {
         consumedResponses,
       ),
     ).toBe(true);
+    expect(
+      candidateResponseIsExpected(
+        409,
+        "POST",
+        "/api/orders",
+        annotations,
+        consumedResponses,
+      ),
+    ).toBe(false);
     expect(
       missingCandidateExpectations(annotations, consumedResponses, new Map()),
     ).toEqual([]);
