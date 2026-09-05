@@ -375,7 +375,8 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                             .writeText(entry.shipping!.trackingCode!)
                             .then(() =>
                               setCopiedTrackingCode(entry.shipping!.trackingCode),
-                            );
+                            )
+                            .catch(() => setCopiedTrackingCode(undefined));
                         }}
                       >
                         {copiedTrackingCode === entry.shipping.trackingCode

@@ -146,6 +146,7 @@
 
   .navigation a {
     flex: 1 1 40%;
+    overflow-wrap: anywhere;
   }
 
   .content {

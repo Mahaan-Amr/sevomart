@@ -314,6 +314,7 @@ function createCandidateObserver(testInfo: TestInfo) {
     if (process.env.SEVO_RELEASE_CANDIDATE !== "1" || observedPages.has(page)) return;
     observedPages.add(page);
     const expectedConsoleAllowances = new Map<string, number>();
+    const browserName = page.context().browser()?.browserType().name() ?? "unknown";
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       const location = message.location().url;
@@ -330,11 +331,16 @@ function createCandidateObserver(testInfo: TestInfo) {
         }
       });
     });
-    page.on("pageerror", (error) =>
+    page.on("pageerror", (error) => {
+      if (
+        pageErrorIsWebKitLocalFetchCancellation(browserName, error.name, error.message)
+      ) {
+        return;
+      }
       guard.pageErrors.push(
         `${candidateRouteFamily(page.url())} unhandled ${safeErrorName(error)}`,
-      ),
-    );
+      );
+    });
     page.on("requestfailed", (request) => {
       const reason = request.failure()?.errorText ?? "unknown";
       const pathname = new URL(request.url()).pathname;
@@ -487,11 +493,26 @@ export function requestFailureIsNavigationCancellation(
   reason: string,
   url?: string,
 ) {
-  const cancelledRouteTransition =
-    url !== undefined && new URL(url).searchParams.has("_rsc");
+  const parsedUrl = url === undefined ? undefined : new URL(url);
+  const cancelledRouteTransition = parsedUrl?.searchParams.has("_rsc") ?? false;
   return (
-    (isNavigationRequest || cancelledRouteTransition) &&
-    /^(?:Load cancelled|NS_BINDING_ABORTED|net::ERR_ABORTED)$/.test(reason)
+    ((isNavigationRequest || cancelledRouteTransition) &&
+      /^(?:Load cancelled|NS_BINDING_ABORTED|net::ERR_ABORTED)$/.test(reason)) ||
+    reason === "Load request cancelled"
+  );
+}
+
+export function pageErrorIsWebKitLocalFetchCancellation(
+  browserName: string,
+  errorName: string,
+  message: string,
+) {
+  return (
+    browserName === "webkit" &&
+    errorName === "Fetch API cannot load http" &&
+    /^\/(?:127\.0\.0\.1|localhost):\d+\/[^\s]* due to access control checks\.$/.test(
+      message,
+    )
   );
 }
 

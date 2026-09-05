@@ -7,6 +7,7 @@ import {
   candidateRouteFamily,
   consumeExpectedConsoleAllowance,
   missingCandidateExpectations,
+  pageErrorIsWebKitLocalFetchCancellation,
   requestFailureIsNavigationCancellation,
 } from "../helpers/release-playwright";
 
@@ -49,6 +50,58 @@ describe("release browser guard policy", () => {
         false,
         "net::ERR_ABORTED",
         "http://127.0.0.1:3110/api/orders",
+      ),
+    ).toBe(false);
+    expect(
+      requestFailureIsNavigationCancellation(
+        false,
+        "Load request cancelled",
+        "http://127.0.0.1:3110/_next/static/chunks/app.js",
+      ),
+    ).toBe(true);
+    expect(
+      requestFailureIsNavigationCancellation(
+        false,
+        "Load request cancelled",
+        "http://127.0.0.1:3110/api/orders",
+      ),
+    ).toBe(true);
+    expect(
+      requestFailureIsNavigationCancellation(
+        false,
+        "Load failed",
+        "http://127.0.0.1:3110/api/orders",
+      ),
+    ).toBe(false);
+  });
+
+  it("recognizes only WebKit local-fetch cancellation page errors", () => {
+    expect(
+      pageErrorIsWebKitLocalFetchCancellation(
+        "webkit",
+        "Fetch API cannot load http",
+        "/127.0.0.1:3110/cart?_rsc=fixture due to access control checks.",
+      ),
+    ).toBe(true);
+    expect(
+      pageErrorIsWebKitLocalFetchCancellation(
+        "webkit",
+        "Fetch API cannot load http",
+        "/localhost:3110/api/discovery due to access control checks.",
+      ),
+    ).toBe(true);
+    expect(
+      pageErrorIsWebKitLocalFetchCancellation(
+        "chromium",
+        "Fetch API cannot load http",
+        "/127.0.0.1:3110/api/discovery due to access control checks.",
+      ),
+    ).toBe(false);
+    expect(
+      pageErrorIsWebKitLocalFetchCancellation(
+        "webkit",
+        "Fetch API cannot load https",
+        "/example.com/private due to access control checks.",
       ),
     ).toBe(false);
   });
