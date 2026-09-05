@@ -8,7 +8,10 @@ import {
   assertReleaseCandidateCoverage,
   assertReleaseCandidateReport,
 } from "./qa/release-candidate-report.mjs";
-import { runReleaseCandidateLayers } from "./qa/release-candidate-layers.mjs";
+import {
+  releaseCandidateLayerEnvironment,
+  runReleaseCandidateLayers,
+} from "./qa/release-candidate-layers.mjs";
 import { assertQaScenarioProcessEnvironment } from "./qa/scenario-environment.mjs";
 import { assertCleanCandidate } from "./qa/candidate-source.mjs";
 import { createQaScenarioFactory } from "./qa/scenario-factory.v1.mjs";
@@ -72,7 +75,8 @@ for (const runNumber of [1, 2]) {
           : {}),
       };
       runReleaseCandidateLayers(
-        (script) => runPnpm(script, environment),
+        (script) =>
+          runPnpm(script, releaseCandidateLayerEnvironment(script, environment)),
         `Candidate ${runId}`,
       );
       const result = spawnSync(
