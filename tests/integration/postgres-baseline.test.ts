@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
+const configuredDatabaseName = decodeURIComponent(new URL(databaseUrl).pathname.slice(1));
 
 describe("PostgreSQL integration baseline", () => {
   it("executes a query against the configured real database", async () => {
@@ -13,7 +14,7 @@ describe("PostgreSQL integration baseline", () => {
         select current_database() as name, 1::int as value
       `;
 
-      expect(result).toEqual({ name: "sevo", value: 1 });
+      expect(result).toEqual({ name: configuredDatabaseName, value: 1 });
     } finally {
       await sql.end();
     }
