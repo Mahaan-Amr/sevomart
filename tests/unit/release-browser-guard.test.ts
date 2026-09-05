@@ -181,6 +181,25 @@ describe("release browser guard policy", () => {
     ).toEqual(["response following-recovery"]);
   });
 
+  it("requires a multi-route scenario once instead of requiring every route variant", () => {
+    const annotations = [
+      { type: "release-expected-response", description: "guest-cart-lifecycle" },
+    ];
+    const consumedResponses = new Map<number, number>();
+    expect(
+      candidateResponseIsExpected(
+        409,
+        "DELETE",
+        "/api/cart/items/fixture",
+        annotations,
+        consumedResponses,
+      ),
+    ).toBe(true);
+    expect(
+      missingCandidateExpectations(annotations, consumedResponses, new Map()),
+    ).toEqual([]);
+  });
+
   it("consumes a console allowance for an expected response only once", () => {
     const allowances = new Map([["http://localhost/api/following", 1]]);
     expect(

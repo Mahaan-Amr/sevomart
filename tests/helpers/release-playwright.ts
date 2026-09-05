@@ -559,15 +559,20 @@ export function missingCandidateExpectations(
     ["release-expected-response", expectedCandidateResponses, consumedResponses],
     ["release-expected-failure", expectedCandidateFailures, consumedFailures],
   ] as const) {
-    entries.forEach((entry, index) => {
-      const expected = annotationCount(annotations, type, entry.scenario);
-      const observed = consumed.get(index) ?? 0;
+    const scenarios = new Set(entries.map((entry) => entry.scenario));
+    for (const scenario of scenarios) {
+      const expected = annotationCount(annotations, type, scenario);
+      const observed = entries.reduce(
+        (total, entry, index) =>
+          entry.scenario === scenario ? total + (consumed.get(index) ?? 0) : total,
+        0,
+      );
       for (let count = observed; count < expected; count += 1) {
         missing.push(
-          `${type === "release-expected-response" ? "response" : "failure"} ${entry.scenario}`,
+          `${type === "release-expected-response" ? "response" : "failure"} ${scenario}`,
         );
       }
-    });
+    }
   }
   return missing;
 }
