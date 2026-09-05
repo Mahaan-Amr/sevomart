@@ -448,7 +448,7 @@ test("platform agent confirms approval before the initial store is created", asy
 test("keeps the committed approval clear when the queue refresh fails", async ({
   page,
 }, testInfo) => {
-  expectCandidateResponse(testInfo, "platform-review-recovery");
+  expectCandidateResponse(testInfo, "platform-queue-recovery");
   const application = sellerApplication();
   let approved = false;
   await page.route("**/api/platform/seller-applications**", async (route) => {

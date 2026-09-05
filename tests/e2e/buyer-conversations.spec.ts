@@ -1,4 +1,4 @@
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 import { conversationsV1Examples } from "@sevo/contracts/conversations/v1";
 
@@ -11,6 +11,7 @@ import {
 test("buyer conversations recover from loading failure and expose the empty list", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "conversation-list-recovery");
   let fail = true;
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.route("**/api/conversations?*", (route) =>
@@ -53,6 +54,7 @@ test("buyer conversations recover from loading failure and expose the empty list
 test("buyer reads a long Persian thread and retries one unsent message without duplication", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "conversation-recovery");
   const thread = conversationsV1Examples.ConversationThreadV1;
   const longText =
     "این پیام فارسی بلند برای بررسی شکستن درست خط‌ها و خوانایی رشته است. ".repeat(8);
@@ -112,7 +114,8 @@ test("buyer reads a long Persian thread and retries one unsent message without d
 
 test("contextual conversation resumes safely after login and opens its stable URL", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "conversation-sign-in");
   const thread = conversationsV1Examples.ConversationThreadV1;
   const source = "/s/khane-sofal/products/0d113616-5ad8-45d2-a126-b5b3412b3dd7";
   const newConversation = `/conversations/new?${new URLSearchParams({

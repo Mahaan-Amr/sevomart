@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   candidateRequestFailureIsExpected,
+  candidateRequestIsExternal,
   candidateResponseIsExpected,
   candidateRouteFamily,
   consumeExpectedConsoleAllowance,
@@ -50,6 +51,17 @@ describe("release browser guard policy", () => {
         "http://127.0.0.1:3110/api/orders",
       ),
     ).toBe(false);
+  });
+
+  it("allows local blob previews without allowing remote traffic", () => {
+    expect(candidateRequestIsExternal("blob:http://127.0.0.1:3110/preview")).toBe(
+      false,
+    );
+    expect(candidateRequestIsExternal("blob:http://localhost:3110/preview")).toBe(
+      false,
+    );
+    expect(candidateRequestIsExternal("data:image/png;base64,fixture")).toBe(false);
+    expect(candidateRequestIsExternal("https://cdn.example.com/image.png")).toBe(true);
   });
 
   it("consumes each annotated response allowance exactly once", () => {

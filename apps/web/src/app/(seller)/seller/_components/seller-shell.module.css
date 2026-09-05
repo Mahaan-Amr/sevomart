@@ -91,6 +91,13 @@
   font-weight: 600;
 }
 
+@media (max-width: 260px) {
+  .mobileNavigation {
+    grid-template-columns: repeat(6, 52px);
+    overflow-x: auto;
+  }
+}
+
 .link:focus-visible,
 .activeLink:focus-visible,
 .buyerLink:focus-visible,

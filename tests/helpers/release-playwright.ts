@@ -23,6 +23,12 @@ const expectedCandidateResponses = [
   },
   {
     status: 503,
+    method: "GET",
+    path: /^\/api\/platform\/seller-applications(?:\/.*)?$/,
+    scenario: "platform-queue-recovery",
+  },
+  {
+    status: 503,
     method: "PUT",
     path: /^\/api\/store\/me\/follows\//,
     scenario: "following-recovery",
@@ -91,13 +97,13 @@ const expectedCandidateResponses = [
     status: 422,
     method: "POST",
     path: /^\/api\/purchase-experience-media\//,
-    scenario: "purchase-media-validation",
+    scenario: "purchase-media-invalid",
   },
   {
     status: 410,
     method: "POST",
     path: /^\/api\/purchase-experience-media\//,
-    scenario: "purchase-media-validation",
+    scenario: "purchase-media-expired",
   },
   {
     status: 404,
@@ -133,7 +139,43 @@ const expectedCandidateResponses = [
     status: 404,
     method: "GET",
     path: /^\/api\/orders\/[^/]+\/direct-refund$/,
-    scenario: "order-related-empty",
+    scenario: "buyer-direct-refund-empty",
+  },
+  {
+    status: 404,
+    method: "GET",
+    path: /^\/api\/orders\/[^/]+\/fulfillment$/,
+    scenario: "buyer-fulfillment-empty",
+  },
+  {
+    status: 503,
+    method: "GET",
+    path: /^\/api\/conversations$/,
+    scenario: "conversation-list-recovery",
+  },
+  {
+    status: 401,
+    method: "POST",
+    path: /^\/api\/conversations$/,
+    scenario: "conversation-sign-in",
+  },
+  {
+    status: 404,
+    method: "GET",
+    path: /^\/api\/store\/seller\/store\/draft$/,
+    scenario: "store-draft-empty",
+  },
+  {
+    status: 404,
+    method: "GET",
+    path: /^\/api\/store\/stores\/[^/]+\/products\/[^/]+$/,
+    scenario: "product-unpublished",
+  },
+  {
+    status: 409,
+    method: "PUT",
+    path: /^\/api\/seller\/inventory$/,
+    scenario: "inventory-ambiguous-result",
   },
   {
     status: 401,
@@ -183,17 +225,17 @@ const expectedCandidateFailures = [
   {
     method: "POST",
     path: /^\/api\/store\/seller\/products\/[^/]+\/images$/,
-    scenario: "product-network-recovery",
+    scenario: "product-upload-recovery",
   },
   {
     method: "POST",
     path: /^\/api\/store\/seller\/products\/[^/]+\/publications$/,
-    scenario: "product-network-recovery",
+    scenario: "product-publication-recovery",
   },
   {
     method: "POST",
     path: /^\/api\/store\/seller\/products\/[^/]+\/unpublication$/,
-    scenario: "product-network-recovery",
+    scenario: "product-unpublication-recovery",
   },
   {
     method: "PUT",
@@ -332,8 +374,7 @@ function createCandidateObserver(testInfo: TestInfo) {
       }
     });
     page.on("request", (request) => {
-      const hostname = new URL(request.url()).hostname;
-      if (!["127.0.0.1", "localhost"].includes(hostname)) {
+      if (candidateRequestIsExternal(request.url())) {
         guard.externalRequests.push(`${request.method()} external request`);
       }
     });
@@ -440,6 +481,13 @@ export function requestFailureIsNavigationCancellation(
     (isNavigationRequest || cancelledRouteTransition) &&
     /^(?:Load cancelled|NS_BINDING_ABORTED|net::ERR_ABORTED)$/.test(reason)
   );
+}
+
+export function candidateRequestIsExternal(url: string): boolean {
+  const parsed = new URL(url);
+  if (parsed.protocol === "blob:") return candidateRequestIsExternal(parsed.pathname);
+  if (!["http:", "https:"].includes(parsed.protocol)) return false;
+  return !["127.0.0.1", "localhost"].includes(parsed.hostname);
 }
 
 function consumeAnnotatedExpectation(

@@ -24,7 +24,12 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   page,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "product-validation");
-  expectCandidateFailure(testInfo, "product-network-recovery");
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    expectCandidateFailure(testInfo, "product-upload-recovery");
+  }
+  expectCandidateFailure(testInfo, "product-publication-recovery");
+  expectCandidateFailure(testInfo, "product-unpublication-recovery");
+  expectCandidateResponse(testInfo, "product-unpublished");
   test.setTimeout(120_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = productTracerTestMobiles[projectIndex]!;

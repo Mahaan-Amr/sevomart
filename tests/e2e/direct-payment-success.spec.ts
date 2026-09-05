@@ -20,7 +20,8 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
   page,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "order-privacy");
-  expectCandidateResponse(testInfo, "order-related-empty");
+  expectCandidateResponse(testInfo, "buyer-direct-refund-empty");
+  expectCandidateResponse(testInfo, "buyer-direct-refund-empty");
   test.setTimeout(90_000); // Includes payment, tracking and dispute accessibility scans.
   const mobile = paymentBuyerTestMobiles[visualProjectIndex(testInfo.project.name)]!;
   const databaseUrl =
@@ -255,14 +256,18 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       where disputes.order_id = ${ids.order}
     `;
     expect(savedDispute).toMatchObject({ evidenceCount: 1 });
-    const [privateEvidence] = await sql<Array<{ visibility: string }>>`
-      select assets.visibility
-      from media_assets assets
-      join media_buyer_dispute_upload_contexts contexts
-        on contexts.id = assets.owner_reference_id
-      where contexts.order_id = ${ids.order}
-    `;
-    expect(privateEvidence).toEqual({ visibility: "PRIVATE" });
+    await expect
+      .poll(async () => {
+        const [privateEvidence] = await sql<Array<{ visibility: string }>>`
+          select assets.visibility
+          from media_assets assets
+          join media_buyer_dispute_upload_contexts contexts
+            on contexts.id = assets.owner_reference_id
+          where contexts.order_id = ${ids.order}
+        `;
+        return privateEvidence;
+      })
+      .toEqual({ visibility: "PRIVATE" });
     await captureReleaseCheckpoint(page, testInfo, {
       cellId: "buyer-dispute:success",
       name: "buyer-dispute",

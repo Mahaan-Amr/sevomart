@@ -19,6 +19,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   page,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "store-validation");
+  expectCandidateResponse(testInfo, "store-draft-empty");
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = storeBuilderTestMobiles[projectIndex];
   if (!mobile)

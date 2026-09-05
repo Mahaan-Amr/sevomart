@@ -157,10 +157,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
   } catch (error) {
     fixtureFailure = { error };
   }
-  const cleanupFailure = await cleanupFixtureResources(
-    sql,
-    seller ? [seller] : [],
-  );
+  const cleanupFailure = await cleanupFixtureResources(sql, seller ? [seller] : []);
   if (fixtureFailure) throw fixtureFailure.error;
   if (cleanupFailure) throw cleanupFailure.error;
 
@@ -451,6 +448,7 @@ test("same-store carts merge only after the buyer chooses merge", async ({
 }, testInfo) => {
   expectCandidateResponse(testInfo, "buyer-sign-in-required");
   expectCandidateResponse(testInfo, "cart-resolution-required");
+  expectCandidateResponse(testInfo, "cart-resolution-required");
   test.setTimeout(90_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = sameStoreCartConflictTestMobiles[projectIndex]!;
@@ -485,6 +483,7 @@ test("different-store carts change only after the buyer chooses which one to kee
   playwright,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "buyer-sign-in-required");
+  expectCandidateResponse(testInfo, "cart-resolution-required");
   expectCandidateResponse(testInfo, "cart-resolution-required");
   test.setTimeout(90_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
@@ -549,9 +548,14 @@ async function seedCartConflict(
   try {
     sql = postgres(databaseUrl, { max: 1 });
     for (let index = 0; index < fixtures.length; index += 1) {
-      const mobileIndex = differentStore ? 8 + projectIndex * 2 + index : 4 + projectIndex;
+      const mobileIndex = differentStore
+        ? 8 + projectIndex * 2 + index
+        : 4 + projectIndex;
       sellers.push(
-        await authenticatedSeller(playwright, mediaFixtureSellerTestMobiles[mobileIndex]!),
+        await authenticatedSeller(
+          playwright,
+          mediaFixtureSellerTestMobiles[mobileIndex]!,
+        ),
       );
     }
     const existing = await sql<Array<{ identityId: string }>>`
@@ -683,7 +687,8 @@ async function authenticatedSeller(
   try {
     const requested = await context.post("/v1/auth/otp/requests", { data: { mobile } });
     expect(requested.status()).toBe(202);
-    const challengeId = ((await requested.json()) as { challengeId: string }).challengeId;
+    const challengeId = ((await requested.json()) as { challengeId: string })
+      .challengeId;
     const verified = await context.post("/v1/auth/otp/verifications", {
       data: { challengeId, code: "111111" },
     });
