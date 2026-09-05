@@ -24,14 +24,20 @@ export function SalesContentGrid({
             <SalesContentMedia card={card} />
             <span className={styles.source}>{card.sourceLabel}</span>
             {stores.get(card.storeId) ? (
-              <Link className={styles.store} href={stores.get(card.storeId)!.href}>
+              <Link
+                className={styles.store}
+                href={stores.get(card.storeId)!.href}
+                prefetch={false}
+              >
                 {stores.get(card.storeId)!.name}
               </Link>
             ) : null}
             {card.product ? (
               <>
                 <h3>
-                  <Link href={card.product.href}>{card.product.name}</Link>
+                  <Link href={card.product.href} prefetch={false}>
+                    {card.product.name}
+                  </Link>
                 </h3>
                 <strong>{card.product.priceLabel}</strong>
                 {card.product.availabilityLabel ? (

@@ -264,9 +264,14 @@ function createCandidateObserver(testInfo: TestInfo) {
       if (message.type() !== "error") return;
       const location = message.location().url;
       queueMicrotask(() => {
-        if (!location || !consumeExpectedConsoleAllowance(expectedConsoleAllowances, location)) {
+        if (
+          !location ||
+          !consumeExpectedConsoleAllowance(expectedConsoleAllowances, location)
+        ) {
           guard.consoleErrors.push(
-            location ? `console.error ${candidateRouteFamily(location)}` : "console.error",
+            location
+              ? `console.error ${candidateRouteFamily(location)}`
+              : "console.error",
           );
         }
       });
@@ -279,14 +284,25 @@ function createCandidateObserver(testInfo: TestInfo) {
     page.on("requestfailed", (request) => {
       const reason = request.failure()?.errorText ?? "unknown";
       const pathname = new URL(request.url()).pathname;
+      const expectedFailure = candidateRequestFailureIsExpected(
+        request.method(),
+        pathname,
+        testInfo.annotations,
+        consumedFailures,
+      );
+      if (expectedFailure) {
+        expectedConsoleAllowances.set(
+          request.url(),
+          (expectedConsoleAllowances.get(request.url()) ?? 0) + 1,
+        );
+      }
       if (
-        !requestFailureIsNavigationCancellation(request.isNavigationRequest(), reason) &&
-        !candidateRequestFailureIsExpected(
-          request.method(),
-          pathname,
-          testInfo.annotations,
-          consumedFailures,
-        )
+        !requestFailureIsNavigationCancellation(
+          request.isNavigationRequest(),
+          reason,
+          request.url(),
+        ) &&
+        !expectedFailure
       ) {
         guard.networkErrors.push(
           `${candidateRouteFamily(page.url())} ${request.method()} ${request.resourceType()} request failed ${candidateRouteFamily(pathname)} ${safeFailureKind(reason)}`,
@@ -416,9 +432,12 @@ export function candidateResponseIsExpected(
 export function requestFailureIsNavigationCancellation(
   isNavigationRequest: boolean,
   reason: string,
+  url?: string,
 ) {
+  const cancelledRouteTransition =
+    url !== undefined && new URL(url).searchParams.has("_rsc");
   return (
-    isNavigationRequest &&
+    (isNavigationRequest || cancelledRouteTransition) &&
     /^(?:Load cancelled|NS_BINDING_ABORTED|net::ERR_ABORTED)$/.test(reason)
   );
 }
@@ -463,7 +482,9 @@ export function missingCandidateExpectations(
       const expected = annotationCount(annotations, type, entry.scenario);
       const observed = consumed.get(index) ?? 0;
       for (let count = observed; count < expected; count += 1) {
-        missing.push(`${type === "release-expected-response" ? "response" : "failure"} ${entry.scenario}`);
+        missing.push(
+          `${type === "release-expected-response" ? "response" : "failure"} ${entry.scenario}`,
+        );
       }
     });
   }

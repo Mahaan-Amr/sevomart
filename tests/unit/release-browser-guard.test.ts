@@ -30,9 +30,25 @@ describe("release browser guard policy", () => {
       expect(requestFailureIsNavigationCancellation(true, reason)).toBe(true);
       expect(requestFailureIsNavigationCancellation(false, reason)).toBe(false);
     }
-    expect(requestFailureIsNavigationCancellation(true, "connection reset")).toBe(false);
+    expect(requestFailureIsNavigationCancellation(true, "connection reset")).toBe(
+      false,
+    );
     expect(
       requestFailureIsNavigationCancellation(true, "net::ERR_ABORTED_BY_EXTENSION"),
+    ).toBe(false);
+    expect(
+      requestFailureIsNavigationCancellation(
+        false,
+        "net::ERR_ABORTED",
+        "http://127.0.0.1:3110/?_rsc=route-transition",
+      ),
+    ).toBe(true);
+    expect(
+      requestFailureIsNavigationCancellation(
+        false,
+        "net::ERR_ABORTED",
+        "http://127.0.0.1:3110/api/orders",
+      ),
     ).toBe(false);
   });
 
@@ -55,11 +71,15 @@ describe("release browser guard policy", () => {
       candidateRequestFailureIsExpected("GET", "/api/store/media/fixture", annotations),
     ).toBe(true);
     expect(
-      candidateRequestFailureIsExpected("POST", "/api/store/media/fixture", annotations),
+      candidateRequestFailureIsExpected(
+        "POST",
+        "/api/store/media/fixture",
+        annotations,
+      ),
     ).toBe(false);
-    expect(candidateRequestFailureIsExpected("GET", "/api/store/media/fixture", [])).toBe(
-      false,
-    );
+    expect(
+      candidateRequestFailureIsExpected("GET", "/api/store/media/fixture", []),
+    ).toBe(false);
   });
 
   it("consumes each annotated request-failure allowance exactly once", () => {

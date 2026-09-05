@@ -251,6 +251,7 @@ function FeedGrid({
               <Link
                 className={styles.imageLink}
                 href={`/s/${item.storeSlug}/products/${item.productId}`}
+                prefetch={false}
                 aria-label={`دیدن ${item.product.name}`}
                 data-feed-focus={imageFocus}
                 onNavigate={() => rememberOrigin(imageFocus)}
@@ -265,6 +266,7 @@ function FeedGrid({
               <h2>
                 <Link
                   href={`/s/${item.storeSlug}/products/${item.productId}`}
+                  prefetch={false}
                   data-feed-focus={titleFocus}
                   onNavigate={() => rememberOrigin(titleFocus)}
                 >
@@ -274,6 +276,7 @@ function FeedGrid({
               <Link
                 className={styles.storeLink}
                 href={`/s/${item.storeSlug}`}
+                prefetch={false}
                 data-feed-focus={storeFocus}
                 onNavigate={() => rememberOrigin(storeFocus)}
               >

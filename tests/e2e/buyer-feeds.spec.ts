@@ -1,3 +1,5 @@
+import type { Page } from "@playwright/test";
+
 import {
   expect,
   expectCandidateFailure,
@@ -12,6 +14,15 @@ import {
   assertMinimumContrast,
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
+
+function mockFeedMedia(page: Page) {
+  return page.route("**/api/store/media/*", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#F6E3E9"/></svg>',
+    }),
+  );
+}
 
 function feedItem(position: number, store = "خانه سفال") {
   return {
@@ -30,12 +41,7 @@ test("discovery and following keep independent cursor and scroll state", async (
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const firstItems = Array.from({ length: 18 }, (_, index) => feedItem(index + 1));
-  await page.route("**/api/store/media/*", (route) =>
-    route.fulfill({
-      contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#F6E3E9"/></svg>',
-    }),
-  );
+  await mockFeedMedia(page);
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
       json: route.request().url().includes("cursor=discovery-next")
@@ -118,6 +124,7 @@ test("following asks a guest to sign in and cancellation restores discovery", as
   page,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "following-sign-in");
+  await mockFeedMedia(page);
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
       json: {
@@ -146,7 +153,9 @@ test("following asks a guest to sign in and cancellation restores discovery", as
 test("returning from product detail restores the loaded feed, scroll, and origin focus", async ({
   page,
 }, testInfo) => {
-  expectCandidateFailure(testInfo, "media-fallback");
+  for (let request = 0; request < 3; request += 1) {
+    expectCandidateFailure(testInfo, "media-fallback");
+  }
   const firstItems = Array.from({ length: 18 }, (_, index) => feedItem(index + 1));
   await page.route("**/api/store/media/*", (route) => route.abort());
   await page.route("**/api/discovery*", (route) =>
@@ -255,6 +264,7 @@ test("following errors use safe code-based guidance and keep private data out of
   page,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "following-auth-recovery");
+  await mockFeedMedia(page);
   let followingRead = 0;
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
@@ -307,6 +317,7 @@ test("a stale following cursor replaces the old snapshot instead of merging it",
   page,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "following-cursor-recovery");
+  await mockFeedMedia(page);
   let initialReads = 0;
   await page.route("**/api/following*", (route) => {
     if (route.request().url().includes("cursor=stale-following")) {
@@ -343,6 +354,7 @@ test("sales content stays distinct, purchasable, and human when media or stock f
   page,
 }, testInfo) => {
   expectCandidateFailure(testInfo, "media-fallback");
+  await mockFeedMedia(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   const item = {
     ...feedItem(41),
