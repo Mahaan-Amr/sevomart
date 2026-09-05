@@ -8,6 +8,7 @@ import {
   assertReleaseCandidateCoverage,
   assertReleaseCandidateReport,
 } from "./qa/release-candidate-report.mjs";
+import { runReleaseCandidateLayers } from "./qa/release-candidate-layers.mjs";
 import { assertQaScenarioProcessEnvironment } from "./qa/scenario-environment.mjs";
 import { assertCleanCandidate } from "./qa/candidate-source.mjs";
 import { createQaScenarioFactory } from "./qa/scenario-factory.v1.mjs";
@@ -70,10 +71,10 @@ for (const runNumber of [1, 2]) {
           ? { SEVO_RELEASE_CHROMIUM_CHANNEL: process.env.SEVO_RELEASE_CHROMIUM_CHANNEL }
           : {}),
       };
-      for (const script of ["test:unit", "test:contract", "test:integration"]) {
-        const layerResult = runPnpm(script, environment);
-        if (layerResult !== 0) throw new Error(`Candidate ${runId} failed ${script}`);
-      }
+      runReleaseCandidateLayers(
+        (script) => runPnpm(script, environment),
+        `Candidate ${runId}`,
+      );
       const result = spawnSync(
         process.execPath,
         ["scripts/run-e2e-tests.mjs", "--config", "playwright.release.config.ts"],
