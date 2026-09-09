@@ -317,9 +317,15 @@ test("guest adds a product, signs in and continues the same cart", async ({
   }
   await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
   await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
+  await expect(page.getByText(/محیط آزمایشی: این پرداخت واقعی نیست/)).toBeVisible();
   await expect(
     page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
   ).toHaveAttribute("href", /\/conversations\/new\?kind=ORDER.*returnTo=%2Fcheckout/);
+  await page.getByRole("button", { name: /پرداخت آزمایشی/ }).click();
+  await expect(page).toHaveURL(/\/orders\/[^/]+\/payment-result\?attemptId=/, {
+    timeout: 15_000,
+  });
+  await expect(page.getByRole("heading", { name: "پرداخت تأیید شد" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
 
   const historySql = postgres(databaseUrl, { max: 1 });
@@ -420,13 +426,13 @@ test("guest adds a product, signs in and continues the same cart", async ({
         `;
         return rows[0];
       })
-      .toEqual({ orderStatus: "EXPIRED", reservationStatus: "RELEASED" });
+      .toEqual({ orderStatus: "PAID", reservationStatus: "CONSUMED" });
     expect(
       await historySql`
         select event_id from platform_outbox_events
         where aggregate_id = ${created.orderId} and event_type = 'OrderExpired.v1'
       `,
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(
       await historySql<Array<{ available: number }>>`
         select (level.on_hand - coalesce(sum(line.quantity) filter (
@@ -439,7 +445,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
         where level.variant_id = ${ids.variant}
         group by level.variant_id
       `,
-    ).toEqual([{ available: 8 }]);
+    ).toEqual([{ available: 5 }]);
   } finally {
     await historySql.end();
   }

@@ -35,6 +35,20 @@ export function proxyPaymentAttemptsRequest(
   });
 }
 
+export function proxyDevPaymentProviderRequest(
+  request: Request,
+  segments: readonly string[],
+) {
+  return proxyJsonApiRequest(request, segments, {
+    basePath: "/v1/payment-providers/dev/pay",
+    isAllowed: (parts) => parts.length === 1,
+    responseHeaders: ["location", "x-correlation-id"],
+    noStore: true,
+    forwardSearch: true,
+    redirect: "manual",
+  });
+}
+
 export function proxySellerOrdersRequest(
   request: Request,
   segments: readonly string[] = [],

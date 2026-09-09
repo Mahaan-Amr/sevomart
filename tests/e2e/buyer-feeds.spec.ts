@@ -225,6 +225,11 @@ test("loading is announced without layout shift and empty feeds keep distinct gu
   releaseDiscovery!();
   await expect(page.getByText("فعلاً کالایی برای دیدن نیست.")).toBeVisible();
   await expect(page.getByText("بعداً دوباره سر بزنید.")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "فید کشف" })
+      .getByRole("link", { name: "فروشنده شوید" }),
+  ).toHaveAttribute("href", "/seller/start");
   expect(
     await page.evaluate(
       () => (window as Window & { feedLayoutShift?: number }).feedLayoutShift ?? 0,

@@ -40,12 +40,13 @@ describe("identity and store shared schemas", () => {
     expect(JSON.stringify(event)).not.toMatch(/mobile|token/i);
   });
 
-  it("publishes a canonical public identity session without mobile or roles", () => {
+  it("publishes a canonical public identity session with only a masked mobile", () => {
     const session = identityAccessV1Schemas.IdentitySession.parse({
       actor: {
         identityId: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
         audience: "PUBLIC",
       },
+      maskedMobile: "0912***6789",
       expiresAt: "2026-08-23T09:00:00.000Z",
     });
 
@@ -54,9 +55,11 @@ describe("identity and store shared schemas", () => {
         identityId: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
         audience: "PUBLIC",
       },
+      maskedMobile: "0912***6789",
       expiresAt: "2026-08-23T09:00:00.000Z",
     });
-    expect(JSON.stringify(session)).not.toMatch(/mobile|role/i);
+    expect(JSON.stringify(session)).not.toContain("09123456789");
+    expect(JSON.stringify(session)).not.toMatch(/role/i);
   });
 
   it("accepts every published Persian request and response example", () => {

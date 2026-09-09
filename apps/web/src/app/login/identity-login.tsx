@@ -16,12 +16,14 @@ export function IdentityLogin({
   showDevelopmentCode,
   returnTo,
   autoContinue = false,
+  attachCartOnContinue = autoContinue,
   cancelTo,
 }: {
   initiallySignedIn: boolean;
   showDevelopmentCode: boolean;
   returnTo: string;
   autoContinue?: boolean;
+  attachCartOnContinue?: boolean;
   cancelTo?: string;
 }) {
   const [step, setStep] = useState<Step>(initiallySignedIn ? "signed-in" : "mobile");
@@ -86,14 +88,16 @@ export function IdentityLogin({
         throw new Error("invalid session response");
       }
       if (autoContinue) {
-        const attached = await fetch("/api/cart/attach", {
-          method: "POST",
-          headers: { "idempotency-key": crypto.randomUUID() },
-          body: "{}",
-        });
-        if (!attached.ok && attached.status !== 409) {
-          setMessage("ورود انجام شد، اما سبد آماده نشد. دوباره ادامه دهید.");
-          return;
+        if (attachCartOnContinue) {
+          const attached = await fetch("/api/cart/attach", {
+            method: "POST",
+            headers: { "idempotency-key": crypto.randomUUID() },
+            body: "{}",
+          });
+          if (!attached.ok && attached.status !== 409) {
+            setMessage("ورود انجام شد، اما سبد آماده نشد. دوباره ادامه دهید.");
+            return;
+          }
         }
         window.location.assign(returnTo);
         return;

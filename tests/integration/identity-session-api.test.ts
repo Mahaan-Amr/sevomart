@@ -245,8 +245,10 @@ describe("identity session HTTP API with PostgreSQL", () => {
     expect(identitySessionContract.safeParse(verifyResponse.json()).success).toBe(true);
     expect(verifyResponse.json()).toMatchObject({
       actor: { audience: "PUBLIC" },
+      maskedMobile: "0912***6789",
     });
-    expect(JSON.stringify(verifyResponse.json())).not.toMatch(/mobile|role/i);
+    expect(JSON.stringify(verifyResponse.json())).not.toContain("09123456789");
+    expect(JSON.stringify(verifyResponse.json())).not.toMatch(/role/i);
     expect(verifyResponse.headers["set-cookie"]).toContain("sevo_session=");
     expect(verifyResponse.headers["set-cookie"]).toContain("HttpOnly");
     expect(verifyResponse.headers["set-cookie"]).toContain("SameSite=Lax");

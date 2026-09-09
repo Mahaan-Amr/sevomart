@@ -27,17 +27,19 @@ export async function convergeStoreDemoState({ sql, baseline }) {
     await sql`
       insert into store_stores
         (id, name, slug, bio, return_policy, settlement_kind, settlement_status,
-         theme_color, status, published_at, updated_at, publication_version,
-         revision, return_policy_revision)
+         settlement_verified_at, theme_color, status, published_at, updated_at,
+         publication_version, revision, return_policy_revision)
       values (${id(store.key)}, ${store.name}, ${store.slug}, ${store.bio},
         'تا ۷ روز پس از تحویل، درخواست مرجوعی را با فروشنده هماهنگ کنید.',
-        'DIRECT', 'ACTIVE', ${store.themeColor}, ${store.status},
+        'TEST', 'TEST_VERIFIED', ${baseline.now}, ${store.themeColor}, ${store.status},
         ${published ? baseline.atDaysAgo(30) : null}, ${baseline.now},
         ${publicationVersion}, ${revision}, ${returnPolicyRevision})
       on conflict (id) do update set name = excluded.name, slug = excluded.slug,
         bio = excluded.bio, return_policy = excluded.return_policy,
         settlement_kind = excluded.settlement_kind,
-        settlement_status = excluded.settlement_status, theme_color = excluded.theme_color,
+        settlement_status = excluded.settlement_status,
+        settlement_verified_at = excluded.settlement_verified_at,
+        theme_color = excluded.theme_color,
         status = excluded.status, published_at = excluded.published_at,
         updated_at = excluded.updated_at, publication_version = excluded.publication_version,
         revision = excluded.revision, return_policy_revision = excluded.return_policy_revision

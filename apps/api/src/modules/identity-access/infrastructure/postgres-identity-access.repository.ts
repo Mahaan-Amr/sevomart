@@ -117,10 +117,14 @@ export class PostgresIdentityAccessRepository
   }
 
   async findActiveSession(tokenHash: string, now: Date) {
-    const rows = await this.#sql<Array<{ identityId: string; expiresAt: Date }>>`
-      select i.id as "identityId", s.expires_at as "expiresAt"
+    const rows = await this.#sql<
+      Array<{ identityId: string; mobile: IranianMobile; expiresAt: Date }>
+    >`
+      select i.id as "identityId", login.mobile, s.expires_at as "expiresAt"
       from identity_sessions s
       join identity_identities i on i.id = s.identity_id
+      join identity_login_methods login on login.identity_id = i.id
+        and login.kind = 'MOBILE'
       where s.token_hash = ${tokenHash}
         and s.audience = 'PUBLIC'
         and s.revoked_at is null
@@ -135,14 +139,17 @@ export class PostgresIdentityAccessRepository
     const rows = await this.#sql<
       Array<{
         identityId: string;
+        mobile: IranianMobile;
         expiresAt: Date;
         identityStatus: "ACTIVE" | "INACTIVE";
       }>
     >`
-      select i.id as "identityId", s.expires_at as "expiresAt",
+      select i.id as "identityId", login.mobile, s.expires_at as "expiresAt",
         i.status as "identityStatus"
       from identity_sessions s
       join identity_identities i on i.id = s.identity_id
+      join identity_login_methods login on login.identity_id = i.id
+        and login.kind = 'MOBILE'
       where s.token_hash = ${tokenHash}
         and s.audience = 'PUBLIC'
         and s.revoked_at is null
