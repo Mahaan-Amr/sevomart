@@ -24,7 +24,10 @@ test("guest adds a product, signs in and continues the same cart", async ({
   playwright,
 }, testInfo) => {
   expectCandidateResponse(testInfo, "buyer-sign-in-required");
-  expectCandidateResponse(testInfo, "guest-cart-lifecycle");
+  expectCandidateResponse(testInfo, "guest-cart-delete-conflict");
+  expectCandidateResponse(testInfo, "guest-cart-order-conflict");
+  expectCandidateResponse(testInfo, "guest-cart-checkout-conflict");
+  expectCandidateResponse(testInfo, "guest-cart-product-missing");
   test.setTimeout(90_000); // Includes separate accessibility scans at each purchase step.
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = guestCartTestMobiles[projectIndex]!;

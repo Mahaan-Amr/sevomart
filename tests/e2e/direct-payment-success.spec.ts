@@ -248,10 +248,11 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       page.locator("#problem-title").locator("xpath=..").locator("img"),
     ).toHaveCount(0);
     const [savedDispute] = await sql<
-      Array<{ disputeId: string; evidenceCount: number }>
+      Array<{ disputeId: string; evidenceCount: number; evidenceId: string }>
     >`
       select disputes.id as "disputeId",
-        jsonb_array_length(disputes.contributions->0->'evidence')::int as "evidenceCount"
+        jsonb_array_length(disputes.contributions->0->'evidence')::int as "evidenceCount",
+        disputes.contributions->0->'evidence'->0->>'evidenceId' as "evidenceId"
       from problem_disputes disputes
       where disputes.order_id = ${ids.order}
     `;
@@ -259,11 +260,9 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
     await expect
       .poll(async () => {
         const [privateEvidence] = await sql<Array<{ visibility: string }>>`
-          select assets.visibility
-          from media_assets assets
-          join media_buyer_dispute_upload_contexts contexts
-            on contexts.id = assets.owner_reference_id
-          where contexts.order_id = ${ids.order}
+          select visibility
+          from media_assets
+          where id = ${savedDispute?.evidenceId ?? null}::uuid
         `;
         return privateEvidence;
       })

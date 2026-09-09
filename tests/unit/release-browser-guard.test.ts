@@ -188,9 +188,15 @@ describe("release browser guard policy", () => {
     ).toEqual(["response following-recovery"]);
   });
 
-  it("requires a multi-route scenario once instead of requiring every route variant", () => {
+  it("requires a separate annotation for every intentional guest-cart response", () => {
     const annotations = [
-      { type: "release-expected-response", description: "guest-cart-lifecycle" },
+      { type: "release-expected-response", description: "guest-cart-delete-conflict" },
+      { type: "release-expected-response", description: "guest-cart-order-conflict" },
+      {
+        type: "release-expected-response",
+        description: "guest-cart-checkout-conflict",
+      },
+      { type: "release-expected-response", description: "guest-cart-product-missing" },
     ];
     const consumedResponses = new Map<number, number>();
     expect(
@@ -210,7 +216,54 @@ describe("release browser guard policy", () => {
         annotations,
         consumedResponses,
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      candidateResponseIsExpected(
+        409,
+        "GET",
+        "/api/checkout/options",
+        annotations,
+        consumedResponses,
+      ),
+    ).toBe(true);
+    expect(
+      candidateResponseIsExpected(
+        404,
+        "GET",
+        "/s/store/products/product",
+        annotations,
+        consumedResponses,
+      ),
+    ).toBe(true);
+    expect(
+      missingCandidateExpectations(annotations, consumedResponses, new Map()),
+    ).toEqual([]);
+  });
+
+  it("requires separate annotations for following authorization responses", () => {
+    const annotations = [
+      { type: "release-expected-response", description: "following-identity-inactive" },
+      { type: "release-expected-response", description: "following-session-expired" },
+    ];
+    const consumedResponses = new Map<number, number>();
+    expect(
+      candidateResponseIsExpected(
+        403,
+        "GET",
+        "/api/following",
+        annotations,
+        consumedResponses,
+      ),
+    ).toBe(true);
+    expect(
+      candidateResponseIsExpected(
+        401,
+        "GET",
+        "/api/following",
+        annotations,
+        consumedResponses,
+      ),
+    ).toBe(true);
     expect(
       missingCandidateExpectations(annotations, consumedResponses, new Map()),
     ).toEqual([]);

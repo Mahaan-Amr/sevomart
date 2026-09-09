@@ -263,7 +263,8 @@ test("loading is announced without layout shift and empty feeds keep distinct gu
 test("following errors use safe code-based guidance and keep private data out of login resume", async ({
   page,
 }, testInfo) => {
-  expectCandidateResponse(testInfo, "following-auth-recovery");
+  expectCandidateResponse(testInfo, "following-identity-inactive");
+  expectCandidateResponse(testInfo, "following-session-expired");
   await mockFeedMedia(page);
   let followingRead = 0;
   await page.route("**/api/discovery*", (route) =>
