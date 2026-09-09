@@ -16,7 +16,7 @@ export class DevDirectPaymentProvider implements DirectPaymentProvider {
   async initiate(command: Parameters<DirectPaymentProvider["initiate"]>[0]) {
     return {
       providerReference: scenarioReference(command.attemptId, "PENDING"),
-      redirectUrl: `/v1/payment-providers/dev/pay/${command.attemptId}?scenario=success`,
+      redirectUrl: `/api/payment-providers/dev/pay/${command.attemptId}?scenario=success`,
     };
   }
 

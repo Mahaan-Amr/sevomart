@@ -14,7 +14,22 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
 
   await expect(page.locator("html")).toHaveAttribute("lang", "fa");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("heading", { name: "کشف تازه‌ها" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "فروشگاه‌های تازه را در سوو کشف کنید" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "کالاها را ببینید، از خود فروشگاه بخرید و سفارش‌تان را در یک مسیر روشن پیگیری کنید.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "خرید کنید" })).toHaveAttribute(
+    "href",
+    "#discovery-feed",
+  );
+  await expect(page.getByRole("link", { name: "فروشنده شوید" })).toHaveAttribute(
+    "href",
+    "/seller/start",
+  );
   const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
   await expect(
     navigation.getByRole("link", { name: "کشف", exact: true }),
@@ -53,6 +68,58 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   );
 
   await assertMinimumContrast(page.locator("h1, main p, nav a"));
+});
+
+test("signed-in buyer shell shows the masked identity and supports sign out", async ({
+  page,
+}) => {
+  await page.goto("/login?returnTo=%2F");
+  await page.getByLabel("شماره موبایل").fill("09123456789");
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByRole("button", { name: "ورود" }).click();
+
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByText("۰۹۱۲***۶۷۸۹", { exact: true }).click();
+  const identityMenu = page.locator("details");
+  await expect(identityMenu.getByRole("link", { name: "ورود و ادامه" })).toHaveCount(0);
+  await expect(identityMenu.getByRole("link", { name: "سفارش‌ها" })).toBeVisible();
+  await expect(identityMenu.getByRole("link", { name: "نشانی‌ها" })).toBeVisible();
+  await expect(
+    identityMenu.getByRole("link", { name: "درخواست فروشندگی" }),
+  ).toBeVisible();
+  let rejectSignOut = true;
+  await page.route("**/api/auth/session", async (route) => {
+    if (route.request().method() === "DELETE" && rejectSignOut) {
+      await route.fulfill({ status: 503, json: {} });
+      return;
+    }
+    await route.continue();
+  });
+  await identityMenu.getByRole("button", { name: "خروج" }).click();
+  await expect(identityMenu.getByRole("alert")).toContainText("خروج انجام نشد");
+  rejectSignOut = false;
+  await identityMenu.getByRole("button", { name: "خروج" }).click();
+  await expect(page.getByText("هویت سوو", { exact: true })).toBeVisible();
+});
+
+test("seller introduction explains responsibility and resumes the application after OTP", async ({
+  page,
+}) => {
+  await page.goto("/seller/start");
+  await expect(
+    page.getByRole("heading", {
+      name: "فروشگاه خودتان را روشن و قابل پیگیری بسازید",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText(/بازپرداخت را تضمین نمی‌کند/)).toBeVisible();
+  await page.getByRole("link", { name: "شروع درخواست فروشندگی" }).click();
+  await expect(page).toHaveURL(/\/seller\/login\?returnTo=/);
+  await page.getByLabel("شماره موبایل").fill("09123456789");
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page).toHaveURL(/\/seller\/application$/);
 });
 
 test("discovery renders public feed data and recovers from a failed request", async ({
@@ -98,6 +165,50 @@ test("legacy addresses preserve the checkout return destination through login", 
   await expect(
     page.getByRole("link", { name: "انصراف و بازگشت", exact: true }),
   ).toHaveAttribute("href", "/checkout/delivery");
+});
+
+test("addresses do not claim to be empty while saved data is loading", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/addresses", async (route) => {
+    await delayed;
+    await route.fulfill({
+      json: { addresses: ordersV1Examples.CheckoutOptions.addresses },
+    });
+  });
+
+  await page.goto("/account/addresses");
+  await expect(page.getByRole("status")).toContainText("در حال دریافت نشانی‌ها");
+  await expect(page.getByText("هنوز نشانی‌ای ذخیره نشده است.")).toHaveCount(0);
+  release();
+  await expect(
+    page.getByText(ordersV1Examples.CheckoutOptions.addresses[0]!.recipientName),
+  ).toBeVisible();
+});
+
+test("addresses distinguish a failed load and recover on retry", async ({ page }) => {
+  let fail = true;
+  await page.route("**/api/addresses", async (route) => {
+    await route.fulfill(
+      fail
+        ? { status: 503, json: {} }
+        : { json: { addresses: ordersV1Examples.CheckoutOptions.addresses } },
+    );
+  });
+
+  await page.goto("/account/addresses");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "دریافت نشانی‌ها" }),
+  ).toContainText("دریافت نشانی‌ها انجام نشد");
+  fail = false;
+  await page.getByRole("button", { name: "تلاش دوباره" }).click();
+  await expect(
+    page.getByText(ordersV1Examples.CheckoutOptions.addresses[0]!.recipientName),
+  ).toBeVisible();
 });
 
 test("checkout's legacy entry resumes at delivery and keeps login contextual", async ({

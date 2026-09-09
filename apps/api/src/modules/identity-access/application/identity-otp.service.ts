@@ -100,6 +100,7 @@ export class IdentityOtpService {
       token,
       session: {
         actor: { identityId: identity.id, audience: "PUBLIC" },
+        maskedMobile: maskMobile(mobile),
         expiresAt: expiresAt.toISOString(),
       },
     };
@@ -119,6 +120,7 @@ export class IdentityOtpService {
     if (!activeSession) return undefined;
     return {
       actor: { identityId: activeSession.identityId, audience: "PUBLIC" },
+      maskedMobile: maskMobile(activeSession.mobile),
       expiresAt: activeSession.expiresAt.toISOString(),
     };
   }
@@ -129,6 +131,7 @@ export class IdentityOtpService {
     return {
       session: {
         actor: { identityId: result.identityId, audience: "PUBLIC" as const },
+        maskedMobile: maskMobile(result.mobile),
         expiresAt: result.expiresAt.toISOString(),
       },
       identityStatus: result.identityStatus,
@@ -139,6 +142,10 @@ export class IdentityOtpService {
     if (!token) return false;
     return this.repository.revokeSession(hashToken(token), this.now());
   }
+}
+
+function maskMobile(mobile: IranianMobile): string {
+  return `${mobile.slice(0, 4)}***${mobile.slice(-4)}`;
 }
 
 export function createProductionOtpCode(): OtpCode {

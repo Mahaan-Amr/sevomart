@@ -20,7 +20,7 @@ import { formatIrrAsToman } from "../../../lib/format-money";
 import { loginHref } from "../../../lib/navigation";
 import styles from "./checkout.module.css";
 
-export function CheckoutView() {
+export function CheckoutView({ developmentPayment }: { developmentPayment: boolean }) {
   const router = useRouter();
   const isReview = usePathname() === "/checkout/review";
   const [options, setOptions] = useState<CheckoutOptions>();
@@ -238,10 +238,16 @@ export function CheckoutView() {
           >
             گفت‌وگو درباره سفارش
           </Link>
+          {developmentPayment ? (
+            <p className={styles.devNotice} role="status">
+              محیط آزمایشی: این پرداخت واقعی نیست و فقط نتیجه‌های مسیر خرید را شبیه‌سازی
+              می‌کند.
+            </p>
+          ) : null}
           <button className={styles.primary} disabled={pending} onClick={startPayment}>
             {pending
               ? "در حال رفتن به پرداخت…"
-              : `پرداخت ${formatIrrAsToman(order.review.total.amount)}`}
+              : `${developmentPayment ? "پرداخت آزمایشی" : "پرداخت"} ${formatIrrAsToman(order.review.total.amount)}`}
           </button>
           {message ? (
             <div role="alert" className={styles.error}>

@@ -82,6 +82,7 @@ export type StoredIdentitySession = {
 
 export type ActiveIdentitySession = {
   identityId: string;
+  mobile: IranianMobile;
   expiresAt: Date;
 };
 

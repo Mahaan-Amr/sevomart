@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import postgres from "postgres";
+import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import { publicProductContract } from "@sevo/contracts/product/v1";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -8,6 +10,8 @@ import { createDemoSeedRequest, executeDemoSeed } from "../../scripts/demo/runti
 import { createPostgresDemoSeedDatabase } from "../../scripts/demo/postgres.mjs";
 import { stableDemoId } from "../../scripts/demo/baseline.mjs";
 import { createMediaDemoSeedAdapter } from "../../apps/api/src/modules/media/demo-seed.composition.mjs";
+import { createApiApp } from "../../apps/api/src/create-app";
+import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 const baselineManifest = JSON.parse(
   readFileSync(new URL("../../ops/demo/manifest.v1.json", import.meta.url), "utf8"),
@@ -49,6 +53,16 @@ describe("demo seed PostgreSQL runtime", () => {
     fingerprint = targets[0]?.fingerprint ?? "";
     await sql`delete from platform_seed_manifest_receipts where namespace = 'sevo.demo'`;
     await sql`delete from platform_seed_resources where namespace = 'sevo.demo'`;
+    // The shared integration suite intentionally runs first against this disposable
+    // database. Acknowledge only that pre-existing test backlog so this suite can
+    // prove the seed accounts for the events it creates itself.
+    await sql`
+      insert into platform_outbox_consumptions (consumer_name, event_id, consumed_at)
+      select 'discovery-public-feed-v1', event_id, now()
+      from platform_outbox_events
+      where event_type in ${sql([...discoveryFeedProjectionEventTypes])}
+      on conflict (consumer_name, event_id) do nothing
+    `;
   });
 
   afterAll(async () => {
@@ -87,6 +101,57 @@ describe("demo seed PostgreSQL runtime", () => {
         conversations: 3,
         orders: 10,
       });
+      const app = await createApiApp(apiTestEnvironment);
+      try {
+        const discovery = await app.getHttpAdapter().getInstance().inject({
+          method: "GET",
+          url: "/v1/feeds/discovery?limit=18",
+        });
+        expect(discovery.statusCode, discovery.body).toBe(200);
+        const discoveryItems = discovery.json<{
+          items: Array<{ productId: string }>;
+        }>().items;
+        const canonicalProductIds = new Set(
+          baselineManifest.resources
+            .filter(({ kind, state }) => kind === "product" && state === "PUBLISHED")
+            .map(({ key }) => stableDemoId(key)),
+        );
+        expect(
+          discoveryItems.filter(({ productId }) => canonicalProductIds.has(productId)),
+        ).toHaveLength(9);
+        const sessionToken = "canonical-demo-buyer-session";
+        await sql`
+          insert into identity_sessions
+            (id, token_hash, identity_id, audience, expires_at)
+          values (${crypto.randomUUID()},
+            ${createHash("sha256").update(sessionToken).digest("hex")},
+            ${stableDemoId("identity.buyer")}, 'PUBLIC', now() + interval '1 hour')
+          on conflict (token_hash) do update set revoked_at = null,
+            expires_at = excluded.expires_at
+        `;
+        const orders = await app
+          .getHttpAdapter()
+          .getInstance()
+          .inject({
+            method: "GET",
+            url: "/v1/orders",
+            headers: { cookie: `sevo_session=${sessionToken}` },
+          });
+        expect(orders.statusCode, orders.body).toBe(200);
+        const orderItems = orders.json<{ items: Array<{ orderId: string }> }>().items;
+        expect(orderItems).toHaveLength(10);
+        const detail = await app
+          .getHttpAdapter()
+          .getInstance()
+          .inject({
+            method: "GET",
+            url: `/v1/orders/${orderItems[0]!.orderId}`,
+            headers: { cookie: `sevo_session=${sessionToken}` },
+          });
+        expect(detail.statusCode, detail.body).toBe(200);
+      } finally {
+        await app.close();
+      }
       const publicationSnapshots = await sql<Array<{ snapshot: unknown }>>`
         select snapshot from product_publications
         where snapshot is not null and product_id in (
@@ -106,7 +171,7 @@ describe("demo seed PostgreSQL runtime", () => {
         humanIdentityStatus: "ACTIVE",
         missingMediaReferences: 0,
         mediaAssets: 17,
-        orderTransitions: 19,
+        orderTransitions: 12,
         paymentAudits: 24,
         refundAudits: 3,
         fulfillmentTimelineEntries: 21,
@@ -645,7 +710,12 @@ async function seedEvidence() {
     select
       (select status from identity_identities where id = ${humanIdentityId}) as "humanIdentityStatus",
       (select count(*)::int from media_assets where original_object_key like 'demo/%') as "mediaAssets",
-      (select count(*)::int from order_state_transitions where reason_code = 'DEMO_BASELINE') as "orderTransitions",
+      (select count(*)::int from order_state_transitions
+        where order_id in ${sql(
+          baselineManifest.resources
+            .filter(({ kind }) => kind === "order")
+            .map(({ key }) => stableDemoId(key)),
+        )}) as "orderTransitions",
       (select count(*)::int from payment_attempt_audits where reason_code in
         ('ATTEMPT_CREATED', 'PROVIDER_DISPATCHED', 'PROVIDER_CONFIRMED', 'PROVIDER_PENDING')) as "paymentAudits",
       (select count(*)::int from payment_direct_refund_audits where actor_reference in

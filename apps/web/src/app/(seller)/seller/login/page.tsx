@@ -19,6 +19,9 @@ export default async function SellerLoginPage({
     <IdentityLogin
       initiallySignedIn={Boolean(session)}
       returnTo={returnTo}
+      cancelTo="/seller/start"
+      autoContinue={returnTo === "/seller/application"}
+      attachCartOnContinue={false}
       showDevelopmentCode={
         (process.env.SEVO_RUNTIME_ENV ?? process.env.NODE_ENV) !== "production" &&
         (process.env.OTP_PROVIDER ?? "dev") === "dev"

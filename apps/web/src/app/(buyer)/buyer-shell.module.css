@@ -81,8 +81,37 @@
   z-index: 2;
 }
 
-.identityMenu a {
+.identityMenu a,
+.identityMenu button {
   justify-content: start;
+}
+.identityMenu button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.identityMenu button:hover {
+  background: var(--color-cover-start);
+}
+.identityMenu button:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+.identityMenu button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.identityError {
+  margin: 4px 12px 8px;
+  color: var(--color-primary-dark);
+  font-size: 12px;
+  line-height: 1.8;
 }
 .content {
   display: block;

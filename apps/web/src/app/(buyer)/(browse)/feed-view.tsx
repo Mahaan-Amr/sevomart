@@ -178,11 +178,17 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
       ) : null}
       {state.emptyState ? (
         <div className={styles.state}>
+          <span className={styles.emptyMark} aria-hidden="true">
+            سوو
+          </span>
           <p>{state.emptyState.message}</p>
           {kind === "following" ? (
             <Link href="/">{state.emptyState.nextAction}</Link>
           ) : (
-            <p>{state.emptyState.nextAction}</p>
+            <>
+              <p>{state.emptyState.nextAction}</p>
+              <Link href="/seller/start">فروشنده شوید</Link>
+            </>
           )}
         </div>
       ) : null}

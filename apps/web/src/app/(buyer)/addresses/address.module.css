@@ -51,6 +51,22 @@
   display: flex;
   gap: 8px;
 }
+.loadError {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding-block: 12px;
+}
+.loadError button {
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  cursor: pointer;
+}
 .rowActions button,
 .cancel {
   min-height: 40px;

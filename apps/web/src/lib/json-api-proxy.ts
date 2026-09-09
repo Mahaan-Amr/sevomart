@@ -9,6 +9,7 @@ export async function proxyJsonApiRequest(
     responseHeaders: readonly string[];
     noStore?: boolean;
     forwardSearch?: boolean;
+    redirect?: RequestRedirect;
   },
 ): Promise<Response> {
   if (!options.isAllowed(segments)) {
@@ -36,6 +37,7 @@ export async function proxyJsonApiRequest(
         headers,
         body: hasBody ? await request.arrayBuffer() : undefined,
         cache: "no-store",
+        redirect: options.redirect,
       },
     );
     const responseHeaders = new Headers();
@@ -44,7 +46,9 @@ export async function proxyJsonApiRequest(
       const value = upstream.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }
-    return new Response(upstream.body, {
+    const responseBody =
+      upstream.status >= 300 && upstream.status < 400 ? null : upstream.body;
+    return new Response(responseBody, {
       status: upstream.status,
       headers: responseHeaders,
     });

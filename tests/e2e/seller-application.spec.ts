@@ -25,7 +25,7 @@ test("applicant keeps a Persian RTL draft across a return and sees the next step
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await page.getByRole("link", { name: "ادامه کار" }).click();
+  await expect(page).toHaveURL(/\/seller\/application$/);
   await expect(page.locator("main")).not.toContainText(
     "در حال آماده‌کردن درخواست شما…",
   );
@@ -110,7 +110,7 @@ test("an information-request draft survives a reload without losing applicant ed
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await page.getByRole("link", { name: "ادامه کار" }).click();
+  await expect(page).toHaveURL(/\/seller\/application$/);
 
   const field = page.getByLabel("الان چطور می‌فروشید؟");
   await expect(field).toHaveValue(application.currentPayload.currentSalesMethod);
@@ -136,7 +136,7 @@ test("an approved application points to the canonical seller workspace", async (
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await page.getByRole("link", { name: "ادامه کار" }).click();
+  await expect(page).toHaveURL(/\/seller\/application$/);
   await expect(page.getByText("درخواست شما تأیید شد.")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "رفتن به فضای فروشنده" }),
@@ -467,6 +467,11 @@ function legacyStoreDraft() {
 async function establishIdentitySession(context: BrowserContext) {
   const identityId = randomUUID();
   const token = randomBytes(32).toString("base64url");
+  const mobile = `090${randomBytes(4)
+    .readUInt32BE()
+    .toString()
+    .padStart(8, "0")
+    .slice(-8)}`;
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
@@ -475,6 +480,11 @@ async function establishIdentitySession(context: BrowserContext) {
       await transaction`
         insert into identity_identities (id, status)
         values (${identityId}, 'ACTIVE')
+      `;
+      await transaction`
+        insert into identity_login_methods
+          (id, identity_id, kind, mobile, verified_at)
+        values (${randomUUID()}, ${identityId}, 'MOBILE', ${mobile}, now())
       `;
       await transaction`
         insert into identity_sessions
