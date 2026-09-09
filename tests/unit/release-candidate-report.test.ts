@@ -64,11 +64,13 @@ it("rejects forbidden markers and missing browser projects", () => {
   );
 });
 
-function reportWith(results: Array<{
-  status: string;
-  retry: number;
-  browserActivity?: Record<string, number>;
-}>) {
+function reportWith(
+  results: Array<{
+    status: string;
+    retry: number;
+    browserActivity?: Record<string, number>;
+  }>,
+) {
   for (const result of results) {
     result.browserActivity ??= {
       consoleErrors: 0,
@@ -114,7 +116,9 @@ it("does not infer scenario or zoom evidence from a passing file in every projec
             tests: ["360x800", "390x844", "768x1024", "1440x900"].map((viewport) => ({
               projectName: `chromium-${viewport}`,
               expectedStatus: "passed",
-              results: [{ status: "passed", retry: 0, browserActivity: cleanBrowserActivity }],
+              results: [
+                { status: "passed", retry: 0, browserActivity: cleanBrowserActivity },
+              ],
             })),
           },
         ],

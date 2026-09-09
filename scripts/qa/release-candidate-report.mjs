@@ -22,7 +22,9 @@ export function assertReleaseCandidateReport(report) {
         (key) => !Number.isInteger(browserActivity[key]) || browserActivity[key] !== 0,
       )
     ) {
-      throw new Error(`Release candidate has no clean browser guard: ${candidate.title}`);
+      throw new Error(
+        `Release candidate has no clean browser guard: ${candidate.title}`,
+      );
     }
   }
   return report;

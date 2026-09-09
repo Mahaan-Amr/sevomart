@@ -20,12 +20,21 @@ it("runs only manifest journeys in Chromium candidate projects", () => {
     candidate.name?.startsWith("chromium-"),
   );
   expect(project).toBeDefined();
-  const patterns = Array.isArray(project!.testMatch) ? project!.testMatch : [project!.testMatch];
+  const patterns = Array.isArray(project!.testMatch)
+    ? project!.testMatch
+    : [project!.testMatch];
   const required = new Set(manifest.journeys.flatMap((journey) => journey.tests.e2e));
   for (const file of required) {
-    expect(patterns.some((pattern) => pattern instanceof RegExp && pattern.test(file))).toBe(true);
+    expect(
+      patterns.some((pattern) => pattern instanceof RegExp && pattern.test(file)),
+    ).toBe(true);
   }
-  expect(patterns.some((pattern) => pattern instanceof RegExp && pattern.test("tests/e2e/web-baseline.spec.ts"))).toBe(false);
+  expect(
+    patterns.some(
+      (pattern) =>
+        pattern instanceof RegExp && pattern.test("tests/e2e/web-baseline.spec.ts"),
+    ),
+  ).toBe(false);
 });
 
 it("requires manifest tests to create extra browser contexts through the guard", () => {
