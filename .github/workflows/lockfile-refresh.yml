@@ -19,6 +19,12 @@ jobs:
         with:
           node-version-file: .node-version
       - run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Print compressed lockfile for restricted runners
+        run: |
+          echo LOCKFILE_BEGIN
+          gzip --stdout pnpm-lock.yaml | base64 --wrap=0
+          echo
+          echo LOCKFILE_END
       - uses: actions/upload-artifact@v4
         with:
           name: refreshed-lockfile
