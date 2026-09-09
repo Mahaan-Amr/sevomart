@@ -279,15 +279,33 @@ describe("release browser guard policy", () => {
     ).toBe(false);
   });
 
-  it("selects the annotated scenario when response tuples overlap", () => {
+  it("requires separate annotations for refund absence and retry responses", () => {
+    const annotations = [
+      { type: "release-expected-response", description: "direct-refund-empty" },
+      { type: "release-expected-response", description: "direct-refund-retry" },
+    ];
+    const consumedResponses = new Map<number, number>();
     expect(
       candidateResponseIsExpected(
         404,
         "GET",
         "/api/seller/orders/order-id/direct-refund",
-        [{ type: "release-expected-response", description: "direct-refund-recovery" }],
+        annotations,
+        consumedResponses,
       ),
     ).toBe(true);
+    expect(
+      candidateResponseIsExpected(
+        503,
+        "POST",
+        "/api/seller/orders/order-id/direct-refund",
+        annotations,
+        consumedResponses,
+      ),
+    ).toBe(true);
+    expect(
+      missingCandidateExpectations(annotations, consumedResponses, new Map()),
+    ).toEqual([]);
   });
 
   it("reduces URLs to non-identifying route families", () => {

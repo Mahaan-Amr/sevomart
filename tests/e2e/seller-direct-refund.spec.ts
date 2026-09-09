@@ -103,7 +103,8 @@ test("seller requests cancellation while refund stays pending trusted verificati
 test("provider failure stays unsuccessful until a valid retry succeeds", async ({
   page,
 }, testInfo) => {
-  expectCandidateResponse(testInfo, "direct-refund-recovery");
+  expectCandidateResponse(testInfo, "direct-refund-empty");
+  expectCandidateResponse(testInfo, "direct-refund-retry");
   const index = visualProjectIndex(testInfo.project.name);
   const mobile = sellerRefundRecoveryTestMobiles[index]!;
   const orderId = randomUUID();

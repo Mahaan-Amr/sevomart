@@ -124,16 +124,10 @@ const expectedCandidateResponses = [
     scenario: "seller-fulfillment-empty",
   },
   {
-    status: 404,
-    method: "GET",
-    path: /^\/api\/seller\/orders\/.*\/direct-refund$/,
-    scenario: "direct-refund-recovery",
-  },
-  {
     status: 503,
     method: "POST",
     path: /^\/api\/seller\/orders\/.*\/direct-refund$/,
-    scenario: "direct-refund-recovery",
+    scenario: "direct-refund-retry",
   },
   {
     status: 404,
