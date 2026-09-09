@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
+const pnpmWorkspace = readFileSync("pnpm-workspace.yaml", "utf8");
 const productionDockerfiles = [
   "apps/api/Dockerfile",
   "apps/web/Dockerfile",
@@ -38,4 +39,8 @@ describe("first-slice CI acceptance contract", () => {
       expect(install).toBeGreaterThan(patchesCopy);
     },
   );
+
+  it("allows unrelated patches during filtered production deploys", () => {
+    expect(pnpmWorkspace).toMatch(/^allowUnusedPatches: true$/m);
+  });
 });
