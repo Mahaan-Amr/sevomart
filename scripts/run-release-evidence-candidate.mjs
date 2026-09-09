@@ -9,6 +9,7 @@ import {
   assertReleaseCandidateReport,
 } from "./qa/release-candidate-report.mjs";
 import {
+  releaseCandidateBrowserEnvironment,
   releaseCandidateLayerEnvironment,
   runReleaseCandidateLayers,
 } from "./qa/release-candidate-layers.mjs";
@@ -82,7 +83,11 @@ for (const runNumber of [1, 2]) {
       const result = spawnSync(
         process.execPath,
         ["scripts/run-e2e-tests.mjs", "--config", "playwright.release.config.ts"],
-        { encoding: "utf8", env: environment, stdio: "inherit" },
+        {
+          encoding: "utf8",
+          env: releaseCandidateBrowserEnvironment(environment),
+          stdio: "inherit",
+        },
       );
       if (result.error) throw result.error;
       if (result.status !== 0)

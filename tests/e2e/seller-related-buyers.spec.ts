@@ -32,6 +32,7 @@ test("seller finds an order buyer and reveals delivery details with a reason", a
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByRole("heading", { name: "وارد شدید" })).toBeVisible();
 
   const identities = await sql<Array<{ identityId: string }>>`
     select identity_id as "identityId" from identity_login_methods where mobile = ${mobile}

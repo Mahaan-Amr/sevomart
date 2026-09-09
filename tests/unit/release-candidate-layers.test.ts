@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import {
+  releaseCandidateBrowserEnvironment,
   releaseCandidateLayerEnvironment,
   runReleaseCandidateLayers,
 } from "../../scripts/qa/release-candidate-layers.mjs";
@@ -52,4 +53,21 @@ it("gives the integration runner ownership of its disposable targets", () => {
   expect(
     releaseCandidateLayerEnvironment("test:integration", candidateEnvironment),
   ).not.toHaveProperty("MINIO_ENDPOINT");
+});
+
+it("uses persistent storage adapters for browser candidates on disposable targets", () => {
+  const candidateEnvironment = {
+    DATABASE_URL: "postgresql://sevo:sevo_local@127.0.0.1:32000/sevo_qa_release",
+    MINIO_ENDPOINT: "127.0.0.1",
+    MINIO_PORT: "32001",
+    SEVO_RUNTIME_ENV: "test",
+  };
+
+  expect(releaseCandidateBrowserEnvironment(candidateEnvironment)).toMatchObject({
+    DATABASE_URL: candidateEnvironment.DATABASE_URL,
+    MINIO_ENDPOINT: candidateEnvironment.MINIO_ENDPOINT,
+    MINIO_PORT: candidateEnvironment.MINIO_PORT,
+    SEVO_RUNTIME_ENV: "development",
+  });
+  expect(candidateEnvironment.SEVO_RUNTIME_ENV).toBe("test");
 });

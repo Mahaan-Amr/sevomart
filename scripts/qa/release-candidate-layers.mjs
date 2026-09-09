@@ -13,6 +13,15 @@ export function releaseCandidateLayerEnvironment(script, candidateEnvironment) {
     : candidateEnvironment;
 }
 
+export function releaseCandidateBrowserEnvironment(candidateEnvironment) {
+  return {
+    ...candidateEnvironment,
+    // Browser candidates must exercise the PostgreSQL/MinIO adapters while the
+    // surrounding QA lifecycle still owns their disposable endpoints.
+    SEVO_RUNTIME_ENV: "development",
+  };
+}
+
 export function runReleaseCandidateLayers(runScript, candidateName = "Candidate") {
   for (const script of RELEASE_CANDIDATE_LAYERS) {
     if (runScript(script) !== 0) {
