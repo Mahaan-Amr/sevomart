@@ -145,3 +145,10 @@
     animation: none !important;
   }
 }
+.devNotice {
+  padding: 10px 12px;
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: 8px;
+  background: var(--color-cover-start);
+  color: var(--color-text);
+}

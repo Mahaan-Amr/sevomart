@@ -199,7 +199,18 @@
   .header,
   .reviewArea {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .revealed dl div,
+  .evidence li,
+  .followUp li {
+    flex-wrap: wrap;
+  }
+
+  .reviewArea > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .header button {

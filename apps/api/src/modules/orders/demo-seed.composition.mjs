@@ -1,4 +1,7 @@
 const SHIPPING_FEE = 850000;
+const RETURN_POLICY = "تا ۷ روز پس از تحویل، درخواست مرجوعی را با فروشنده هماهنگ کنید.";
+const DIRECT_SETTLEMENT_DISCLOSURE =
+  "مبلغ این سفارش مستقیماً برای فروشگاه تسویه می‌شود. سیاست مرجوعی را فروشگاه تعیین می‌کند. سوو گزارش مشکل و تخلف را پیگیری می‌کند، اما بازپرداخت را تضمین نمی‌کند.";
 
 export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
   const { id, firstVariant } = baseline.ids;
@@ -86,9 +89,16 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
     const checkoutId = id(`${order.key}.checkout`);
     const orderId = id(order.key);
     const totalAmount = product.price + SHIPPING_FEE;
-    const [existingOrder] = await sql`
-      select status from order_orders where id = ${orderId}
-    `;
+    const expiresAt = new Date(createdAt.getTime() + 15 * 60_000);
+    const reviewSnapshot = buildReviewSnapshot({
+      baseline,
+      order,
+      product,
+      cartId,
+      checkoutId,
+      addressId: id(historicalAddressKey),
+      expiresAt,
+    });
     await sql`
       insert into order_carts
         (id, store_id, identity_id, status, revision, expires_at, created_at,
@@ -104,9 +114,10 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
          address_revision, shipping_method_id, shipping_revision, policy_revision,
          snapshot, expires_at, consumed_order_id, created_at)
       values (${checkoutId}, ${buyerId}, ${cartId}, 1, ${id(historicalAddressKey)}, 1,
-        ${id("store.aban.shipping")}, 1, 1, ${sql.json({ product: product.name })},
-        ${new Date(createdAt.getTime() + 15 * 60_000)}, null, ${createdAt})
-      on conflict (checkout_revision) do nothing
+        ${id("store.aban.shipping")}, 1, 1, ${sql.json(reviewSnapshot)},
+        ${expiresAt}, null, ${createdAt})
+      on conflict (checkout_revision) do update set snapshot = excluded.snapshot,
+        expires_at = excluded.expires_at
     `;
     const paidAt = ["PENDING_PAYMENT", "PAYMENT_REVIEW", "EXPIRED"].includes(
       order.state,
@@ -120,27 +131,15 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
          created_at, paid_at)
       values (${orderId}, ${buyerId}, ${storeId}, ${checkoutId},
         ${id(`${order.key}.reservation`)}, ${order.state}, ${totalAmount}, 'IRR',
-        ${new Date(createdAt.getTime() + 15 * 60_000)},
-        ${sql.json({ settlementKind: "DIRECT", product: product.name })},
+        ${expiresAt}, ${sql.json(reviewSnapshot)},
         ${createdAt}, ${paidAt})
-      on conflict (id) do nothing
+      on conflict (id) do update set status = excluded.status,
+        total_amount = excluded.total_amount,
+        currency = excluded.currency,
+        reservation_expires_at = excluded.reservation_expires_at,
+        review_snapshot = excluded.review_snapshot,
+        created_at = excluded.created_at, paid_at = excluded.paid_at
     `;
-    if (existingOrder && existingOrder.status !== order.state) {
-      await sql`
-        update order_orders set status = ${order.state}, paid_at = ${paidAt}
-        where id = ${orderId}
-      `;
-      await sql`
-        insert into order_state_transitions
-          (id, order_id, from_status, to_status, reason_code, actor_kind,
-           correlation_id, occurred_at)
-        values (${id(`${order.key}.baseline-restored.${order.state}`)}, ${orderId},
-          ${existingOrder.status}, ${order.state}, 'DEMO_BASELINE_RESTORED', 'SYSTEM',
-          ${id(`${order.key}.baseline-restored-correlation.${order.state}`)},
-          ${baseline.now})
-        on conflict (id) do nothing
-      `;
-    }
     await sql`
       update order_checkout_preparations set consumed_order_id = ${orderId}
       where checkout_revision = ${checkoutId}
@@ -156,6 +155,61 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
     await seedSnapshots(sql, baseline, orderId, id(historicalAddressKey));
     await seedOrderHistory(sql, baseline, order, paidAt);
   }
+}
+
+function buildReviewSnapshot({
+  baseline,
+  order,
+  product,
+  cartId,
+  checkoutId,
+  addressId,
+  expiresAt,
+}) {
+  const { id, firstVariant } = baseline.ids;
+  return {
+    checkoutRevision: checkoutId,
+    expiresAt: expiresAt.toISOString(),
+    cart: { cartId, revision: 1 },
+    store: {
+      storeId: id("store.aban"),
+      name: baseline.resources.get("store.aban").name,
+    },
+    items: [
+      {
+        productId: id(order.product),
+        variantId: firstVariant(order.product),
+        name: product.name,
+        quantity: 1,
+        publicationVersion: 1,
+        unitPrice: { amount: product.price, currency: "IRR" },
+        lineTotal: { amount: product.price, currency: "IRR" },
+      },
+    ],
+    address: {
+      addressId,
+      revision: 1,
+      recipientName: "نیلوفر مرادی",
+      recipientMobile: "09000000001",
+      provinceText: "تهران",
+      cityText: "تهران",
+      addressLine: "خیابان نمونه، کوچه آزمایش، پلاک ۱۲",
+      postalCode: "1234567890",
+    },
+    shippingMethod: {
+      id: id("store.aban.shipping"),
+      revision: 1,
+      code: "NATIONAL_POST",
+      label: "پست پیشتاز",
+      fee: { amount: SHIPPING_FEE, currency: "IRR" },
+      estimatedDeliveryText: "۳ تا ۵ روز کاری",
+      requiresDeliveryAddress: true,
+    },
+    returnPolicy: { revision: 1, text: RETURN_POLICY },
+    subtotal: { amount: product.price, currency: "IRR" },
+    total: { amount: product.price + SHIPPING_FEE, currency: "IRR" },
+    settlement: { mode: "DIRECT", disclosure: DIRECT_SETTLEMENT_DISCLOSURE },
+  };
 }
 
 async function seedSnapshots(sql, baseline, orderId, addressId) {
@@ -177,8 +231,7 @@ async function seedSnapshots(sql, baseline, orderId, addressId) {
   `;
   await sql`
     insert into order_policy_snapshots (order_id, revision, text)
-    values (${orderId}, 1,
-      'تا ۷ روز پس از تحویل، درخواست مرجوعی را با فروشنده هماهنگ کنید.')
+    values (${orderId}, 1, ${RETURN_POLICY})
     on conflict (order_id) do nothing
   `;
 }
@@ -186,29 +239,53 @@ async function seedSnapshots(sql, baseline, orderId, addressId) {
 async function seedOrderHistory(sql, baseline, order, paidAt) {
   const { id } = baseline.ids;
   const createdAt = baseline.atDaysAgo(order.ageDays, order.ageMinutes ?? 0);
-  const transitions = [{ from: null, to: "PENDING_PAYMENT", at: createdAt }];
+  const transitions = [];
   if (order.state === "PAYMENT_REVIEW") {
     transitions.push({
       from: "PENDING_PAYMENT",
       to: "PAYMENT_REVIEW",
+      reason: "PAYMENT_DISPATCH_UNRESOLVED",
       at: new Date(createdAt.getTime() + 2 * 60_000),
     });
   } else if (order.state === "EXPIRED") {
     transitions.push({
       from: "PENDING_PAYMENT",
       to: "EXPIRED",
+      reason: "PAYMENT_FAILED",
       at: new Date(createdAt.getTime() + 15 * 60_000),
     });
   } else if (paidAt) {
-    transitions.push({ from: "PENDING_PAYMENT", to: order.state, at: paidAt });
+    transitions.push({
+      from: "PENDING_PAYMENT",
+      to: "PAID",
+      reason: "PAYMENT_CONFIRMED",
+      at: paidAt,
+    });
+    if (order.state === "CANCELLATION_PENDING_REFUND" || order.state === "CANCELLED") {
+      transitions.push({
+        from: "PAID",
+        to: "CANCELLATION_PENDING_REFUND",
+        reason: "REFUND_REQUESTED",
+        at: new Date(paidAt.getTime() + 60_000),
+      });
+    }
+    if (order.state === "CANCELLED") {
+      transitions.push({
+        from: "CANCELLATION_PENDING_REFUND",
+        to: "CANCELLED",
+        reason: "REFUND_CONFIRMED",
+        at: new Date(paidAt.getTime() + 2 * 60_000),
+      });
+    }
   }
+  await sql`delete from order_state_transitions where order_id = ${id(order.key)}`;
   for (const [index, transition] of transitions.entries()) {
     await sql`
       insert into order_state_transitions
         (id, order_id, from_status, to_status, reason_code, actor_kind,
          correlation_id, occurred_at)
       values (${id(`${order.key}.order-transition.${index + 1}`)}, ${id(order.key)},
-        ${transition.from}, ${transition.to}, 'DEMO_BASELINE', 'SYSTEM',
+        ${transition.from}, ${transition.to}, ${transition.reason}, 'SYSTEM',
         ${id(`${order.key}.order-correlation.${index + 1}`)}, ${transition.at})
       on conflict (id) do nothing
     `;

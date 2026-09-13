@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  test,
+} from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -16,6 +22,8 @@ import {
 test("seller finds variants and safely adjusts inventory with Persian numbers", async ({
   page,
 }, testInfo) => {
+  expectCandidateFailure(testInfo, "inventory-ambiguous-result");
+  expectCandidateResponse(testInfo, "inventory-ambiguous-result");
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = sellerInventoryTestMobiles[projectIndex]!;
   const databaseUrl =
@@ -403,6 +411,11 @@ test("seller finds variants and safely adjusts inventory with Persian numbers", 
     );
     await assertMinimumContrast(page.locator("#inventory-editor-error"));
     await assertNoHorizontalOverflow(page);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-inventory:success",
+      name: "seller-inventory",
+      sensitiveRegions: [],
+    });
     await assertInteractiveTargets(
       page,
       "main a, main button, main input, main select, main summary, main textarea",

@@ -7,6 +7,24 @@ export async function convergeDiscoveryDemoState({
   inventoryStates,
 }) {
   const { id } = baseline.ids;
+  const projectionEventTypes = [
+    "StorePublished.v1",
+    "StoreUnpublished.v1",
+    "ProductPublished.v1",
+    "ProductPublished.v2",
+    "ProductUnpublished.v1",
+    "VariantPriceChanged.v1",
+    "VariantAvailabilityChanged.v1",
+  ];
+  const projectionAggregateIds = [
+    ...baseline.stores.map((store) => id(store.key)),
+    ...baseline.products.flatMap((product) => [
+      id(product.key),
+      ...(product.variants ?? []).map((variant) =>
+        id(`${product.key}.variant.${variant.key}`),
+      ),
+    ]),
+  ];
   const follows = manifest.resources.filter(({ kind }) => kind === "follow");
   const followRevisions = new Map();
   let followSetChanged = false;
@@ -92,6 +110,14 @@ export async function convergeDiscoveryDemoState({
     values ('public-feed-v1', true, null, ${baseline.now})
     on conflict (projection_name) do update set healthy = true, reason = null,
       updated_at = excluded.updated_at
+  `;
+  await sql`
+    insert into platform_outbox_consumptions (consumer_name, event_id, consumed_at)
+    select 'discovery-public-feed-v1', event_id, ${baseline.now}
+    from platform_outbox_events
+    where event_type in ${sql(projectionEventTypes)}
+      and aggregate_id in ${sql(projectionAggregateIds)}
+    on conflict (consumer_name, event_id) do nothing
   `;
   await sql`
     delete from discovery_follower_count_relation_projections

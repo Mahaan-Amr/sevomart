@@ -266,7 +266,7 @@ describe("seller application applicant API with PostgreSQL", () => {
     }
   });
 
-  it("resubmits only a requested-information revision and preserves its public timeline", async () => {
+  it("resubmits only a requested-information revision and preserves causal timeline order despite clock skew", async () => {
     const app = await startApp();
     const cookie = await signIn(app);
     const server = app.getHttpAdapter().getInstance();
@@ -312,7 +312,7 @@ describe("seller application applicant API with PostgreSQL", () => {
              'REQUEST_INFORMATION', 'INFORMATION_INCOMPLETE',
              'لطفاً روش فعلی فروش را روشن‌تر بنویسید.',
              ARRAY['currentSalesMethod'],
-             '9921f18f-187f-40dd-a389-1626156366f8', now())
+             '9921f18f-187f-40dd-a389-1626156366f8', now() + interval '1 hour')
         `;
       });
     } finally {

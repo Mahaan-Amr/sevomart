@@ -11,7 +11,7 @@ import {
 } from "../helpers/visual-projects";
 
 test("seller publishes one simple variant that a guest sees without private data", async ({
-  browser,
+  newCandidateContext,
   page,
 }, testInfo) => {
   test.setTimeout(120_000);
@@ -113,7 +113,7 @@ test("seller publishes one simple variant that a guest sees without private data
   if (!publicHref) throw new Error("Published product link must have an href");
   const productId = new URL(publicHref, page.url()).pathname.split("/").at(-1)!;
 
-  const guestContext = await browser.newContext({
+  const guestContext = await newCandidateContext({
     locale: "fa-IR",
     timezoneId: "Asia/Tehran",
     viewport: testInfo.project.use.viewport,

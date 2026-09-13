@@ -171,6 +171,17 @@
   font-size: 11px;
 }
 
+@media (max-width: 260px) {
+  .follow {
+    grid-template-columns: 1fr;
+  }
+
+  .followButton,
+  .followingButton {
+    width: 100%;
+  }
+}
+
 .followButton,
 .followingButton,
 .followError button,

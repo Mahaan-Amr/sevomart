@@ -14,11 +14,12 @@ export async function convergePaymentsDemoState({ sql, baseline }) {
          provider_reference, redirect_url, created_at, dispatched_at, confirmed_at)
       values (${attemptId}, ${id(order.key)}, ${id("identity.buyer")}, ${status},
         ${totalAmount}, 'IRR', 'DEV', ${`dev-scenario-${scenario}-${attemptId}`},
-        ${`/v1/payment-providers/dev/pay/${attemptId}?scenario=${scenario}`},
+        ${`/api/payment-providers/dev/pay/${attemptId}?scenario=${scenario}`},
         ${createdAt}, ${new Date(createdAt.getTime() + 60_000)},
         ${status === "CONFIRMED" ? new Date(createdAt.getTime() + 2 * 60_000) : null})
       on conflict (id) do update set status = excluded.status,
         provider_reference = excluded.provider_reference, redirect_url = excluded.redirect_url,
+        created_at = excluded.created_at, dispatched_at = excluded.dispatched_at,
         confirmed_at = excluded.confirmed_at
     `;
     await seedAttemptAudit(sql, baseline, order, attemptId, status, createdAt);

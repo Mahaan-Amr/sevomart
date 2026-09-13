@@ -50,6 +50,7 @@
     "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:contract && pnpm test:integration"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.62.1",
     "@sevo/contracts": "workspace:*",
@@ -59,7 +60,7 @@
     "globals": "16.4.0",
     "postgres": "3.4.7",
     "prettier": "3.9.6",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0",
     "vitest": "4.1.10",

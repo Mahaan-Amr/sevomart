@@ -21,7 +21,9 @@ const emptyAddress: AddressFields = {
 };
 
 export function AddressView({ returnTo }: { returnTo: string }) {
-  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [addresses, setAddresses] = useState<SavedAddress[]>();
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState<SavedAddress>();
   const [fields, setFields] = useState<AddressFields>(emptyAddress);
   const [message, setMessage] = useState("");
@@ -32,16 +34,27 @@ export function AddressView({ returnTo }: { returnTo: string }) {
   }, []);
 
   async function load() {
-    const response = await fetch("/api/addresses", { cache: "no-store" });
-    if (response.status === 401) {
-      window.location.assign(
-        loginHref(`/account/addresses?${new URLSearchParams({ returnTo })}`, returnTo),
-      );
-      return;
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const response = await fetch("/api/addresses", { cache: "no-store" });
+      if (response.status === 401) {
+        window.location.assign(
+          loginHref(
+            `/account/addresses?${new URLSearchParams({ returnTo })}`,
+            returnTo,
+          ),
+        );
+        return;
+      }
+      const parsed = savedAddressListContract.safeParse(await response.json());
+      if (!response.ok || !parsed.success) throw new Error("addresses unavailable");
+      setAddresses(parsed.data.addresses);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
     }
-    const parsed = savedAddressListContract.safeParse(await response.json());
-    if (parsed.success) setAddresses(parsed.data.addresses);
-    else setMessage("نشانی‌ها بارگیری نشدند. دوباره تلاش کنید.");
   }
 
   async function submit(event: FormEvent) {
@@ -127,7 +140,16 @@ export function AddressView({ returnTo }: { returnTo: string }) {
           نشانی را برای انتخاب در مرحله مرور سفارش نگه دارید. ویرایش، نسخه تازه‌ای
           می‌سازد و سفارش‌های قبلی را تغییر نمی‌دهد.
         </p>
-        {addresses.length ? (
+        {loading && !addresses ? (
+          <p role="status">در حال دریافت نشانی‌ها…</p>
+        ) : loadError && !addresses ? (
+          <div className={styles.loadError} role="alert">
+            <p>دریافت نشانی‌ها انجام نشد.</p>
+            <button type="button" onClick={() => void load()}>
+              تلاش دوباره
+            </button>
+          </div>
+        ) : addresses?.length ? (
           <ul className={styles.list} aria-label="نشانی‌های ذخیره‌شده">
             {addresses.map((address) => (
               <li key={address.addressId}>
@@ -151,9 +173,9 @@ export function AddressView({ returnTo }: { returnTo: string }) {
               </li>
             ))}
           </ul>
-        ) : (
+        ) : addresses ? (
           <p>هنوز نشانی‌ای ذخیره نشده است.</p>
-        )}
+        ) : null}
         <form onSubmit={submit} className={styles.form}>
           <h2>{editing ? "ویرایش نشانی" : "افزودن نشانی"}</h2>
           <Field

@@ -9,7 +9,9 @@ model ContentSalesContent {
   mediaId         String   @map("media_id") @db.Uuid
   mediaKind       String   @map("media_kind") @db.VarChar(8)
   active          Boolean  @default(true)
+  revision        Int      @default(1)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
   products        ContentSalesContentProduct[]
 
   @@index([storeId, createdAt])

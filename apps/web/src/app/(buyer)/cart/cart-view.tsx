@@ -211,7 +211,7 @@ export function CartView() {
                         disabled={pending || item.quantity <= 1}
                         onClick={() => changeItem(item.variantId, item.quantity - 1)}
                       >
-                        −
+                        -
                       </button>
                       <button
                         type="button"

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -31,6 +32,7 @@ test("seller finds an order buyer and reveals delivery details with a reason", a
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByRole("heading", { name: "وارد شدید" })).toBeVisible();
 
   const identities = await sql<Array<{ identityId: string }>>`
     select identity_id as "identityId" from identity_login_methods where mobile = ${mobile}
@@ -247,6 +249,11 @@ test("seller finds an order buyer and reveals delivery details with a reason", a
     await expect(page.getByText(/خیابان آزادی/)).toBeVisible();
     expect(revealReason).toBe("پیگیری ارسال سفارش و هماهنگی زمان تحویل");
     await assertNoHorizontalOverflow(page);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-related-buyer:success",
+      name: "seller-related-buyer",
+      sensitiveRegions: [revealedHeading.locator("..")],
+    });
     await olderOrder.click();
     await expect(page).toHaveURL(`/seller/orders/${olderOrderId}/buyer`);
     await expect(page.getByRole("heading", { name: "خریدار این سفارش" })).toBeVisible();

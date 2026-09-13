@@ -16,12 +16,14 @@ export function IdentityLogin({
   showDevelopmentCode,
   returnTo,
   autoContinue = false,
+  attachCartOnContinue = autoContinue,
   cancelTo,
 }: {
   initiallySignedIn: boolean;
   showDevelopmentCode: boolean;
   returnTo: string;
   autoContinue?: boolean;
+  attachCartOnContinue?: boolean;
   cancelTo?: string;
 }) {
   const [step, setStep] = useState<Step>(initiallySignedIn ? "signed-in" : "mobile");
@@ -30,7 +32,12 @@ export function IdentityLogin({
   const [challengeId, setChallengeId] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
+  const [ready, setReady] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setReady(true);
+  }, []);
 
   useEffect(() => {
     if (step === "code") codeInput.current?.focus();
@@ -81,14 +88,16 @@ export function IdentityLogin({
         throw new Error("invalid session response");
       }
       if (autoContinue) {
-        const attached = await fetch("/api/cart/attach", {
-          method: "POST",
-          headers: { "idempotency-key": crypto.randomUUID() },
-          body: "{}",
-        });
-        if (!attached.ok && attached.status !== 409) {
-          setMessage("ورود انجام شد، اما سبد آماده نشد. دوباره ادامه دهید.");
-          return;
+        if (attachCartOnContinue) {
+          const attached = await fetch("/api/cart/attach", {
+            method: "POST",
+            headers: { "idempotency-key": crypto.randomUUID() },
+            body: "{}",
+          });
+          if (!attached.ok && attached.status !== 409) {
+            setMessage("ورود انجام شد، اما سبد آماده نشد. دوباره ادامه دهید.");
+            return;
+          }
         }
         window.location.assign(returnTo);
         return;
@@ -135,7 +144,7 @@ export function IdentityLogin({
             type="button"
             className={styles.signOut}
             onClick={signOut}
-            disabled={pending}
+            disabled={!ready || pending}
           >
             {pending ? "در حال خروج…" : "خروج"}
           </button>
@@ -166,12 +175,13 @@ export function IdentityLogin({
               inputMode="numeric"
               autoComplete="tel"
               dir="ltr"
+              disabled={!ready}
               value={mobile}
               onChange={(event) => setMobile(event.target.value)}
               aria-describedby={message ? "login-message" : undefined}
             />
             <StatusMessage message={message} />
-            <button type="submit" disabled={pending}>
+            <button type="submit" disabled={!ready || pending}>
               {pending ? "در حال دریافت…" : "دریافت کد"}
             </button>
           </form>

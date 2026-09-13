@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 
 import {
   assertMinimumContrast,
@@ -58,6 +58,7 @@ test("guest signs in with the visible development OTP, returns to the prior acti
 
 test("login is fully reachable by keyboard with a visible focus", async ({ page }) => {
   await page.goto("/seller/login");
+  await expect(page.getByLabel("شماره موبایل")).toBeEditable();
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("شماره موبایل")).toBeFocused();
   await expect(page.getByLabel("شماره موبایل")).toHaveCSS("outline-style", "solid");
@@ -83,7 +84,8 @@ test("a forged session cookie is rejected against PostgreSQL", async ({
 
 test("server failure stays human and the login honors visual accessibility", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "login-recovery");
   const longServerMessage =
     "ارتباط با سرور برقرار نشد. چند لحظه صبر کنید و دوباره برای ورود به فضای فروشنده تلاش کنید.";
   await page.emulateMedia({ reducedMotion: "reduce" });

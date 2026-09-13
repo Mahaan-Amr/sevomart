@@ -178,11 +178,17 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
       ) : null}
       {state.emptyState ? (
         <div className={styles.state}>
+          <span className={styles.emptyMark} aria-hidden="true">
+            سوو
+          </span>
           <p>{state.emptyState.message}</p>
           {kind === "following" ? (
             <Link href="/">{state.emptyState.nextAction}</Link>
           ) : (
-            <p>{state.emptyState.nextAction}</p>
+            <>
+              <p>{state.emptyState.nextAction}</p>
+              <Link href="/seller/start">فروشنده شوید</Link>
+            </>
           )}
         </div>
       ) : null}
@@ -251,6 +257,7 @@ function FeedGrid({
               <Link
                 className={styles.imageLink}
                 href={`/s/${item.storeSlug}/products/${item.productId}`}
+                prefetch={false}
                 aria-label={`دیدن ${item.product.name}`}
                 data-feed-focus={imageFocus}
                 onNavigate={() => rememberOrigin(imageFocus)}
@@ -265,6 +272,7 @@ function FeedGrid({
               <h2>
                 <Link
                   href={`/s/${item.storeSlug}/products/${item.productId}`}
+                  prefetch={false}
                   data-feed-focus={titleFocus}
                   onNavigate={() => rememberOrigin(titleFocus)}
                 >
@@ -274,6 +282,7 @@ function FeedGrid({
               <Link
                 className={styles.storeLink}
                 href={`/s/${item.storeSlug}`}
+                prefetch={false}
                 data-feed-focus={storeFocus}
                 onNavigate={() => rememberOrigin(storeFocus)}
               >

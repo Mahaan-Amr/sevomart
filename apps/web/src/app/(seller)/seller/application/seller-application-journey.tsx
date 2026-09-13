@@ -276,12 +276,7 @@ export function SellerApplicationJourney({
       <section className={styles.panel} aria-labelledby="application-title">
         <header className={styles.header}>
           <span className={styles.brand}>سوو</span>
-          <span
-            className={styles.progress}
-            aria-label={`پیش‌نویس، قدم ${draft.step + 1} از ۴`}
-          >
-            پیش‌نویس · {draft.step + 1} از ۴
-          </span>
+          <span className={styles.progress}>پیش‌نویس · {draft.step + 1} از ۴</span>
         </header>
         <h1 id="application-title">درخواست فروشندگی</h1>
         {reason ? <p className={styles.reason}>{reason}</p> : null}

@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 
 import {
@@ -16,6 +17,11 @@ test("platform agent establishes the separate session through the Web journey", 
   await establishPlatformAgentIdentity(mobile, ["SELLER_APPLICATION_REVIEW"]);
 
   await page.goto("/platform/login");
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "platform-agent-sign-in:empty",
+    name: "platform-login",
+    sensitiveRegions: [],
+  });
   await page.getByLabel("شماره موبایل").fill(mobile);
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");

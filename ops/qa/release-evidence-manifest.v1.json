@@ -62,7 +62,7 @@
         "unit": ["tests/unit/discovery-ranking-cursor.test.ts"],
         "contract": ["tests/contract/discovery-public-feed.contract.test.ts"],
         "integration": ["tests/integration/discovery-public-feed-api.test.ts"],
-        "e2e": ["tests/e2e/store-following.spec.ts"]
+        "e2e": ["tests/e2e/buyer-feeds.spec.ts"]
       }
     },
     {
@@ -76,7 +76,7 @@
         "unit": ["tests/unit/discovery-ranking-cursor.test.ts"],
         "contract": ["tests/contract/discovery-following-feed.contract.test.ts"],
         "integration": ["tests/integration/store-following-api.test.ts"],
-        "e2e": ["tests/e2e/store-following.spec.ts"]
+        "e2e": ["tests/e2e/buyer-feeds.spec.ts"]
       }
     },
     {
@@ -163,7 +163,7 @@
         "unit": ["apps/web/src/lib/seller-order-actionability.unit.test.ts"],
         "contract": ["tests/contract/fulfillment-v1.contract.test.ts"],
         "integration": ["tests/integration/fulfillment-producer.test.ts"],
-        "e2e": ["tests/e2e/seller-order-fulfillment.spec.ts"]
+        "e2e": ["tests/e2e/direct-payment-success.spec.ts"]
       }
     },
     {
@@ -193,7 +193,7 @@
         ],
         "contract": ["tests/contract/content-v2.contract.test.ts"],
         "integration": ["tests/integration/content-producer.test.ts"],
-        "e2e": ["tests/e2e/release-critical-tracers.spec.ts"]
+        "e2e": ["tests/e2e/purchase-experience.spec.ts"]
       }
     },
     {

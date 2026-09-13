@@ -25,6 +25,7 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByRole("link", { name: "ادامه کار" })).toBeVisible();
 
   const identities = await sql<Array<{ identityId: string }>>`
     select identity_id as "identityId"
@@ -75,9 +76,9 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   });
   const isDesktopNavigation = (testInfo.project.use.viewport?.width ?? 0) >= 768;
   await expect(sellerNavigation.first().getByRole("link")).toHaveCount(
-    isDesktopNavigation ? 6 : 5,
+    isDesktopNavigation ? 7 : 6,
   );
-  for (const label of ["خانه", "سفارش‌ها", "کالاها", "موجودی", "فروشگاه"]) {
+  for (const label of ["خانه", "سفارش‌ها", "کالاها", "محتوا", "موجودی", "فروشگاه"]) {
     await expect(
       sellerNavigation.first().getByRole("link", { name: label }),
     ).toBeVisible();

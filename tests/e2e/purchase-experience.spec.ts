@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  test,
+} from "../helpers/release-playwright";
 import { directSettlementDisclosure } from "@sevo/contracts/orders/v1";
 import postgres from "postgres";
 import sharp from "sharp";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   paymentBuyerTestMobiles,
@@ -14,6 +20,15 @@ import { assertMinimumContrast } from "../helpers/visual-assertions";
 test("eligible buyer retries once and publishes one verified purchase experience", async ({
   page,
 }, testInfo) => {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    expectCandidateResponse(testInfo, "purchase-media-invalid");
+  }
+  expectCandidateResponse(testInfo, "purchase-media-expired");
+  expectCandidateResponse(testInfo, "buyer-direct-refund-empty");
+  expectCandidateResponse(testInfo, "buyer-direct-refund-empty");
+  expectCandidateResponse(testInfo, "buyer-fulfillment-empty");
+  expectCandidateResponse(testInfo, "buyer-fulfillment-empty");
+  expectCandidateFailure(testInfo, "purchase-submit-retry");
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
@@ -22,7 +37,6 @@ test("eligible buyer retries once and publishes one verified purchase experience
   const storeId = randomUUID();
   const productId = randomUUID();
   const variantId = randomUUID();
-  const mediaId = randomUUID();
   const shippingMethodId = randomUUID();
   const slug = `purchase-experience-${visualProjectIndex(testInfo.project.name)}`;
   const cartId = randomUUID();
@@ -73,6 +87,7 @@ test("eligible buyer retries once and publishes one verified purchase experience
     settlement: { mode: "DIRECT", disclosure: directSettlementDisclosure },
   };
   let orderCreated = false;
+  let productMediaId = "";
   try {
     await page.goto("/login?next=/");
     await page.getByLabel("شماره موبایل").fill(mobile);
@@ -122,11 +137,37 @@ test("eligible buyer retries once and publishes one verified purchase experience
       values (${variantId}, ${productId}, ${storeId}, 'default', 'default',
         false, true)
     `;
+    const productImage = await sharp({
+      create: {
+        width: 32,
+        height: 32,
+        channels: 4,
+        background: { r: 164, g: 20, b: 57, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const uploadedProductImage = await page.request.post(
+      `/api/store/seller/products/${productId}/images`,
+      {
+        multipart: {
+          purpose: "PRODUCT_IMAGE",
+          file: {
+            name: "purchase-product.png",
+            mimeType: "image/png",
+            buffer: productImage,
+          },
+        },
+      },
+    );
+    expect(uploadedProductImage.status()).toBe(201);
+    productMediaId = ((await uploadedProductImage.json()) as { id: string }).id;
+    await sql`update media_assets set visibility = 'PUBLIC' where id = ${productMediaId}`;
     await sql`
       insert into product_publications
         (product_id, publication_version, name, description, media_id, variant_id)
       values (${productId}, 1, 'کالای تأییدشده',
-        'شرح کالای تأییدشده برای نمایش عمومی تجربه', ${mediaId}, ${variantId})
+        'شرح کالای تأییدشده برای نمایش عمومی تجربه', ${productMediaId}, ${variantId})
     `;
     await sql`
       insert into product_offers (product_id, variant_id, amount, currency, revision)
@@ -418,6 +459,11 @@ test("eligible buyer retries once and publishes one verified purchase experience
       )
       .toBe(true);
     await expect(page.getByText(/میانگین [۰-۹]/)).toHaveCount(0);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-purchase-experience:success",
+      name: "purchase-experience",
+      sensitiveRegions: [publicExperienceImage],
+    });
     await sql`
       insert into content_purchase_experiences
         (id, buyer_identity_id, order_item_id, store_id, product_id,
@@ -474,6 +520,10 @@ test("eligible buyer retries once and publishes one verified purchase experience
     await sql`delete from product_publications where product_id = ${productId}`;
     await sql`delete from product_variants where product_id = ${productId}`;
     await sql`delete from product_products where id = ${productId}`;
+    if (productMediaId) {
+      await sql`delete from media_variants where media_id = ${productMediaId}`;
+      await sql`delete from media_assets where id = ${productMediaId}`;
+    }
     await sql`delete from store_shipping_methods where store_id = ${storeId}`;
     await sql`delete from store_memberships where store_id = ${storeId}`;
     await sql`delete from store_stores where id = ${storeId}`;

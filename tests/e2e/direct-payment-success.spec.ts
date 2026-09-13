@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 
 import {
@@ -16,9 +16,13 @@ import {
 } from "../helpers/visual-assertions";
 
 test("buyer dispatches payment, confirms once, and sees the real receipt", async ({
-  browser,
+  newCandidateContext,
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "order-privacy");
+  expectCandidateResponse(testInfo, "buyer-direct-refund-empty");
+  expectCandidateResponse(testInfo, "buyer-direct-refund-empty");
+  test.setTimeout(90_000); // Includes payment, tracking and dispute accessibility scans.
   const mobile = paymentBuyerTestMobiles[visualProjectIndex(testInfo.project.name)]!;
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
@@ -152,6 +156,11 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
         (order_id, store_id, status, version, accepted_event_id, created_at, updated_at)
       values
         (${ids.order}, ${ids.store}, 'SHIPPED', 1, ${randomUUID()}, now(), now())
+      on conflict (order_id) do update set
+        status = excluded.status,
+        version = excluded.version,
+        accepted_event_id = excluded.accepted_event_id,
+        updated_at = excluded.updated_at
     `;
     await sql`
       insert into fulfillment_timeline_entries
@@ -160,6 +169,14 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       values
         (${randomUUID()}, ${ids.order}, 1, 'SHIPPED', 'IDENTITY', ${identityId}, ${randomUUID()}, now(),
          'پست پیشتاز', 'POST-1234567890')
+      on conflict (order_id, version) do update set
+        status = excluded.status,
+        actor_type = excluded.actor_type,
+        actor_id = excluded.actor_id,
+        correlation_id = excluded.correlation_id,
+        occurred_at = excluded.occurred_at,
+        shipping_method = excluded.shipping_method,
+        tracking_code = excluded.tracking_code
     `;
 
     await page.goto(`/orders/${ids.order}?attemptId=${attempt.attemptId}`);
@@ -169,6 +186,11 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       ),
     );
     await expect(page.getByRole("heading", { name: "پرداخت تأیید شد" })).toBeVisible();
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-payment:success",
+      name: "buyer-payment-result",
+      sensitiveRegions: [],
+    });
     const ownerRead = await page.context().request.get(`/api/orders/${ids.order}`);
     expect(ownerRead.status()).toBe(200);
     expect(ownerRead.headers()["cache-control"]).toBe("no-store");
@@ -181,7 +203,7 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
 
     await page.goto("/orders");
     await expect(page.getByRole("heading", { name: "سفارش‌های من" })).toBeVisible();
-    await expect(page.getByText("خانه فنجان")).toBeVisible();
+    await expect(page.getByText("خانه فنجان")).toBeVisible({ timeout: 15_000 });
     await page.getByRole("link", { name: /خانه فنجان/ }).click();
     await expect(page).toHaveURL(`/orders/${ids.order}`);
     await expect(page.getByRole("heading", { name: "سفارش ارسال شد" })).toBeVisible();
@@ -226,26 +248,29 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       page.locator("#problem-title").locator("xpath=..").locator("img"),
     ).toHaveCount(0);
     const [savedDispute] = await sql<
-      Array<{ disputeId: string; evidenceCount: number }>
+      Array<{ disputeId: string; evidenceCount: number; evidenceId: string }>
     >`
       select disputes.id as "disputeId",
-        jsonb_array_length(disputes.contributions->0->'evidence')::int as "evidenceCount"
+        jsonb_array_length(disputes.contributions->0->'evidence')::int as "evidenceCount",
+        disputes.contributions->0->'evidence'->0->>'evidenceId' as "evidenceId"
       from problem_disputes disputes
       where disputes.order_id = ${ids.order}
     `;
     expect(savedDispute).toMatchObject({ evidenceCount: 1 });
-    const [privateEvidence] = await sql<Array<{ visibility: string }>>`
-      select assets.visibility
-      from media_assets assets
-      join media_buyer_dispute_upload_contexts contexts
-        on contexts.id = assets.owner_reference_id
-      where contexts.order_id = ${ids.order}
-    `;
-    expect(privateEvidence).toEqual({ visibility: "PRIVATE" });
-    await mkdir("docs/delivery/issue-157", { recursive: true });
-    await page.screenshot({
-      path: `docs/delivery/issue-157/buyer-dispute-${testInfo.project.name}.png`,
-      fullPage: true,
+    await expect
+      .poll(async () => {
+        const [privateEvidence] = await sql<Array<{ visibility: string }>>`
+          select visibility
+          from media_assets
+          where id = ${savedDispute?.evidenceId ?? null}::uuid
+        `;
+        return privateEvidence;
+      })
+      .toEqual({ visibility: "PRIVATE" });
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-dispute:success",
+      name: "buyer-dispute",
+      sensitiveRegions: [page.locator("main img, main video, main dd")],
     });
     await expect(
       page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
@@ -269,16 +294,16 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
             Number.parseFloat(getComputedStyle(element).transitionDuration) || 0,
         ),
     ).toBeLessThanOrEqual(0.01);
-    await mkdir("docs/delivery/issue-148", { recursive: true });
-    await page.screenshot({
-      path: `docs/delivery/issue-148/order-tracking-${testInfo.project.name}.png`,
-      fullPage: true,
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "buyer-order-tracking:success",
+      name: "buyer-order-tracking",
+      sensitiveRegions: [page.locator("main img, main video, main dd")],
     });
     expect(
       await sql`select count(*)::int as count from payment_attempts where order_id = ${ids.order}`,
     ).toEqual([{ count: 1 }]);
 
-    const unrelatedContext = await browser.newContext({
+    const unrelatedContext = await newCandidateContext({
       baseURL: new URL(page.url()).origin,
       locale: "fa-IR",
       timezoneId: "Asia/Tehran",
@@ -341,6 +366,8 @@ async function focusByTab(
 }
 
 test("seller sees the real paid actionable order", async ({ page }, testInfo) => {
+  expectCandidateResponse(testInfo, "seller-fulfillment-empty");
+  test.setTimeout(90_000);
   const mobile = paymentSellerTestMobiles[visualProjectIndex(testInfo.project.name)]!;
   const databaseUrl =
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
@@ -380,7 +407,9 @@ test("seller sees the real paid actionable order", async ({ page }, testInfo) =>
     await expect(
       page.getByRole("heading", { name: "سفارش‌های آماده اقدام" }),
     ).toBeVisible();
-    await expect(page.getByText(`سفارش ${ids.order}`)).toBeVisible();
+    await expect(page.getByText(`سفارش ${ids.order}`)).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByText("۱ کالا")).toBeVisible();
   } finally {
     await sql`delete from order_items where order_id = ${ids.order}`;

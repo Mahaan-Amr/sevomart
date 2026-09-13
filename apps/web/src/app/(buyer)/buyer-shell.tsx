@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import type { IdentitySession } from "@sevo/contracts/identity-access/v1";
 
 import { loginHref } from "../../lib/navigation";
 import { useFeedWorkspace } from "./(browse)/feed-workspace";
@@ -16,14 +17,37 @@ const destinations = [
   { href: "/conversations", label: "گفت‌وگوها", ready: true },
 ];
 
-export function BuyerShell({ children }: { children: ReactNode }) {
+export function BuyerShell({
+  children,
+  session,
+}: {
+  children: ReactNode;
+  session?: IdentitySession;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
   const query = useSearchParams().toString();
+  const [endingSession, setEndingSession] = useState(false);
+  const [signOutError, setSignOutError] = useState(false);
   const { clearRestoredFocus, rememberScroll, restored, restoredFocus, scrollFor } =
     useFeedWorkspace();
   const returnTo = `${pathname}${query ? `?${query}` : ""}`;
   const activeFeed =
     pathname === "/" ? "discovery" : pathname === "/following" ? "following" : null;
+
+  async function signOut() {
+    setEndingSession(true);
+    setSignOutError(false);
+    try {
+      const response = await fetch("/api/auth/session", { method: "DELETE" });
+      if (response.ok) router.refresh();
+      else setSignOutError(true);
+    } catch {
+      setSignOutError(true);
+    } finally {
+      setEndingSession(false);
+    }
+  }
 
   useEffect(() => {
     if (!activeFeed || !restored) return;
@@ -90,10 +114,30 @@ export function BuyerShell({ children }: { children: ReactNode }) {
         <div className={styles.actions}>
           <Link href="/cart">سبد</Link>
           <details className={styles.identity}>
-            <summary>هویت سوو</summary>
+            <summary>
+              {session ? formatMaskedMobile(session.maskedMobile) : "هویت سوو"}
+            </summary>
             <div className={styles.identityMenu}>
-              <Link href="/account/addresses">نشانی‌ها</Link>
-              <Link href={loginHref(returnTo, returnTo)}>ورود و ادامه</Link>
+              {session ? (
+                <>
+                  <Link href="/orders">سفارش‌ها</Link>
+                  <Link href="/account/addresses">نشانی‌ها</Link>
+                  <Link href="/seller/start">درخواست فروشندگی</Link>
+                  <button type="button" onClick={signOut} disabled={endingSession}>
+                    {endingSession ? "در حال خروج…" : "خروج"}
+                  </button>
+                  {signOutError ? (
+                    <p className={styles.identityError} role="alert">
+                      خروج انجام نشد. دوباره تلاش کنید.
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <Link href="/seller/start">فروشنده شوید</Link>
+                  <Link href={loginHref(returnTo, returnTo)}>ورود و ادامه</Link>
+                </>
+              )}
             </div>
           </details>
         </div>
@@ -103,4 +147,8 @@ export function BuyerShell({ children }: { children: ReactNode }) {
       </main>
     </div>
   );
+}
+
+function formatMaskedMobile(value: string) {
+  return value.replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[Number(digit)] ?? digit);
 }

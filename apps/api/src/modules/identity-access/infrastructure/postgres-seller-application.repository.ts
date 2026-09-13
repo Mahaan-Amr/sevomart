@@ -1464,10 +1464,12 @@ async function hydrateApplication(
   row: ApplicationRow,
 ): Promise<SellerApplicationView> {
   const timeline = await sql<TimelineRow[]>`
+    select revision, status, title, "publicReason", "reasonCode", "requestedFields", "occurredAt"
+    from (
     select revision, 'SUBMITTED' as status,
       case when revision = 1 then 'درخواست ثبت شد' else 'اطلاعات تکمیل شد' end as title,
       null::text as "publicReason", null::text as "reasonCode",
-      ARRAY[]::text[] as "requestedFields", submitted_at as "occurredAt"
+      ARRAY[]::text[] as "requestedFields", submitted_at as "occurredAt", 0 as phase
     from identity_seller_application_revisions
     where application_id = ${row.applicationId}
     union all
@@ -1485,10 +1487,11 @@ async function hydrateApplication(
         else 'درخواست پس گرفته شد'
       end as title,
       public_reason as "publicReason", reason_code as "reasonCode",
-      requested_fields as "requestedFields", occurred_at as "occurredAt"
+      requested_fields as "requestedFields", occurred_at as "occurredAt", 1 as phase
     from identity_seller_application_decisions
     where application_id = ${row.applicationId}
-    order by "occurredAt" asc
+    ) as entries
+    order by revision asc, phase asc, "occurredAt" asc
   `;
 
   return sellerApplicationViewContract.parse({

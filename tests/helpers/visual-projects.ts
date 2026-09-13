@@ -86,6 +86,14 @@ export const sellerReportsTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(194 + index),
 );
 
+export const sellerSalesContentTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(198 + index),
+);
+
+export const mediaFixtureSellerTestMobiles = Array.from({ length: 16 }, (_, index) =>
+  testMobile(202 + index),
+);
+
 export const guestCartTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(60 + index),
 );
@@ -138,6 +146,8 @@ export const allE2eTestMobiles = [
   ...sellerRefundRecoveryTestMobiles,
   ...sellerDisputeTestMobiles,
   ...sellerReportsTestMobiles,
+  ...sellerSalesContentTestMobiles,
+  ...mediaFixtureSellerTestMobiles,
   ...guestCartTestMobiles,
   ...sameStoreCartConflictTestMobiles,
   ...differentStoreCartConflictTestMobiles,

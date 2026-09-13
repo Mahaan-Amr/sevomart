@@ -17,7 +17,9 @@ const ids = {
   store: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
   otherStore: "bd75d73c-1744-422c-a6ae-31195ed6abf2",
   product: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+  replacementProduct: "b78fdcc0-caad-4315-a7cd-b22834fe76d5",
   media: "807c619f-a989-4fd9-8b78-a437a07c7bc4",
+  replacementMedia: "907c619f-a989-4fd9-8b78-a437a07c7bc5",
   content: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
 };
 
@@ -91,11 +93,45 @@ describe("public sales-content projection", () => {
       /actorIdentityId|buyerId|orderItemId|viewCount|likeCount/i,
     );
 
+    await project(
+      sql,
+      salesContentPublishedV1Contract.parse({
+        ...envelope(
+          "SalesContentPublished.v1",
+          ids.content,
+          2,
+          "2026-09-01T09:15:00.000Z",
+        ),
+        payload: {
+          contentId: ids.content,
+          source: "SELLER",
+          storeId: ids.store,
+          media: { mediaId: ids.replacementMedia, kind: "IMAGE" },
+          productIds: [ids.replacementProduct],
+          moderationState: "PUBLISHED",
+        },
+      }),
+    );
+    const replaced = await server.inject({
+      method: "GET",
+      url: `/v2/sales-content?storeIds=${ids.store}`,
+    });
+    expect(replaced.json().items[0]).toMatchObject({
+      media: { mediaId: ids.replacementMedia, kind: "IMAGE" },
+      products: [{ productId: ids.replacementProduct, active: true }],
+      publishedAt,
+    });
+
     const stopped = productUnpublishedV1Contract.parse({
-      ...envelope("ProductUnpublished.v1", ids.product, 2, "2026-09-01T09:30:00.000Z"),
+      ...envelope(
+        "ProductUnpublished.v1",
+        ids.replacementProduct,
+        2,
+        "2026-09-01T09:30:00.000Z",
+      ),
       payload: {
         storeId: ids.store,
-        productId: ids.product,
+        productId: ids.replacementProduct,
         publicationVersion: 1,
       },
     });
@@ -105,7 +141,7 @@ describe("public sales-content projection", () => {
       url: `/v2/sales-content?storeIds=${ids.store}`,
     });
     expect(unavailable.json().items[0].products).toEqual([
-      { productId: ids.product, active: false },
+      { productId: ids.replacementProduct, active: false },
     ]);
 
     const unrelated = await server.inject({

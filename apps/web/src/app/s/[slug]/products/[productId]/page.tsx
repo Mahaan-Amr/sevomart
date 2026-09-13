@@ -27,7 +27,7 @@ export default async function PublicProductPage({
         <a className={styles.back} href={`/s/${slug}`}>
           بازگشت به فروشگاه
         </a>
-        <div className={styles.gallery} aria-label="تصویرهای کالا">
+        <section className={styles.gallery} aria-label="تصویرهای کالا">
           {productImages(product).map((image, index) => (
             <img
               className={styles.image}
@@ -36,7 +36,7 @@ export default async function PublicProductPage({
               key={image.id}
             />
           ))}
-        </div>
+        </section>
         <section className={styles.details}>
           <h1>{product.name}</h1>
           <p>{product.description}</p>
@@ -159,7 +159,7 @@ function PurchaseExperiences({
               </div>
               {experience.text ? <p>{experience.text}</p> : null}
               {experience.mediaIds.length > 0 ? (
-                <div
+                <section
                   className={styles.experienceMedia}
                   aria-label="تصویرهای تجربه خرید"
                 >
@@ -170,7 +170,7 @@ function PurchaseExperiences({
                       alt={`تصویر تجربه خرید ${(index + 1).toLocaleString("fa-IR")}`}
                     />
                   ))}
-                </div>
+                </section>
               ) : null}
             </li>
           ))}

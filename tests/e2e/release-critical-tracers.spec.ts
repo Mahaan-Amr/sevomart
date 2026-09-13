@@ -468,11 +468,12 @@ async function identityIdForMobile(mobile: string) {
 
 function grantPlatformPermission(identityId: string) {
   const pnpmEntryPoint = process.env.npm_execpath;
-  if (!pnpmEntryPoint) throw new Error("pnpm entry point is unavailable");
+  const command = pnpmEntryPoint ? process.execPath : "pnpm";
+  const commandPrefix = pnpmEntryPoint ? [pnpmEntryPoint] : [];
   const result = spawnSync(
-    process.execPath,
+    command,
     [
-      pnpmEntryPoint,
+      ...commandPrefix,
       "platform:permission",
       "--",
       "--identity-id",
@@ -482,8 +483,13 @@ function grantPlatformPermission(identityId: string) {
       "--idempotency-key",
       randomUUID(),
     ],
-    { env: process.env, encoding: "utf8" },
+    {
+      env: process.env,
+      encoding: "utf8",
+      shell: !pnpmEntryPoint && process.platform === "win32",
+    },
   );
+  if (result.error) throw result.error;
   expect(result.status, result.stderr).toBe(0);
 }
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertMinimumContrast,
@@ -13,12 +14,12 @@ const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
 
 test("a dispute agent requests timed access and records an audited result", async ({
-  browser,
+  newCandidateContext,
   context,
   page,
-}) => {
+}, testInfo) => {
   const agent = await establishPlatformAgentSession(context, ["DISPUTE_REVIEW"]);
-  const managerContext = await browser.newContext();
+  const managerContext = await newCandidateContext();
   await establishPlatformAgentSession(managerContext, ["ACCESS_ADMINISTRATION"]);
   const managerPage = await managerContext.newPage();
   const dispute = await seedDispute();
@@ -85,6 +86,11 @@ test("a dispute agent requests timed access and records an audited result", asyn
   await expect(page.getByText("حل‌شده", { exact: true }).first()).toBeVisible();
 
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "platform-dispute-review:success",
+    name: "platform-dispute-review",
+    sensitiveRegions: [page.locator("main img, main video")],
+  });
   await managerContext.close();
 });
 

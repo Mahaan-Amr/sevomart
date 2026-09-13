@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -16,6 +17,7 @@ import { createSellerWorkspaceFixture } from "../helpers/seller-workspace-fixtur
 test("seller advances the nearest fulfillment step and recovers from a conflict", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "fulfillment-conflict");
   const index = visualProjectIndex(testInfo.project.name);
   const mobile = sellerFulfillmentTestMobiles[index]!;
   const orderId = randomUUID();
@@ -165,6 +167,11 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
       page.getByRole("heading", { name: "تحویل سفارش ثبت شد" }),
     ).toBeFocused();
     await assertNoHorizontalOverflow(page);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-fulfillment:success",
+      name: "seller-fulfillment",
+      sensitiveRegions: [],
+    });
 
     await page.reload();
     await expect(

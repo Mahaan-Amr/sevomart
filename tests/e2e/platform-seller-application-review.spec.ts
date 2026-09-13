@@ -1,4 +1,5 @@
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertMinimumContrast,
@@ -12,7 +13,7 @@ test.beforeEach(async ({ context }) => {
 
 test("platform agent reviews a Persian RTL application on the approved compact workspace", async ({
   page,
-}) => {
+}, testInfo) => {
   let application = sellerApplication();
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.route("**/api/platform/seller-applications**", async (route) => {
@@ -77,6 +78,11 @@ test("platform agent reviews a Persian RTL application on the approved compact w
   await expect(page.getByRole("heading", { name: "خانه ماه" })).toBeVisible();
   await expect(page.getByText("09123456789")).toHaveCount(0);
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "platform-seller-application-review:success",
+    name: "application-review",
+    sensitiveRegions: [],
+  });
 
   const queueItem = page.getByRole("button", { name: /خانه ماه/ });
   await queueItem.focus();
@@ -264,7 +270,8 @@ test("keeps an empty queue when an older case detail arrives late", async ({
 
 test("retries an unchanged decision with the same idempotency key", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "platform-review-recovery");
   let application = sellerApplication();
   const attemptedKeys: string[] = [];
   await page.route("**/api/platform/seller-applications**", async (route) => {
@@ -440,7 +447,8 @@ test("platform agent confirms approval before the initial store is created", asy
 
 test("keeps the committed approval clear when the queue refresh fails", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "platform-queue-recovery");
   const application = sellerApplication();
   let approved = false;
   await page.route("**/api/platform/seller-applications**", async (route) => {

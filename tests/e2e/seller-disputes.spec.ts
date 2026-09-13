@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -17,6 +18,7 @@ import { createSellerWorkspaceFixture } from "../helpers/seller-workspace-fixtur
 test("seller sees the nearest deadline and submits one store-scoped response", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "dispute-conflict");
   const index = visualProjectIndex(testInfo.project.name);
   await page.emulateMedia({ reducedMotion: "reduce" });
   const fixture = await createSellerWorkspaceFixture(page, {
@@ -115,6 +117,11 @@ test("seller sees the nearest deadline and submits one store-scoped response", a
     await expect(page.getByRole("button", { name: "ثبت پاسخ فروشگاه" })).toHaveCount(0);
 
     await assertNoHorizontalOverflow(page);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-dispute-response:success",
+      name: "seller-dispute",
+      sensitiveRegions: [page.locator("main img, main video")],
+    });
     await assertInteractiveTargets(page, "main a, main button, main textarea");
     await assertMinimumContrast(page.locator("h1, h2, p, a, button, label, span"));
 

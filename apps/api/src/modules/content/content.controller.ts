@@ -8,6 +8,7 @@ import {
   Inject,
   Param,
   Post,
+  Put,
   Query,
   Req,
 } from "@nestjs/common";
@@ -32,6 +33,39 @@ export class ContentController {
   ) {
     return this.respond(request, () =>
       this.content.publishSalesContent(this.context(request), request.body, key),
+    );
+  }
+
+  @Get("v2/seller/sales-content")
+  listSellerSalesContentV2(@Req() request: FastifyRequest) {
+    return this.respond(request, () =>
+      this.content.listSellerSalesContent(this.context(request)),
+    );
+  }
+
+  @Get("v2/seller/sales-content/:contentId")
+  readSellerSalesContentV2(
+    @Req() request: FastifyRequest,
+    @Param("contentId") contentId: string,
+  ) {
+    return this.respond(request, () =>
+      this.content.readSellerSalesContent(this.context(request), contentId),
+    );
+  }
+
+  @Put("v2/seller/sales-content/:contentId")
+  replaceSellerSalesContentV2(
+    @Req() request: FastifyRequest,
+    @Param("contentId") contentId: string,
+    @Headers("idempotency-key") key: string | undefined,
+  ) {
+    return this.respond(request, () =>
+      this.content.replaceSellerSalesContent(
+        this.context(request),
+        contentId,
+        request.body,
+        key,
+      ),
     );
   }
 
@@ -118,13 +152,16 @@ export class ContentController {
       const status =
         error.code === "FORBIDDEN"
           ? HttpStatus.FORBIDDEN
-          : error.code === "IDEMPOTENCY_CONFLICT" ||
-              error.code === "IDEMPOTENCY_IN_PROGRESS" ||
-              error.code === "ALREADY_SUBMITTED"
-            ? HttpStatus.CONFLICT
-            : error.code === "PRECONDITION_REQUIRED"
-              ? HttpStatus.PRECONDITION_REQUIRED
-              : HttpStatus.UNPROCESSABLE_ENTITY;
+          : error.code === "CONTENT_NOT_FOUND"
+            ? HttpStatus.NOT_FOUND
+            : error.code === "REVISION_CONFLICT" ||
+                error.code === "IDEMPOTENCY_CONFLICT" ||
+                error.code === "IDEMPOTENCY_IN_PROGRESS" ||
+                error.code === "ALREADY_SUBMITTED"
+              ? HttpStatus.CONFLICT
+              : error.code === "PRECONDITION_REQUIRED"
+                ? HttpStatus.PRECONDITION_REQUIRED
+                : HttpStatus.UNPROCESSABLE_ENTITY;
       throw contentHttpError(request.id, error.code, status);
     }
   }
@@ -140,6 +177,8 @@ function contentHttpError(correlationId: string, code: string, status: number) {
     IDEMPOTENCY_CONFLICT: "این شناسه درخواست قبلاً با اطلاعات دیگری استفاده شده است.",
     IDEMPOTENCY_IN_PROGRESS: "درخواست مشابه هنوز در حال انجام است.",
     PRECONDITION_REQUIRED: "شناسه یکتای درخواست را ارسال کنید.",
+    CONTENT_NOT_FOUND: "این محتوای فروش پیدا نشد.",
+    REVISION_CONFLICT: "محتوا جای دیگری تغییر کرده است. نسخه تازه را باز کنید.",
   };
   return new HttpException(
     { code, message: messages[code] ?? messages.NOT_ELIGIBLE, correlationId },

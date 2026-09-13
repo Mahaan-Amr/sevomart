@@ -1,4 +1,10 @@
-import { expect, test, type Locator, type Page } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateResponse,
+  test,
+  type Locator,
+  type Page,
+} from "../helpers/release-playwright";
 import { discoveryFeedProjectionEventTypes } from "@sevo/contracts/discovery/v1";
 import postgres from "postgres";
 
@@ -165,7 +171,9 @@ test.beforeAll(async ({ browserName }, testInfo) => {
 
 test("guest cancel preserves the store and login completes a retriable follow", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "following-recovery");
+  expectCandidateResponse(testInfo, "following-conflict");
   await page.goto("/");
   const discoveryList = page.getByRole("list", { name: "کالاهای تازه" });
   await expect(async () => {

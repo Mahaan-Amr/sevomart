@@ -233,6 +233,7 @@ describe("content producer persistence", () => {
     const fixtureProductId = productIdContract.parse(randomUUID());
     const fixtureVariantId = randomUUID();
     const fixtureMediaId = randomUUID();
+    const replacementMediaId = randomUUID();
     let sellerId = "";
     let contentId = "";
     let activeSeller: Awaited<ReturnType<typeof createActiveSellerFixture>> | undefined;
@@ -290,6 +291,18 @@ describe("content producer persistence", () => {
         ownerIdentityId: parsedSellerId,
         visibility: "PRIVATE",
       });
+      await storage.put({
+        key: replacementMediaId,
+        purpose: "PRODUCT_IMAGE",
+        contentType: "image/png",
+        bytes: Uint8Array.from([2]),
+        checksum: "d".repeat(64),
+        width: 1,
+        height: 1,
+        variants: [],
+        ownerIdentityId: parsedSellerId,
+        visibility: "PRIVATE",
+      });
 
       const published = await server.inject({
         method: "POST",
@@ -315,6 +328,121 @@ describe("content producer persistence", () => {
           where content_id = ${contentId}
         `,
       ).toEqual([{ productId: fixtureProductId, publicationVersion: 1 }]);
+
+      const listed = await server.inject({
+        method: "GET",
+        url: "/v2/seller/sales-content",
+        headers: { cookie },
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toMatchObject({
+        storeId: fixtureStoreId,
+        items: [
+          {
+            contentId,
+            media: { mediaId: fixtureMediaId, kind: "IMAGE" },
+            products: [{ productId: fixtureProductId, active: true }],
+            active: true,
+            revision: 1,
+          },
+        ],
+      });
+      const read = await server.inject({
+        method: "GET",
+        url: `/v2/seller/sales-content/${contentId}`,
+        headers: { cookie },
+      });
+      expect(read.statusCode).toBe(200);
+      expect(read.json()).toMatchObject({ contentId, revision: 1 });
+
+      const replacementPayload = {
+        expectedRevision: 1,
+        media: { mediaId: replacementMediaId, kind: "IMAGE" },
+        productIds: [fixtureProductId],
+      };
+      const replaced = await server.inject({
+        method: "PUT",
+        url: `/v2/seller/sales-content/${contentId}`,
+        headers: { cookie, "idempotency-key": "replace-sales-content-http-v2-139" },
+        payload: replacementPayload,
+      });
+      expect(replaced.statusCode).toBe(200);
+      expect(replaced.json()).toMatchObject({
+        contentId,
+        media: { mediaId: replacementMediaId, kind: "IMAGE" },
+        revision: 2,
+      });
+      const conflict = await server.inject({
+        method: "PUT",
+        url: `/v2/seller/sales-content/${contentId}`,
+        headers: { cookie, "idempotency-key": "replace-sales-content-conflict-139" },
+        payload: replacementPayload,
+      });
+      expect(conflict.statusCode).toBe(409);
+      expect(conflict.json().code).toBe("REVISION_CONFLICT");
+
+      const correlationId = randomUUID();
+      await sql.begin((transaction) =>
+        projectContentProductState(
+          productUnpublishedV1Contract.parse({
+            version: 1,
+            eventId: randomUUID(),
+            eventType: "ProductUnpublished.v1",
+            aggregateId: fixtureProductId,
+            aggregateVersion: 2,
+            occurredAt: new Date().toISOString(),
+            correlationId,
+            causationId: correlationId,
+            actor: { type: "IDENTITY", id: parsedSellerId },
+            payload: {
+              storeId: fixtureStoreId,
+              productId: fixtureProductId,
+              publicationVersion: 1,
+            },
+          }),
+          transaction,
+        ),
+      );
+      const stopped = await server.inject({
+        method: "GET",
+        url: `/v2/seller/sales-content/${contentId}`,
+        headers: { cookie },
+      });
+      expect(stopped.json()).toMatchObject({
+        active: false,
+        products: [{ productId: fixtureProductId, active: false }],
+      });
+
+      const overflowContentIds = Array.from({ length: 60 }, () => randomUUID());
+      await sql.begin(async (transaction) => {
+        for (const overflowContentId of overflowContentIds) {
+          await transaction`
+            insert into content_sales_contents
+              (id, store_id, actor_identity_id, source, moderation_state,
+               media_id, media_kind, active, created_at)
+            values
+              (${overflowContentId}, ${fixtureStoreId}, ${parsedSellerId}, 'SELLER',
+               'PUBLISHED', ${fixtureMediaId}, 'IMAGE', true, now())
+          `;
+          await transaction`
+            insert into content_sales_content_products
+              (content_id, product_id, publication_version, active)
+            values (${overflowContentId}, ${fixtureProductId}, 1, true)
+          `;
+        }
+      });
+      const cappedList = await server.inject({
+        method: "GET",
+        url: "/v2/seller/sales-content",
+        headers: { cookie },
+      });
+      expect(cappedList.statusCode).toBe(200);
+      expect(cappedList.json().items).toHaveLength(60);
+      expect(
+        cappedList
+          .json()
+          .items.every((item: { products: unknown[] }) => item.products.length === 1),
+      ).toBe(true);
     } finally {
       if (contentId) {
         await sql`delete from platform_outbox_events where aggregate_id = ${contentId}`;

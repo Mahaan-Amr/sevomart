@@ -351,6 +351,7 @@ export const actorContextContract = z.object({
 
 export const identitySessionContract = z.object({
   actor: actorContextContract,
+  maskedMobile: z.string().regex(/^09\d{2}\*{3}\d{4}$/),
   expiresAt: z.string().datetime({ offset: true }),
 });
 
@@ -446,6 +447,7 @@ export const identityAccessV1Examples = {
       identityId: "8154cb9b-a8db-4a89-87f7-c14c27fefb3c",
       audience: "PUBLIC",
     },
+    maskedMobile: "0912***6789",
     expiresAt: "2026-08-23T09:00:00.000Z",
   },
   PlatformAgentSession: {

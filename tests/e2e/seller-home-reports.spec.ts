@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Locator, type Page } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -33,6 +34,7 @@ test("seller acts from the operational home and reads a private basic report", a
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.getByRole("link", { name: "ادامه کار" })).toBeVisible();
 
   const identities = await sql<Array<{ identityId: string }>>`
     select identity_id as "identityId"
@@ -125,6 +127,11 @@ test("seller acts from the operational home and reads a private basic report", a
     const reportsLink = page.getByRole("link", { name: "دیدن گزارش فروش" });
     await expect(reportsLink).toHaveAttribute("href", "/seller/reports");
     await assertNoHorizontalOverflow(page);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-home-reporting:success",
+      name: "seller-home",
+      sensitiveRegions: [],
+    });
     await assertInteractiveTargets(
       page,
       "main a, main button, main input, main select, main summary, main textarea",
@@ -173,6 +180,11 @@ test("seller acts from the operational home and reads a private basic report", a
     await expect(page.getByText("از", { exact: true })).toBeVisible();
     await expect(page.getByText("تا", { exact: true })).toBeVisible();
     await assertNoHorizontalOverflow(page);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-home-reporting:success",
+      name: "seller-report",
+      sensitiveRegions: [],
+    });
     await assertInteractiveTargets(
       page,
       "main a, main button, main input, main select, main summary, main textarea",

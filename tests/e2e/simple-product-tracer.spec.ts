@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  test,
+} from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -17,6 +23,13 @@ import {
 test("seller publishes a two-axis product that a guest sees on the storefront", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "product-validation");
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    expectCandidateFailure(testInfo, "product-upload-recovery");
+  }
+  expectCandidateFailure(testInfo, "product-publication-recovery");
+  expectCandidateFailure(testInfo, "product-unpublication-recovery");
+  expectCandidateResponse(testInfo, "product-unpublished");
   test.setTimeout(120_000);
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = productTracerTestMobiles[projectIndex]!;
@@ -240,6 +253,11 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
     ).projection.images.map((entry) => entry.id),
   ).toEqual(expectedMediaIds);
   await expect(page.getByRole("heading", { name: "پیش‌نمایش کالا" })).toBeVisible();
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "seller-product:success",
+    name: "seller-product-preview",
+    sensitiveRegions: [],
+  });
   await expect(page.getByText("۴۴۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "برگشت و ویرایش" }).click();
   await page.getByRole("radio", { name: "چندگونه" }).click();

@@ -1,6 +1,13 @@
-import { expect, request as createRequest, test } from "../helpers/release-playwright";
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  request as createRequest,
+  test,
+} from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -77,7 +84,7 @@ test.beforeAll(async ({ browserName }, testInfo) => {
 
 test("a guest reads a published empty storefront from the real API", async ({
   page,
-}) => {
+}, testInfo) => {
   const externalRequests: string[] = [];
   page.on("request", (request) => {
     if (new URL(request.url()).hostname !== "127.0.0.1") {
@@ -106,9 +113,18 @@ test("a guest reads a published empty storefront from the real API", async ({
     /\/conversations\/new\?kind=STORE/,
   );
   expect(externalRequests).toEqual([]);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-storefront:empty",
+    name: "storefront-empty",
+    sensitiveRegions: [],
+  });
 });
 
-test("draft and unknown slugs expose no private store data", async ({ page }) => {
+test("draft and unknown slugs expose no private store data", async ({
+  page,
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "storefront-not-found");
+  expectCandidateResponse(testInfo, "storefront-not-found");
   for (const slug of [stores.draftSlug, `unknown-${stores.draftSlug}`]) {
     const response = await page.goto(`/s/${slug}`);
     expect(response?.status()).toBe(404);
@@ -117,7 +133,8 @@ test("draft and unknown slugs expose no private store data", async ({ page }) =>
   }
 });
 
-test("stopping publication gives guests a human 404", async ({ page }) => {
+test("stopping publication gives guests a human 404", async ({ page }, testInfo) => {
+  expectCandidateResponse(testInfo, "storefront-not-found");
   const context = await authenticatedSellerContext(stores.defaultMobile);
   const current = await context.get("/v1/seller/store/draft");
   expect(current.ok()).toBe(true);
@@ -217,7 +234,8 @@ test("keyboard order, focus, and interactive targets stay usable", async ({ page
 
 test("the storefront shows stopped sales content without a purchase action", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateFailure(testInfo, "media-fallback");
   await page.route("**/api/sales-content*", (route) => {
     const storeId = new URL(route.request().url()).searchParams.get("storeIds");
     return route.fulfill({
@@ -275,6 +293,12 @@ test("the storefront reflows without clipping at an effective 200% zoom", async 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("region", { name: "پیش از سفارش بدانید" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-storefront:success",
+    name: "storefront-custom",
+    sensitiveRegions: [],
+    zoom: 2,
+  });
 });
 
 test("essential text and actions meet minimum contrast", async ({ page }) => {
@@ -311,7 +335,7 @@ test("motion is useful when allowed and removed when reduced", async ({ page }) 
 });
 
 for (const state of ["default", "custom", "loading", "error"] as const) {
-  test(`${state} has a deterministic visual baseline`, async ({ page }) => {
+  test(`${state} has a deterministic visual baseline`, async ({ page }, testInfo) => {
     const path =
       state === "default"
         ? `/s/${stores.defaultSlug}`
@@ -324,6 +348,11 @@ for (const state of ["default", "custom", "loading", "error"] as const) {
       `storefront-${state}.png`,
       deterministicScreenshotOptions,
     );
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: `buyer-storefront:${state === "loading" ? "loading" : state === "error" ? "provider-server-failure" : "success"}`,
+      name: `storefront-${state}`,
+      sensitiveRegions: [],
+    });
   });
 }
 

@@ -3,6 +3,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
+const pnpmWorkspace = readFileSync("pnpm-workspace.yaml", "utf8");
+const productionDockerfiles = [
+  "apps/api/Dockerfile",
+  "apps/web/Dockerfile",
+  "apps/worker/Dockerfile",
+  "packages/database/Dockerfile",
+];
 
 describe("first-slice CI acceptance contract", () => {
   it("retains every Playwright failure artifact and fails if one is missing", () => {
@@ -20,4 +27,20 @@ describe("first-slice CI acceptance contract", () => {
       expect(workflow).toContain(`dockerfile: ${dockerfile}`);
     },
   );
+
+  it.each(productionDockerfiles)(
+    "copies pnpm patches before installing dependencies in %s",
+    (dockerfile) => {
+      const contents = readFileSync(dockerfile, "utf8");
+      const patchesCopy = contents.indexOf("COPY patches ./patches");
+      const install = contents.indexOf("pnpm install --frozen-lockfile");
+
+      expect(patchesCopy).toBeGreaterThan(-1);
+      expect(install).toBeGreaterThan(patchesCopy);
+    },
+  );
+
+  it("allows unrelated patches during filtered production deploys", () => {
+    expect(pnpmWorkspace).toMatch(/^allowUnusedPatches: true$/m);
+  });
 });

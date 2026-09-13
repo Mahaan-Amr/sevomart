@@ -1,11 +1,28 @@
-import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+import {
+  expect,
+  expectCandidateFailure,
+  expectCandidateResponse,
+  test,
+} from "../helpers/release-playwright";
 import { discoveryV1Examples } from "@sevo/contracts/discovery/v1";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
   assertMinimumContrast,
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
+
+function mockFeedMedia(page: Page) {
+  return page.route("**/api/store/media/*", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#F6E3E9"/></svg>',
+    }),
+  );
+}
 
 function feedItem(position: number, store = "خانه سفال") {
   return {
@@ -22,15 +39,9 @@ function feedItem(position: number, store = "خانه سفال") {
 test("discovery and following keep independent cursor and scroll state", async ({
   page,
 }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   const firstItems = Array.from({ length: 18 }, (_, index) => feedItem(index + 1));
-  await page.route("**/api/store/media/*", (route) =>
-    route.fulfill({
-      contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#F6E3E9"/></svg>',
-    }),
-  );
+  await mockFeedMedia(page);
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
       json: route.request().url().includes("cursor=discovery-next")
@@ -63,9 +74,11 @@ test("discovery and following keep independent cursor and scroll state", async (
   await page.getByRole("button", { name: "دیدن کالاهای بیشتر" }).click();
   await expect(page.getByRole("listitem")).toHaveCount(19);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const followingTab = page.getByRole("link", { name: "دنبال‌شده‌ها" });
+  await followingTab.scrollIntoViewIfNeeded();
   const discoveryScroll = await page.evaluate(() => window.scrollY);
 
-  await page.getByRole("link", { name: "دنبال‌شده‌ها" }).click();
+  await followingTab.click();
   await expect(page.getByRole("heading", { name: "دنبال‌شده‌ها" })).toBeVisible();
   await expect(
     page.getByRole("link", {
@@ -79,9 +92,10 @@ test("discovery and following keep independent cursor and scroll state", async (
   expect(
     await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches),
   ).toBe(true);
-  await page.screenshot({
-    path: testInfo.outputPath("following-mobile.png"),
-    fullPage: true,
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-following:success",
+    name: "buyer-following",
+    sensitiveRegions: [],
   });
 
   const discoveryTab = page.getByRole("link", { name: "کشف", exact: true });
@@ -99,11 +113,18 @@ test("discovery and following keep independent cursor and scroll state", async (
   await discoveryTab.press("Enter");
   await expect(page.getByRole("listitem")).toHaveCount(19);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(discoveryScroll);
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "buyer-discovery:success",
+    name: "buyer-discovery",
+    sensitiveRegions: [],
+  });
 });
 
 test("following asks a guest to sign in and cancellation restores discovery", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "following-sign-in");
+  await mockFeedMedia(page);
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
       json: {
@@ -131,7 +152,10 @@ test("following asks a guest to sign in and cancellation restores discovery", as
 
 test("returning from product detail restores the loaded feed, scroll, and origin focus", async ({
   page,
-}) => {
+}, testInfo) => {
+  for (let request = 0; request < 3; request += 1) {
+    expectCandidateFailure(testInfo, "media-fallback");
+  }
   const firstItems = Array.from({ length: 18 }, (_, index) => feedItem(index + 1));
   await page.route("**/api/store/media/*", (route) => route.abort());
   await page.route("**/api/discovery*", (route) =>
@@ -157,6 +181,7 @@ test("returning from product detail restores the loaded feed, scroll, and origin
   const origin = page.getByRole("link", { name: "کالای تازه 19", exact: true });
   await origin.scrollIntoViewIfNeeded();
   const savedScroll = await page.evaluate(() => window.scrollY);
+  expect(savedScroll).toBeGreaterThan(0);
   await origin.evaluate((element: HTMLAnchorElement) => element.click());
   await expect(page).toHaveURL(/\/products\/00000019-/);
   await page.goBack();
@@ -200,6 +225,11 @@ test("loading is announced without layout shift and empty feeds keep distinct gu
   releaseDiscovery!();
   await expect(page.getByText("فعلاً کالایی برای دیدن نیست.")).toBeVisible();
   await expect(page.getByText("بعداً دوباره سر بزنید.")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "فید کشف" })
+      .getByRole("link", { name: "فروشنده شوید" }),
+  ).toHaveAttribute("href", "/seller/start");
   expect(
     await page.evaluate(
       () => (window as Window & { feedLayoutShift?: number }).feedLayoutShift ?? 0,
@@ -237,7 +267,10 @@ test("loading is announced without layout shift and empty feeds keep distinct gu
 
 test("following errors use safe code-based guidance and keep private data out of login resume", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "following-identity-inactive");
+  expectCandidateResponse(testInfo, "following-session-expired");
+  await mockFeedMedia(page);
   let followingRead = 0;
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({
@@ -288,7 +321,9 @@ test("following errors use safe code-based guidance and keep private data out of
 
 test("a stale following cursor replaces the old snapshot instead of merging it", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateResponse(testInfo, "following-cursor-recovery");
+  await mockFeedMedia(page);
   let initialReads = 0;
   await page.route("**/api/following*", (route) => {
     if (route.request().url().includes("cursor=stale-following")) {
@@ -323,7 +358,9 @@ test("a stale following cursor replaces the old snapshot instead of merging it",
 
 test("sales content stays distinct, purchasable, and human when media or stock fails", async ({
   page,
-}) => {
+}, testInfo) => {
+  expectCandidateFailure(testInfo, "media-fallback");
+  await mockFeedMedia(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   const item = {
     ...feedItem(41),

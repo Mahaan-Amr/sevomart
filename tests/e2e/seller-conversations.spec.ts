@@ -1,11 +1,13 @@
 import {
   expect,
+  expectCandidateResponse,
   request as apiRequest,
   test,
   type Locator,
   type Page,
 } from "../helpers/release-playwright";
 import postgres from "postgres";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   buyerConversationTestMobiles,
@@ -25,6 +27,9 @@ const apiBaseUrl = `http://127.0.0.1:${process.env.SEVO_E2E_API_PORT ?? "3109"}`
 test("seller answers one private thread without duplicate effects and gets a safe way back", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "conversation-recovery");
+  expectCandidateResponse(testInfo, "conversation-recovery");
+  expectCandidateResponse(testInfo, "conversation-media-validation");
   const index = visualProjectIndex(testInfo.project.name);
   const sellerMobile = sellerConversationTestMobiles[index]!;
   const buyerMobile = buyerConversationTestMobiles[index]!;
@@ -47,6 +52,16 @@ test("seller answers one private thread without duplicate effects and gets a saf
     await page.getByLabel("کد شش‌رقمی").fill("111111");
     await page.getByRole("button", { name: "ورود" }).click();
 
+    await expect
+      .poll(async () => {
+        const sellerRows = await sql<Array<{ identityId: string }>>`
+          select identity_id as "identityId"
+          from identity_login_methods
+          where mobile = ${sellerMobile}
+        `;
+        return sellerRows[0]?.identityId;
+      })
+      .toBeTruthy();
     const sellerRows = await sql<Array<{ identityId: string }>>`
       select identity_id as "identityId"
       from identity_login_methods
@@ -178,6 +193,11 @@ test("seller answers one private thread without duplicate effects and gets a saf
     await expect(page.getByText(sellerReply, { exact: true })).toHaveCount(1);
     expect(idempotencyKeys).toHaveLength(2);
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-conversations:recovery",
+      name: "seller-conversation-thread",
+      sensitiveRegions: [],
+    });
 
     await page.locator('input[type="file"]').setInputFiles({
       name: "broken.png",

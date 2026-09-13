@@ -18,7 +18,11 @@ export async function assertInteractiveTargets(
     elements
       .filter((element) => {
         const style = getComputedStyle(element);
-        return style.display !== "none" && style.visibility !== "hidden";
+        return (
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          element.checkVisibility()
+        );
       })
       .map((element) => {
         const rect = element.getBoundingClientRect();

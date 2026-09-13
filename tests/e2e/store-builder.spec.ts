@@ -1,6 +1,7 @@
-import { expect, test } from "../helpers/release-playwright";
+import { expect, expectCandidateResponse, test } from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
+import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
   assertInteractiveTargets,
@@ -17,6 +18,8 @@ import {
 test("seller builds, refreshes, previews and publishes a minimal store", async ({
   page,
 }, testInfo) => {
+  expectCandidateResponse(testInfo, "store-validation");
+  expectCandidateResponse(testInfo, "store-draft-empty");
   const projectIndex = visualProjectIndex(testInfo.project.name);
   const mobile = storeBuilderTestMobiles[projectIndex];
   if (!mobile)
@@ -78,6 +81,11 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
 
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   const storeNameInput = page.getByLabel("نام فروشگاه");
+  await captureReleaseCheckpoint(page, testInfo, {
+    cellId: "seller-store-setup:empty",
+    name: "store-builder",
+    sensitiveRegions: [],
+  });
   await storeNameInput.fill("پیش‌نویس خانه ماه");
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(page).toHaveURL(/\/seller\/store$/);

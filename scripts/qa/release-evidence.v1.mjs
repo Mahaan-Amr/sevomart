@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { assertReleaseCandidateCoverage } from "./release-candidate-report.mjs";
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const MIGRATION_PATTERN = /^\d{14}__[a-z0-9-]+__[a-z0-9-]+$/;
@@ -179,6 +180,7 @@ export function finalizeReleaseEvidence(
   }
 
   const fingerprints = new Set();
+  const runIds = new Set();
   const expectedCells = new Map(
     createEvidenceCells(manifest).map((cell) => [cell.cellId, cell]),
   );
@@ -192,6 +194,10 @@ export function finalizeReleaseEvidence(
   }
 
   for (const run of evidence.runs) {
+    if (typeof run.runId !== "string" || !run.runId.trim() || runIds.has(run.runId)) {
+      throw new Error("Candidate evidence requires unique run IDs");
+    }
+    runIds.add(run.runId);
     if (
       typeof run.environmentFingerprint !== "string" ||
       run.environmentFingerprint.length < 16 ||
@@ -202,6 +208,7 @@ export function finalizeReleaseEvidence(
     fingerprints.add(run.environmentFingerprint);
     assertRunMetadata(run, evidence.candidate);
     const receiptCells = assertRunReceipt(
+      manifest,
       run,
       evidence.candidate,
       expectedCells,
@@ -236,8 +243,13 @@ export function finalizeReleaseEvidence(
     }
   }
 
-  const approvals = new Set(evidence.approvals ?? []);
-  if (approvals.size < 2 || !approvals.has(evidence.candidate.author)) {
+  const approvals = new Set(
+    (evidence.approvals ?? []).map(normalizeReviewer).filter(Boolean),
+  );
+  if (
+    approvals.size < 2 ||
+    !approvals.has(normalizeReviewer(evidence.candidate.author))
+  ) {
     throw new Error(
       "Final evidence approval requires both developers, including the author",
     );
@@ -246,6 +258,12 @@ export function finalizeReleaseEvidence(
   const finalizedAt = new Date(now);
   if (Number.isNaN(finalizedAt.getTime()))
     throw new Error("Finalization time must be valid");
+  if (finalizedAt.getTime() >= Date.parse(evidence.retentionUntil)) {
+    throw new Error("Evidence retention window has expired");
+  }
+  if (finalizedAt.getTime() < Date.parse(evidence.createdAt)) {
+    throw new Error("Finalization cannot precede evidence creation");
+  }
   return structuredClone({
     ...evidence,
     status: "APPROVED",
@@ -275,7 +293,14 @@ function verifyCandidateArtifacts(candidate, verifyArtifact) {
   }
 }
 
-function assertRunReceipt(run, candidate, expectedCells, verifyArtifact, readReceipt) {
+function assertRunReceipt(
+  manifest,
+  run,
+  candidate,
+  expectedCells,
+  verifyArtifact,
+  readReceipt,
+) {
   const receipt = run.receipt;
   if (
     !validCandidateArtifact(receipt, candidate) ||
@@ -286,8 +311,17 @@ function assertRunReceipt(run, candidate, expectedCells, verifyArtifact, readRec
   }
   const content = readReceipt(receipt);
   if (
+    typeof content?.report?.ref !== "string" ||
+    !content.report.ref.trim() ||
+    !/^[0-9a-f]{64}$/.test(content.report.sha256 ?? "") ||
+    verifyArtifact(content.report) !== true
+  ) {
+    throw new Error(`Run ${run.runId} browser report failed integrity verification`);
+  }
+  if (
     content?.contractVersion !== 1 ||
     content.runId !== run.runId ||
+    content.environmentFingerprint !== run.environmentFingerprint ||
     content.sha !== candidate.sha ||
     content.migration !== candidate.migration ||
     content.seedVersion !== candidate.seedVersion ||
@@ -301,14 +335,41 @@ function assertRunReceipt(run, candidate, expectedCells, verifyArtifact, readRec
   ) {
     throw new Error(`Run ${run.runId} candidate receipt did not pass cleanly`);
   }
+  const measuredCells = new Map(
+    assertReleaseCandidateCoverage(readReceipt(content.report), manifest).map(
+      (cell) => [cell.cellId, cell],
+    ),
+  );
   const receiptCells = new Map(content.cells?.map((cell) => [cell.cellId, cell]) ?? []);
   if (
     receiptCells.size !== expectedCells.size ||
+    receiptCells.size !== content.cells?.length ||
     [...expectedCells.keys()].some((cellId) => !receiptCells.has(cellId))
   ) {
     throw new Error(`Run ${run.runId} receipt does not cover the evidence matrix`);
   }
+  for (const [cellId, cell] of receiptCells) {
+    const measured = measuredCells.get(cellId);
+    for (const field of ["browsers", "viewports"]) {
+      if (!sameMembers(cell[field], measured?.[field])) {
+        throw new Error(`Run ${run.runId} receipt differs from measured ${cellId}`);
+      }
+    }
+    if (!sameMembers(cell.testLayers?.e2e, measured?.testLayers.e2e)) {
+      throw new Error(`Run ${run.runId} receipt differs from measured ${cellId}`);
+    }
+  }
   return receiptCells;
+}
+
+function sameMembers(left, right) {
+  return (
+    Array.isArray(left) &&
+    Array.isArray(right) &&
+    left.length === right.length &&
+    new Set(left).size === left.length &&
+    left.every((value) => right.includes(value))
+  );
 }
 
 function createEvidenceCells(manifest) {
@@ -415,7 +476,10 @@ function validateObservation(
   if (observation.unexpectedNetworkErrors?.length) {
     throw new Error(`Evidence cell ${cell.cellId} has an unexpected network error`);
   }
-  if (!observation.reviewer?.trim() || observation.reviewer === candidate.author) {
+  if (
+    !normalizeReviewer(observation.reviewer) ||
+    normalizeReviewer(observation.reviewer) === normalizeReviewer(candidate.author)
+  ) {
     throw new Error(`Evidence cell ${cell.cellId} requires an independent reviewer`);
   }
   if (Number.isNaN(Date.parse(observation.reviewedAt ?? ""))) {
@@ -451,6 +515,10 @@ function validateObservation(
       throw new Error(`Evidence cell ${cell.cellId} is missing ${kind}`);
     }
   }
+}
+
+function normalizeReviewer(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
 function assertCoverage(cell, receiptCell, observation) {

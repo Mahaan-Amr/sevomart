@@ -374,7 +374,7 @@ export const paymentsV1Examples = {
     status: "DISPATCHED",
     amount: { amount: 4_500_000, currency: "IRR" },
     provider: "DEV",
-    redirectUrl: "/v1/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
+    redirectUrl: "/api/payment-providers/dev/pay/91fe87eb-6c0f-47ca-93ca-9f9a038ca273",
     createdAt: "2026-08-25T08:00:00.000Z",
   },
   ProviderCallbackInput: {

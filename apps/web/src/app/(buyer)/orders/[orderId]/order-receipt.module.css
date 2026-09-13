@@ -74,6 +74,12 @@
     animation: none !important;
   }
 }
+@media (max-width: 360px) {
+  .panel dl div {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-wrap: anywhere;
+  }
+}
 .back {
   display: inline-flex;
   align-items: center;

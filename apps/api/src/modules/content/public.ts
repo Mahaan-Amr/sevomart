@@ -1,4 +1,5 @@
 import type {
+  ContentId,
   OrderItemId,
   PurchaseExperience,
   SalesContent,
@@ -7,6 +8,9 @@ import type {
   ProductPurchaseExperiences,
   ContentErrorV2,
   PublicSalesContentFeedV2,
+  ReplaceSellerSalesContentInputV2,
+  SellerSalesContentItemV2,
+  SellerSalesContentListV2,
   PublishPurchaseExperienceInputV2,
   PublishSalesContentInputV2,
   PurchaseExperienceEligibilityDecisionV2,
@@ -35,6 +39,7 @@ export interface ContentSellerAccessRead {
   isActiveSeller(identityId: IdentityId): Promise<boolean>;
 }
 export interface ContentStoreRead {
+  readOwnedStore(identityId: IdentityId): Promise<{ storeId: StoreId } | undefined>;
   requireOwnedSellable(identityId: IdentityId, storeId: StoreId): Promise<unknown>;
 }
 export interface ContentProductRead {
@@ -82,6 +87,16 @@ export type PublishPurchaseExperienceCommand = ContentMutation &
     storeId: StoreId;
     productId: ProductId;
   }>;
+export type ReplaceSellerSalesContentCommand = ContentMutation &
+  Readonly<{
+    contentId: ContentId;
+    input: ReplaceSellerSalesContentInputV2;
+    storeId: StoreId;
+    products: ReadonlyArray<{
+      productId: ProductId;
+      publicationVersion: number;
+    }>;
+  }>;
 
 export interface ContentRepository {
   replaySalesContent(command: ContentMutation): Promise<SalesContent | undefined>;
@@ -89,6 +104,20 @@ export interface ContentRepository {
     command: ContentMutation,
   ): Promise<PurchaseExperience | undefined>;
   publishSalesContent(command: PublishSalesContentCommand): Promise<SalesContent>;
+  replayReplaceSellerSalesContent(
+    command: ContentMutation,
+  ): Promise<SellerSalesContentItemV2 | undefined>;
+  listSellerSalesContent(input: {
+    actorId: IdentityId;
+    storeId: StoreId;
+  }): Promise<SellerSalesContentListV2>;
+  readSellerSalesContent(input: {
+    actorId: IdentityId;
+    contentId: ContentId;
+  }): Promise<SellerSalesContentItemV2 | undefined>;
+  replaceSellerSalesContent(
+    command: ReplaceSellerSalesContentCommand,
+  ): Promise<SellerSalesContentItemV2>;
   publishPurchaseExperience(
     command: PublishPurchaseExperienceCommand,
   ): Promise<PurchaseExperience>;

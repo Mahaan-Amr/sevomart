@@ -25,7 +25,7 @@ export default async function SellerReportsPage() {
           </div>
         ) : (
           <>
-            <div className={styles.range} aria-label="بازه گزارش">
+            <section className={styles.range} aria-label="بازه گزارش">
               <strong>۳۰ روز گذشته</strong>
               <span>از</span>
               <time dateTime={report.data.range.from}>
@@ -35,7 +35,7 @@ export default async function SellerReportsPage() {
               <time dateTime={report.data.range.to}>
                 {formatReportDate(report.data.range.to)}
               </time>
-            </div>
+            </section>
             {report.data.orderCount === 0 ? (
               <div className={styles.status}>
                 <h2>هنوز گزارشی برای این بازه نیست</h2>

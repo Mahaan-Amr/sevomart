@@ -60,6 +60,21 @@ export const contentV2Operations = {
     method: "get",
     path: "/v2/sales-content",
   },
+  listSellerSalesContent: {
+    operationId: "listSellerSalesContentV2",
+    method: "get",
+    path: "/v2/seller/sales-content",
+  },
+  readSellerSalesContent: {
+    operationId: "readSellerSalesContentV2",
+    method: "get",
+    path: "/v2/seller/sales-content/{contentId}",
+  },
+  replaceSellerSalesContent: {
+    operationId: "replaceSellerSalesContentV2",
+    method: "put",
+    path: "/v2/seller/sales-content/{contentId}",
+  },
 } as const;
 
 export const createPurchaseExperienceMediaContextInputContract = z
@@ -84,6 +99,42 @@ export const salesContentMediaV2Contract = z
 
 export const publishSalesContentInputV2Contract =
   publishSalesContentInputContract.extend({ media: salesContentMediaV2Contract });
+
+export const replaceSellerSalesContentInputV2Contract =
+  publishSalesContentInputV2Contract
+    .omit({ storeId: true })
+    .extend({ expectedRevision: z.int().positive() })
+    .strict();
+
+export const sellerSalesContentProductV2Contract = z
+  .object({
+    productId: productIdContract,
+    publicationVersion: z.int().positive(),
+    active: z.boolean(),
+  })
+  .strict();
+
+export const sellerSalesContentItemV2Contract = z
+  .object({
+    contentId: contentIdContract,
+    source: z.literal("SELLER"),
+    moderationState: contentModerationStateContract,
+    storeId: storeIdContract,
+    media: salesContentMediaV2Contract,
+    products: z.array(sellerSalesContentProductV2Contract).min(1).max(10),
+    active: z.boolean(),
+    revision: z.int().positive(),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const sellerSalesContentListV2Contract = z
+  .object({
+    storeId: storeIdContract,
+    items: z.array(sellerSalesContentItemV2Contract).max(60),
+  })
+  .strict();
 
 export const purchaseExperienceEligibilityDecisionV2Contract = z.discriminatedUnion(
   "eligible",
@@ -191,6 +242,13 @@ export const contentErrorV2Contract = z.union([
       correlationId: z.uuid(),
     })
     .strict(),
+  z
+    .object({
+      code: z.enum(["CONTENT_NOT_FOUND", "REVISION_CONFLICT"]),
+      message: z.string().min(1),
+      correlationId: z.uuid(),
+    })
+    .strict(),
 ]);
 
 export const contentV2Schemas = {
@@ -201,6 +259,10 @@ export const contentV2Schemas = {
   ContentModerationState: contentModerationStateContract,
   SalesContentMediaV2: salesContentMediaV2Contract,
   PublishSalesContentInputV2: publishSalesContentInputV2Contract,
+  ReplaceSellerSalesContentInputV2: replaceSellerSalesContentInputV2Contract,
+  SellerSalesContentProductV2: sellerSalesContentProductV2Contract,
+  SellerSalesContentItemV2: sellerSalesContentItemV2Contract,
+  SellerSalesContentListV2: sellerSalesContentListV2Contract,
   SalesContent: salesContentContract,
   SalesContentProductEligibilityDecision:
     salesContentProductEligibilityDecisionContract,
@@ -236,6 +298,35 @@ export const contentV2Examples = {
       kind: "IMAGE",
     },
     productIds: ["a78fdcc0-caad-4315-a7cd-b22834fe76d4"],
+  },
+  ReplaceSellerSalesContentInputV2: {
+    expectedRevision: 1,
+    media: {
+      mediaId: "807c619f-a989-4fd9-8b78-a437a07c7bc4",
+      kind: "IMAGE",
+    },
+    productIds: ["a78fdcc0-caad-4315-a7cd-b22834fe76d4"],
+  },
+  SellerSalesContentItemV2: {
+    contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+    source: "SELLER",
+    moderationState: "PUBLISHED",
+    storeId: "ad75d73c-1744-422c-a6ae-31195ed6abf1",
+    media: {
+      mediaId: "807c619f-a989-4fd9-8b78-a437a07c7bc4",
+      kind: "IMAGE",
+    },
+    products: [
+      {
+        productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+        publicationVersion: 1,
+        active: true,
+      },
+    ],
+    active: true,
+    revision: 1,
+    createdAt: "2026-09-01T09:00:00.000Z",
+    updatedAt: "2026-09-01T09:00:00.000Z",
   },
   PublishPurchaseExperienceInputV2: {
     buyerId: "97554510-44c2-4e02-b44f-95c17ff239de",
@@ -324,6 +415,11 @@ export type { OrderItemId } from "../../orders/v1/index";
 export type PublishSalesContentInputV2 = z.infer<
   typeof publishSalesContentInputV2Contract
 >;
+export type ReplaceSellerSalesContentInputV2 = z.infer<
+  typeof replaceSellerSalesContentInputV2Contract
+>;
+export type SellerSalesContentItemV2 = z.infer<typeof sellerSalesContentItemV2Contract>;
+export type SellerSalesContentListV2 = z.infer<typeof sellerSalesContentListV2Contract>;
 export type PurchaseExperienceEligibilityDecisionV2 = z.infer<
   typeof purchaseExperienceEligibilityDecisionV2Contract
 >;
