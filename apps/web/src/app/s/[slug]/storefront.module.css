@@ -141,6 +141,12 @@
   gap: 4px;
 }
 
+.statsUpdatedAt {
+  padding-inline: 8px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
 .storeActions,
 .storeActionsTwo {
   display: grid;
@@ -217,7 +223,7 @@
   width: 100%;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: var(--color-surface);
   color: var(--color-primary-dark);
   text-decoration: none;
 }
@@ -765,6 +771,10 @@
   }
 
   .identity .productCount {
+    padding-inline: 24px;
+  }
+
+  .statsUpdatedAt {
     padding-inline: 24px;
   }
 

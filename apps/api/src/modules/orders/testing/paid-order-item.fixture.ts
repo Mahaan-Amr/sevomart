@@ -52,6 +52,7 @@ export async function createPaidOrderItemFixture(
   `;
 
   return {
+    orderId,
     async cleanup() {
       try {
         await sql`delete from order_fulfillment_status_projections where order_id = ${orderId}`;

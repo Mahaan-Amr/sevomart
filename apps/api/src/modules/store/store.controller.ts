@@ -39,12 +39,16 @@ import {
 } from "./application/store.service";
 import {
   PUBLIC_ACTIVE_PRODUCT_COUNT_READER,
+  PUBLIC_VERIFIED_PURCHASE_COUNT_READER,
+  PUBLIC_STORE_RATING_READER,
   PUBLIC_STORE_FOLLOWING_READER,
   STORE_SERVICE,
 } from "./store.tokens";
 import { StoreIdempotencyConflictError, StoreRevisionConflictError } from "./public";
 import type {
   PublicActiveProductCountReader,
+  PublicVerifiedPurchaseCountReader,
+  PublicStoreRatingReader,
   PublicStoreFollowingReader,
 } from "./public";
 
@@ -59,6 +63,10 @@ export class StoreController {
     private readonly following: PublicStoreFollowingReader,
     @Inject(PUBLIC_ACTIVE_PRODUCT_COUNT_READER)
     private readonly activeProducts: PublicActiveProductCountReader,
+    @Inject(PUBLIC_VERIFIED_PURCHASE_COUNT_READER)
+    private readonly verifiedPurchases: PublicVerifiedPurchaseCountReader,
+    @Inject(PUBLIC_STORE_RATING_READER)
+    private readonly rating: PublicStoreRatingReader,
   ) {}
 
   @Get("seller/store/draft")
@@ -173,14 +181,17 @@ export class StoreController {
       ? await this.sessions.readActiveIdentitySession(token)
       : undefined;
     const storeId = storeIdContract.parse(store.id);
-    const [following, activeProductCount] = await Promise.all([
-      this.following.readPublicStoreFollowing(
-        storeId,
-        session ? identityIdContract.parse(session.actor.identityId) : undefined,
-        store.publishedAt,
-      ),
-      this.activeProducts.readActiveProductCount(storeId),
-    ]);
+    const [following, activeProductCount, verifiedPurchases, rating] =
+      await Promise.all([
+        this.following.readPublicStoreFollowing(
+          storeId,
+          session ? identityIdContract.parse(session.actor.identityId) : undefined,
+          store.publishedAt,
+        ),
+        this.activeProducts.readActiveProductCount(storeId),
+        this.verifiedPurchases.readVerifiedPurchaseCount(storeId),
+        this.rating.readPublicStoreRating(storeId),
+      ]);
     response.header(
       "cache-control",
       session ? "private, no-store" : "public, max-age=30, must-revalidate",
@@ -190,6 +201,8 @@ export class StoreController {
     return {
       ...store,
       activeProductCount,
+      verifiedPurchases,
+      rating,
       followerCount: following.followerCount,
       ...(following.viewer ? { viewer: following.viewer } : {}),
     };

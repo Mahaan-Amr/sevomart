@@ -164,6 +164,18 @@ describe("Store v1 executable schema surface", () => {
         conversionRate: 0.2,
       }),
     ).toEqual(store.storeV1Examples.PublicStore);
+    expect(
+      store.publicStoreContract.safeParse({
+        ...store.storeV1Examples.PublicStore,
+        verifiedPurchases: { count: -1, updatedAt: null },
+      }).success,
+    ).toBe(false);
+    expect(
+      store.publicStoreContract.safeParse({
+        ...store.storeV1Examples.PublicStore,
+        rating: { sampleSize: 2, average: 5 },
+      }).success,
+    ).toBe(false);
   });
 
   it("does not reinterpret absent or inactive seller eligibility as an active grant", () => {
