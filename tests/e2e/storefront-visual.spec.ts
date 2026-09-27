@@ -267,16 +267,17 @@ test("the storefront shows stopped sales content without a purchase action", asy
   await page.goto(`/s/${stores.defaultSlug}`);
 
   await expect(page.getByRole("heading", { name: "محتوای فروش" })).toBeVisible();
-  await expect(
-    page
-      .getByRole("list", { name: "محتوای فروش فروشگاه" })
-      .getByText("محتوای فروش", { exact: true }),
-  ).toHaveCount(1);
+  const cover = page.getByRole("button", { name: /دیدن محتوای فروش/ });
+  await expect(cover).toHaveCount(1);
   await expect(page.getByText("تصویر این محتوا باز نشد.")).toBeVisible();
-  await expect(page.getByText("کالای متصل فعلاً قابل خرید نیست.")).toBeVisible();
+  await cover.click();
+  const detail = page.getByRole("dialog", { name: /محتوای فروش/ });
   await expect(
-    page.getByRole("list", { name: "محتوای فروش فروشگاه" }).getByRole("link"),
-  ).toHaveCount(1);
+    detail.getByText("کالای متصل فعلاً برای خرید در دسترس نیست."),
+  ).toBeVisible();
+  await expect(detail.getByRole("link")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(detail).not.toBeVisible();
 });
 
 test("the storefront reflows without clipping at an effective 200% zoom", async ({
