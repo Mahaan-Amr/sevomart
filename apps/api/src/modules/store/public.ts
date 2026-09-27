@@ -57,6 +57,7 @@ export type StoreRow = {
   name?: string;
   slug?: string;
   bio?: string;
+  publicContactPhone?: string | null;
   shippingMethods?: StoreShippingMethod[];
   returnPolicy?: string;
   settlementDestination?: VerifiedSettlementDestination;

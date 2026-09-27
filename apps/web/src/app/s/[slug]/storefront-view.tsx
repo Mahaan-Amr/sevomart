@@ -9,6 +9,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { newConversationHref } from "../../../lib/conversation-navigation";
 import styles from "./storefront.module.css";
+import { StoreContactDialog } from "./store-contact-dialog";
 import { StoreFollowControl } from "./store-follow-control";
 import { StoreSalesContent } from "./store-sales-content";
 
@@ -176,6 +177,14 @@ export function ReadyStorefront({
               {new Intl.NumberFormat("fa-IR").format(store.activeProductCount)} کالای
               فعال
             </p>
+          </div>
+        ) : null}
+        <div
+          className={
+            store.publicContactPhone ? styles.storeActions : styles.storeActionsTwo
+          }
+        >
+          {store.followerCount ? (
             <StoreFollowControl
               storeId={store.id}
               slug={store.slug}
@@ -183,17 +192,24 @@ export function ReadyStorefront({
               initialViewer={store.viewer}
               autoFollow={autoFollow}
             />
-          </div>
-        ) : null}
-        <Link
-          className={styles.conversation}
-          href={newConversationHref(
-            { kind: "STORE", storeId: store.id },
-            `/s/${store.slug}`,
-          )}
-        >
-          گفت‌وگو با فروشگاه
-        </Link>
+          ) : null}
+          <Link
+            className={styles.conversation}
+            aria-label="گفت‌وگو با فروشگاه"
+            href={newConversationHref(
+              { kind: "STORE", storeId: store.id },
+              `/s/${store.slug}`,
+            )}
+          >
+            گفت‌وگو
+          </Link>
+          {store.publicContactPhone ? (
+            <StoreContactDialog
+              storeName={store.name}
+              phone={store.publicContactPhone}
+            />
+          ) : null}
+        </div>
       </header>
       {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">
