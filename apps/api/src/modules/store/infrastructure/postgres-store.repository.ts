@@ -150,6 +150,7 @@ export class PostgresStoreRepository
     const slug = criteria.slug ?? null;
     const rows = await sql<StoreDatabaseRow[]>`
       select s.id, s.name, s.slug, s.bio,
+        s.public_contact_phone as "publicContactPhone",
         s.return_policy as "returnPolicy",
         s.return_policy_revision as "returnPolicyRevision",
         s.settlement_kind as "settlementKind",
@@ -210,13 +211,14 @@ export class PostgresStoreRepository
           const revision = currentRevision + 1;
           await sql`
           insert into store_stores
-            (id, name, slug, bio, return_policy, return_policy_revision,
+            (id, name, slug, bio, public_contact_phone, return_policy, return_policy_revision,
              settlement_kind, settlement_status, settlement_verified_at,
              logo_media_id, cover_media_id, theme_color, status, published_at,
              publication_version, revision, updated_at)
           values
             (${row.id}, ${row.name ?? null}, ${row.slug ?? null},
-             ${row.bio ?? null}, ${row.returnPolicy ?? null},
+             ${row.bio ?? null}, ${row.publicContactPhone ?? null},
+             ${row.returnPolicy ?? null},
              ${row.returnPolicyRevision ?? 0},
              ${row.settlementDestination?.kind ?? null},
              ${row.settlementDestination?.status ?? null},
@@ -227,6 +229,7 @@ export class PostgresStoreRepository
              ${revision}, ${row.updatedAt})
           on conflict (id) do update set
             name = excluded.name, slug = excluded.slug, bio = excluded.bio,
+            public_contact_phone = excluded.public_contact_phone,
             return_policy = excluded.return_policy,
             return_policy_revision = excluded.return_policy_revision,
             settlement_kind = excluded.settlement_kind,

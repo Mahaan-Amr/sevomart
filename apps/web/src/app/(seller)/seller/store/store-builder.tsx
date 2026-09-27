@@ -27,7 +27,14 @@ type Stage = "edit" | "preview" | "published";
 export type StoreSection = "setup" | "profile" | "shipping" | "returns" | "appearance";
 type FieldErrors = Partial<
   Record<
-    "name" | "slug" | "bio" | "shipping" | "returnPolicy" | "logo" | "cover",
+    | "name"
+    | "slug"
+    | "bio"
+    | "publicContactPhone"
+    | "shipping"
+    | "returnPolicy"
+    | "logo"
+    | "cover",
     string
   >
 >;
@@ -44,6 +51,7 @@ const emptyForm: {
   name: string;
   slug: string;
   bio: string;
+  publicContactPhone: string;
   shippingCode: ShippingCode;
   returnPolicy: string;
   themeColor: string;
@@ -52,6 +60,7 @@ const emptyForm: {
   name: "",
   slug: "",
   bio: "",
+  publicContactPhone: "",
   shippingCode: "NATIONAL_POST",
   returnPolicy: "",
   themeColor: "#A41439",
@@ -132,6 +141,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       name: draft.name ?? "",
       slug: draft.slug ?? "",
       bio: draft.bio ?? "",
+      publicContactPhone: draft.publicContactPhone ?? "",
       shippingCode: draft.shippingMethods?.[0]?.code ?? "NATIONAL_POST",
       returnPolicy: draft.returnPolicy ?? "",
       themeColor: draft.themeColor ?? "#A41439",
@@ -844,6 +854,21 @@ function StoreSettingsPage({
                   onChange={(event) => updateFormField("bio", event.target.value)}
                 />
               </Field>
+              <Field
+                label="شماره تماس کاری (اختیاری)"
+                hint="با ذخیره، این شماره در صفحه عمومی فروشگاه دیده می‌شود. برای حذف، ورودی را خالی کنید."
+                error={errors.publicContactPhone}
+              >
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  dir="ltr"
+                  value={form.publicContactPhone}
+                  onChange={(event) =>
+                    updateFormField("publicContactPhone", event.target.value)
+                  }
+                />
+              </Field>
             </>
           ) : null}
           {section === "shipping" ? (
@@ -1051,6 +1076,7 @@ function validateSection(section: StoreSection, form: StoreForm): FieldErrors {
       ...(all.name ? { name: all.name } : {}),
       ...(all.slug ? { slug: all.slug } : {}),
       ...(all.bio ? { bio: all.bio } : {}),
+      ...(all.publicContactPhone ? { publicContactPhone: all.publicContactPhone } : {}),
     };
   }
   if (section === "returns") {
@@ -1085,6 +1111,7 @@ function buildSectionInput(
       name: form.name.trim(),
       slug: form.slug.trim() as StoreDraftInput["slug"],
       bio: form.bio.trim(),
+      publicContactPhone: normalizedContactPhone(form.publicContactPhone),
     };
   }
   if (section === "shipping") {
@@ -1106,6 +1133,7 @@ function buildDraftInput(
       ? { slug: form.slug.trim() as StoreDraftInput["slug"] }
       : {}),
     ...(complete || form.bio.trim().length >= 2 ? { bio: form.bio.trim() } : {}),
+    publicContactPhone: normalizedContactPhone(form.publicContactPhone),
     shippingMethods: form.shippingMethods.map(toShippingInput),
     ...(complete || form.returnPolicy.trim().length >= 10
       ? { returnPolicy: form.returnPolicy.trim() }
@@ -1174,6 +1202,12 @@ function validateForm(form: typeof emptyForm): FieldErrors {
   const bioLength = form.bio.trim().length;
   if (bioLength < 2) errors.bio = "یک معرفی کوتاه برای فروشگاه بنویسید.";
   else if (bioLength > 240) errors.bio = "معرفی کوتاه حداکثر ۲۴۰ نویسه است.";
+  if (
+    form.publicContactPhone.trim() &&
+    !/^0[1-9][0-9]{9}$/.test(latinDigits(form.publicContactPhone.trim()))
+  ) {
+    errors.publicContactPhone = "شماره کاری را با ۱۱ رقم و بدون فاصله وارد کنید.";
+  }
   const returnPolicyLength = form.returnPolicy.trim().length;
   if (returnPolicyLength < 10)
     errors.returnPolicy = "شرایط مرجوعی را کمی روشن‌تر بنویسید.";
@@ -1183,7 +1217,11 @@ function validateForm(form: typeof emptyForm): FieldErrors {
 }
 
 function hasIdentityErrors(errors: FieldErrors) {
-  return Boolean(errors.name || errors.slug || errors.bio);
+  return Boolean(errors.name || errors.slug || errors.bio || errors.publicContactPhone);
+}
+
+function normalizedContactPhone(value: string): string | null {
+  return value.trim() ? latinDigits(value.trim()) : null;
 }
 
 const shippingCodes = ["NATIONAL_POST", "COURIER", "PICKUP"] as const;

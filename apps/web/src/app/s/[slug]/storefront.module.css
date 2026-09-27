@@ -141,6 +141,23 @@
   gap: 4px;
 }
 
+.storeActions,
+.storeActionsTwo {
+  display: grid;
+  width: min(calc(100% - 16px), 560px);
+  align-items: end;
+  gap: 8px;
+  margin: 8px auto;
+}
+
+.storeActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.storeActionsTwo {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .identity .productCount {
   padding-inline: 8px;
   color: var(--color-text);
@@ -149,10 +166,8 @@
 
 .follow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 8px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .followSummary {
@@ -185,7 +200,8 @@
 .followButton,
 .followingButton,
 .followError button,
-.conversation {
+.conversation,
+.contactButton {
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--color-primary);
@@ -198,8 +214,7 @@
 
 .conversation {
   display: inline-flex;
-  width: fit-content;
-  margin: 4px 8px 0;
+  width: 100%;
   align-items: center;
   justify-content: center;
   background: transparent;
@@ -207,13 +222,66 @@
   text-decoration: none;
 }
 
+.contactButton {
+  width: 100%;
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.contactDialog {
+  width: min(100% - 24px, 420px);
+  padding: 20px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 18px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.contactDialog::backdrop {
+  background: rgb(47 37 40 / 55%);
+}
+
+.contactDialog h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.contactDialog a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  color: var(--color-primary-dark);
+}
+
+.contactDialogClose {
+  display: block;
+  min-height: 40px;
+  margin-block-start: 16px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  cursor: pointer;
+}
+
+.contactButton:focus-visible,
+.contactDialog button:focus-visible,
+.contactDialog a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
 .followButton {
+  width: 100%;
   background: var(--color-primary);
   box-shadow: 3px 3px 8px var(--shadow-primary);
   color: var(--color-on-primary);
 }
 
 .followingButton {
+  width: 100%;
   background: var(--color-background);
   box-shadow: inset 3px 3px 7px var(--shadow-neutral-soft);
   color: var(--color-primary-dark);

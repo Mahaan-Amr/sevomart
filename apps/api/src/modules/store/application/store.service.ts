@@ -114,7 +114,7 @@ export class StoreService implements StoreAuthoritativeRead {
       operation: "SAVE_STORE_DRAFT",
       actorId: sellerId,
       requestHash: hashParsedInput(input),
-      ...(legacyReplay.success
+      ...(legacyReplay.success && input.publicContactPhone === undefined
         ? { compatibleRequestHashes: [hashParsedInput(legacyReplay.data)] }
         : {}),
     };
@@ -152,6 +152,10 @@ export class StoreService implements StoreAuthoritativeRead {
         name: input.name ?? current?.name,
         slug: input.slug ?? current?.slug,
         bio: input.bio ?? current?.bio,
+        publicContactPhone:
+          input.publicContactPhone !== undefined
+            ? input.publicContactPhone
+            : (current?.publicContactPhone ?? null),
         shippingMethods,
         returnPolicy: input.returnPolicy ?? current?.returnPolicy,
         returnPolicyRevision,
@@ -408,6 +412,7 @@ function toDraft(row: StoreRow): StoreDraft {
     name: row.name ?? undefined,
     slug: (row.slug ?? undefined) as StoreDraft["slug"],
     bio: row.bio ?? undefined,
+    publicContactPhone: row.publicContactPhone ?? null,
     shippingMethods: row.shippingMethods?.map(toShippingMethodSnapshot),
     returnPolicy: row.returnPolicy ?? undefined,
     settlementDestination: row.settlementDestination
@@ -434,6 +439,7 @@ function toPublicStore(
     name: row.name!,
     slug: row.slug as PublicStore["slug"],
     bio: row.bio!,
+    ...(row.publicContactPhone ? { publicContactPhone: row.publicContactPhone } : {}),
     shippingMethods: row.shippingMethods!.map(toShippingMethodSnapshot),
     returnPolicy: row.returnPolicy!,
     settlementDestination: { kind: "TEST", status: "TEST_VERIFIED" },

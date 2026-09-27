@@ -20,6 +20,7 @@ export { storeSlugContract } from "./store-identifiers";
 
 export const storeIdempotencyKeyContract = z.string().min(1).max(200);
 export const storeRevisionTagContract = z.string().regex(/^"\d+"$/);
+export const storePublicContactPhoneContract = z.string().regex(/^0[1-9][0-9]{9}$/);
 
 const readableShippingMethodContract = z.object({
   code: z.enum(["NATIONAL_POST", "COURIER", "PICKUP"]),
@@ -148,6 +149,7 @@ const writableStoreFields = {
   name: z.string().trim().min(2).max(80),
   slug: storeSlugContract,
   bio: z.string().trim().min(2).max(240),
+  publicContactPhone: storePublicContactPhoneContract.nullable(),
   shippingMethods: shippingMethodsInputContract,
   returnPolicy: z.string().trim().min(10).max(1_000),
   settlementDestination: settlementDestinationInputContract,
@@ -173,6 +175,7 @@ export const storeDraftInputContract = z.object({
   name: writableStoreFields.name.optional(),
   slug: writableStoreFields.slug.optional(),
   bio: writableStoreFields.bio.optional(),
+  publicContactPhone: writableStoreFields.publicContactPhone.optional(),
   shippingMethods: writableStoreFields.shippingMethods.optional(),
   returnPolicy: writableStoreFields.returnPolicy.optional(),
   settlementDestination: writableStoreFields.settlementDestination.optional(),
@@ -208,6 +211,7 @@ const draftStoreContract = z.object({
   name: readableStoreFields.name.optional(),
   slug: readableStoreFields.slug.optional(),
   bio: readableStoreFields.bio.optional(),
+  publicContactPhone: writableStoreFields.publicContactPhone.optional(),
   shippingMethods: z
     .array(storeShippingMethodSnapshotV1Contract)
     .min(1)
@@ -226,6 +230,7 @@ const publishedStoreRecordContract = z.object({
   name: readableStoreFields.name,
   slug: readableStoreFields.slug,
   bio: readableStoreFields.bio,
+  publicContactPhone: writableStoreFields.publicContactPhone.optional(),
   shippingMethods: z.array(storeShippingMethodSnapshotV1Contract).min(1).max(5),
   returnPolicy: readableStoreFields.returnPolicy,
   settlementDestination: verifiedSettlementDestinationContract,
@@ -311,6 +316,7 @@ export const publicStoreContract = z.object({
   name: readableStoreFields.name,
   slug: readableStoreFields.slug,
   bio: readableStoreFields.bio,
+  publicContactPhone: storePublicContactPhoneContract.optional(),
   shippingMethods: z.array(storeShippingMethodSnapshotV1Contract).min(1).max(5),
   returnPolicy: readableStoreFields.returnPolicy,
   settlementDestination: verifiedSettlementDestinationContract,
