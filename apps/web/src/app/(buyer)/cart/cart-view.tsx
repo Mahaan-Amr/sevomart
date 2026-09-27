@@ -178,7 +178,13 @@ export function CartView() {
   }
 
   if (loading) {
-    return <main className={styles.page}>در حال آماده‌کردن سبد…</main>;
+    return (
+      <main className={styles.page}>
+        <section className={styles.panel} role="status">
+          در حال آماده‌کردن سبد…
+        </section>
+      </main>
+    );
   }
 
   return (

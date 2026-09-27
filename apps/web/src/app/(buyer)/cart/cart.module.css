@@ -8,6 +8,13 @@
 .panel {
   width: min(100%, 680px);
   margin-inline: auto;
+  padding: 24px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow:
+    8px 8px 20px var(--shadow-neutral),
+    -8px -8px 20px var(--shadow-highlight-strong);
 }
 
 .header {
@@ -290,6 +297,10 @@
 @media (max-width: 520px) {
   .page {
     padding-block-start: 16px;
+  }
+
+  .panel {
+    padding: 20px;
   }
 
   .item {

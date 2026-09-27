@@ -62,6 +62,19 @@ test("cart keeps quantity controls together and explains the running total", asy
 
   await page.goto("/cart");
   await expect(page.getByRole("heading", { name: "سبد شما" })).toBeVisible();
+  const panel = page.locator("main > section");
+  const surface = await panel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      panel: style.backgroundColor,
+      page: getComputedStyle(document.body).backgroundColor,
+      radius: Number.parseFloat(style.borderTopLeftRadius),
+      border: style.borderTopWidth,
+    };
+  });
+  expect(surface.panel).not.toBe(surface.page);
+  expect(surface.radius).toBeGreaterThanOrEqual(18);
+  expect(surface.border).not.toBe("0px");
   await expect(page.getByText("هر عدد ۴۵۰٬۰۰۰ تومان")).toBeVisible();
   await expect(page.getByText("۹۰۰٬۰۰۰ تومان")).toHaveCount(2);
   await expect(
