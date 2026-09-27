@@ -287,13 +287,28 @@ export function ConversationThread({ conversationId }: { conversationId: string 
         <textarea
           id="conversation-message"
           maxLength={4_000}
-          rows={3}
+          rows={1}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
         />
         <small>{new Intl.NumberFormat("fa-IR").format(draft.length)} از ۴٬۰۰۰</small>
-        <button type="submit" disabled={sending || !draft.trim()}>
-          {sending ? "در حال فرستادن…" : "فرستادن پیام"}
+        <button
+          type="submit"
+          disabled={sending || !draft.trim()}
+          aria-label={sending ? "در حال فرستادن پیام" : "فرستادن پیام"}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 3 3 10.5l7.2 3.3L13.5 21 21 3Z" />
+            <path d="m10.2 13.8 4.3-4.3" />
+          </svg>
         </button>
       </form>
     </section>
