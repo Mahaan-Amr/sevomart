@@ -389,29 +389,31 @@ function ApplicationStatus({
             {message}
           </p>
         ) : null}
-        {application.status === "SUBMITTED" ? (
-          <button
-            type="button"
-            className={styles.danger}
-            disabled={withdrawalPending}
-            onClick={onWithdraw}
-          >
-            {withdrawalPending ? "در حال بستن…" : "پس‌گرفتن درخواست"}
-          </button>
-        ) : null}
-        {application.status === "WITHDRAWN" || application.status === "REJECTED" ? (
-          <button type="button" className={styles.primaryAction} onClick={onStartNew}>
-            ثبت درخواست تازه
-          </button>
-        ) : null}
-        {application.status === "APPROVED" ? (
-          <a className={styles.primaryAction} href="/seller">
-            رفتن به فضای فروشنده
+        <div className={styles.statusActions}>
+          {application.status === "SUBMITTED" ? (
+            <button
+              type="button"
+              className={styles.danger}
+              disabled={withdrawalPending}
+              onClick={onWithdraw}
+            >
+              {withdrawalPending ? "در حال بستن…" : "پس‌گرفتن درخواست"}
+            </button>
+          ) : null}
+          {application.status === "WITHDRAWN" || application.status === "REJECTED" ? (
+            <button type="button" className={styles.primaryAction} onClick={onStartNew}>
+              ثبت درخواست تازه
+            </button>
+          ) : null}
+          {application.status === "APPROVED" ? (
+            <a className={styles.primaryAction} href="/seller">
+              رفتن به فضای فروشنده
+            </a>
+          ) : null}
+          <a className={styles.leave} href="/">
+            بازگشت به سوو
           </a>
-        ) : null}
-        <a className={styles.leave} href="/">
-          بازگشت به سوو
-        </a>
+        </div>
       </section>
     </main>
   );

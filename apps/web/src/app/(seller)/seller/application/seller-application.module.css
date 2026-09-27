@@ -165,6 +165,33 @@
   cursor: pointer;
 }
 
+.statusActions {
+  display: grid;
+  gap: 12px;
+  margin-block-start: 24px;
+}
+
+.statusActions .danger,
+.statusActions .primaryAction,
+.statusActions .leave {
+  width: 100%;
+  margin-block-start: 0;
+}
+
+.statusActions .danger,
+.statusActions .primaryAction {
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.statusActions .leave {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  text-align: center;
+}
+
 .primaryAction:focus-visible {
   outline: 2px solid var(--color-primary-light);
   outline-offset: 2px;
