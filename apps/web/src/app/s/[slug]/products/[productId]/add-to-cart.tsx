@@ -22,7 +22,6 @@ export function AddToCart({
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
-  const [replacementRevision, setReplacementRevision] = useState<number>();
   const selectedVariant =
     singleVariant ??
     (axes.every((axis) => choices[axis.name])
@@ -43,7 +42,6 @@ export function AddToCart({
     for (const later of axes.slice(axisIndex + 1)) delete next[later.name];
     setChoices(next);
     setMessage("");
-    setReplacementRevision(undefined);
   }
 
   async function add() {
@@ -54,9 +52,9 @@ export function AddToCart({
     setPending(true);
     setMessage("");
     try {
-      const current = await fetch("/api/cart", { cache: "no-store" });
+      const current = await fetch("/api/cart/v2", { cache: "no-store" });
       const currentBody = (await current.json()) as { cart?: { revision?: number } };
-      const response = await fetch(`/api/cart/items/${variantId}`, {
+      const response = await fetch(`/api/cart/v2/items/${variantId}`, {
         method: "PUT",
         headers: {
           "content-type": "application/json",
@@ -71,47 +69,10 @@ export function AddToCart({
       });
       const body = (await response.json()) as { code?: string; message?: string };
       if (!response.ok) {
-        if (
-          body.code === "STORE_REPLACEMENT_CONFIRMATION_REQUIRED" &&
-          typeof currentBody.cart?.revision === "number"
-        ) {
-          setReplacementRevision(currentBody.cart.revision);
-        }
         setMessage(body.message ?? "افزودن به سبد انجام نشد.");
         return;
       }
       setMessage("به سبد اضافه شد.");
-    } catch {
-      setMessage("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function replaceStore() {
-    if (replacementRevision === undefined || !selectedVariant) return;
-    setPending(true);
-    try {
-      const response = await fetch("/api/cart/store-replacement", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "idempotency-key": crypto.randomUUID(),
-        },
-        body: JSON.stringify({
-          variantId,
-          quantity,
-          expectedRevision: replacementRevision,
-          confirmed: true,
-        }),
-      });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        setMessage(body.message ?? "تغییر فروشگاه انجام نشد.");
-        return;
-      }
-      setReplacementRevision(undefined);
-      setMessage("سبد فروشگاه قبلی کنار گذاشته شد و کالا به سبد تازه اضافه شد.");
     } catch {
       setMessage("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
     } finally {
@@ -195,35 +156,21 @@ export function AddToCart({
           </option>
         ))}
       </select>
-      {replacementRevision === undefined ? (
-        <button
-          type="button"
-          onClick={add}
-          disabled={!selectedVariant?.available || pending}
-        >
-          {pending
-            ? "در حال افزودن…"
-            : !selectedVariant
-              ? "گونه را انتخاب کنید"
-              : selectedVariant.available
-                ? "افزودن به سبد"
-                : "فعلاً ناموجود"}
-        </button>
-      ) : null}
+      <button
+        type="button"
+        onClick={add}
+        disabled={!selectedVariant?.available || pending}
+      >
+        {pending
+          ? "در حال افزودن…"
+          : !selectedVariant
+            ? "گونه را انتخاب کنید"
+            : selectedVariant.available
+              ? "افزودن به سبد"
+              : "فعلاً ناموجود"}
+      </button>
       {message ? <p role="status">{message}</p> : null}
-      {replacementRevision !== undefined ? (
-        <button
-          className={styles.replacementAction}
-          type="button"
-          onClick={replaceStore}
-          disabled={pending}
-        >
-          تغییر فروشگاه و افزودن
-        </button>
-      ) : null}
-      {message === "به سبد اضافه شد." || message.includes("سبد تازه") ? (
-        <a href="/cart">دیدن سبد</a>
-      ) : null}
+      {message === "به سبد اضافه شد." ? <a href="/cart">دیدن سبد</a> : null}
     </div>
   );
 }

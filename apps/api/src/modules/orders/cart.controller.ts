@@ -60,7 +60,21 @@ export class CartController {
   @Get()
   async read(@Req() request: FastifyRequest) {
     const identityId = await this.optionalIdentity(request);
-    return this.carts.read(identityId, readCookie(request, "sevo_cart"));
+    try {
+      return await this.carts.read(identityId, readCookie(request, "sevo_cart"));
+    } catch (error) {
+      if (error instanceof CartResolutionRequiredError) {
+        throw new HttpException(
+          {
+            code: "CART_V2_REQUIRED",
+            message: "این سبد کالاهای چند فروشگاه را دارد. نسخه تازه سبد را باز کنید.",
+            correlationId: request.id,
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
   }
 
   @Put("items/:variantId")
@@ -301,7 +315,7 @@ export class CartController {
   }
 }
 
-function readCookie(request: FastifyRequest, name: string) {
+export function readCookie(request: FastifyRequest, name: string) {
   return request.headers.cookie
     ?.split(";")
     .map((part) => part.trim().split("="))
@@ -310,7 +324,7 @@ function readCookie(request: FastifyRequest, name: string) {
     .join("=");
 }
 
-function validationError(correlationId: string) {
+export function validationError(correlationId: string) {
   return new HttpException(
     {
       code: "VALIDATION_ERROR",
@@ -321,7 +335,7 @@ function validationError(correlationId: string) {
   );
 }
 
-async function cartError(
+export async function cartError(
   error: unknown,
   correlationId: string,
   carts: CartService,

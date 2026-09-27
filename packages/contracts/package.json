@@ -37,6 +37,10 @@
       "types": "./dist/orders/v1/index.d.ts",
       "default": "./dist/orders/v1/index.js"
     },
+    "./orders/v2": {
+      "types": "./dist/orders/v2/index.d.ts",
+      "default": "./dist/orders/v2/index.js"
+    },
     "./payments/v1": {
       "types": "./dist/payments/v1/index.d.ts",
       "default": "./dist/payments/v1/index.js"
