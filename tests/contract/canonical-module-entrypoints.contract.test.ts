@@ -9,6 +9,7 @@ import * as inventoryV1 from "@sevo/contracts/inventory/v1";
 import * as mediaV1 from "@sevo/contracts/media/v1";
 import * as notificationsV1 from "@sevo/contracts/notifications/v1";
 import * as ordersV1 from "@sevo/contracts/orders/v1";
+import * as ordersV2 from "@sevo/contracts/orders/v2";
 import * as paymentsV1 from "@sevo/contracts/payments/v1";
 import * as paymentsV2 from "@sevo/contracts/payments/v2";
 import {
@@ -50,6 +51,7 @@ const canonicalDomainEntrypoints: Record<string, Record<string, unknown>> = {
   "@sevo/contracts/product/v1": productV1,
   "@sevo/contracts/inventory/v1": inventoryV1,
   "@sevo/contracts/orders/v1": ordersV1,
+  "@sevo/contracts/orders/v2": ordersV2,
   "@sevo/contracts/payments/v1": paymentsV1,
   "@sevo/contracts/payments/v2": paymentsV2,
   "@sevo/contracts/fulfillment/v1": fulfillmentV1,

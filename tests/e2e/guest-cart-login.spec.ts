@@ -191,9 +191,9 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("تعداد ۲")).toBeVisible();
   await expect(page.getByText("هر عدد ۴۵۰٬۰۰۰ تومان")).toBeVisible();
-  await expect(page.getByText("۹۰۰٬۰۰۰ تومان")).toHaveCount(2);
+  await expect(page.getByText("۹۰۰٬۰۰۰ تومان")).toHaveCount(3);
   await expect(
-    page.getByText("هزینه ارسال در قدم بعد مشخص می‌شود.", { exact: false }),
+    page.getByText("هزینهٔ ارسال هر فروشگاه", { exact: false }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "مدیریت نشانی‌های تحویل" })).toHaveCount(
     0,
@@ -217,10 +217,10 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await otherTab.goto("/cart");
   await otherTab.getByRole("button", { name: "بیشترکردن تعداد فنجان سرامیکی" }).click();
   await expect(otherTab.getByText("تعداد ۳")).toBeVisible();
-  await expect(otherTab.getByText("۱٬۳۵۰٬۰۰۰ تومان")).toHaveCount(2);
+  await expect(otherTab.getByText("۱٬۳۵۰٬۰۰۰ تومان")).toHaveCount(3);
   await page.getByRole("button", { name: "حذف فنجان سرامیکی" }).click();
   await expect(
-    page.getByText("سبد در جای دیگری تغییر کرده است. نسخه تازه را بررسی کنید."),
+    page.getByText("سبد تغییر کرده است. نسخه تازه را بررسی کنید."),
   ).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
 
@@ -241,9 +241,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
-  await expect(
-    page.getByText("سبد به هویت سوو متصل شد و برای ادامه خرید آماده است."),
-  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "ادامه به تحویل سفارش" })).toBeVisible();
   const reviewSql = postgres(databaseUrl, { max: 1 });
   try {
     await reviewSql`
@@ -272,7 +270,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
   await page.getByRole("link", { name: "ادامه به تحویل سفارش" }).click();
   await expect(page).toHaveURL(/\/checkout\/delivery$/);
-  await page.getByRole("link", { name: "افزودن یا ویرایش نشانی" }).click();
+  await page.getByRole("link", { name: "افزودن نشانی تحویل" }).click();
   await expect(page.getByRole("heading", { name: "نشانی تحویل" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await page.getByLabel("نام گیرنده").focus();
@@ -309,13 +307,13 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("link", { name: "بازگشت به تحویل سفارش" }).click();
   await expect(page).toHaveURL(/\/checkout\/delivery/);
   await expect(page.getByRole("heading", { name: "تحویل سفارش" })).toBeVisible();
-  await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
+  await page.getByRole("button", { name: "مرور مبلغ نهایی" }).click();
   await expect(page).toHaveURL(/\/checkout\/review$/);
-  await expect(page.getByRole("heading", { name: "تسویه مستقیم" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مرور نهایی خرید" })).toBeVisible();
   await captureReleaseCheckpoint(page, testInfo, {
     cellId: "buyer-address-checkout:success",
     name: "buyer-checkout-review",
-    sensitiveRegions: [page.locator("main dd")],
+    sensitiveRegions: [],
   });
   await expect(page.getByText("بازپرداخت را تضمین نمی‌کند.")).toBeVisible();
   const stockSql = postgres(databaseUrl, { max: 1 });
@@ -324,10 +322,8 @@ test("guest adds a product, signs in and continues the same cart", async ({
       update inventory_levels set on_hand = 0, revision = revision + 1
       where variant_id = ${ids.variant}
     `;
-    await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
-    await expect(
-      page.getByRole("alert").filter({ hasText: "سبد را اصلاح" }),
-    ).toBeVisible();
+    await page.getByRole("button", { name: "ثبت خرید و ادامه به پرداخت" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "موجودی" })).toBeVisible();
     await stockSql`
       update inventory_levels set on_hand = 8, revision = revision + 1
       where variant_id = ${ids.variant}
@@ -335,17 +331,12 @@ test("guest adds a product, signs in and continues the same cart", async ({
   } finally {
     await stockSql.end();
   }
-  await page.getByRole("button", { name: /ثبت سفارش و پرداخت/ }).click();
-  await expect(page.getByRole("heading", { name: "سفارش ثبت شد" })).toBeVisible();
-  await expect(page.getByText(/محیط آزمایشی: این پرداخت واقعی نیست/)).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "گفت‌وگو درباره سفارش" }),
-  ).toHaveAttribute("href", /\/conversations\/new\?kind=ORDER.*returnTo=%2Fcheckout/);
+  await page.getByRole("button", { name: "ثبت خرید و ادامه به پرداخت" }).click();
+  await expect(page.getByRole("heading", { name: "خرید شما" })).toBeVisible();
+  await expect(page.getByText(/پول واقعی جابه‌جا نمی‌شود/)).toBeVisible();
   await page.getByRole("button", { name: /پرداخت آزمایشی/ }).click();
-  await expect(page).toHaveURL(/\/orders\/[^/]+\/payment-result\?attemptId=/, {
-    timeout: 15_000,
-  });
-  await expect(page.getByRole("heading", { name: "پرداخت تأیید شد" })).toBeVisible();
+  await expect(page).toHaveURL(/\/purchases\/[^/]+$/, { timeout: 15_000 });
+  await expect(page.getByText(/پرداخت این خرید ثبت شد/)).toBeVisible();
   await assertNoHorizontalOverflow(page);
 
   const historySql = postgres(databaseUrl, { max: 1 });
@@ -471,7 +462,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
   }
 });
 
-test("same-store carts merge only after the buyer chooses merge", async ({
+test("same-store guest and buyer carts merge without dropping duplicate quantities", async ({
   page,
   playwright,
 }, testInfo) => {
@@ -489,25 +480,11 @@ test("same-store carts merge only after the buyer chooses merge", async ({
     fixture.guestProductId,
     mobile,
   );
-  await expect(
-    page.getByRole("heading", { name: "کدام سبد را ادامه می‌دهید؟" }),
-  ).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toBeVisible();
-  await expect(
-    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
-  ).toBeVisible();
-  await expect(
-    page.getByText("پیش از ورود: ۲، هویت سوو من: ۳، پس از ترکیب: ۵"),
-  ).toBeVisible();
-  await expect(page.getByText("تعداد ۳")).toBeVisible();
-  await page.getByRole("button", { name: "ترکیب دو سبد" }).click();
   await expect(page.getByText("تعداد ۵")).toBeVisible();
-  await expect(
-    page.getByText("انتخاب شما انجام شد و سبد آماده ادامه خرید است."),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "سبد شما" })).toBeVisible();
 });
 
-test("different-store carts change only after the buyer chooses which one to keep", async ({
+test("different-store carts keep both stores after sign-in", async ({
   page,
   playwright,
 }, testInfo) => {
@@ -525,17 +502,10 @@ test("different-store carts change only after the buyer chooses which one to kee
     fixture.guestProductId,
     mobile,
   );
-  await expect(
-    page.getByRole("heading", { name: "کدام سبد را ادامه می‌دهید؟" }),
-  ).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "ترکیب دو سبد" })).toHaveCount(0);
-  await expect(
-    page.getByText("سبد پیش از ورود ۱ کالا و سبد هویت سوو شما ۱ کالا دارد."),
-  ).toBeVisible();
   await expect(page.getByText("کالای حساب")).toBeVisible();
-  await page.getByRole("button", { name: "نگه‌داشتن سبد پیش از ورود" }).click();
   await expect(page.getByText("کالای مهمان")).toBeVisible();
   await expect(page.getByText("تعداد ۲")).toBeVisible();
+  await expect(page.getByRole("region", { name: /^فروشگاه / })).toHaveCount(2);
 });
 
 async function addGuestProductAndSignIn(

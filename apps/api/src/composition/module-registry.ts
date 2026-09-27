@@ -242,6 +242,7 @@ export const canonicalApiModuleRegistry: readonly {
     }) =>
       OrdersModule.register(environment, {
         checkoutRepository,
+        paymentWorkflow: checkoutRepository,
         products: productRepository,
         inventory: inventoryAuthoring,
         createProductTransactionContext: createOpaqueProductTransactionContext,

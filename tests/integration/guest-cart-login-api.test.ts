@@ -3,6 +3,13 @@ import {
   cartErrorContract,
   cartResolutionContract,
 } from "@sevo/contracts/orders/v1";
+import {
+  cartV2Contract,
+  checkoutOptionsV2Contract,
+  checkoutPreparationV2Contract,
+  purchaseGroupContract,
+  devPurchaseGroupPaymentResultContract,
+} from "@sevo/contracts/orders/v2";
 import { createHash } from "node:crypto";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -25,6 +32,34 @@ describe("guest cart and login attachment HTTP API", () => {
 
   beforeEach(async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const groupIds = await sql<Array<{ id: string }>>`
+      select id from order_purchase_groups
+      where cart_id in (select id from order_carts where store_id in (${storeId}, ${other.storeId}))
+    `;
+    for (const { id: groupId } of groupIds) {
+      await sql`delete from order_purchase_group_dev_attempts where group_id = ${groupId}`;
+      await sql`
+        update order_checkout_preparations set consumed_order_id = null
+        where checkout_revision in (select checkout_revision from order_orders where purchase_group_id = ${groupId})
+      `;
+      await sql`
+        delete from inventory_reservation_lines
+        where reservation_id in (select reservation_id from order_orders where purchase_group_id = ${groupId})
+      `;
+      await sql`
+        delete from inventory_reservations
+        where id in (select reservation_id from order_orders where purchase_group_id = ${groupId})
+      `;
+      await sql`delete from order_state_transitions where order_id in (select id from order_orders where purchase_group_id = ${groupId})`;
+      await sql`delete from order_items where order_id in (select id from order_orders where purchase_group_id = ${groupId})`;
+      await sql`delete from order_delivery_snapshots where order_id in (select id from order_orders where purchase_group_id = ${groupId})`;
+      await sql`delete from order_shipping_snapshots where order_id in (select id from order_orders where purchase_group_id = ${groupId})`;
+      await sql`delete from order_policy_snapshots where order_id in (select id from order_orders where purchase_group_id = ${groupId})`;
+      await sql`delete from order_orders where purchase_group_id = ${groupId}`;
+      await sql`delete from order_checkout_preparations where cart_id in (select cart_id from order_purchase_groups where id = ${groupId})`;
+      await sql`delete from order_purchase_group_preparations where consumed_group_id = ${groupId}`;
+      await sql`delete from order_purchase_groups where id = ${groupId}`;
+    }
     await sql`
       delete from order_cart_audits
       where cart_id in (
@@ -38,6 +73,10 @@ describe("guest cart and login attachment HTTP API", () => {
     `;
     await sql`
       delete from order_carts where store_id in (${storeId}, ${other.storeId})
+    `;
+    await sql`
+      delete from product_publications
+      where product_id in (${productId}, ${other.productId}) and publication_version > 1
     `;
     await sql`
       delete from inventory_levels where variant_id in (${variantId}, ${other.variantId})
@@ -156,6 +195,418 @@ describe("guest cart and login attachment HTTP API", () => {
 
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
+  });
+
+  it("keeps products from two stores in one guest cart with separate store sections", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: {
+        "idempotency-key": crypto.randomUUID(),
+        "x-sevo-guest-scope": crypto.randomUUID(),
+      },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    });
+    expect(first.statusCode, JSON.stringify(first.json())).toBe(200);
+    const cookie = first.headers["set-cookie"]!;
+    const second = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${other.variantId}`,
+      headers: { cookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId: other.variantId, quantity: 1, expectedRevision: 1 },
+    });
+    expect(second.statusCode, JSON.stringify(second.json())).toBe(200);
+    const cart = cartV2Contract.parse(second.json());
+    expect(cart.stores).toHaveLength(2);
+    expect(cart.stores.map((store) => store.storeId)).toEqual([storeId, other.storeId]);
+    expect(cart.stores.map((store) => store.items[0]?.quantity)).toEqual([2, 1]);
+    const refreshed = await server.inject({
+      method: "GET",
+      url: "/v2/cart",
+      headers: { cookie },
+    });
+    expect(cartV2Contract.parse(refreshed.json().cart).stores).toHaveLength(2);
+  });
+
+  it("merges guest and buyer carts from different stores without dropping either", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const guest = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: {
+        "idempotency-key": crypto.randomUUID(),
+        "x-sevo-guest-scope": crypto.randomUUID(),
+      },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    });
+    const guestCookie = guest.headers["set-cookie"]!;
+    const sessionCookie = await signIn(server);
+    const buyer = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${other.variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId: other.variantId, quantity: 1, expectedRevision: 0 },
+    });
+    expect(buyer.statusCode, JSON.stringify(buyer.json())).toBe(200);
+    const attached = await server.inject({
+      method: "POST",
+      url: "/v2/cart/attach",
+      headers: {
+        cookie: `${sessionCookie}; ${guestCookie}`,
+        "idempotency-key": crypto.randomUUID(),
+      },
+      payload: {},
+    });
+    expect(attached.statusCode, JSON.stringify(attached.json())).toBe(200);
+    expect(attached.json().attached).toBe(true);
+    expect(cartV2Contract.parse(attached.json().cart).stores).toHaveLength(2);
+  });
+
+  it("preserves both carts when a merged quantity exceeds the limit and lets the buyer resolve it", async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`update inventory_levels set on_hand = 150 where variant_id = ${variantId}`;
+    await sql.end();
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const guest = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: {
+        "idempotency-key": crypto.randomUUID(),
+        "x-sevo-guest-scope": crypto.randomUUID(),
+      },
+      payload: { variantId, quantity: 60, expectedRevision: 0 },
+    });
+    expect(guest.statusCode).toBe(200);
+    const guestCookie = guest.headers["set-cookie"]!;
+    const sessionCookie = await signIn(server);
+    const buyer = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 50, expectedRevision: 0 },
+    });
+    expect(buyer.statusCode).toBe(200);
+    const combinedCookie = `${sessionCookie}; ${guestCookie}`;
+    const conflict = await server.inject({
+      method: "POST",
+      url: "/v2/cart/attach",
+      headers: { cookie: combinedCookie, "idempotency-key": crypto.randomUUID() },
+      payload: {},
+    });
+    expect(conflict.statusCode).toBe(200);
+    expect(conflict.json()).toMatchObject({
+      attached: false,
+      conflicts: {
+        quantities: [{ variantId, guestQuantity: 60, buyerQuantity: 50 }],
+      },
+    });
+    expect(
+      cartV2Contract.parse(conflict.json().guestCart).stores[0]?.items[0]?.quantity,
+    ).toBe(60);
+    const reduced = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: { cookie: combinedCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 39, expectedRevision: buyer.json().revision },
+    });
+    expect(reduced.statusCode, JSON.stringify(reduced.json())).toBe(200);
+    expect(cartV2Contract.parse(reduced.json()).stores[0]?.items[0]?.quantity).toBe(39);
+    const attached = await server.inject({
+      method: "POST",
+      url: "/v2/cart/attach",
+      headers: { cookie: combinedCookie, "idempotency-key": crypto.randomUUID() },
+      payload: {},
+    });
+    expect(attached.statusCode, JSON.stringify(attached.json())).toBe(200);
+    expect(attached.json().attached).toBe(true);
+    expect(
+      cartV2Contract.parse(attached.json().cart).stores[0]?.items[0]?.quantity,
+    ).toBe(99);
+  });
+
+  it("creates one purchase group and one local payment for two independent store orders", async () => {
+    const shippingIds = [crypto.randomUUID(), crypto.randomUUID()];
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`delete from store_shipping_methods where store_id in (${storeId}, ${other.storeId})`;
+    for (const [index, id] of [storeId, other.storeId].entries()) {
+      await sql`
+        update store_stores set
+          return_policy = 'تا هفت روز امکان درخواست مرجوعی با هماهنگی فروشنده وجود دارد.',
+          return_policy_revision = 1, settlement_kind = 'TEST',
+          settlement_status = 'TEST_VERIFIED', settlement_verified_at = now()
+        where id = ${id}
+      `;
+      await sql`
+        insert into store_shipping_methods
+          (id, store_id, position, revision, code, label, fixed_fee_amount,
+           estimated_delivery_text, enabled, requires_delivery_address, requires_postal_code)
+        values (${shippingIds[index]!}, ${id}, 0, 1, 'PICKUP', 'تحویل حضوری', ${index * 100_000},
+          'هماهنگی با فروشگاه', true, false, false)
+      `;
+    }
+    await sql.end();
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const sessionCookie = await signIn(server);
+    const first = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 2, expectedRevision: 0 },
+    });
+    expect(first.statusCode, JSON.stringify(first.json())).toBe(200);
+    const second = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${other.variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId: other.variantId, quantity: 1, expectedRevision: 1 },
+    });
+    expect(second.statusCode, JSON.stringify(second.json())).toBe(200);
+    const cart = cartV2Contract.parse(second.json());
+    const optionsResponse = await server.inject({
+      method: "GET",
+      url: "/v2/checkout/options",
+      headers: { cookie: sessionCookie },
+    });
+    expect(optionsResponse.statusCode, JSON.stringify(optionsResponse.json())).toBe(
+      200,
+    );
+    const options = checkoutOptionsV2Contract.parse(optionsResponse.json());
+    expect(options.stores).toHaveLength(2);
+    const shippingCheck = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await shippingCheck`
+      update store_shipping_methods set enabled = false where id = ${shippingIds[1]!}
+    `;
+    const unavailableShipping = await server.inject({
+      method: "POST",
+      url: "/v2/checkout/prepare",
+      headers: { cookie: sessionCookie },
+      payload: {
+        cartId: cart.cartId,
+        cartRevision: cart.revision,
+        shipping: options.stores.map((store) => ({
+          storeId: store.storeId,
+          shippingMethodId: store.shippingMethods[0]!.id,
+          shippingMethodRevision: store.shippingMethods[0]!.revision,
+        })),
+      },
+    });
+    expect(unavailableShipping.statusCode).toBe(409);
+    await shippingCheck`
+      update store_shipping_methods set enabled = true where id = ${shippingIds[1]!}
+    `;
+    await shippingCheck.end();
+    const preparedResponse = await server.inject({
+      method: "POST",
+      url: "/v2/checkout/prepare",
+      headers: { cookie: sessionCookie },
+      payload: {
+        cartId: cart.cartId,
+        cartRevision: cart.revision,
+        shipping: options.stores.map((store) => ({
+          storeId: store.storeId,
+          shippingMethodId: store.shippingMethods[0]!.id,
+          shippingMethodRevision: store.shippingMethods[0]!.revision,
+        })),
+      },
+    });
+    expect(preparedResponse.statusCode, JSON.stringify(preparedResponse.json())).toBe(
+      200,
+    );
+    const review = checkoutPreparationV2Contract.parse(preparedResponse.json());
+    expect(review.total.amount).toBe(
+      review.stores.reduce((sum, child) => sum + child.total.amount, 0),
+    );
+    const priceCheck = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const oldOffer = await priceCheck<Array<{ amount: number }>>`
+      select amount::int as amount from product_offers where variant_id = ${other.variantId}
+    `;
+    await priceCheck`
+      update product_offers set amount = amount + 100000 where variant_id = ${other.variantId}
+    `;
+    const changedPurchase = await server.inject({
+      method: "POST",
+      url: "/v2/purchase-groups",
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        checkoutRevision: review.checkoutRevision,
+        cartRevision: review.cart.revision,
+      },
+    });
+    expect(changedPurchase.statusCode).toBe(409);
+    expect(changedPurchase.json().code).toBe("CART_CHANGED");
+    await priceCheck`
+      update product_offers set amount = ${oldOffer[0]!.amount}
+      where variant_id = ${other.variantId}
+    `;
+    await priceCheck`
+      update inventory_levels set on_hand = 0 where variant_id = ${other.variantId}
+    `;
+    const unavailablePurchase = await server.inject({
+      method: "POST",
+      url: "/v2/purchase-groups",
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        checkoutRevision: review.checkoutRevision,
+        cartRevision: review.cart.revision,
+      },
+    });
+    expect(unavailablePurchase.statusCode).toBe(409);
+    const orderCount = await priceCheck<Array<{ count: number }>>`
+      select count(*)::int as count from order_purchase_groups
+      where checkout_revision = ${review.checkoutRevision}
+    `;
+    expect(orderCount[0]?.count).toBe(0);
+    await priceCheck`
+      update inventory_levels set on_hand = 4 where variant_id = ${other.variantId}
+    `;
+    await priceCheck.end();
+    const createdResponse = await server.inject({
+      method: "POST",
+      url: "/v2/purchase-groups",
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        checkoutRevision: review.checkoutRevision,
+        cartRevision: review.cart.revision,
+      },
+    });
+    expect(createdResponse.statusCode, JSON.stringify(createdResponse.json())).toBe(
+      201,
+    );
+    const group = purchaseGroupContract.parse(createdResponse.json());
+    expect(group.stores).toHaveLength(2);
+    const failedResponse = await server.inject({
+      method: "POST",
+      url: `/v2/purchase-groups/${group.groupId}/dev-payment`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { scenario: "failure" },
+    });
+    expect(failedResponse.statusCode, JSON.stringify(failedResponse.json())).toBe(200);
+    expect(
+      devPurchaseGroupPaymentResultContract.parse(failedResponse.json()),
+    ).toMatchObject({
+      paymentStatus: "FAILED",
+      purchase: { status: "PENDING_PAYMENT" },
+    });
+    const paymentKey = crypto.randomUUID();
+    const paymentResponse = await server.inject({
+      method: "POST",
+      url: `/v2/purchase-groups/${group.groupId}/dev-payment`,
+      headers: { cookie: sessionCookie, "idempotency-key": paymentKey },
+      payload: { scenario: "success" },
+    });
+    expect(paymentResponse.statusCode, JSON.stringify(paymentResponse.json())).toBe(
+      200,
+    );
+    const payment = devPurchaseGroupPaymentResultContract.parse(paymentResponse.json());
+    expect(payment).toMatchObject({
+      paymentStatus: "CONFIRMED",
+      purchase: { status: "PAID" },
+    });
+    expect(payment.purchase.stores.map((store) => store.status)).toEqual([
+      "PAID",
+      "PAID",
+    ]);
+    const repeated = await server.inject({
+      method: "POST",
+      url: `/v2/purchase-groups/${group.groupId}/dev-payment`,
+      headers: { cookie: sessionCookie, "idempotency-key": paymentKey },
+      payload: { scenario: "success" },
+    });
+    expect(repeated.statusCode, JSON.stringify(repeated.json())).toBe(200);
+    expect(devPurchaseGroupPaymentResultContract.parse(repeated.json())).toEqual(
+      payment,
+    );
+    const verify = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const attempts = await verify<Array<{ count: number }>>`
+      select count(*)::int as count from order_purchase_group_dev_attempts where group_id = ${group.groupId}
+    `;
+    expect(attempts[0]?.count).toBe(2);
+    await verify.end();
+
+    const nextFirst = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 1, expectedRevision: 0 },
+    });
+    expect(nextFirst.statusCode).toBe(200);
+    const nextSecond = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${other.variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId: other.variantId, quantity: 1, expectedRevision: 1 },
+    });
+    expect(nextSecond.statusCode).toBe(200);
+    const nextCart = cartV2Contract.parse(nextSecond.json());
+    const nextOptions = checkoutOptionsV2Contract.parse(
+      (
+        await server.inject({
+          method: "GET",
+          url: "/v2/checkout/options",
+          headers: { cookie: sessionCookie },
+        })
+      ).json(),
+    );
+    const nextPreparationResponse = await server.inject({
+      method: "POST",
+      url: "/v2/checkout/prepare",
+      headers: { cookie: sessionCookie },
+      payload: {
+        cartId: nextCart.cartId,
+        cartRevision: nextCart.revision,
+        shipping: nextOptions.stores.map((store) => ({
+          storeId: store.storeId,
+          shippingMethodId: store.shippingMethods[0]!.id,
+          shippingMethodRevision: store.shippingMethods[0]!.revision,
+        })),
+      },
+    });
+    expect(nextPreparationResponse.statusCode).toBe(200);
+    const nextPreparation = checkoutPreparationV2Contract.parse(
+      nextPreparationResponse.json(),
+    );
+    const nextGroupResponse = await server.inject({
+      method: "POST",
+      url: "/v2/purchase-groups",
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        checkoutRevision: nextPreparation.checkoutRevision,
+        cartRevision: nextCart.revision,
+      },
+    });
+    expect(nextGroupResponse.statusCode).toBe(201);
+    const nextGroup = purchaseGroupContract.parse(nextGroupResponse.json());
+    const pendingResponse = await server.inject({
+      method: "POST",
+      url: `/v2/purchase-groups/${nextGroup.groupId}/dev-payment`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { scenario: "pending" },
+    });
+    expect(pendingResponse.statusCode, JSON.stringify(pendingResponse.json())).toBe(
+      200,
+    );
+    expect(
+      devPurchaseGroupPaymentResultContract.parse(pendingResponse.json()),
+    ).toMatchObject({
+      paymentStatus: "REVIEW_REQUIRED",
+      purchase: { status: "PAYMENT_REVIEW" },
+    });
+    const retryAfterReview = await server.inject({
+      method: "POST",
+      url: `/v2/purchase-groups/${nextGroup.groupId}/dev-payment`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { scenario: "success" },
+    });
+    expect(retryAfterReview.statusCode).toBe(409);
   });
 
   it("keeps a server-side guest cart across refresh and revalidates its display", async () => {

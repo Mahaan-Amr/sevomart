@@ -196,11 +196,14 @@ export function createOrderPaymentTransactionContext(
 }
 
 export type StoredCartItem = Readonly<{
+  storeId: StoreId;
   productId: ProductId;
   variantId: VariantId;
   quantity: number;
   reviewedPublicationVersion: number;
   reviewedUnitPriceAmount: number;
+  reviewedPolicyRevision: number;
+  reviewedShippingHash: string;
 }>;
 
 export type StoredCart = Readonly<{
@@ -288,6 +291,11 @@ export interface CartRepository {
     requestHash: string;
     correlationId: string;
     reviewSnapshot: CartReviewSnapshot;
+    storeReviews?: ReadonlyArray<{
+      storeId: StoreId;
+      policyRevision: number;
+      shippingHash: string;
+    }>;
   }): Promise<StoredCart>;
   replaceStore(
     command: CartMutationCommand & {

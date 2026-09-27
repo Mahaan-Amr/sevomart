@@ -12,6 +12,7 @@ import {
   type ReplaceCartStoreInput,
 } from "@sevo/contracts/orders/v1";
 import { cartIdContract, cartIdempotencyKeyContract } from "@sevo/contracts/orders/v1";
+import { cartV2Contract, type CartV2 } from "@sevo/contracts/orders/v2";
 import {
   identityIdContract,
   variantIdContract,
@@ -55,6 +56,167 @@ export class CartService {
     const buyer = actor ? await this.repository.readBuyer(actor) : undefined;
     const stored = buyer ?? guest;
     return { cart: stored ? await this.toCart(stored, Boolean(buyer && guest)) : null };
+  }
+
+  async readV2(identityId: string | undefined, guestSecret: string | undefined) {
+    const actor = identityId ? identityIdContract.parse(identityId) : undefined;
+    const guest = guestSecret
+      ? await this.repository.readGuest(hashSecret(guestSecret))
+      : undefined;
+    const buyer = actor ? await this.repository.readBuyer(actor) : undefined;
+    const stored = buyer ?? guest;
+    return { cart: stored ? await this.toCartV2(stored) : null };
+  }
+
+  async mutateV2(
+    identityId: string | undefined,
+    guestSecret: string | undefined,
+    input: CartMutationInput,
+    idempotencyKey: string,
+    correlationId: string,
+    guestScope?: string,
+  ): Promise<{ cart: CartV2; guestSecret?: string }> {
+    const actor = identityId ? identityIdContract.parse(identityId) : undefined;
+    const key = cartIdempotencyKeyContract.parse(idempotencyKey);
+    const variantId = variantIdContract.parse(input.variantId);
+    const authoritative = await this.products.readAuthoritativeVariant(variantId);
+    if (!authoritative?.sellable) throw new CartVariantUnavailableError();
+    const [store, stock] = await Promise.all([
+      this.stores.readStore(authoritative.storeId),
+      this.inventory.read(variantId),
+    ]);
+    if (
+      store?.publicationStatus !== "PUBLISHED" ||
+      !stock ||
+      stock.available < input.quantity
+    ) {
+      throw new CartVariantUnavailableError();
+    }
+    const guest = guestSecret
+      ? await this.repository.readGuest(hashSecret(guestSecret))
+      : undefined;
+    const buyer = actor ? await this.repository.readBuyer(actor) : undefined;
+    const derivationScope =
+      guestScope ?? (guestSecret ? hashSecret(guestSecret) : actor!);
+    const newSecret =
+      guestSecret && guest
+        ? guestSecret
+        : deriveNewGuestSecret(this.tokenDerivationSecret, derivationScope, key);
+    const stored = await this.repository.mutate({
+      ...(actor && (buyer || !guest) ? { identityId: actor } : {}),
+      guestTokenHash: hashSecret(newSecret),
+      newCartId: cartIdContract.parse(randomUUID()),
+      newAccessTokenId: randomUUID(),
+      storeId: authoritative.storeId,
+      productId: authoritative.productId,
+      variantId,
+      quantity: input.quantity,
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: key,
+      requestHash: requestHash(input),
+      correlationId,
+      reviewSnapshot: this.reviewSnapshot(store, [authoritative]),
+      expiresAt: new Date(Date.now() + CART_LIFETIME_MS),
+    });
+    return {
+      cart: await this.toCartV2(stored),
+      ...(!actor && !guest ? { guestSecret: newSecret } : {}),
+    };
+  }
+
+  async removeItemV2(
+    identityId: string | undefined,
+    guestSecret: string | undefined,
+    variantId: string,
+    input: CartItemRemovalInput,
+    idempotencyKey: string,
+    correlationId: string,
+  ) {
+    const actor = identityId ? identityIdContract.parse(identityId) : undefined;
+    const stored = await this.repository.removeItem({
+      ...(actor ? { identityId: actor } : {}),
+      guestTokenHash: hashSecret(guestSecret ?? ""),
+      variantId: variantIdContract.parse(variantId),
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
+      requestHash: requestHash(input),
+      correlationId,
+    });
+    return this.toCartV2(stored);
+  }
+
+  async attachV2(
+    identityId: string,
+    guestSecret: string | undefined,
+    idempotencyKey: string,
+    correlationId: string,
+  ) {
+    const actor = identityIdContract.parse(identityId);
+    if (!guestSecret) {
+      const buyer = await this.repository.readBuyer(actor);
+      return { cart: buyer ? await this.toCartV2(buyer) : null, attached: false };
+    }
+    const guestTokenHash = hashSecret(guestSecret);
+    const key = cartIdempotencyKeyContract.parse(idempotencyKey);
+    const inspected = await this.repository.inspectAttachment({
+      identityId: actor,
+      guestTokenHash,
+      idempotencyKey: key,
+      requestHash: requestHash({}),
+      correlationId,
+    });
+    if (inspected.status === "NONE") {
+      return {
+        cart: inspected.cart ? await this.toCartV2(inspected.cart) : null,
+        attached: false,
+      };
+    }
+    if (inspected.status === "ATTACHED") {
+      return { cart: await this.toCartV2(inspected.cart), attached: true };
+    }
+    const quantities = inspected.guest.items.flatMap((item) => {
+      const buyerItem = inspected.buyer.items.find(
+        (candidate) => candidate.variantId === item.variantId,
+      );
+      return buyerItem && buyerItem.quantity + item.quantity > 99
+        ? [
+            {
+              variantId: item.variantId,
+              guestQuantity: item.quantity,
+              buyerQuantity: buyerItem.quantity,
+            },
+          ]
+        : [];
+    });
+    const mergedLineCount = new Set([
+      ...inspected.guest.items.map((item) => item.variantId),
+      ...inspected.buyer.items.map((item) => item.variantId),
+    ]).size;
+    if (quantities.length || mergedLineCount > 100) {
+      return {
+        cart: await this.toCartV2(inspected.buyer),
+        guestCart: await this.toCartV2(inspected.guest),
+        attached: false,
+        conflicts: { quantities, lineLimitExceeded: mergedLineCount > 100 },
+      };
+    }
+    const merged = await this.repository.resolveAttachment({
+      identityId: actor,
+      guestTokenHash,
+      input: {
+        decision: "MERGE",
+        guestRevision: inspected.guest.revision,
+        buyerRevision: inspected.buyer.revision,
+      },
+      idempotencyKey: key,
+      requestHash: requestHash({
+        decision: "MERGE",
+        guestRevision: inspected.guest.revision,
+        buyerRevision: inspected.buyer.revision,
+      }),
+      correlationId,
+    });
+    return { cart: await this.toCartV2(merged), attached: true };
   }
 
   present(stored: StoredCart) {
@@ -116,6 +278,9 @@ export class CartService {
           throw new CartResolutionRequiredError();
         }
         const selected = existingGuest ?? existingBuyer;
+        if (selected?.items.some((item) => item.storeId !== selected.storeId)) {
+          throw new CartResolutionRequiredError();
+        }
         if (selected && selected.storeId !== authoritative.storeId) {
           const currentStore = await this.stores.readStore(selected.storeId);
           throw new CartStoreReplacementRequiredError(
@@ -183,6 +348,14 @@ export class CartService {
       },
       () => this.read(identityId, guestSecret).then((result) => result.cart),
       async () => {
+        const current = actor
+          ? await this.repository.readBuyer(actor)
+          : guestSecret
+            ? await this.repository.readGuest(hashSecret(guestSecret))
+            : undefined;
+        if (current?.items.some((item) => item.storeId !== current.storeId)) {
+          throw new CartResolutionRequiredError();
+        }
         const stored = await this.repository.removeItem({
           ...(actor ? { identityId: actor } : {}),
           guestTokenHash: hashSecret(guestSecret ?? ""),
@@ -223,6 +396,9 @@ export class CartService {
             ? await this.repository.readGuest(hashSecret(guestSecret))
             : undefined;
         if (!stored) throw new CartRevisionConflictError();
+        if (stored.items.some((item) => item.storeId !== stored.storeId)) {
+          throw new CartResolutionRequiredError();
+        }
         const [store, ...products] = await Promise.all([
           this.stores.readStore(stored.storeId),
           ...stored.items.map((item) =>
@@ -248,6 +424,56 @@ export class CartService {
         return this.toCart(reviewed, false);
       },
     );
+  }
+
+  async confirmReviewV2(
+    identityId: string | undefined,
+    guestSecret: string | undefined,
+    input: CartReviewInput,
+    idempotencyKey: string,
+    correlationId: string,
+  ): Promise<CartV2> {
+    const actor = identityId ? identityIdContract.parse(identityId) : undefined;
+    const stored = actor
+      ? await this.repository.readBuyer(actor)
+      : guestSecret
+        ? await this.repository.readGuest(hashSecret(guestSecret))
+        : undefined;
+    if (!stored || stored.revision !== input.expectedRevision) {
+      throw new CartRevisionConflictError(stored);
+    }
+    if (!stored.items.length) return this.toCartV2(stored);
+    const storeIds = [...new Set(stored.items.map((item) => item.storeId))];
+    const [stores, products] = await Promise.all([
+      Promise.all(storeIds.map((storeId) => this.stores.readStore(storeId))),
+      Promise.all(
+        stored.items.map((item) =>
+          this.products.readAuthoritativeVariant(item.variantId),
+        ),
+      ),
+    ]);
+    if (stores.some((store) => !store) || products.some((product) => !product)) {
+      throw new CartVariantUnavailableError();
+    }
+    const storeReviews = storeIds.map((storeId, index) => ({
+      storeId,
+      policyRevision: stores[index]!.returnPolicy?.revision ?? 0,
+      shippingHash: shippingHash(stores[index]!.shippingMethods),
+    }));
+    const reviewed = await this.repository.confirmReview({
+      ...(actor ? { identityId: actor } : {}),
+      guestTokenHash: hashSecret(guestSecret ?? ""),
+      expectedRevision: input.expectedRevision,
+      idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
+      requestHash: requestHash(input),
+      correlationId,
+      reviewSnapshot: this.reviewSnapshot(
+        stores[0]!,
+        products as Array<NonNullable<(typeof products)[number]>>,
+      ),
+      storeReviews,
+    });
+    return this.toCartV2(reviewed);
   }
 
   async inspectAttachment(
@@ -306,6 +532,12 @@ export class CartService {
       () => this.read(identityId, guestSecret).then((result) => result.cart),
       async () => {
         if (!actor && !guestSecret) throw new CartRevisionConflictError();
+        const current = actor
+          ? await this.repository.readBuyer(actor)
+          : await this.repository.readGuest(hashSecret(guestSecret!));
+        if (current?.items.some((item) => item.storeId !== current.storeId)) {
+          throw new CartResolutionRequiredError();
+        }
         const variantId = variantIdContract.parse(input.variantId);
         const authoritative = await this.products.readAuthoritativeVariant(variantId);
         const [stock, store] = await Promise.all([
@@ -356,8 +588,20 @@ export class CartService {
     correlationId: string,
   ): Promise<CartAttachmentResult> {
     if (!guestSecret) throw new CartResolutionRequiredError();
+    const actor = identityIdContract.parse(identityId);
+    const [guest, buyer] = await Promise.all([
+      this.repository.readGuest(hashSecret(guestSecret)),
+      this.repository.readBuyer(actor),
+    ]);
+    if (
+      guest?.items.some((item) => item.storeId !== guest.storeId) ||
+      buyer?.items.some((item) => item.storeId !== buyer.storeId) ||
+      (input.decision === "MERGE" && guest && buyer && guest.storeId !== buyer.storeId)
+    ) {
+      throw new CartResolutionRequiredError();
+    }
     const stored = await this.repository.resolveAttachment({
-      identityId: identityIdContract.parse(identityId),
+      identityId: actor,
       guestTokenHash: hashSecret(guestSecret),
       input,
       idempotencyKey: cartIdempotencyKeyContract.parse(idempotencyKey),
@@ -415,6 +659,9 @@ export class CartService {
   }
 
   private async toCart(stored: StoredCart, requiresResolution: boolean): Promise<Cart> {
+    if (stored.items.some((item) => item.storeId !== stored.storeId)) {
+      throw new CartResolutionRequiredError();
+    }
     const store = await this.stores.readStore(stored.storeId);
     if (!store?.displayIdentity.name) throw new CartVariantUnavailableError();
     const reviewChanges: CartReviewChange[] = [];
@@ -498,6 +745,138 @@ export class CartService {
       reviewRequired: reviewChanges.length > 0,
       reviewChanges,
       items: resolvedItems.map((item) => item.cartItem),
+    });
+  }
+
+  private async toCartV2(stored: StoredCart): Promise<CartV2> {
+    const storeIds = [...new Set(stored.items.map((item) => item.storeId))];
+    const stores = await Promise.all(
+      storeIds.map(async (storeId) => {
+        const store = await this.stores.readStore(storeId);
+        if (!store?.displayIdentity.name) throw new CartVariantUnavailableError();
+        return { storeId, store };
+      }),
+    );
+    const storeById = new Map(stores.map(({ storeId, store }) => [storeId, store]));
+    const reviewChanges: Array<{
+      storeId: StoreId;
+      change: CartReviewChange;
+    }> = [];
+    const projected = await Promise.all(
+      stored.items.map(async (item) => {
+        const store = storeById.get(item.storeId)!;
+        const product = await this.products.readAuthoritativeVariant(item.variantId);
+        if (!product || product.storeId !== item.storeId) {
+          throw new CartVariantUnavailableError();
+        }
+        const stock = await this.inventory.read(item.variantId);
+        if (item.reviewedPublicationVersion !== product.publicationVersion) {
+          reviewChanges.push({
+            storeId: item.storeId,
+            change: { kind: "PRODUCT_CHANGED", variantId: item.variantId },
+          });
+        }
+        if (item.reviewedUnitPriceAmount !== product.unitPrice.amount) {
+          reviewChanges.push({
+            storeId: item.storeId,
+            change: {
+              kind: "PRICE_CHANGED",
+              variantId: item.variantId,
+              previousUnitPrice: {
+                amount: item.reviewedUnitPriceAmount,
+                currency: "IRR",
+              },
+              currentUnitPrice: product.unitPrice,
+            },
+          });
+        }
+        const stockUnavailable = (stock?.available ?? 0) < item.quantity;
+        if (
+          !product.sellable ||
+          store.publicationStatus !== "PUBLISHED" ||
+          stockUnavailable
+        ) {
+          reviewChanges.push({
+            storeId: item.storeId,
+            change: { kind: "VARIANT_UNAVAILABLE", variantId: item.variantId },
+          });
+        }
+        return {
+          storeId: item.storeId,
+          cartItem: {
+            productId: product.productId,
+            variantId: item.variantId,
+            name: product.name,
+            image: product.image,
+            quantity: item.quantity,
+            unitPrice: product.unitPrice,
+            availability:
+              !product.sellable || store.publicationStatus !== "PUBLISHED"
+                ? ("UNAVAILABLE" as const)
+                : stockUnavailable
+                  ? ("OUT_OF_STOCK" as const)
+                  : ("AVAILABLE" as const),
+          },
+        };
+      }),
+    );
+    for (const { storeId, store } of stores) {
+      const representative = stored.items.find((item) => item.storeId === storeId)!;
+      if (
+        representative.reviewedPolicyRevision !== (store.returnPolicy?.revision ?? 0)
+      ) {
+        reviewChanges.push({
+          storeId,
+          change: {
+            kind: "POLICY_CHANGED",
+            currentPolicyText:
+              store.returnPolicy?.text ??
+              "این فروشگاه اکنون سیاست مرجوعی ثبت‌شده‌ای ندارد.",
+          },
+        });
+      }
+      if (representative.reviewedShippingHash !== shippingHash(store.shippingMethods)) {
+        reviewChanges.push({
+          storeId,
+          change: {
+            kind: "SHIPPING_METHOD_CHANGED",
+            currentMethods: store.shippingMethods.map((method) => ({
+              label: method.label,
+              fixedFee: method.fixedFee,
+              estimatedDeliveryText: method.estimatedDeliveryText,
+            })),
+          },
+        });
+      }
+    }
+    const sections = stores.map(({ storeId, store }) => {
+      const items = projected
+        .filter((item) => item.storeId === storeId)
+        .map((item) => item.cartItem);
+      return {
+        storeId,
+        name: store.displayIdentity.name,
+        ...(store.slug ? { slug: store.slug } : {}),
+        items,
+        subtotal: {
+          amount: items.reduce(
+            (total, item) => total + item.quantity * item.unitPrice.amount,
+            0,
+          ),
+          currency: "IRR" as const,
+        },
+      };
+    });
+    return cartV2Contract.parse({
+      cartId: stored.cartId,
+      revision: stored.revision,
+      reviewRequired: reviewChanges.length > 0,
+      reviewChanges,
+      stores: sections,
+      subtotal: {
+        amount: sections.reduce((total, section) => total + section.subtotal.amount, 0),
+        currency: "IRR",
+      },
     });
   }
 

@@ -1,8 +1,9 @@
 import { proxyJsonApiRequest } from "./json-api-proxy";
 
 export function proxyCheckoutRequest(request: Request, segments: readonly string[]) {
-  return proxyJsonApiRequest(request, segments, {
-    basePath: "/v1/checkout",
+  const v2 = segments[0] === "v2";
+  return proxyJsonApiRequest(request, v2 ? segments.slice(1) : segments, {
+    basePath: v2 ? "/v2/checkout" : "/v1/checkout",
     isAllowed: (parts) =>
       parts.length === 1 && ["options", "prepare"].includes(parts[0] ?? ""),
     responseHeaders: ["content-type", "retry-after", "x-correlation-id"],
