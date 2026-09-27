@@ -428,6 +428,11 @@
   font-size: 15px;
 }
 
+.salesContentCaption {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .salesContentDetail ul {
   display: grid;
   gap: 8px;

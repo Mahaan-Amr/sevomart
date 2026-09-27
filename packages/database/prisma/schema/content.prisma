@@ -8,6 +8,7 @@ model ContentSalesContent {
   moderationState String   @default("PUBLISHED") @map("moderation_state") @db.VarChar(16)
   mediaId         String   @map("media_id") @db.Uuid
   mediaKind       String   @map("media_kind") @db.VarChar(8)
+  caption         String?  @db.VarChar(500)
   active          Boolean  @default(true)
   revision        Int      @default(1)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -64,6 +65,7 @@ model ContentPublicSalesContent {
   moderationState String   @map("moderation_state")
   mediaId         String   @map("media_id") @db.Uuid
   mediaKind       String   @map("media_kind")
+  caption         String?  @db.VarChar(500)
   aggregateVersion BigInt  @map("aggregate_version")
   publishedAt     DateTime @map("published_at") @db.Timestamptz(6)
   updatedAt       DateTime @map("updated_at") @db.Timestamptz(6)

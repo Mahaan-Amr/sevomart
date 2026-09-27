@@ -57,6 +57,7 @@ describe("OpenAPI executable content contract", () => {
         SalesContent: expect.any(Object),
         SalesContentProductEligibilityDecision: expect.any(Object),
         SalesContentPublishedV1: expect.any(Object),
+        SalesContentPublishedV2: expect.any(Object),
         PurchaseExperience: expect.any(Object),
         PurchaseExperiencePublishedV1: expect.any(Object),
         ContentError: expect.any(Object),

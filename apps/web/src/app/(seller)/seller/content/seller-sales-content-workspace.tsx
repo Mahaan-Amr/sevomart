@@ -40,6 +40,7 @@ export function SellerSalesContentWorkspace({
   const [current, setCurrent] = useState<SellerSalesContentItemV2>();
   const [selected, setSelected] = useState<string[]>([]);
   const [mediaId, setMediaId] = useState<string>();
+  const [caption, setCaption] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [message, setMessage] = useState("در حال بارگیری…");
   const [failed, setFailed] = useState(false);
@@ -87,6 +88,7 @@ export function SellerSalesContentWorkspace({
           }
           setCurrent(parsedItem.data);
           setMediaId(parsedItem.data.media.mediaId);
+          setCaption(parsedItem.data.caption ?? "");
           setSelected(parsedItem.data.products.map((product) => product.productId));
           setPreviewUrl(`/api/store/media/${parsedItem.data.media.mediaId}`);
         }
@@ -174,11 +176,13 @@ export function SellerSalesContentWorkspace({
         ? {
             expectedRevision: current.revision,
             media: { mediaId, kind: "IMAGE" as const },
+            caption: caption.trim() || null,
             productIds: selected,
           }
         : {
             storeId,
             media: { mediaId, kind: "IMAGE" as const },
+            caption: caption.trim() || null,
             productIds: selected,
           };
     const payload = JSON.stringify(body);
@@ -304,6 +308,18 @@ export function SellerSalesContentWorkspace({
             />
           </label>
           <small>JPEG، PNG یا WebP تا ۱۰ مگابایت. ویدیو هنوز پشتیبانی نمی‌شود.</small>
+        </fieldset>
+        <fieldset disabled={pending}>
+          <legend>توضیح محتوا (اختیاری)</legend>
+          <textarea
+            aria-label="توضیح محتوا"
+            value={caption}
+            onChange={(event) => setCaption(event.target.value)}
+            maxLength={500}
+            rows={3}
+            placeholder="دربارهٔ این محتوا بنویسید"
+          />
+          <small>{caption.length} از ۵۰۰ نویسه؛ پس از باز کردن کاور دیده می‌شود.</small>
         </fieldset>
         <fieldset disabled={pending}>
           <legend>کالاهای مرتبط ({selected.length} از ۱۰)</legend>

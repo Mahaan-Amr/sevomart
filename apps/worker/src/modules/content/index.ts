@@ -4,6 +4,7 @@ import {
   productUnpublishedV1Contract,
 } from "@sevo/contracts/product/v1";
 import { salesContentPublishedV1Contract } from "@sevo/contracts/content/v1";
+import { salesContentPublishedV2Contract } from "@sevo/contracts/content/v2";
 import {
   storePublishedV1Contract,
   storeUnpublishedV1Contract,
@@ -88,21 +89,29 @@ export const projectPublicSalesContent: OutboxEventHandler = async (event, sql) 
     return;
   }
 
-  if (event.eventType === "SalesContentPublished.v1") {
-    const content = salesContentPublishedV1Contract.parse(event);
+  if (
+    event.eventType === "SalesContentPublished.v1" ||
+    event.eventType === "SalesContentPublished.v2"
+  ) {
+    const content =
+      event.eventType === "SalesContentPublished.v2"
+        ? salesContentPublishedV2Contract.parse(event)
+        : salesContentPublishedV1Contract.parse(event);
+    const caption = "caption" in content.payload ? content.payload.caption : null;
     const applied = await sql<Array<{ contentId: string }>>`
       insert into content_public_sales_contents
-        (content_id, store_id, source, moderation_state, media_id, media_kind,
+        (content_id, store_id, source, moderation_state, media_id, media_kind, caption,
          aggregate_version, published_at, updated_at)
       values
         (${content.payload.contentId}, ${content.payload.storeId},
          ${content.payload.source}, ${content.payload.moderationState},
-         ${content.payload.media.mediaId}, ${content.payload.media.kind},
+         ${content.payload.media.mediaId}, ${content.payload.media.kind}, ${caption},
          ${content.aggregateVersion}, ${content.occurredAt}, ${content.occurredAt})
       on conflict (content_id) do update
       set store_id = excluded.store_id, source = excluded.source,
           moderation_state = excluded.moderation_state,
           media_id = excluded.media_id, media_kind = excluded.media_kind,
+          caption = excluded.caption,
           aggregate_version = excluded.aggregate_version,
           updated_at = excluded.updated_at
       where content_public_sales_contents.aggregate_version < excluded.aggregate_version
@@ -212,6 +221,7 @@ const publicSalesContentWorker: WorkerHandler = {
       consumerName: "content-public-sales-content-v2",
       handlers: {
         "SalesContentPublished.v1": projectPublicSalesContent,
+        "SalesContentPublished.v2": projectPublicSalesContent,
         "ProductPublished.v1": projectPublicSalesContent,
         "ProductPublished.v2": projectPublicSalesContent,
         "ProductUnpublished.v1": projectPublicSalesContent,

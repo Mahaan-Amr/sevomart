@@ -97,8 +97,19 @@ export const salesContentMediaV2Contract = z
   })
   .strict();
 
-export const publishSalesContentInputV2Contract =
-  publishSalesContentInputContract.extend({ media: salesContentMediaV2Contract });
+export const publishSalesContentInputV2Contract = publishSalesContentInputContract
+  .extend({
+    media: salesContentMediaV2Contract,
+    caption: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
+
+export const salesContentPublishedV2Contract = salesContentPublishedV1Contract.extend({
+  eventType: z.literal("SalesContentPublished.v2"),
+  payload: salesContentPublishedV1Contract.shape.payload.extend({
+    caption: z.string().max(500).nullable(),
+  }),
+});
 
 export const replaceSellerSalesContentInputV2Contract =
   publishSalesContentInputV2Contract
@@ -121,6 +132,7 @@ export const sellerSalesContentItemV2Contract = z
     moderationState: contentModerationStateContract,
     storeId: storeIdContract,
     media: salesContentMediaV2Contract,
+    caption: z.string().max(500).nullable().optional(),
     products: z.array(sellerSalesContentProductV2Contract).min(1).max(10),
     active: z.boolean(),
     revision: z.int().positive(),
@@ -221,6 +233,7 @@ export const publicSalesContentItemV2Contract = z
         kind: z.enum(["IMAGE", "VIDEO"]),
       })
       .strict(),
+    caption: z.string().max(500).nullable().optional(),
     products: z.array(publicSalesContentProductV2Contract).min(1).max(10),
     publishedAt: z.iso.datetime({ offset: true }),
   })
@@ -283,6 +296,7 @@ export const contentV2Schemas = {
   ContentError: contentErrorContract,
   ContentErrorV2: contentErrorV2Contract,
   SalesContentPublishedV1: salesContentPublishedV1Contract,
+  SalesContentPublishedV2: salesContentPublishedV2Contract,
   PurchaseExperiencePublishedV1: purchaseExperiencePublishedV1Contract,
 } as const;
 

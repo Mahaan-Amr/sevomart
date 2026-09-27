@@ -662,7 +662,7 @@ describe("content producer persistence", () => {
     ).toMatchObject([{ id: published.contentId, active: true }]);
     expect(
       await sql`select event_type from platform_outbox_events where aggregate_id = ${published.contentId}`,
-    ).toEqual([{ event_type: "SalesContentPublished.v1" }]);
+    ).toEqual([{ event_type: "SalesContentPublished.v2" }]);
 
     const stopped = productUnpublishedV1Contract.parse({
       version: 1,
