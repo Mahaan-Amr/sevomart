@@ -130,6 +130,9 @@ function fixture(
         items: [],
       };
     },
+    async readProductSalesContent(productId) {
+      return { productId, items: [] };
+    },
   };
   const sessions = {
     async readActiveIdentitySession(token: string) {
@@ -305,6 +308,17 @@ describe("ContentService", () => {
     await expect(
       service.readPublicSalesContent("not-a-store-id"),
     ).rejects.toMatchObject({ code: "INVALID_QUERY" });
+  });
+
+  it("reads product-linked sales content without a store-feed limit", async () => {
+    const { service } = fixture();
+    await expect(service.readProductSalesContent(ids.product)).resolves.toEqual({
+      productId: ids.product,
+      items: [],
+    });
+    await expect(service.readProductSalesContent("invalid")).rejects.toMatchObject({
+      code: "INVALID_QUERY",
+    });
   });
 
   it("publishes seller content only with owned media and active same-store products", async () => {

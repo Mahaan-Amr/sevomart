@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   productPurchaseExperiencesContract,
   publicSalesContentFeedV2Contract,
+  publicProductSalesContentV2Contract,
   sellerSalesContentItemV2Contract,
   sellerSalesContentListV2Contract,
   salesContentPublishedV2Contract,
@@ -230,6 +231,46 @@ export class PostgresContentRepository implements ContentRepository {
     return publicSalesContentFeedV2Contract.parse({
       projectionUpdatedAt: (status?.updatedAt ?? new Date(0)).toISOString(),
       items: [...byContent.values()],
+    });
+  }
+
+  async readProductSalesContent(productId: string) {
+    const rows = await this.#sql<
+      Array<{
+        contentId: string;
+        storeId: string;
+        source: "SELLER";
+        mediaId: string;
+        mediaKind: "IMAGE" | "VIDEO";
+        caption: string | null;
+        publishedAt: Date;
+      }>
+    >`
+      select content.content_id as "contentId", content.store_id as "storeId",
+        content.source, content.media_id as "mediaId",
+        content.media_kind as "mediaKind", content.caption,
+        content.published_at as "publishedAt"
+      from content_public_sales_contents content
+      join content_public_store_states store on store.store_id = content.store_id
+        and store.published
+      join content_public_sales_content_products product
+        on product.content_id = content.content_id
+        and product.product_id = ${productId}::uuid
+        and product.active
+      where content.moderation_state = 'PUBLISHED'
+      order by content.published_at desc, content.content_id desc
+    `;
+    return publicProductSalesContentV2Contract.parse({
+      productId,
+      items: rows.map((row) => ({
+        contentId: row.contentId,
+        storeId: row.storeId,
+        source: row.source,
+        media: { mediaId: row.mediaId, kind: row.mediaKind },
+        caption: row.caption,
+        products: [{ productId, active: true }],
+        publishedAt: row.publishedAt.toISOString(),
+      })),
     });
   }
 

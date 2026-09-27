@@ -254,6 +254,12 @@ export class ContentService {
     return this.repository.readPublicSalesContent(parsed.data);
   }
 
+  async readProductSalesContent(rawProductId: unknown) {
+    const parsed = productIdContract.safeParse(rawProductId);
+    if (!parsed.success) throw new ContentFault("INVALID_QUERY");
+    return this.repository.readProductSalesContent(parsed.data);
+  }
+
   private async requireIdentity(request: ContentRequest) {
     if (!request.sessionToken) throw new ContentFault("UNAUTHENTICATED");
     const session = await this.sessions.readActiveIdentitySession(request.sessionToken);

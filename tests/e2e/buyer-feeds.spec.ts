@@ -413,10 +413,29 @@ test("sales content stays distinct, purchasable, and human when media or stock f
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "محتوای فروش تازه" })).toBeVisible({
+  await expect(
+    page.getByRole("heading", { name: "عکس‌ها و ویدیوهای فروشگاه‌ها" }),
+  ).toBeVisible({
     timeout: 10_000,
   });
-  await expect(page.getByText("محتوای فروش", { exact: true })).toHaveCount(2);
+  await expect(
+    page.getByText(
+      "فروشنده‌ها این تصویرها و ویدیوها را برای معرفی کالاهایشان منتشر کرده‌اند.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("محتوای فروش", { exact: true })).toHaveCount(0);
+  const mediaList = page.getByRole("list", { name: "عکس‌ها و ویدیوهای فروشگاه‌ها" });
+  await expect(mediaList.getByRole("link", { name: /دیدن کالای مرتبط:/ })).toHaveCount(
+    2,
+  );
+  await expect(mediaList.locator("strong")).toHaveCount(0);
+  const productTop = await page
+    .getByRole("list", { name: "کالاهای تازه" })
+    .evaluate((element) => element.getBoundingClientRect().top);
+  const mediaTop = await mediaList.evaluate(
+    (element) => element.getBoundingClientRect().top,
+  );
+  expect(productTop).toBeLessThan(mediaTop);
   await expect(page.getByText("تصویر این محتوا باز نشد.")).toBeVisible();
   await expect(page.getByText("ویدیوی این محتوا باز نشد.")).toBeVisible();
   await expect(page.getByText("ناموجود", { exact: true })).toHaveCount(3);
@@ -424,15 +443,10 @@ test("sales content stays distinct, purchasable, and human when media or stock f
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page, "main a, main button, main video");
-  await assertMinimumContrast(
-    page
-      .getByRole("list", { name: "محتوای فروش قابل خرید" })
-      .locator("span, a, strong"),
-  );
+  await assertMinimumContrast(mediaList.locator("span, a"));
   expect(
     Number.parseFloat(
-      await page
-        .getByRole("list", { name: "محتوای فروش قابل خرید" })
+      await mediaList
         .locator("article")
         .first()
         .evaluate((element) => getComputedStyle(element).transitionDuration),

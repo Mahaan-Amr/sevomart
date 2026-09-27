@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { formatIrrAsToman } from "../../../../../lib/format-money";
 import { newProductConversationHref } from "../../../../../lib/conversation-navigation";
 import { readPublicProductPage } from "../../../../../lib/public-product-page";
+import { StoreSalesContent } from "../../store-sales-content";
 import { AddToCart } from "./add-to-cart";
 import styles from "./product-public.module.css";
 
@@ -86,6 +87,19 @@ export default async function PublicProductPage({
           <p className={styles.payment}>
             روش پرداخت پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
+          <StoreSalesContent
+            store={{ id: store.id, name: store.name, slug: store.slug }}
+            productId={product.productId}
+            products={[
+              {
+                productId: product.productId,
+                name: product.name,
+                href: `/s/${slug}/products/${product.productId}`,
+                priceLabel: formatProductPrice(product),
+                unavailable: product.availability !== "AVAILABLE",
+              },
+            ]}
+          />
           <PurchaseExperiences
             feed={result.experiences}
             retryHref={`/s/${slug}/products/${productId}`}

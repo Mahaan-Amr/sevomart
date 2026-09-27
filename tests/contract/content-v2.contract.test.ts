@@ -5,6 +5,7 @@ import {
   purchaseExperienceMediaContextContract,
   contentErrorV2Contract,
   publicSalesContentFeedV2Contract,
+  publicProductSalesContentV2Contract,
   publicSalesContentStoreIdsV2Contract,
   publishPurchaseExperienceInputV2Contract,
   publishSalesContentInputV2Contract,
@@ -24,6 +25,21 @@ const ids = {
 };
 
 describe("content v2 contract", () => {
+  it("can return every published item linked to a product beyond the store feed limit", () => {
+    const items = Array.from({ length: 61 }, () => ({
+      contentId: crypto.randomUUID(),
+      source: "SELLER",
+      storeId: ids.store,
+      media: { mediaId: ids.media, kind: "IMAGE" },
+      products: [{ productId: ids.product, active: true }],
+      publishedAt: "2026-09-01T09:00:00.000Z",
+    }));
+    expect(
+      publicProductSalesContentV2Contract.parse({ productId: ids.product, items })
+        .items,
+    ).toHaveLength(61);
+  });
+
   it("publishes the executable image-only sales-content input", () => {
     const input = {
       storeId: ids.store,
@@ -95,6 +111,11 @@ describe("content v2 contract", () => {
         operationId: "readPublicSalesContentV2",
         method: "get",
         path: "/v2/sales-content",
+      },
+      readProductSalesContent: {
+        operationId: "readProductSalesContentV2",
+        method: "get",
+        path: "/v2/products/{productId}/sales-content",
       },
       listSellerSalesContent: {
         operationId: "listSellerSalesContentV2",

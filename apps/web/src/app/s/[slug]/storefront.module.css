@@ -335,6 +335,19 @@
   padding: 12px 16px 24px;
 }
 
+.productSalesContent {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.productSalesContent h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--color-text);
+}
+
 .salesContent h2 {
   margin: 0;
   color: var(--color-text);
@@ -351,6 +364,7 @@
   overflow: hidden;
   display: block;
   width: 100%;
+  aspect-ratio: 1;
   padding: 0;
   border: 0;
   border-radius: 12px;
@@ -362,8 +376,8 @@
 .salesContentCover video {
   display: block;
   width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain;
 }
 
 .brokenContentMedia {
