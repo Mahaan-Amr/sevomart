@@ -161,21 +161,24 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
           ? `${new Intl.NumberFormat("fa-IR").format(state.items.length)} کالا نمایش داده شد.`
           : "کالایی در این فید نمایش داده نشد."}
       </p>
+      {state.items.length > 0 ? (
+        <FeedGrid items={state.items} kind={kind} onLeave={saveForBrowse} />
+      ) : null}
       {salesContentCards.length > 0 ? (
         <section
           className={styles.salesContent}
           aria-labelledby={`${kind}-sales-title`}
         >
-          <h2 id={`${kind}-sales-title`}>محتوای فروش تازه</h2>
+          <h2 id={`${kind}-sales-title`}>عکس‌ها و ویدیوهای فروشگاه‌ها</h2>
+          <p>
+            فروشنده‌ها این تصویرها و ویدیوها را برای معرفی کالاهایشان منتشر کرده‌اند.
+          </p>
           <SalesContentGrid
             cards={salesContentCards}
             stores={stores}
-            label="محتوای فروش قابل خرید"
+            label="عکس‌ها و ویدیوهای فروشگاه‌ها"
           />
         </section>
-      ) : null}
-      {state.items.length > 0 ? (
-        <FeedGrid items={state.items} kind={kind} onLeave={saveForBrowse} />
       ) : null}
       {state.emptyState ? (
         <div className={styles.state}>

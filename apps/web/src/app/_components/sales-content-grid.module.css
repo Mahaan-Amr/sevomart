@@ -15,7 +15,7 @@
 .card {
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: 8px;
 }
 
 .media,
@@ -39,19 +39,13 @@
   text-align: center;
 }
 
-.source {
-  width: fit-content;
-  margin-block-start: 4px;
-  padding: 2px 8px;
-  border: 1px solid var(--color-border-primary);
-  border-radius: 999px;
-  color: var(--color-primary-dark);
-  font-size: 11px;
-  font-weight: 600;
+.byline {
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .store,
-.card h3 a {
+.relatedProduct a {
   display: inline-flex;
   align-items: center;
   min-height: 40px;
@@ -62,23 +56,18 @@
 }
 
 .store {
-  color: var(--color-muted);
-  font-size: 13px;
-}
-
-.card h3 {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.8;
-}
-
-.card h3 a {
-  color: var(--color-text);
-}
-
-.card strong {
   color: var(--color-primary-dark);
-  font-size: 14px;
+  font-size: inherit;
+}
+
+.relatedProduct {
+  display: grid;
+  gap: 2px;
+}
+
+.relatedProduct a {
+  color: var(--color-primary-dark);
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -91,7 +80,7 @@
 }
 
 .store:focus-visible,
-.card h3 a:focus-visible,
+.relatedProduct a:focus-visible,
 .media:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 2px;
@@ -102,12 +91,8 @@
     gap: 16px 8px;
   }
 
-  .card h3,
-  .card strong {
-    font-size: 13px;
-  }
-
-  .store,
+  .byline,
+  .relatedProduct a,
   .unavailable {
     font-size: 11px;
   }
