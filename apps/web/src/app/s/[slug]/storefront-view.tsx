@@ -8,6 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { newConversationHref } from "../../../lib/conversation-navigation";
+import { BuyerProductCard } from "../../(buyer)/_components/buyer-product-card";
 import styles from "./storefront.module.css";
 import { StoreContactDialog } from "./store-contact-dialog";
 import { StoreFollowControl } from "./store-follow-control";
@@ -248,18 +249,14 @@ export function ReadyStorefront({
           <h2 id="products-title">کالاهای فروشگاه</h2>
           <div className={styles.productList}>
             {products.map((product) => (
-              <Link
-                className={styles.product}
+              <BuyerProductCard
                 href={`/s/${store.slug}/products/${product.productId}`}
+                imageId={product.image.id}
+                name={product.name}
+                price={formatSummaryPrice(product)}
+                unavailable={product.availability !== "AVAILABLE"}
                 key={product.productId}
-              >
-                <img src={`/api/store/media/${product.image.id}`} alt={product.name} />
-                <span>
-                  <strong>{product.name}</strong>
-                  <small>{formatSummaryPrice(product)}</small>
-                  <em>{product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}</em>
-                </span>
-              </Link>
+              />
             ))}
           </div>
         </section>

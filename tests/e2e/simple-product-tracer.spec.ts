@@ -402,12 +402,13 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("link", { name: "دیدن کالا در فروشگاه" }).click();
   await expect(page.getByRole("heading", { name: "فنجان سرامیکی" })).toBeVisible();
   await expect(page.getByText("از ۴۵۶٬۰۰۰ تومان تا ۴۸۰٬۰۰۰ تومان")).toHaveCount(0);
-  await expect(page.getByText("رنگ", { exact: true })).toBeVisible();
-  await expect(page.getByText("قرمز، آبی", { exact: true })).toBeVisible();
-  await expect(page.getByText("اندازه", { exact: true })).toBeVisible();
-  await expect(page.getByText("کوچک، بزرگ", { exact: true })).toBeVisible();
-  await expect(page.getByText("قرمز، بزرگ", { exact: true })).toBeVisible();
-  await expect(page.getByText(/۴۶۰٬۰۰۰ تومان · ناموجود/)).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "رنگ" }).getByRole("button"),
+  ).toHaveCount(2);
+  await expect(
+    page.getByRole("group", { name: "اندازه" }).getByRole("button"),
+  ).toHaveCount(2);
+  await expect(page.getByText("۴۶۰٬۰۰۰ تومان", { exact: true })).toHaveCount(0);
   await expect(page.getByText("خانه فنجان", { exact: true })).toBeVisible();
   await expect(page.getByText("پست پیشتاز", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "روش‌های ارسال" })).toContainText(
@@ -421,7 +422,8 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
       "تا هفت روز پس از تحویل می‌توانید برای کالای استفاده‌نشده درخواست مرجوعی ثبت کنید؛ کالا باید با بسته‌بندی و متعلقات کامل بازگردانده شود.",
     ),
   ).toBeVisible();
-  const variantSelector = page.getByLabel("گونه", { exact: true });
+  const colorChoices = page.getByRole("group", { name: "رنگ" });
+  const sizeChoices = page.getByRole("group", { name: "اندازه" });
   const addButton = page.getByRole("button", { name: "گونه را انتخاب کنید" });
   const selectedOffer = page.getByRole("status");
   await expect(selectedOffer).toContainText(
@@ -440,18 +442,23 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
       }, addButtonHandle),
     ).toBe(true);
   }
-  await expect(variantSelector).toHaveValue("");
+  await expect(colorChoices.getByRole("button", { name: "قرمز" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await expect(addButton).toBeDisabled();
   await expect(page.getByLabel("تعداد")).toBeDisabled();
-  await variantSelector.focus();
-  await expect(variantSelector).toBeFocused();
-  await variantSelector.selectOption({ label: "قرمز، بزرگ — ناموجود" });
+  await colorChoices.getByRole("button", { name: "قرمز" }).focus();
+  await expect(colorChoices.getByRole("button", { name: "قرمز" })).toBeFocused();
+  await colorChoices.getByRole("button", { name: "قرمز" }).click();
+  await expect(addButton).toBeDisabled();
+  await sizeChoices.getByRole("button", { name: "بزرگ · ناموجود" }).click();
   await expect(selectedOffer).toContainText("قیمت گونه انتخاب‌شده");
   await expect(page.getByText("۴۶۰٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await expect(page.getByText("ناموجود", { exact: true }).last()).toBeVisible();
   await expect(page.getByLabel("تعداد")).toBeDisabled();
   await expect(page.getByRole("button", { name: "فعلاً ناموجود" })).toBeDisabled();
-  await variantSelector.selectOption({ label: "قرمز، کوچک" });
+  await sizeChoices.getByRole("button", { name: "کوچک" }).click();
   await expect(page.getByText("۴۵۶٬۰۰۰ تومان", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "افزودن به سبد" })).toBeEnabled();
   await expect(page.getByText("8", { exact: true })).toHaveCount(0);
@@ -510,6 +517,10 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
         Number.parseFloat(getComputedStyle(element).transitionDuration),
       ),
   ).toBeLessThan(0.001);
+  await page.goto(`/s/${slug}`);
+  await expect(page.getByRole("heading", { name: "کالاهای فروشگاه" })).toBeVisible();
+  await page.getByRole("link", { name: "دیدن فنجان سرامیکی و گزینه‌های آن" }).click();
+  await expect(page.getByRole("group", { name: "رنگ" })).toBeVisible();
 });
 
 async function readPublicVariantAmount(

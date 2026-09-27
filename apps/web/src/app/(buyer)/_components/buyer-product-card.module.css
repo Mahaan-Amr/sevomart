@@ -1,0 +1,117 @@
+.card {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  align-content: start;
+  border: 1px solid var(--color-border-primary-soft);
+  border-radius: 18px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.imageLink {
+  display: block;
+  margin: 8px 8px 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--color-background);
+}
+
+.imageLink img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.info {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px 12px 12px;
+}
+
+.store {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 40px;
+  color: var(--color-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.info h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  font-weight: 600;
+}
+
+.info h2 a {
+  display: -webkit-box;
+  min-height: 40px;
+  overflow: hidden;
+  color: var(--color-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 8px;
+  margin-block-start: 4px;
+}
+
+.bottom strong {
+  color: var(--color-primary-dark);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bottom span {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.detailLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  margin-block-start: 4px;
+  border-block-start: 1px solid var(--color-divider);
+  color: var(--color-primary-dark);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.card:focus-within {
+  border-color: var(--color-primary-light);
+}
+
+.card a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .info {
+    padding: 8px;
+  }
+
+  .info h2 {
+    font-size: 13px;
+  }
+
+  .bottom strong {
+    font-size: 12px;
+  }
+}

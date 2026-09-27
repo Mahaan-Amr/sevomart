@@ -162,11 +162,25 @@ describe("demo seed PostgreSQL runtime", () => {
           )}
         )
       `;
-      expect(() => {
-        for (const { snapshot } of publicationSnapshots) {
-          publicProductContract.parse(snapshot);
-        }
-      }).not.toThrow();
+      const publishedProducts = publicationSnapshots.map(({ snapshot }) =>
+        publicProductContract.parse(snapshot),
+      );
+      const tshirt = publishedProducts.find(
+        ({ productId }) => productId === stableDemoId("product.tshirt"),
+      );
+      expect(tshirt?.axes).toEqual([
+        { name: "رنگ", values: ["سفید", "مشکی"] },
+        { name: "اندازه", values: ["کوچک", "متوسط"] },
+      ]);
+      expect(
+        tshirt?.variants.find(
+          ({ variantId }) =>
+            variantId === stableDemoId("product.tshirt.variant.black-medium"),
+        )?.combination,
+      ).toEqual([
+        { axis: "رنگ", value: "مشکی" },
+        { axis: "اندازه", value: "متوسط" },
+      ]);
       expect(await seedEvidence()).toMatchObject({
         humanIdentityStatus: "ACTIVE",
         missingMediaReferences: 0,

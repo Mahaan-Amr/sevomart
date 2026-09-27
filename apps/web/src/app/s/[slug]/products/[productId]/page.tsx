@@ -48,31 +48,6 @@ export default async function PublicProductPage({
               </span>
             </>
           ) : null}
-          {"axes" in product && product.axes.length > 0 ? (
-            <dl className={styles.axes} aria-label="ویژگی‌های کالا">
-              {product.axes.map((axis) => (
-                <div key={axis.name}>
-                  <dt>{axis.name}</dt>
-                  <dd>{axis.values.join("، ")}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-          {"variants" in product && product.variants.length > 1 ? (
-            <ul className={styles.variants} aria-label="گونه‌های کالا">
-              {product.variants.map((variant) => (
-                <li key={variant.variantId}>
-                  <span>
-                    {variant.combination.map((part) => part.value).join("، ")}
-                  </span>
-                  <span>
-                    {formatIrrAsToman(variant.price.amount)} ·{" "}
-                    {variant.availability === "AVAILABLE" ? "موجود" : "ناموجود"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
           <section className={styles.purchaseTerms} aria-labelledby="store-title">
             <span id="store-title">فروشگاه</span>
             <strong>{store.name}</strong>
@@ -104,7 +79,10 @@ export default async function PublicProductPage({
             <strong>{store.returnPolicy}</strong>
             <p>این سیاست را فروشنده اعلام کرده است.</p>
           </section>
-          <AddToCart variants={cartVariants(product)} />
+          <AddToCart
+            axes={"axes" in product ? product.axes : []}
+            variants={cartVariants(product)}
+          />
           <p className={styles.payment}>
             روش پرداخت پیش از ثبت سفارش نمایش داده می‌شود.
           </p>
@@ -212,6 +190,7 @@ function cartVariants(product: PublicProduct | PublicSimpleProduct) {
         label: product.name,
         priceLabel: formatIrrAsToman(product.price.amount),
         available: product.availability === "AVAILABLE",
+        combination: [],
       },
     ];
   }
@@ -220,5 +199,6 @@ function cartVariants(product: PublicProduct | PublicSimpleProduct) {
     label: variant.combination.map((part) => part.value).join("، ") || product.name,
     priceLabel: formatIrrAsToman(variant.price.amount),
     available: variant.availability === "AVAILABLE",
+    combination: variant.combination,
   }));
 }

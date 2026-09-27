@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SalesContentGrid } from "../../_components/sales-content-grid";
+import { BuyerProductCard } from "../_components/buyer-product-card";
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { loginHref } from "../../../lib/navigation";
 import { buildSalesContentCards } from "../../../lib/sales-content-view-model";
@@ -253,51 +254,24 @@ function FeedGrid({
           onLeave(kind, window.scrollY, focusTarget);
         return (
           <li key={item.productId}>
-            <article className={styles.product}>
-              <Link
-                className={styles.imageLink}
-                href={`/s/${item.storeSlug}/products/${item.productId}`}
-                prefetch={false}
-                aria-label={`دیدن ${item.product.name}`}
-                data-feed-focus={imageFocus}
-                onNavigate={() => rememberOrigin(imageFocus)}
-              >
-                <img
-                  src={`/api/store/media/${item.product.image.id}`}
-                  alt=""
-                  width={300}
-                  height={300}
-                />
-              </Link>
-              <h2>
-                <Link
-                  href={`/s/${item.storeSlug}/products/${item.productId}`}
-                  prefetch={false}
-                  data-feed-focus={titleFocus}
-                  onNavigate={() => rememberOrigin(titleFocus)}
-                >
-                  {item.product.name}
-                </Link>
-              </h2>
-              <Link
-                className={styles.storeLink}
-                href={`/s/${item.storeSlug}`}
-                prefetch={false}
-                data-feed-focus={storeFocus}
-                onNavigate={() => rememberOrigin(storeFocus)}
-              >
-                {item.store.name}
-              </Link>
-              <strong>
-                {item.priceRange.minimum.amount !== item.priceRange.maximum.amount
-                  ? "از "
-                  : ""}
-                {formatIrrAsToman(item.priceRange.minimum.amount)}
-              </strong>
-              {item.availability === "OUT_OF_STOCK" ? (
-                <span className={styles.unavailable}>ناموجود</span>
-              ) : null}
-            </article>
+            <BuyerProductCard
+              href={`/s/${item.storeSlug}/products/${item.productId}`}
+              imageId={item.product.image.id}
+              name={item.product.name}
+              price={`${item.priceRange.minimum.amount !== item.priceRange.maximum.amount ? "از " : ""}${formatIrrAsToman(item.priceRange.minimum.amount)}`}
+              unavailable={item.availability === "OUT_OF_STOCK"}
+              store={{ name: item.store.name, href: `/s/${item.storeSlug}` }}
+              focusPrefix={item.productId}
+              onNavigate={(target) =>
+                rememberOrigin(
+                  target === "image"
+                    ? imageFocus
+                    : target === "title"
+                      ? titleFocus
+                      : storeFocus,
+                )
+              }
+            />
           </li>
         );
       })}
