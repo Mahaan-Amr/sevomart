@@ -20,6 +20,7 @@ model OrderCart {
 
 model OrderCartItem {
   cartId                     String    @map("cart_id") @db.Uuid
+  storeId                    String    @map("store_id") @db.Uuid
   variantId                  String    @map("variant_id") @db.Uuid
   productId                  String    @map("product_id") @db.Uuid
   quantity                   Int
@@ -30,6 +31,7 @@ model OrderCartItem {
   cart                       OrderCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
   @@id([cartId, variantId])
+  @@index([cartId, storeId])
   @@map("order_cart_items")
 }
 

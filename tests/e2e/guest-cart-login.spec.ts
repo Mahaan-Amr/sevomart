@@ -683,8 +683,8 @@ async function seedCartConflict(
     `;
     await sql`
       insert into order_cart_items
-        (cart_id, variant_id, product_id, quantity, updated_at)
-      values (${cartId}, ${buyer.variantId}, ${buyer.productId}, 3, now())
+        (cart_id, store_id, variant_id, product_id, quantity, updated_at)
+      values (${cartId}, ${buyer.storeId}, ${buyer.variantId}, ${buyer.productId}, 3, now())
     `;
   } catch (error) {
     fixtureFailure = { error };
