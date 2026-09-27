@@ -36,7 +36,9 @@ export function BuyerNavigation() {
             opacity: activeIndex < 0 ? 0 : 1,
             transform: `translateX(calc(-${Math.max(activeIndex, 0) * 100}% - ${Math.max(activeIndex, 0) * 4}px))`,
           }}
-        />
+        >
+          <span key={active ?? "none"} className={styles.refraction} />
+        </span>
         {destinations.map(({ href, label }) => (
           <Link
             key={href}
@@ -55,6 +57,7 @@ export function BuyerNavigation() {
             }}
           >
             <NavigationIcon destination={href} />
+            <span className={styles.label}>{label}</span>
           </Link>
         ))}
       </nav>

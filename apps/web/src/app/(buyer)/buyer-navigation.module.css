@@ -1,5 +1,5 @@
 .area {
-  height: calc(96px + env(safe-area-inset-bottom));
+  height: calc(104px + env(safe-area-inset-bottom));
 }
 
 .bar {
@@ -12,29 +12,29 @@
   align-items: center;
   gap: 4px;
   width: min(520px, calc(100% - 32px));
-  min-height: 68px;
+  min-height: 78px;
   margin-inline: auto;
   padding: 8px;
-  border: 1px solid rgb(255 255 255 / 82%);
-  border-radius: 24px;
+  border: 1px solid rgb(255 255 255 / 88%);
+  border-radius: 999px;
   background:
     linear-gradient(
-      125deg,
-      rgb(255 255 255 / 55%),
-      rgb(255 255 255 / 8%) 42%,
-      rgb(255 255 255 / 36%) 78%,
+      116deg,
+      rgb(255 255 255 / 48%),
+      rgb(255 255 255 / 9%) 34%,
+      rgb(255 255 255 / 38%) 72%,
       rgb(255 255 255 / 13%)
     ),
-    linear-gradient(180deg, rgb(255 255 255 / 27%), transparent 55%),
-    rgb(250 248 248 / 24%);
+    linear-gradient(180deg, rgb(255 255 255 / 37%), transparent 55%),
+    rgb(250 248 248 / 16%);
   box-shadow:
     0 14px 32px rgb(47 37 40 / 14%),
-    0 2px 8px rgb(255 255 255 / 65%),
-    inset 0 1px 1px rgb(255 255 255 / 98%),
-    inset 1px 0 1px rgb(255 255 255 / 60%),
-    inset 0 -1px 2px rgb(129 118 122 / 16%);
-  -webkit-backdrop-filter: blur(32px) saturate(1.7);
-  backdrop-filter: blur(32px) saturate(1.7);
+    0 3px 12px rgb(255 255 255 / 68%),
+    inset 0 2px 2px rgb(255 255 255 / 96%),
+    inset 0 -2px 4px rgb(129 118 122 / 18%),
+    inset 2px 0 3px rgb(255 255 255 / 56%);
+  -webkit-backdrop-filter: blur(22px) saturate(1.45);
+  backdrop-filter: blur(22px) saturate(1.45);
 }
 
 .activeLens {
@@ -42,61 +42,79 @@
   inset-block: 8px;
   inset-inline-start: 8px;
   width: calc((100% - 32px) / 5);
-  border: 1px solid rgb(255 255 255 / 88%);
-  border-radius: 16px;
+  border: 1px solid rgb(255 255 255 / 94%);
+  border-radius: 999px;
   background:
     linear-gradient(
-      140deg,
-      rgb(255 255 255 / 65%),
-      rgb(255 255 255 / 12%) 52%,
-      rgb(255 255 255 / 47%)
+      135deg,
+      rgb(255 255 255 / 58%),
+      rgb(255 255 255 / 8%) 44%,
+      rgb(255 255 255 / 48%)
     ),
-    rgb(250 248 248 / 24%);
+    rgb(250 248 248 / 16%);
   box-shadow:
-    inset 0 1px 1px rgb(255 255 255 / 96%),
-    inset 0 -1px 2px rgb(129 118 122 / 12%),
-    0 2px 12px rgb(164 20 57 / 9%);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  backdrop-filter: blur(14px) saturate(1.4);
+    inset 2px 2px 5px rgb(255 255 255 / 94%),
+    inset -2px -2px 5px rgb(129 118 122 / 18%),
+    0 3px 11px rgb(47 37 40 / 14%);
+  -webkit-backdrop-filter: blur(8px) saturate(1.35) contrast(1.06);
+  backdrop-filter: blur(8px) saturate(1.35) contrast(1.06);
   pointer-events: none;
   transition:
-    transform 280ms cubic-bezier(0.22, 0.8, 0.28, 1),
-    opacity 180ms ease;
+    transform 440ms cubic-bezier(0.2, 0.82, 0.24, 1),
+    opacity 220ms ease;
 }
 
 .activeLens::before {
   position: absolute;
-  inset-block-start: -10px;
-  inset-inline-start: calc(50% - 15px);
-  width: 30px;
-  height: 4px;
-  border-radius: 0 0 4px 4px;
+  inset-block-start: -9px;
+  inset-inline-start: calc(50% - 11px);
+  width: 22px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
   background: var(--color-primary);
   box-shadow:
-    0 0 7px rgb(164 20 57 / 62%),
-    0 0 16px rgb(164 20 57 / 32%);
+    0 0 6px rgb(164 20 57 / 54%),
+    0 0 14px rgb(164 20 57 / 24%);
   content: "";
 }
 
 .activeLens::after {
   position: absolute;
-  inset-block-start: -6px;
-  inset-inline-start: calc(50% - 29px);
-  width: 58px;
-  height: 38px;
-  background: linear-gradient(rgb(164 20 57 / 17%), transparent);
-  clip-path: polygon(30% 0, 70% 0, 100% 100%, 0 100%);
+  inset: -1px;
+  border: 1px solid rgb(255 255 255 / 46%);
+  border-radius: inherit;
+  box-shadow:
+    inset 2px 0 3px rgb(255 255 255 / 70%),
+    inset -2px 0 3px rgb(164 20 57 / 11%);
   content: "";
+}
+
+.refraction {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 14%,
+    rgb(255 255 255 / 44%) 44%,
+    rgb(255 255 255 / 10%) 55%,
+    transparent 76%
+  );
+  opacity: 0;
+  animation: refraction-sweep 440ms ease-out;
 }
 
 .bar a {
   position: relative;
   z-index: 1;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   min-width: 40px;
-  min-height: 48px;
-  border-radius: 16px;
+  min-height: 60px;
+  border-radius: 999px;
   color: var(--color-text);
   text-decoration: none;
   transition:
@@ -119,8 +137,43 @@
 
 .bar svg {
   position: relative;
-  width: 25px;
-  height: 25px;
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.label {
+  max-width: 100%;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@keyframes refraction-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(18%);
+  }
+
+  40% {
+    opacity: 0.8;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-18%);
+  }
+}
+
+@media (max-width: 420px) {
+  .label {
+    font-size: 9px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -137,6 +190,10 @@
   }
 
   .activeLens::after {
+    box-shadow: none;
+  }
+
+  .refraction {
     display: none;
   }
 }
@@ -145,5 +202,9 @@
   .activeLens,
   .bar a {
     transition: none;
+  }
+
+  .refraction {
+    animation: none;
   }
 }
