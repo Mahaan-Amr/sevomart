@@ -448,9 +448,9 @@ describe("inventory reservation transaction seam", () => {
     `;
     await sql`
       insert into order_cart_items
-        (cart_id, variant_id, product_id, quantity,
+        (cart_id, store_id, variant_id, product_id, quantity,
          reviewed_publication_version, reviewed_unit_price_amount)
-      values (${cartId}, ${variantId}, ${productId}, 1, 3, 4500000)
+      values (${cartId}, ${storeId}, ${variantId}, ${productId}, 1, 3, 4500000)
     `;
     const preparation = checkoutPreparationContract.parse({
       checkoutRevision,

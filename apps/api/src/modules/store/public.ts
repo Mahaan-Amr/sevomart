@@ -23,6 +23,20 @@ export interface PublicActiveProductCountReader {
   readActiveProductCount(storeId: StoreId): Promise<number>;
 }
 
+export interface PublicVerifiedPurchaseCountReader {
+  readVerifiedPurchaseCount(storeId: StoreId): Promise<{
+    count: number;
+    updatedAt: string | null;
+  }>;
+}
+
+export interface PublicStoreRatingReader {
+  readPublicStoreRating(storeId: StoreId): Promise<{
+    sampleSize: number;
+    average: number;
+  } | null>;
+}
+
 export type SettlementDestination = {
   kind: "TEST";
 };
@@ -57,6 +71,7 @@ export type StoreRow = {
   name?: string;
   slug?: string;
   bio?: string;
+  publicContactPhone?: string | null;
   shippingMethods?: StoreShippingMethod[];
   returnPolicy?: string;
   settlementDestination?: VerifiedSettlementDestination;

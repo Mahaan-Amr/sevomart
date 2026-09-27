@@ -126,6 +126,14 @@ export class ContentController {
     return this.respond(request, () => this.content.readPublicSalesContent(storeIds));
   }
 
+  @Get("v2/products/:productId/sales-content")
+  readProductSalesContentV2(
+    @Req() request: FastifyRequest,
+    @Param("productId") productId: string,
+  ) {
+    return this.respond(request, () => this.content.readProductSalesContent(productId));
+  }
+
   private context(request: FastifyRequest) {
     request.id = eventCorrelationId(request.id);
     return {

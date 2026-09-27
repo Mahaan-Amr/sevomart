@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createJsonSchemaMap } from "../../json-schema";
 import { fulfillmentStatusContract } from "../../fulfillment/v1/index";
 import { mediaIdContract } from "../../media-v1";
+import { storeSlugContract } from "../../store-v1";
 import {
   identityIdContract,
   eventActorV1Contract,
@@ -297,7 +298,13 @@ export const cartReviewChangeContract = z.discriminatedUnion("kind", [
 export const cartContract = z
   .object({
     cartId: cartIdContract,
-    store: z.object({ storeId: storeIdContract, name: z.string().min(1) }).strict(),
+    store: z
+      .object({
+        storeId: storeIdContract,
+        name: z.string().min(1),
+        slug: storeSlugContract.optional(),
+      })
+      .strict(),
     revision: z.int().nonnegative(),
     requiresResolution: z.boolean(),
     reviewRequired: z.boolean(),

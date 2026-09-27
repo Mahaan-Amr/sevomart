@@ -18,6 +18,7 @@ import {
 test("seller builds, refreshes, previews and publishes a minimal store", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(90_000);
   expectCandidateResponse(testInfo, "store-validation");
   expectCandidateResponse(testInfo, "store-draft-empty");
   const projectIndex = visualProjectIndex(testInfo.project.name);
@@ -506,4 +507,42 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
   await expect(page).toHaveURL(/\/seller\/store\/shipping$/);
+
+  await page.goto("/seller/store/profile");
+  const businessPhone = page.getByLabel("شماره تماس کاری (اختیاری)");
+  await expect(businessPhone).toBeEmpty();
+  await businessPhone.fill("۰۹۱۲۳۴۵۶۷۸۹");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await page.goto("/seller/store/profile");
+  await expect(page.getByLabel("شماره تماس کاری (اختیاری)")).toHaveValue("09123456789");
+  await page.goto("/seller/store/setup");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
+  await expect(page.getByRole("heading", { name: "پیش‌نمایش فروشگاه" })).toBeVisible();
+  await page.getByRole("button", { name: "انتشار فروشگاه" }).click();
+  await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
+  await page.goto(`/s/${slug}`);
+  const contact = page.getByRole("button", { name: "اطلاعات تماس" });
+  await expect(contact).toBeVisible();
+  await contact.click();
+  const contactDialog = page.getByRole("dialog", { name: `اطلاعات تماس ${storeName}` });
+  await expect(
+    contactDialog.getByRole("link", { name: "09123456789" }),
+  ).toHaveAttribute("href", "tel:09123456789");
+  await page.keyboard.press("Escape");
+  await expect(contactDialog).not.toBeVisible();
+
+  await page.goto("/seller/store/profile");
+  await page.getByLabel("شماره تماس کاری (اختیاری)").fill("");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await page.goto("/seller/store/setup");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
+  await expect(page.getByRole("heading", { name: "پیش‌نمایش فروشگاه" })).toBeVisible();
+  await page.getByRole("button", { name: "انتشار فروشگاه" }).click();
+  await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
+  await page.goto(`/s/${slug}`);
+  await expect(page.getByRole("button", { name: "اطلاعات تماس" })).toHaveCount(0);
 });

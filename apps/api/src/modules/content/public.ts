@@ -128,6 +128,10 @@ export interface ContentRepository {
   readPublicSalesContent(
     storeIds: readonly StoreId[],
   ): Promise<PublicSalesContentFeedV2>;
+  readProductSalesContent(productId: ProductId): Promise<{
+    productId: ProductId;
+    items: PublicSalesContentFeedV2["items"];
+  }>;
 }
 
 export interface ContentPublishedMediaRead {

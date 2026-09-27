@@ -7,6 +7,7 @@ import {
   storeIdContract,
   variantIdContract,
   type IdentityId,
+  type StoreId,
 } from "@sevo/contracts/platform/v1";
 import postgres, { type JSONValue, type Sql } from "postgres";
 
@@ -27,6 +28,7 @@ import {
 type CartRow = {
   cartId: string;
   storeId: string;
+  itemStoreId: string | null;
   identityId: string | null;
   revision: number;
   variantId: string | null;
@@ -36,6 +38,8 @@ type CartRow = {
   reviewedShippingHash: string;
   reviewedPublicationVersion: number | null;
   reviewedUnitPriceAmount: number | null;
+  itemReviewedPolicyRevision: number | null;
+  itemReviewedShippingHash: string | null;
 };
 
 export class PostgresCartRepository implements CartRepository {
@@ -197,12 +201,6 @@ export class PostgresCartRepository implements CartRepository {
           if (current.revision !== command.expectedRevision) {
             throw new CartRevisionConflictError(current);
           }
-          if (current.storeId !== command.storeId) {
-            throw new CartStoreReplacementRequiredError(
-              current.storeId,
-              command.storeId,
-            );
-          }
         }
 
         const counts = await sql<Array<{ count: number }>>`
@@ -219,15 +217,19 @@ export class PostgresCartRepository implements CartRepository {
         }
         await sql`
         insert into order_cart_items
-          (cart_id, variant_id, product_id, quantity,
-           reviewed_publication_version, reviewed_unit_price_amount, updated_at)
+          (cart_id, store_id, variant_id, product_id, quantity,
+           reviewed_publication_version, reviewed_unit_price_amount,
+           reviewed_policy_revision, reviewed_shipping_hash, updated_at)
         values
-          (${cartId}, ${command.variantId}, ${command.productId},
+          (${cartId}, ${command.storeId}, ${command.variantId}, ${command.productId},
            ${command.quantity},
            ${command.reviewSnapshot.items[0]?.publicationVersion ?? 0},
-           ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0}, now())
+           ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0},
+           ${command.reviewSnapshot.policyRevision},
+           ${command.reviewSnapshot.shippingHash}, now())
         on conflict (cart_id, variant_id) do update set
           quantity = excluded.quantity, product_id = excluded.product_id,
+          store_id = excluded.store_id,
           updated_at = excluded.updated_at
       `;
         await sql`
@@ -311,6 +313,11 @@ export class PostgresCartRepository implements CartRepository {
     requestHash: string;
     correlationId: string;
     reviewSnapshot: import("../public").CartReviewSnapshot;
+    storeReviews?: ReadonlyArray<{
+      storeId: StoreId;
+      policyRevision: number;
+      shippingHash: string;
+    }>;
   }): Promise<StoredCart> {
     const scope = command.identityId ?? command.guestTokenHash;
     return this.#runIdempotently("CONFIRM_CART_REVIEW", scope, command, () =>
@@ -338,10 +345,20 @@ export class PostgresCartRepository implements CartRepository {
         where id = ${current.cartId}
       `;
         for (const item of command.reviewSnapshot.items) {
+          const storeReview = command.storeReviews?.find((review) =>
+            current.items.some(
+              (currentItem) =>
+                currentItem.variantId === item.variantId &&
+                currentItem.storeId === review.storeId,
+            ),
+          );
           await sql`
           update order_cart_items set
             reviewed_publication_version = ${item.publicationVersion},
-            reviewed_unit_price_amount = ${item.unitPriceAmount}, updated_at = now()
+            reviewed_unit_price_amount = ${item.unitPriceAmount},
+            reviewed_policy_revision = ${storeReview?.policyRevision ?? command.reviewSnapshot.policyRevision},
+            reviewed_shipping_hash = ${storeReview?.shippingHash ?? command.reviewSnapshot.shippingHash},
+            updated_at = now()
           where cart_id = ${current.cartId} and variant_id = ${item.variantId}
         `;
         }
@@ -404,13 +421,16 @@ export class PostgresCartRepository implements CartRepository {
       `;
         await sql`
         insert into order_cart_items
-          (cart_id, variant_id, product_id, quantity,
-           reviewed_publication_version, reviewed_unit_price_amount, updated_at)
+          (cart_id, store_id, variant_id, product_id, quantity,
+           reviewed_publication_version, reviewed_unit_price_amount,
+           reviewed_policy_revision, reviewed_shipping_hash, updated_at)
         values
-          (${command.newCartId}, ${command.variantId}, ${command.productId},
+          (${command.newCartId}, ${command.storeId}, ${command.variantId}, ${command.productId},
            ${command.quantity},
            ${command.reviewSnapshot.items[0]?.publicationVersion ?? 0},
-           ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0}, now())
+           ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0},
+           ${command.reviewSnapshot.policyRevision},
+           ${command.reviewSnapshot.shippingHash}, now())
       `;
         if (!command.identityId) {
           await sql`
@@ -539,7 +559,6 @@ export class PostgresCartRepository implements CartRepository {
 
         let kept: StoredCart;
         if (command.input.decision === "MERGE") {
-          if (guest.storeId !== buyer.storeId) throw new CartResolutionRequiredError();
           const mergedLineCount = new Set([
             ...guest.items.map((item) => item.variantId),
             ...buyer.items.map((item) => item.variantId),
@@ -553,13 +572,16 @@ export class PostgresCartRepository implements CartRepository {
             if (quantity > 99) throw new CartQuantityLimitError();
             await sql`
             insert into order_cart_items
-              (cart_id, variant_id, product_id, quantity,
-               reviewed_publication_version, reviewed_unit_price_amount, updated_at)
+              (cart_id, store_id, variant_id, product_id, quantity,
+               reviewed_publication_version, reviewed_unit_price_amount,
+               reviewed_policy_revision, reviewed_shipping_hash, updated_at)
             values
-              (${buyer.cartId}, ${item.variantId}, ${item.productId}, ${quantity},
-               ${item.reviewedPublicationVersion}, ${item.reviewedUnitPriceAmount}, now())
+              (${buyer.cartId}, ${item.storeId}, ${item.variantId}, ${item.productId}, ${quantity},
+              ${item.reviewedPublicationVersion}, ${item.reviewedUnitPriceAmount},
+              ${item.reviewedPolicyRevision}, ${item.reviewedShippingHash}, now())
             on conflict (cart_id, variant_id) do update set
               quantity = excluded.quantity, product_id = excluded.product_id,
+              store_id = excluded.store_id,
               updated_at = excluded.updated_at
           `;
           }
@@ -630,9 +652,12 @@ export class PostgresCartRepository implements CartRepository {
         c.identity_id as "identityId", c.revision,
         c.reviewed_policy_revision as "reviewedPolicyRevision",
         c.reviewed_shipping_hash as "reviewedShippingHash",
-        item.variant_id as "variantId", item.product_id as "productId", item.quantity,
+        item.store_id as "itemStoreId", item.variant_id as "variantId",
+        item.product_id as "productId", item.quantity,
         item.reviewed_publication_version as "reviewedPublicationVersion",
-        item.reviewed_unit_price_amount as "reviewedUnitPriceAmount"
+        item.reviewed_unit_price_amount as "reviewedUnitPriceAmount",
+        item.reviewed_policy_revision as "itemReviewedPolicyRevision",
+        item.reviewed_shipping_hash as "itemReviewedShippingHash"
       from order_carts c
       left join order_cart_items item on item.cart_id = c.id
       where c.id = ${cartId}
@@ -888,10 +913,13 @@ function fromRows(rows: CartRow[]): StoredCart {
         ? [
             {
               variantId: variantIdContract.parse(row.variantId),
+              storeId: storeIdContract.parse(row.itemStoreId ?? first.storeId),
               productId: productIdContract.parse(row.productId),
               quantity: row.quantity,
               reviewedPublicationVersion: row.reviewedPublicationVersion ?? 0,
               reviewedUnitPriceAmount: row.reviewedUnitPriceAmount ?? 0,
+              reviewedPolicyRevision: row.itemReviewedPolicyRevision ?? 0,
+              reviewedShippingHash: row.itemReviewedShippingHash?.trim() ?? "",
             },
           ]
         : [],
@@ -913,9 +941,12 @@ function parseStoredCart(value: JSONValue): StoredCart {
     items: (object.items as Array<Record<string, unknown>>).map((item) => ({
       productId: productIdContract.parse(item.productId),
       variantId: variantIdContract.parse(item.variantId),
+      storeId: storeIdContract.parse(item.storeId ?? object.storeId),
       quantity: Number(item.quantity),
       reviewedPublicationVersion: Number(item.reviewedPublicationVersion ?? 0),
       reviewedUnitPriceAmount: Number(item.reviewedUnitPriceAmount ?? 0),
+      reviewedPolicyRevision: Number(item.reviewedPolicyRevision ?? 0),
+      reviewedShippingHash: String(item.reviewedShippingHash ?? ""),
     })),
   };
 }

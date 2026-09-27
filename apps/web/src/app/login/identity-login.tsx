@@ -89,7 +89,7 @@ export function IdentityLogin({
       }
       if (autoContinue) {
         if (attachCartOnContinue) {
-          const attached = await fetch("/api/cart/attach", {
+          const attached = await fetch("/api/cart/v2/attach", {
             method: "POST",
             headers: { "idempotency-key": crypto.randomUUID() },
             body: "{}",

@@ -9,6 +9,8 @@ import { PostgresStoreRepository } from "./infrastructure/postgres-store.reposit
 import {
   STORE_AUTHORITATIVE_READ,
   type PublicActiveProductCountReader,
+  type PublicVerifiedPurchaseCountReader,
+  type PublicStoreRatingReader,
   type PublicStoreFollowingReader,
   type SettlementDestinationVerifier,
   type StoreRepository,
@@ -19,6 +21,8 @@ import {
   STORE_REPOSITORY,
   STORE_SERVICE,
   PUBLIC_ACTIVE_PRODUCT_COUNT_READER,
+  PUBLIC_VERIFIED_PURCHASE_COUNT_READER,
+  PUBLIC_STORE_RATING_READER,
   PUBLIC_STORE_FOLLOWING_READER,
 } from "./store.tokens";
 import { TestSettlementDestinationVerifier } from "./testing/test-settlement-verifier";
@@ -28,6 +32,8 @@ export type StoreModuleOptions = {
   settlementVerifier?: SettlementDestinationVerifier;
   publicStoreFollowingReader?: PublicStoreFollowingReader;
   publicActiveProductCountReader?: PublicActiveProductCountReader;
+  publicVerifiedPurchaseCountReader?: PublicVerifiedPurchaseCountReader;
+  publicStoreRatingReader?: PublicStoreRatingReader;
 };
 
 @Module({})
@@ -104,6 +110,26 @@ export class StoreModule {
                 };
               },
             } satisfies PublicStoreFollowingReader),
+        },
+        {
+          provide: PUBLIC_VERIFIED_PURCHASE_COUNT_READER,
+          useValue:
+            options.publicVerifiedPurchaseCountReader ??
+            ({
+              async readVerifiedPurchaseCount() {
+                return { count: 0, updatedAt: null };
+              },
+            } satisfies PublicVerifiedPurchaseCountReader),
+        },
+        {
+          provide: PUBLIC_STORE_RATING_READER,
+          useValue:
+            options.publicStoreRatingReader ??
+            ({
+              async readPublicStoreRating() {
+                return null;
+              },
+            } satisfies PublicStoreRatingReader),
         },
       ],
       exports: [STORE_AUTHORITATIVE_READ],

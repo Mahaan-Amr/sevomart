@@ -8,7 +8,9 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { newConversationHref } from "../../../lib/conversation-navigation";
+import { BuyerProductCard } from "../../(buyer)/_components/buyer-product-card";
 import styles from "./storefront.module.css";
+import { StoreContactDialog } from "./store-contact-dialog";
 import { StoreFollowControl } from "./store-follow-control";
 import { StoreSalesContent } from "./store-sales-content";
 
@@ -176,6 +178,40 @@ export function ReadyStorefront({
               {new Intl.NumberFormat("fa-IR").format(store.activeProductCount)} کالای
               فعال
             </p>
+            {store.verifiedPurchases ? (
+              <p className={styles.productCount}>
+                {new Intl.NumberFormat("fa-IR").format(store.verifiedPurchases.count)}{" "}
+                خرید تأییدشده
+                {store.rating ? (
+                  <>
+                    {" · "}امتیاز{" "}
+                    {new Intl.NumberFormat("fa-IR", {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    }).format(store.rating.average)}{" "}
+                    از ۵
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+            {store.verifiedPurchases?.updatedAt ? (
+              <small className={styles.statsUpdatedAt}>
+                آخرین ثبت وضعیت تحویل:{" "}
+                {new Intl.DateTimeFormat("fa-IR", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZone: "Asia/Tehran",
+                }).format(new Date(store.verifiedPurchases.updatedAt))}
+              </small>
+            ) : null}
+          </div>
+        ) : null}
+        <div
+          className={
+            store.publicContactPhone ? styles.storeActions : styles.storeActionsTwo
+          }
+        >
+          {store.followerCount ? (
             <StoreFollowControl
               storeId={store.id}
               slug={store.slug}
@@ -183,28 +219,25 @@ export function ReadyStorefront({
               initialViewer={store.viewer}
               autoFollow={autoFollow}
             />
-          </div>
-        ) : null}
-        <Link
-          className={styles.conversation}
-          href={newConversationHref(
-            { kind: "STORE", storeId: store.id },
-            `/s/${store.slug}`,
-          )}
-        >
-          گفت‌وگو با فروشگاه
-        </Link>
+          ) : null}
+          <Link
+            className={styles.conversation}
+            aria-label="گفت‌وگو با فروشگاه"
+            href={newConversationHref(
+              { kind: "STORE", storeId: store.id },
+              `/s/${store.slug}`,
+            )}
+          >
+            گفت‌وگو
+          </Link>
+          {store.publicContactPhone ? (
+            <StoreContactDialog
+              storeName={store.name}
+              phone={store.publicContactPhone}
+            />
+          ) : null}
+        </div>
       </header>
-      <StoreSalesContent
-        store={{ id: store.id, name: store.name, slug: store.slug }}
-        products={products.map((product) => ({
-          productId: product.productId,
-          name: product.name,
-          href: `/s/${store.slug}/products/${product.productId}`,
-          priceLabel: formatSummaryPrice(product),
-          unavailable: product.availability !== "AVAILABLE",
-        }))}
-      />
       {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">
           <span className={styles.emptyMark} aria-hidden="true" />
@@ -216,22 +249,28 @@ export function ReadyStorefront({
           <h2 id="products-title">کالاهای فروشگاه</h2>
           <div className={styles.productList}>
             {products.map((product) => (
-              <Link
-                className={styles.product}
+              <BuyerProductCard
                 href={`/s/${store.slug}/products/${product.productId}`}
+                imageId={product.image.id}
+                name={product.name}
+                price={formatSummaryPrice(product)}
+                unavailable={product.availability !== "AVAILABLE"}
                 key={product.productId}
-              >
-                <img src={`/api/store/media/${product.image.id}`} alt={product.name} />
-                <span>
-                  <strong>{product.name}</strong>
-                  <small>{formatSummaryPrice(product)}</small>
-                  <em>{product.availability === "AVAILABLE" ? "موجود" : "ناموجود"}</em>
-                </span>
-              </Link>
+              />
             ))}
           </div>
         </section>
       )}
+      <StoreSalesContent
+        store={{ id: store.id, name: store.name, slug: store.slug }}
+        products={products.map((product) => ({
+          productId: product.productId,
+          name: product.name,
+          href: `/s/${store.slug}/products/${product.productId}`,
+          priceLabel: formatSummaryPrice(product),
+          unavailable: product.availability !== "AVAILABLE",
+        }))}
+      />
       <TrustDetails store={store} />
     </StorefrontFrame>
   );

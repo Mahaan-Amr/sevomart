@@ -5,6 +5,7 @@ model Store {
   name                 String?               @db.VarChar(80)
   slug                 String?               @unique @db.VarChar(48)
   bio                  String?               @db.VarChar(240)
+  publicContactPhone   String?               @map("public_contact_phone") @db.VarChar(11)
   returnPolicy         String?               @map("return_policy") @db.VarChar(1000)
   settlementKind       String?               @map("settlement_kind") @db.VarChar(16)
   settlementStatus     String?               @map("settlement_status") @db.VarChar(24)

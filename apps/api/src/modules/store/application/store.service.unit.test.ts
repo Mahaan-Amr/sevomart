@@ -149,6 +149,48 @@ describe("StoreService publication", () => {
     });
   });
 
+  it("publishes only an explicitly saved business number and removes it on request", async () => {
+    const repository = new MemoryStoreRepository();
+    const service = new StoreService(repository, async (destination) => ({
+      ...destination,
+      status: "TEST_VERIFIED",
+      verifiedAt: new Date("2026-08-16T09:00:00.000Z"),
+    }));
+    await service.saveDraft(
+      "seller-1",
+      {
+        name: "خانه ماه",
+        slug: storeSlugContract.parse("khane-mah"),
+        bio: "سفال دست‌ساز برای خانه",
+        shippingMethods: [{ code: "NATIONAL_POST", label: "پست پیشتاز" }],
+        returnPolicy: "تا هفت روز امکان درخواست مرجوعی وجود دارد.",
+        settlementDestination: { kind: "TEST" },
+      },
+      writeContext(0),
+    );
+    expect(
+      (await service.publish("seller-1", writeContext(1))).store,
+    ).not.toHaveProperty("publicContactPhone");
+
+    await service.saveDraft(
+      "seller-1",
+      { publicContactPhone: "09123456789" },
+      writeContext(2),
+    );
+    expect((await service.publish("seller-1", writeContext(3))).store).toHaveProperty(
+      "publicContactPhone",
+      "09123456789",
+    );
+
+    await service.saveDraft("seller-1", { publicContactPhone: null }, writeContext(4));
+    expect(
+      (await service.publish("seller-1", writeContext(5))).store,
+    ).not.toHaveProperty("publicContactPhone");
+    expect(
+      storeDraftInputContract.safeParse({ publicContactPhone: "09123" }).success,
+    ).toBe(false);
+  });
+
   it("rejects a slug already owned by another seller", async () => {
     const repository = new MemoryStoreRepository();
     repository.slugOwner = {

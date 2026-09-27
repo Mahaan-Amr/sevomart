@@ -150,6 +150,7 @@ test("seller creates, edits, and sees stopped sales content", async ({
     await expect(page.getByRole("status")).toContainText("تصویر آماده است");
     await page.getByLabel(/کیف دست‌دوز/).check();
     await page.getByLabel("دفتر برنامه‌ریزی روزانه").check();
+    await page.getByLabel("توضیح محتوا").fill("داستان ساخت این کالا");
     await page.getByRole("button", { name: "انتشار محتوا" }).click();
     await page.waitForURL("**/seller/content");
     await expect(page.getByText("منبع: فروشنده")).toBeVisible();
@@ -171,6 +172,8 @@ test("seller creates, edits, and sees stopped sales content", async ({
       page.getByRole("heading", { name: "ویرایش محتوای فروش" }),
     ).toBeVisible();
     await page.getByLabel("دفتر برنامه‌ریزی روزانه").uncheck();
+    await expect(page.getByLabel("توضیح محتوا")).toHaveValue("داستان ساخت این کالا");
+    await page.getByLabel("توضیح محتوا").fill("نسخهٔ تازهٔ داستان ساخت");
     const replacementCover = await sharp({
       create: { width: 360, height: 450, channels: 3, background: "#F6E3E9" },
     })

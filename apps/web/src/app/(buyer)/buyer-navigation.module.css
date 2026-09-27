@@ -1,0 +1,196 @@
+.area {
+  height: calc(104px + env(safe-area-inset-bottom));
+}
+
+.bar {
+  position: fixed;
+  inset-inline: 16px;
+  inset-block-end: calc(12px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  width: min(520px, calc(100% - 32px));
+  min-height: 78px;
+  margin-inline: auto;
+  padding: 8px;
+  border: 1px solid rgb(255 255 255 / 88%);
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      116deg,
+      rgb(255 255 255 / 48%),
+      rgb(255 255 255 / 9%) 34%,
+      rgb(255 255 255 / 38%) 72%,
+      rgb(255 255 255 / 13%)
+    ),
+    linear-gradient(180deg, rgb(255 255 255 / 37%), transparent 55%),
+    rgb(250 248 248 / 16%);
+  box-shadow:
+    0 14px 32px rgb(47 37 40 / 14%),
+    0 3px 12px rgb(255 255 255 / 68%),
+    inset 0 2px 2px rgb(255 255 255 / 96%),
+    inset 0 -2px 4px rgb(129 118 122 / 18%),
+    inset 2px 0 3px rgb(255 255 255 / 56%);
+  -webkit-backdrop-filter: blur(22px) saturate(1.45);
+  backdrop-filter: blur(22px) saturate(1.45);
+}
+
+.activeLens {
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 8px;
+  width: calc((100% - 32px) / 5);
+  border: 1px solid rgb(255 255 255 / 94%);
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      135deg,
+      rgb(255 255 255 / 58%),
+      rgb(255 255 255 / 8%) 44%,
+      rgb(255 255 255 / 48%)
+    ),
+    rgb(250 248 248 / 16%);
+  box-shadow:
+    inset 2px 2px 5px rgb(255 255 255 / 94%),
+    inset -2px -2px 5px rgb(129 118 122 / 18%),
+    0 3px 11px rgb(47 37 40 / 14%);
+  -webkit-backdrop-filter: blur(8px) saturate(1.35) contrast(1.06);
+  backdrop-filter: blur(8px) saturate(1.35) contrast(1.06);
+  pointer-events: none;
+  transition:
+    transform 440ms cubic-bezier(0.2, 0.82, 0.24, 1),
+    opacity 220ms ease;
+}
+
+.activeLens::after {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid rgb(255 255 255 / 46%);
+  border-radius: inherit;
+  box-shadow:
+    inset 2px 0 3px rgb(255 255 255 / 70%),
+    inset -2px 0 3px rgb(164 20 57 / 11%);
+  content: "";
+}
+
+.refraction {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 14%,
+    rgb(255 255 255 / 44%) 44%,
+    rgb(255 255 255 / 10%) 55%,
+    transparent 76%
+  );
+  opacity: 0;
+  animation: refraction-sweep 440ms ease-out;
+}
+
+.bar a {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 40px;
+  min-height: 60px;
+  border-radius: 999px;
+  color: var(--color-text);
+  text-decoration: none;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.bar a[aria-current="page"] {
+  color: var(--color-primary-dark);
+}
+
+.bar a:hover {
+  background: rgb(164 20 57 / 8%);
+}
+
+.bar a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 1px;
+}
+
+.bar svg {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.label {
+  max-width: 100%;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@keyframes refraction-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(18%);
+  }
+
+  40% {
+    opacity: 0.8;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-18%);
+  }
+}
+
+@media (max-width: 420px) {
+  .label {
+    font-size: 9px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .bar {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .activeLens {
+    background: var(--color-cover-start);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .activeLens::after {
+    box-shadow: none;
+  }
+
+  .refraction {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activeLens,
+  .bar a {
+    transition: none;
+  }
+
+  .refraction {
+    animation: none;
+  }
+}

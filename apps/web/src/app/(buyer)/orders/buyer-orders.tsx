@@ -4,6 +4,10 @@ import {
   buyerOrderPageContract,
   type BuyerOrderSummary,
 } from "@sevo/contracts/orders/v1";
+import {
+  purchaseGroupListContract,
+  type PurchaseGroupV2,
+} from "@sevo/contracts/orders/v2";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -13,18 +17,32 @@ import styles from "./buyer-orders.module.css";
 
 export function BuyerOrders() {
   const [orders, setOrders] = useState<readonly BuyerOrderSummary[]>();
+  const [purchases, setPurchases] = useState<readonly PurchaseGroupV2[]>();
   const [error, setError] = useState<"SIGNED_OUT" | "UNAVAILABLE">();
 
   useEffect(() => {
-    void fetch("/api/orders", { cache: "no-store" })
-      .then(async (response) => {
+    void Promise.all([
+      fetch("/api/orders", { cache: "no-store" }),
+      fetch("/api/purchase-groups", { cache: "no-store" }),
+    ])
+      .then(async ([response, groupsResponse]) => {
         if (response.status === 401) {
           setError("SIGNED_OUT");
           return;
         }
         const parsed = buyerOrderPageContract.safeParse(await response.json());
-        if (!response.ok || !parsed.success) throw new Error("orders unavailable");
-        setOrders(parsed.data.items);
+        const groups = purchaseGroupListContract.safeParse(await groupsResponse.json());
+        if (!response.ok || !parsed.success || !groupsResponse.ok || !groups.success)
+          throw new Error("orders unavailable");
+        setPurchases(groups.data.items);
+        const groupedOrderIds = new Set(
+          groups.data.items.flatMap((group) =>
+            group.stores.map((store) => store.orderId),
+          ),
+        );
+        setOrders(
+          parsed.data.items.filter((order) => !groupedOrderIds.has(order.orderId)),
+        );
       })
       .catch(() => setError("UNAVAILABLE"));
   }, []);
@@ -50,26 +68,53 @@ export function BuyerOrders() {
         <p className={styles.message} role="alert">
           سفارش‌ها در دسترس نیستند. کمی بعد دوباره تلاش کنید.
         </p>
-      ) : orders?.length === 0 ? (
+      ) : orders?.length === 0 && purchases?.length === 0 ? (
         <div className={styles.message}>
           <p>هنوز سفارشی ثبت نکرده‌اید.</p>
           <Link href="/">دیدن کالاهای تازه</Link>
         </div>
-      ) : orders ? (
+      ) : orders && purchases ? (
         <ul className={styles.orders}>
+          {purchases.map((purchase) => (
+            <li key={purchase.groupId}>
+              <Link href={`/purchases/${purchase.groupId}`}>
+                <span className={styles.identity}>
+                  <strong>
+                    {purchase.stores.map((store) => store.name).join("، ")}
+                  </strong>
+                  <small>
+                    {formatDate(purchase.createdAt)} · یک رسید برای{" "}
+                    {purchase.stores.length.toLocaleString("fa-IR")} فروشگاه
+                  </small>
+                </span>
+                <span className={styles.amount}>
+                  <strong>{formatIrrAsToman(purchase.total.amount)}</strong>
+                </span>
+                <span className={styles.state}>
+                  {purchase.status === "PAID"
+                    ? "پرداخت‌شده"
+                    : purchase.status === "PAYMENT_REVIEW"
+                      ? "در حال بررسی"
+                      : purchase.status === "EXPIRED"
+                        ? "منقضی‌شده"
+                        : "منتظر پرداخت"}
+                </span>
+              </Link>
+            </li>
+          ))}
           {orders.map((order) => {
             const state = presentBuyerOrderState(order.status);
             return (
               <li key={order.orderId}>
                 <Link href={`/orders/${order.orderId}`}>
-                  <span>
+                  <span className={styles.identity}>
                     <strong>{order.store.name}</strong>
                     <small>{formatDate(order.createdAt)}</small>
                   </span>
-                  <span>
+                  <span className={styles.amount}>
                     <strong>{formatIrrAsToman(order.total.amount)}</strong>
-                    <small>{state.label}</small>
                   </span>
+                  <span className={styles.state}>{state.label}</span>
                 </Link>
               </li>
             );

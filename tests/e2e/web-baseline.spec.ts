@@ -8,6 +8,34 @@ import {
   assertInteractiveTargets,
 } from "../helpers/visual-assertions";
 
+function checkoutOptionsV2(
+  shippingMethods = ordersV1Examples.CheckoutOptions.shippingMethods,
+) {
+  return {
+    cart: ordersV1Examples.CheckoutOptions.cart,
+    stores: [
+      {
+        storeId: ordersV1Examples.CheckoutPreparation.store.storeId,
+        name: ordersV1Examples.CheckoutPreparation.store.name,
+        shippingMethods,
+      },
+    ],
+    addresses: ordersV1Examples.CheckoutOptions.addresses,
+  };
+}
+
+function checkoutPreparationV2() {
+  const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  const child = { ...ordersV1Examples.CheckoutPreparation, expiresAt };
+  return {
+    checkoutRevision: "b68f47bf-a4b2-47f4-84f9-f64710a58f38",
+    expiresAt,
+    cart: child.cart,
+    stores: [child],
+    total: child.total,
+  };
+}
+
 test("the web baseline is Persian, accessible, and right-to-left", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
@@ -34,7 +62,10 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   await expect(
     navigation.getByRole("link", { name: "کشف", exact: true }),
   ).toHaveAttribute("aria-current", "page");
-  await expect(navigation.getByRole("link", { name: "سبد" })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "سبد" })).toHaveAttribute(
+    "href",
+    "/cart",
+  );
   await expect(
     page.getByRole("banner").getByRole("link", { name: "سبد" }),
   ).toBeVisible();
@@ -214,7 +245,7 @@ test("addresses distinguish a failed load and recover on retry", async ({ page }
 test("checkout's legacy entry resumes at delivery and keeps login contextual", async ({
   page,
 }) => {
-  await page.route("**/api/checkout/options", (route) =>
+  await page.route("**/api/checkout/v2/options", (route) =>
     route.fulfill({ status: 401, json: {} }),
   );
   await page.goto("/checkout");
@@ -228,24 +259,24 @@ test("checkout's legacy entry resumes at delivery and keeps login contextual", a
 test("delivery and review have separate URLs and refresh requires a fresh review", async ({
   page,
 }) => {
-  await page.route("**/api/checkout/options", (route) =>
-    route.fulfill({ json: ordersV1Examples.CheckoutOptions }),
+  await page.route("**/api/checkout/v2/options", (route) =>
+    route.fulfill({ json: checkoutOptionsV2() }),
   );
-  await page.route("**/api/checkout/prepare", (route) =>
-    route.fulfill({ json: ordersV1Examples.CheckoutPreparation }),
+  await page.route("**/api/checkout/v2/prepare", (route) =>
+    route.fulfill({ json: checkoutPreparationV2() }),
   );
   await page.goto("/checkout/delivery");
   await expect(page.getByRole("heading", { name: "تحویل سفارش" })).toBeVisible();
-  await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
+  await page.getByRole("button", { name: "مرور مبلغ نهایی" }).click();
   await expect(page).toHaveURL(/\/checkout\/review$/);
-  await expect(page.getByRole("heading", { name: "مرور نهایی سفارش" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مرور نهایی خرید" })).toBeVisible();
   await page.goBack();
-  await expect(page.getByRole("group", { name: "روش ارسال" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "ارسال از خانه فنجان" })).toBeVisible();
   await page.goForward();
-  await expect(page.getByRole("heading", { name: "تسویه مستقیم" })).toBeVisible();
+  await expect(page.getByText("مبلغ نهایی یک پرداخت")).toBeVisible();
   await page.reload();
   await expect(page).toHaveURL(/\/checkout\/delivery$/);
-  await expect(page.getByRole("group", { name: "روش ارسال" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "ارسال از خانه فنجان" })).toBeVisible();
 });
 
 test("old payment receipts redirect to their canonical result with a usable way back", async ({
@@ -291,15 +322,12 @@ test("editing addresses returns to the selected delivery method without putting 
     id: "be77af55-ce97-46d5-8540-b5d55652daf2",
     label: "پیک",
   };
-  await page.route("**/api/checkout/options", (route) =>
+  await page.route("**/api/checkout/v2/options", (route) =>
     route.fulfill({
-      json: {
-        ...ordersV1Examples.CheckoutOptions,
-        shippingMethods: [
-          ...ordersV1Examples.CheckoutOptions.shippingMethods,
-          shipping,
-        ],
-      },
+      json: checkoutOptionsV2([
+        ...ordersV1Examples.CheckoutOptions.shippingMethods,
+        shipping,
+      ]),
     }),
   );
   await page.route("**/api/addresses", (route) =>
@@ -307,7 +335,7 @@ test("editing addresses returns to the selected delivery method without putting 
   );
   await page.goto("/checkout/delivery");
   await page.getByRole("radio", { name: /پیک/ }).check();
-  await page.getByRole("link", { name: "افزودن یا ویرایش نشانی" }).click();
+  await page.getByRole("link", { name: "افزودن نشانی دیگر" }).click();
   expect(decodeURIComponent(page.url())).not.toContain("09123456789");
   expect(decodeURIComponent(page.url())).not.toContain("سارا");
   await page.getByRole("link", { name: "بازگشت به تحویل سفارش" }).click();
@@ -325,7 +353,7 @@ test("identity login preserves the current discovery cursor", async ({ page }) =
   ).toHaveAttribute("href", "/?cursor=resume-feed");
 });
 
-test("discovery keeps three columns with long Persian text and follows its cursor to an empty page", async ({
+test("discovery keeps a readable grid with long Persian text and follows its cursor to an empty page", async ({
   page,
 }, testInfo) => {
   const item = discoveryV1Examples.DiscoveryFeedItemV1;
@@ -364,7 +392,12 @@ test("discovery keeps three columns with long Persian text and follows its curso
   const tops = await cards.evaluateAll((elements) =>
     elements.map((element) => element.getBoundingClientRect().top),
   );
-  expect(new Set(tops).size).toBe(1);
+  if ((page.viewportSize()?.width ?? 0) <= 480) {
+    expect(tops[0]).toBe(tops[1]);
+    expect(tops[2]).toBeGreaterThan(tops[1]!);
+  } else {
+    expect(new Set(tops).size).toBe(1);
+  }
   await assertNoHorizontalOverflow(page);
   await assertMinimumContrast(page.locator("main h2, main strong, main span"));
   await page.screenshot({

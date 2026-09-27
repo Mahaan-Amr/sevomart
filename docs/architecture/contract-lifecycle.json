@@ -87,6 +87,18 @@
         ]
       }
     },
+    "@sevo/contracts/orders/v2": {
+      "owner": "orders",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": ["cartV2Contract", "purchaseGroupContract"],
+        "operations": ["ordersV2Operations"],
+        "events": []
+      }
+    },
     "@sevo/contracts/payments/v1": {
       "owner": "payments",
       "approved": true,

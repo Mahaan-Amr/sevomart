@@ -3,14 +3,15 @@ import { randomUUID } from "node:crypto";
 import {
   productPurchaseExperiencesContract,
   publicSalesContentFeedV2Contract,
+  publicProductSalesContentV2Contract,
   sellerSalesContentItemV2Contract,
   sellerSalesContentListV2Contract,
+  salesContentPublishedV2Contract,
 } from "@sevo/contracts/content/v2";
 import {
   purchaseExperienceContract,
   purchaseExperiencePublishedV1Contract,
   salesContentContract,
-  salesContentPublishedV1Contract,
 } from "@sevo/contracts/content/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
@@ -21,6 +22,22 @@ type IdempotencyRecord = { requestHash: string; response: JSONValue };
 
 export class PostgresContentRepository implements ContentRepository {
   readonly #sql: Sql;
+
+  async readPublicStoreRating(storeId: string) {
+    const [row] = await this.#sql<
+      Array<{ sampleSize: string; average: string | null }>
+    >`
+      select count(*)::text as "sampleSize",
+        round(avg(rating)::numeric, 1)::text as average
+      from content_purchase_experiences
+      where store_id = ${storeId}
+        and source = 'VERIFIED_PURCHASE'
+        and moderation_state = 'PUBLISHED'
+    `;
+    const sampleSize = Number(row?.sampleSize ?? 0);
+    if (!row || sampleSize < 3 || row.average === null) return null;
+    return { sampleSize, average: Number(row.average) };
+  }
 
   constructor(databaseUrl: string) {
     this.#sql = postgres(databaseUrl, { max: 5 });
@@ -153,6 +170,7 @@ export class PostgresContentRepository implements ContentRepository {
         source: "SELLER";
         mediaId: string;
         mediaKind: "IMAGE" | "VIDEO";
+        caption: string | null;
         productId: string;
         active: boolean;
         publishedAt: Date;
@@ -160,7 +178,7 @@ export class PostgresContentRepository implements ContentRepository {
     >`
       with selected as (
         select content.content_id, content.store_id, content.source,
-          content.media_id, content.media_kind, content.published_at
+          content.media_id, content.media_kind, content.caption, content.published_at
         from content_public_sales_contents content
         join content_public_store_states store on store.store_id = content.store_id
           and store.published
@@ -171,7 +189,8 @@ export class PostgresContentRepository implements ContentRepository {
       )
       select selected.content_id as "contentId", selected.store_id as "storeId",
         selected.source, selected.media_id as "mediaId",
-        selected.media_kind as "mediaKind", product.product_id as "productId",
+        selected.media_kind as "mediaKind", selected.caption,
+        product.product_id as "productId",
         product.active, selected.published_at as "publishedAt"
       from selected
       join content_public_sales_content_products product
@@ -191,6 +210,7 @@ export class PostgresContentRepository implements ContentRepository {
         source: "SELLER";
         storeId: string;
         media: { mediaId: string; kind: "IMAGE" | "VIDEO" };
+        caption: string | null;
         products: Array<{ productId: string; active: boolean }>;
         publishedAt: string;
       }
@@ -201,6 +221,7 @@ export class PostgresContentRepository implements ContentRepository {
         source: row.source,
         storeId: row.storeId,
         media: { mediaId: row.mediaId, kind: row.mediaKind },
+        caption: row.caption,
         products: [],
         publishedAt: row.publishedAt.toISOString(),
       };
@@ -210,6 +231,46 @@ export class PostgresContentRepository implements ContentRepository {
     return publicSalesContentFeedV2Contract.parse({
       projectionUpdatedAt: (status?.updatedAt ?? new Date(0)).toISOString(),
       items: [...byContent.values()],
+    });
+  }
+
+  async readProductSalesContent(productId: string) {
+    const rows = await this.#sql<
+      Array<{
+        contentId: string;
+        storeId: string;
+        source: "SELLER";
+        mediaId: string;
+        mediaKind: "IMAGE" | "VIDEO";
+        caption: string | null;
+        publishedAt: Date;
+      }>
+    >`
+      select content.content_id as "contentId", content.store_id as "storeId",
+        content.source, content.media_id as "mediaId",
+        content.media_kind as "mediaKind", content.caption,
+        content.published_at as "publishedAt"
+      from content_public_sales_contents content
+      join content_public_store_states store on store.store_id = content.store_id
+        and store.published
+      join content_public_sales_content_products product
+        on product.content_id = content.content_id
+        and product.product_id = ${productId}::uuid
+        and product.active
+      where content.moderation_state = 'PUBLISHED'
+      order by content.published_at desc, content.content_id desc
+    `;
+    return publicProductSalesContentV2Contract.parse({
+      productId,
+      items: rows.map((row) => ({
+        contentId: row.contentId,
+        storeId: row.storeId,
+        source: row.source,
+        media: { mediaId: row.mediaId, kind: row.mediaKind },
+        caption: row.caption,
+        products: [{ productId, active: true }],
+        publishedAt: row.publishedAt.toISOString(),
+      })),
     });
   }
 
@@ -256,11 +317,11 @@ export class PostgresContentRepository implements ContentRepository {
       await sql`
         insert into content_sales_contents
           (id, store_id, actor_identity_id, source, moderation_state,
-           media_id, media_kind, active, created_at)
+           media_id, media_kind, caption, active, created_at)
         values
           (${contentId}, ${command.input.storeId}, ${command.actorId}, 'SELLER',
            'PUBLISHED', ${command.input.media.mediaId}, ${command.input.media.kind},
-           true, ${occurredAt})
+           ${command.input.caption ?? null}, true, ${occurredAt})
       `;
       for (const product of command.products) {
         await sql`
@@ -279,10 +340,10 @@ export class PostgresContentRepository implements ContentRepository {
       );
       await enqueueOutboxEvent(
         sql,
-        salesContentPublishedV1Contract.parse({
+        salesContentPublishedV2Contract.parse({
           version: 1,
           eventId: randomUUID(),
-          eventType: "SalesContentPublished.v1",
+          eventType: "SalesContentPublished.v2",
           aggregateId: contentId,
           aggregateVersion: 1,
           occurredAt,
@@ -294,6 +355,7 @@ export class PostgresContentRepository implements ContentRepository {
             source: "SELLER",
             storeId: command.input.storeId,
             media: command.input.media,
+            caption: command.input.caption ?? null,
             productIds: command.input.productIds,
             moderationState: "PUBLISHED",
           },
@@ -318,10 +380,12 @@ export class PostgresContentRepository implements ContentRepository {
           moderationState: "PUBLISHED" | "HIDDEN";
           createdAt: Date;
           revision: number;
+          caption: string | null;
         }>
       >`
         select actor_identity_id as "actorId", store_id as "storeId",
-          moderation_state as "moderationState", created_at as "createdAt", revision
+          moderation_state as "moderationState", created_at as "createdAt", revision,
+          caption
         from content_sales_contents
         where id = ${command.contentId}
         for update
@@ -364,7 +428,9 @@ export class PostgresContentRepository implements ContentRepository {
       await sql`
         update content_sales_contents
         set media_id = ${command.input.media.mediaId},
-          media_kind = ${command.input.media.kind}, active = true,
+          media_kind = ${command.input.media.kind},
+          caption = ${command.input.caption === undefined ? current.caption : command.input.caption},
+          active = true,
           revision = ${revision}, updated_at = ${updatedAt}
         where id = ${command.contentId}
       `;
@@ -392,10 +458,10 @@ export class PostgresContentRepository implements ContentRepository {
       );
       await enqueueOutboxEvent(
         sql,
-        salesContentPublishedV1Contract.parse({
+        salesContentPublishedV2Contract.parse({
           version: 1,
           eventId: randomUUID(),
-          eventType: "SalesContentPublished.v1",
+          eventType: "SalesContentPublished.v2",
           aggregateId: command.contentId,
           aggregateVersion: revision,
           occurredAt: updatedAt,
@@ -407,6 +473,10 @@ export class PostgresContentRepository implements ContentRepository {
             source: "SELLER",
             storeId: command.storeId,
             media: command.input.media,
+            caption:
+              command.input.caption === undefined
+                ? current.caption
+                : command.input.caption,
             productIds: command.input.productIds,
             moderationState: "PUBLISHED",
           },
@@ -418,6 +488,8 @@ export class PostgresContentRepository implements ContentRepository {
         moderationState: current.moderationState,
         storeId: command.storeId,
         media: command.input.media,
+        caption:
+          command.input.caption === undefined ? current.caption : command.input.caption,
         products: command.products.map((product) => ({ ...product, active: true })),
         active: true,
         revision,
@@ -438,6 +510,7 @@ export class PostgresContentRepository implements ContentRepository {
         storeId: string;
         mediaId: string;
         mediaKind: "IMAGE";
+        caption: string | null;
         productId: string;
         publicationVersion: number;
         productActive: boolean;
@@ -458,6 +531,7 @@ export class PostgresContentRepository implements ContentRepository {
       select content.id as "contentId", content.source,
         content.moderation_state as "moderationState", content.store_id as "storeId",
         content.media_id as "mediaId", content.media_kind as "mediaKind",
+        content.caption,
         product.product_id as "productId",
         product.publication_version as "publicationVersion",
         product.active as "productActive", content.active, content.revision,
@@ -475,6 +549,7 @@ export class PostgresContentRepository implements ContentRepository {
         moderationState: row.moderationState,
         storeId: row.storeId,
         media: { mediaId: row.mediaId, kind: row.mediaKind },
+        caption: row.caption,
         products: [],
         active: row.active,
         revision: row.revision,

@@ -141,10 +141,52 @@
       "name": "تی‌شرت نخی",
       "state": "PUBLISHED",
       "price": 1890000,
+      "axes": [
+        {
+          "clientKey": "color",
+          "name": "رنگ",
+          "values": [
+            { "clientKey": "white", "name": "سفید" },
+            { "clientKey": "black", "name": "مشکی" }
+          ]
+        },
+        {
+          "clientKey": "size",
+          "name": "اندازه",
+          "values": [
+            { "clientKey": "small", "name": "کوچک" },
+            { "clientKey": "medium", "name": "متوسط" }
+          ]
+        }
+      ],
       "variants": [
-        { "key": "white-small", "label": "سفید / کوچک", "onHand": 8 },
-        { "key": "white-medium", "label": "سفید / متوسط", "onHand": 5 },
-        { "key": "black-medium", "label": "مشکی / متوسط", "onHand": 0 }
+        {
+          "key": "white-small",
+          "label": "سفید / کوچک",
+          "combination": [
+            { "axisClientKey": "color", "valueClientKey": "white" },
+            { "axisClientKey": "size", "valueClientKey": "small" }
+          ],
+          "onHand": 8
+        },
+        {
+          "key": "white-medium",
+          "label": "سفید / متوسط",
+          "combination": [
+            { "axisClientKey": "color", "valueClientKey": "white" },
+            { "axisClientKey": "size", "valueClientKey": "medium" }
+          ],
+          "onHand": 5
+        },
+        {
+          "key": "black-medium",
+          "label": "مشکی / متوسط",
+          "combination": [
+            { "axisClientKey": "color", "valueClientKey": "black" },
+            { "axisClientKey": "size", "valueClientKey": "medium" }
+          ],
+          "onHand": 0
+        }
       ]
     },
     {

@@ -38,6 +38,7 @@ import { NotificationsModule } from "../modules/notifications/composition";
 import {
   OrdersModule,
   PostgresCheckoutRepository,
+  PostgresVerifiedPurchaseCountReader,
 } from "../modules/orders/composition";
 import { PaymentsModule } from "../modules/payments/composition";
 import { ProblemFollowUpModule } from "../modules/problem-follow-up/composition";
@@ -84,6 +85,9 @@ function createApiCompositionContext(
     createOpaqueStoreTransactionContext,
   );
   const contentRepository = new PostgresContentRepository(environment.DATABASE_URL);
+  const verifiedPurchaseCountReader = new PostgresVerifiedPurchaseCountReader(
+    environment.DATABASE_URL,
+  );
   const platformAgentSessions = new PostgresPlatformAgentSessionAuthorizer(
     environment.DATABASE_URL,
   );
@@ -118,6 +122,7 @@ function createApiCompositionContext(
       buyerDisputeMediaAccess = access;
     },
     checkoutRepository,
+    verifiedPurchaseCountReader,
     contentRepository,
     environment,
     fulfillmentRepository,
@@ -195,12 +200,16 @@ export const canonicalApiModuleRegistry: readonly {
     compose: ({
       environment,
       productRepository,
+      verifiedPurchaseCountReader,
+      contentRepository,
       storeFollowingRepository,
       storeRepository,
     }) =>
       StoreModule.register(environment, {
         repository: storeRepository,
         publicActiveProductCountReader: productRepository,
+        publicVerifiedPurchaseCountReader: verifiedPurchaseCountReader,
+        publicStoreRatingReader: contentRepository,
         publicStoreFollowingReader: storeFollowingRepository,
       }),
   },
@@ -233,6 +242,7 @@ export const canonicalApiModuleRegistry: readonly {
     }) =>
       OrdersModule.register(environment, {
         checkoutRepository,
+        paymentWorkflow: checkoutRepository,
         products: productRepository,
         inventory: inventoryAuthoring,
         createProductTransactionContext: createOpaqueProductTransactionContext,

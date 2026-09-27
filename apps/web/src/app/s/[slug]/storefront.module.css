@@ -141,6 +141,29 @@
   gap: 4px;
 }
 
+.statsUpdatedAt {
+  padding-inline: 8px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.storeActions,
+.storeActionsTwo {
+  display: grid;
+  width: min(calc(100% - 16px), 560px);
+  align-items: end;
+  gap: 8px;
+  margin: 8px auto;
+}
+
+.storeActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.storeActionsTwo {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .identity .productCount {
   padding-inline: 8px;
   color: var(--color-text);
@@ -149,10 +172,8 @@
 
 .follow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 8px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .followSummary {
@@ -185,7 +206,8 @@
 .followButton,
 .followingButton,
 .followError button,
-.conversation {
+.conversation,
+.contactButton {
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--color-primary);
@@ -198,22 +220,74 @@
 
 .conversation {
   display: inline-flex;
-  width: fit-content;
-  margin: 4px 8px 0;
+  width: 100%;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: var(--color-surface);
   color: var(--color-primary-dark);
   text-decoration: none;
 }
 
+.contactButton {
+  width: 100%;
+  background: transparent;
+  color: var(--color-primary-dark);
+}
+
+.contactDialog {
+  width: min(100% - 24px, 420px);
+  padding: 20px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 18px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.contactDialog::backdrop {
+  background: rgb(47 37 40 / 55%);
+}
+
+.contactDialog h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.contactDialog a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  color: var(--color-primary-dark);
+}
+
+.contactDialogClose {
+  display: block;
+  min-height: 40px;
+  margin-block-start: 16px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  cursor: pointer;
+}
+
+.contactButton:focus-visible,
+.contactDialog button:focus-visible,
+.contactDialog a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
 .followButton {
+  width: 100%;
   background: var(--color-primary);
   box-shadow: 3px 3px 8px var(--shadow-primary);
   color: var(--color-on-primary);
 }
 
 .followingButton {
+  width: 100%;
   background: var(--color-background);
   box-shadow: inset 3px 3px 7px var(--shadow-neutral-soft);
   color: var(--color-primary-dark);
@@ -261,10 +335,144 @@
   padding: 12px 16px 24px;
 }
 
+.productSalesContent {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  border-block-start: 1px solid var(--color-divider);
+}
+
+.productSalesContent h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--color-text);
+}
+
 .salesContent h2 {
   margin: 0;
   color: var(--color-text);
   font-size: 16px;
+}
+
+.salesContentGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.salesContentCover {
+  overflow: hidden;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-background);
+  cursor: pointer;
+}
+
+.salesContentCover img,
+.salesContentCover video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brokenContentMedia {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 8px;
+  place-items: center;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.salesContentCover:focus-visible,
+.closeContent:focus-visible,
+.salesContentDetail a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+.salesContentDialog {
+  width: min(100% - 24px, 560px);
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 18px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.salesContentDialog::backdrop {
+  background: rgb(47 37 40 / 55%);
+}
+
+.salesContentDetail {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.closeContent {
+  min-height: 40px;
+  justify-self: end;
+  padding: 8px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-primary-dark);
+  font: inherit;
+  cursor: pointer;
+}
+
+.detailMedia {
+  display: block;
+  width: 100%;
+  max-height: 50dvh;
+  border-radius: 12px;
+  object-fit: contain;
+}
+
+.salesContentDetail h3,
+.salesContentDetail p,
+.salesContentDetail ul {
+  margin: 0;
+}
+
+.salesContentDetail h3 {
+  font-size: 15px;
+}
+
+.salesContentCaption {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.salesContentDetail ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.salesContentDetail a {
+  display: flex;
+  min-height: 40px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--color-primary-dark);
+}
+
+@media (max-width: 480px) {
+  .salesContentGrid {
+    gap: 8px;
+  }
 }
 
 .products h2 {
@@ -275,52 +483,15 @@
 
 .productList {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 12px;
 }
 
-.product {
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 96px 1fr;
-  min-height: 96px;
-  border-radius: 16px;
-  background: var(--color-background);
-  color: var(--color-text);
-  text-decoration: none;
-}
-
-.product img {
-  display: block;
-  width: 96px;
-  height: 96px;
-  object-fit: cover;
-}
-
-.product > span {
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  padding: 12px;
-}
-
-.product strong,
-.product small,
-.product em {
-  font-style: normal;
-}
-
-.product small {
-  color: var(--color-primary-dark);
-}
-
-.product em {
-  color: var(--color-muted);
-  font-size: 11px;
-}
-
-.product:focus-visible {
-  outline: 3px solid var(--color-primary-light);
-  outline-offset: 2px;
+@media (max-width: 480px) {
+  .productList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 8px;
+  }
 }
 
 .emptyMark {
@@ -564,6 +735,10 @@
   }
 
   .identity .productCount {
+    padding-inline: 24px;
+  }
+
+  .statsUpdatedAt {
     padding-inline: 24px;
   }
 

@@ -141,7 +141,7 @@ export class CheckoutController {
   }
 }
 
-function checkoutValidationError(correlationId: string) {
+export function checkoutValidationError(correlationId: string) {
   return new HttpException(
     {
       code: "VALIDATION_ERROR",
@@ -152,7 +152,7 @@ function checkoutValidationError(correlationId: string) {
   );
 }
 
-function checkoutError(error: unknown, correlationId: string) {
+export function checkoutError(error: unknown, correlationId: string) {
   if (error instanceof CheckoutChangedError) {
     return new HttpException(
       {

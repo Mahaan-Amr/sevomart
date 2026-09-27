@@ -46,6 +46,12 @@ dependency، متغیر محیطی، پورت یا رفتار runtime تازه �
 
 ## مرز منبع و حریم خصوصی
 
+از تغییر [کپشن محتوای فروش](https://github.com/Mahaan-Amr/sevomart/issues/244)،
+ورودی اجرایی v2 کپشن اختیاری تا ۵۰۰ نویسه می‌پذیرد. رخداد جدید
+`SalesContentPublished.v2` کپشن را در projection عمومی حمل می‌کند؛ مصرف رخداد
+قدیمی v1 با کپشن تهی همچنان پشتیبانی می‌شود. فروشنده هنگام ویرایش، اگر کپشن را
+نفرستد مقدار قبلی حفظ می‌شود؛ رشتهٔ تهی مقدار را پاک می‌کند.
+
 `SalesContentPublished.v1` همیشه `source: SELLER` و
 `PurchaseExperiencePublished.v1` همیشه `source: VERIFIED_PURCHASE` دارد؛ هر دو
 رخداد `moderationState: PUBLISHED` را صریح حمل می‌کنند و schema یکدیگر را

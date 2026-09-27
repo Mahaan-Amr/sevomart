@@ -15,9 +15,15 @@ import {
 import { CartService } from "./application/cart.service";
 import { CheckoutExpiryRunner } from "./application/checkout-expiry.runner";
 import { CheckoutService } from "./application/checkout.service";
+import { MultiStoreCheckoutService } from "./application/multi-store-checkout.service";
 import { SavedAddressService } from "./application/saved-address.service";
 import { CartController } from "./cart.controller";
+import { CartV2Controller } from "./cart-v2.controller";
 import { CheckoutController } from "./checkout.controller";
+import {
+  MULTI_STORE_CHECKOUT_SERVICE,
+  MultiStoreCheckoutController,
+} from "./multi-store-checkout.controller";
 import { PostgresCheckoutRepository } from "./infrastructure/postgres-checkout.repository";
 import { PostgresCartRepository } from "./infrastructure/postgres-cart.repository";
 import { PostgresSavedAddressRepository } from "./infrastructure/postgres-saved-address.repository";
@@ -35,6 +41,7 @@ import {
 import type {
   CartRepository,
   CheckoutRepository,
+  OrderPaymentWorkflow,
   SavedAddressRepository,
 } from "./public";
 import { SavedAddressController } from "./saved-address.controller";
@@ -45,6 +52,7 @@ export type OrdersModuleOptions = {
   repository?: CartRepository;
   savedAddressRepository?: SavedAddressRepository;
   checkoutRepository?: CheckoutRepository;
+  paymentWorkflow: OrderPaymentWorkflow;
   products: ProductAuthoritativeRead;
   inventory: InventoryAuthoring;
   createProductTransactionContext: (
@@ -64,8 +72,10 @@ export class OrdersModule {
       module: OrdersModule,
       controllers: [
         CartController,
+        CartV2Controller,
         SavedAddressController,
         CheckoutController,
+        MultiStoreCheckoutController,
         SellerOrderController,
         SellerBuyerController,
       ],
@@ -125,6 +135,34 @@ export class OrdersModule {
             ),
         },
         {
+          provide: MULTI_STORE_CHECKOUT_SERVICE,
+          inject: [
+            CART_REPOSITORY,
+            CART_SERVICE,
+            SAVED_ADDRESS_REPOSITORY,
+            STORE_AUTHORITATIVE_READ,
+          ],
+          useFactory: (
+            carts: CartRepository,
+            cartService: CartService,
+            addresses: SavedAddressRepository,
+            stores: StoreAuthoritativeRead,
+          ) =>
+            new MultiStoreCheckoutService(
+              environment.DATABASE_URL,
+              carts,
+              cartService,
+              addresses,
+              options.products,
+              options.inventory,
+              stores,
+              options.createProductTransactionContext,
+              options.createStoreTransactionContext,
+              options.paymentWorkflow,
+              environment.SEVO_RUNTIME_ENV !== "production",
+            ),
+        },
+        {
           provide: CheckoutExpiryRunner,
           inject: [CHECKOUT_REPOSITORY, "ORDERS_RUNTIME_ENVIRONMENT"],
           useFactory: (repository: CheckoutRepository, runtime: RuntimeEnvironment) =>
@@ -162,3 +200,4 @@ export class OrdersModule {
 export { PostgresCartRepository } from "./infrastructure/postgres-cart.repository";
 export { PostgresSavedAddressRepository } from "./infrastructure/postgres-saved-address.repository";
 export { PostgresCheckoutRepository } from "./infrastructure/postgres-checkout.repository";
+export { PostgresVerifiedPurchaseCountReader } from "./infrastructure/postgres-verified-purchase-count.reader";

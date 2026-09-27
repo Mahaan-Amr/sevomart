@@ -22,30 +22,29 @@ export function SalesContentGrid({
         <li key={card.contentId}>
           <article className={styles.card}>
             <SalesContentMedia card={card} />
-            <span className={styles.source}>{card.sourceLabel}</span>
             {stores.get(card.storeId) ? (
-              <Link
-                className={styles.store}
-                href={stores.get(card.storeId)!.href}
-                prefetch={false}
-              >
-                {stores.get(card.storeId)!.name}
-              </Link>
+              <p className={styles.byline}>
+                {card.media.kind === "VIDEO" ? "ویدیو" : "تصویر"} از فروشگاه{" "}
+                <Link
+                  className={styles.store}
+                  href={stores.get(card.storeId)!.href}
+                  prefetch={false}
+                >
+                  {stores.get(card.storeId)!.name}
+                </Link>
+              </p>
             ) : null}
             {card.product ? (
-              <>
-                <h3>
-                  <Link href={card.product.href} prefetch={false}>
-                    {card.product.name}
-                  </Link>
-                </h3>
-                <strong>{card.product.priceLabel}</strong>
+              <div className={styles.relatedProduct}>
+                <Link href={card.product.href} prefetch={false}>
+                  دیدن کالای مرتبط: {card.product.name}
+                </Link>
                 {card.product.availabilityLabel ? (
                   <span className={styles.unavailable}>
                     {card.product.availabilityLabel}
                   </span>
                 ) : null}
-              </>
+              </div>
             ) : (
               <p className={styles.unavailable}>{card.unavailableLabel}</p>
             )}
@@ -75,7 +74,7 @@ function SalesContentMedia({ card }: { card: SalesContentCardView }) {
       controls
       playsInline
       preload="metadata"
-      aria-label="ویدیوی کوتاه محتوای فروش"
+      aria-label="ویدیوی فروشگاه"
       onError={() => setFailed(true)}
     />
   ) : (

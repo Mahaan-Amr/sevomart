@@ -60,6 +60,11 @@ export const contentV2Operations = {
     method: "get",
     path: "/v2/sales-content",
   },
+  readProductSalesContent: {
+    operationId: "readProductSalesContentV2",
+    method: "get",
+    path: "/v2/products/{productId}/sales-content",
+  },
   listSellerSalesContent: {
     operationId: "listSellerSalesContentV2",
     method: "get",
@@ -97,8 +102,19 @@ export const salesContentMediaV2Contract = z
   })
   .strict();
 
-export const publishSalesContentInputV2Contract =
-  publishSalesContentInputContract.extend({ media: salesContentMediaV2Contract });
+export const publishSalesContentInputV2Contract = publishSalesContentInputContract
+  .extend({
+    media: salesContentMediaV2Contract,
+    caption: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
+
+export const salesContentPublishedV2Contract = salesContentPublishedV1Contract.extend({
+  eventType: z.literal("SalesContentPublished.v2"),
+  payload: salesContentPublishedV1Contract.shape.payload.extend({
+    caption: z.string().max(500).nullable(),
+  }),
+});
 
 export const replaceSellerSalesContentInputV2Contract =
   publishSalesContentInputV2Contract
@@ -121,6 +137,7 @@ export const sellerSalesContentItemV2Contract = z
     moderationState: contentModerationStateContract,
     storeId: storeIdContract,
     media: salesContentMediaV2Contract,
+    caption: z.string().max(500).nullable().optional(),
     products: z.array(sellerSalesContentProductV2Contract).min(1).max(10),
     active: z.boolean(),
     revision: z.int().positive(),
@@ -221,6 +238,7 @@ export const publicSalesContentItemV2Contract = z
         kind: z.enum(["IMAGE", "VIDEO"]),
       })
       .strict(),
+    caption: z.string().max(500).nullable().optional(),
     products: z.array(publicSalesContentProductV2Contract).min(1).max(10),
     publishedAt: z.iso.datetime({ offset: true }),
   })
@@ -230,6 +248,13 @@ export const publicSalesContentFeedV2Contract = z
   .object({
     projectionUpdatedAt: z.iso.datetime({ offset: true }),
     items: z.array(publicSalesContentItemV2Contract).max(60),
+  })
+  .strict();
+
+export const publicProductSalesContentV2Contract = z
+  .object({
+    productId: productIdContract,
+    items: z.array(publicSalesContentItemV2Contract),
   })
   .strict();
 
@@ -279,10 +304,12 @@ export const contentV2Schemas = {
   PublicSalesContentProductV2: publicSalesContentProductV2Contract,
   PublicSalesContentItemV2: publicSalesContentItemV2Contract,
   PublicSalesContentFeedV2: publicSalesContentFeedV2Contract,
+  PublicProductSalesContentV2: publicProductSalesContentV2Contract,
   PurchaseExperience: purchaseExperienceContract,
   ContentError: contentErrorContract,
   ContentErrorV2: contentErrorV2Contract,
   SalesContentPublishedV1: salesContentPublishedV1Contract,
+  SalesContentPublishedV2: salesContentPublishedV2Contract,
   PurchaseExperiencePublishedV1: purchaseExperiencePublishedV1Contract,
 } as const;
 
@@ -382,6 +409,10 @@ export const contentV2Examples = {
       },
     ],
   },
+  PublicProductSalesContentV2: {
+    productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+    items: [],
+  },
 } as const;
 
 export {
@@ -444,4 +475,7 @@ export type PublicSalesContentProductV2 = z.infer<
 >;
 export type PublicSalesContentItemV2 = z.infer<typeof publicSalesContentItemV2Contract>;
 export type PublicSalesContentFeedV2 = z.infer<typeof publicSalesContentFeedV2Contract>;
+export type PublicProductSalesContentV2 = z.infer<
+  typeof publicProductSalesContentV2Contract
+>;
 export type ContentErrorV2 = z.infer<typeof contentErrorV2Contract>;

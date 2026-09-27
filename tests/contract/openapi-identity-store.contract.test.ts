@@ -199,6 +199,19 @@ describe("OpenAPI identity and store compatibility", () => {
     expect(document.components.schemas.PublicStore.properties).toHaveProperty(
       "settlementDestination",
     );
+    expect(document.components.schemas.StoreDraftInput.properties).toHaveProperty(
+      "publicContactPhone",
+    );
+    expect(document.components.schemas.PublicStore.properties).toHaveProperty(
+      "publicContactPhone",
+    );
+    expect(document.components.schemas.PublicStore.properties).toHaveProperty(
+      "verifiedPurchases",
+    );
+    expect(document.components.schemas.PublicStore.properties).toHaveProperty("rating");
+    expect(document.components.schemas.PublicStore.required).not.toContain(
+      "publicContactPhone",
+    );
     for (const [method, path] of [
       ["put", "/v1/seller/store/draft"],
       ["post", "/v1/seller/store/publication"],
@@ -221,7 +234,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "51a6a6c8d8bb8815b3894aa02861a20bf94fa55e40d70c63ac2d338ea4f12cbc",
+      "ffc80ec458d1752e825c601909c6aff5b77eaaf1277ac141448363c0fd25efd3",
     );
   });
 

@@ -27,7 +27,8 @@ describe("OpenAPI executable content contract", () => {
       expect(published?.operationId).toBe(operation.operationId);
       if (
         operation.operationId === "readProductPurchaseExperiencesV2" ||
-        operation.operationId === "readPublicSalesContentV2"
+        operation.operationId === "readPublicSalesContentV2" ||
+        operation.operationId === "readProductSalesContentV2"
       ) {
         expect(published?.security).toEqual([]);
       } else {
@@ -57,6 +58,7 @@ describe("OpenAPI executable content contract", () => {
         SalesContent: expect.any(Object),
         SalesContentProductEligibilityDecision: expect.any(Object),
         SalesContentPublishedV1: expect.any(Object),
+        SalesContentPublishedV2: expect.any(Object),
         PurchaseExperience: expect.any(Object),
         PurchaseExperiencePublishedV1: expect.any(Object),
         ContentError: expect.any(Object),
@@ -67,6 +69,7 @@ describe("OpenAPI executable content contract", () => {
         CreatePurchaseExperienceMediaContextInput: expect.any(Object),
         PurchaseExperienceMediaContext: expect.any(Object),
         PublicSalesContentFeedV2: expect.any(Object),
+        PublicProductSalesContentV2: expect.any(Object),
         PublicSalesContentStoreIdsV2: expect.any(Object),
       }),
     );
