@@ -47,9 +47,9 @@ export async function convergeOrdersDemoState({ sql, manifest, baseline }) {
   `;
     await sql`
     insert into order_cart_items
-      (cart_id, variant_id, product_id, quantity, created_at, updated_at,
+      (cart_id, store_id, variant_id, product_id, quantity, created_at, updated_at,
        reviewed_publication_version, reviewed_unit_price_amount)
-    values (${desiredCartId}, ${desiredCartVariantId},
+    values (${desiredCartId}, ${id(activeCart.store)}, ${desiredCartVariantId},
       ${id(activeCart.product)}, ${activeCart.quantity}, ${baseline.atDaysAgo(1)},
       ${baseline.now}, 0, 0)
     on conflict (cart_id, variant_id) do update set quantity = excluded.quantity,

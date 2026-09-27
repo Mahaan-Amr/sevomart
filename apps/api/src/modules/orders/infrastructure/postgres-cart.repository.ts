@@ -219,10 +219,10 @@ export class PostgresCartRepository implements CartRepository {
         }
         await sql`
         insert into order_cart_items
-          (cart_id, variant_id, product_id, quantity,
+          (cart_id, store_id, variant_id, product_id, quantity,
            reviewed_publication_version, reviewed_unit_price_amount, updated_at)
         values
-          (${cartId}, ${command.variantId}, ${command.productId},
+          (${cartId}, ${command.storeId}, ${command.variantId}, ${command.productId},
            ${command.quantity},
            ${command.reviewSnapshot.items[0]?.publicationVersion ?? 0},
            ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0}, now())
@@ -404,10 +404,10 @@ export class PostgresCartRepository implements CartRepository {
       `;
         await sql`
         insert into order_cart_items
-          (cart_id, variant_id, product_id, quantity,
+          (cart_id, store_id, variant_id, product_id, quantity,
            reviewed_publication_version, reviewed_unit_price_amount, updated_at)
         values
-          (${command.newCartId}, ${command.variantId}, ${command.productId},
+          (${command.newCartId}, ${command.storeId}, ${command.variantId}, ${command.productId},
            ${command.quantity},
            ${command.reviewSnapshot.items[0]?.publicationVersion ?? 0},
            ${command.reviewSnapshot.items[0]?.unitPriceAmount ?? 0}, now())
@@ -553,10 +553,10 @@ export class PostgresCartRepository implements CartRepository {
             if (quantity > 99) throw new CartQuantityLimitError();
             await sql`
             insert into order_cart_items
-              (cart_id, variant_id, product_id, quantity,
+              (cart_id, store_id, variant_id, product_id, quantity,
                reviewed_publication_version, reviewed_unit_price_amount, updated_at)
             values
-              (${buyer.cartId}, ${item.variantId}, ${item.productId}, ${quantity},
+              (${buyer.cartId}, ${guest.storeId}, ${item.variantId}, ${item.productId}, ${quantity},
                ${item.reviewedPublicationVersion}, ${item.reviewedUnitPriceAmount}, now())
             on conflict (cart_id, variant_id) do update set
               quantity = excluded.quantity, product_id = excluded.product_id,
