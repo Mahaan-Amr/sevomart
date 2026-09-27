@@ -1,6 +1,9 @@
 "use client";
 
-import { publicSalesContentFeedV2Contract } from "@sevo/contracts/content/v2";
+import {
+  publicProductSalesContentV2Contract,
+  publicSalesContentFeedV2Contract,
+} from "@sevo/contracts/content/v2";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -13,11 +16,13 @@ type Content = Feed["items"][number];
 export function StoreSalesContent({
   store,
   products,
+  productId,
 }: {
   store: { id: string; name: string; slug: string };
   products: readonly SalesContentProductView[];
+  productId?: string;
 }) {
-  const [feed, setFeed] = useState<Feed | null>();
+  const [feed, setFeed] = useState<Feed["items"] | null>();
   const [selected, setSelected] = useState<Content | null>(null);
   const [brokenMedia, setBrokenMedia] = useState<ReadonlySet<string>>(new Set());
   const dialog = useRef<HTMLDialogElement>(null);
@@ -25,23 +30,27 @@ export function StoreSalesContent({
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ storeIds: store.id });
-    void fetch(`/api/sales-content?${query}`, {
+    const url = productId
+      ? `/api/products/${encodeURIComponent(productId)}/sales-content`
+      : `/api/sales-content?${query}`;
+    void fetch(url, {
       cache: "no-store",
       signal: controller.signal,
     })
       .then(async (response) => {
         if (!response.ok) throw new Error("sales content unavailable");
-        const parsed = publicSalesContentFeedV2Contract.safeParse(
-          await response.json(),
-        );
+        const body: unknown = await response.json();
+        const parsed = productId
+          ? publicProductSalesContentV2Contract.safeParse(body)
+          : publicSalesContentFeedV2Contract.safeParse(body);
         if (!parsed.success) throw new Error("invalid sales content");
-        if (!controller.signal.aborted) setFeed(parsed.data);
+        if (!controller.signal.aborted) setFeed(parsed.data.items);
       })
       .catch(() => {
         if (!controller.signal.aborted) setFeed(null);
       });
     return () => controller.abort();
-  }, [store.id]);
+  }, [productId, store.id]);
 
   useEffect(() => {
     if (selected && !dialog.current?.open) dialog.current?.showModal();
@@ -61,7 +70,7 @@ export function StoreSalesContent({
       </section>
     );
   }
-  if (feed.items.length === 0) return null;
+  if (feed.length === 0) return null;
 
   const productById = new Map(products.map((product) => [product.productId, product]));
   const connectedProducts = selected?.products
@@ -72,10 +81,17 @@ export function StoreSalesContent({
     });
 
   return (
-    <section className={styles.salesContent} aria-labelledby="sales-content-title">
-      <h2 id="sales-content-title">محتوای فروش</h2>
+    <section
+      className={productId ? styles.productSalesContent : styles.salesContent}
+      aria-labelledby={
+        productId ? "product-sales-content-title" : "sales-content-title"
+      }
+    >
+      <h2 id={productId ? "product-sales-content-title" : "sales-content-title"}>
+        {productId ? "عکس‌ها و ویدیوهای این کالا" : "محتوای فروش"}
+      </h2>
       <div className={styles.salesContentGrid}>
-        {feed.items.map((item, index) => (
+        {feed.map((item, index) => (
           <button
             className={styles.salesContentCover}
             key={item.contentId}
@@ -163,21 +179,25 @@ export function StoreSalesContent({
             {selected.caption ? (
               <p className={styles.salesContentCaption}>{selected.caption}</p>
             ) : null}
-            <h3>کالاهای این محتوا</h3>
-            {connectedProducts?.length ? (
-              <ul>
-                {connectedProducts.map((product) => (
-                  <li key={product.productId}>
-                    <Link href={product.href}>
-                      <span>{product.name}</span>
-                      <span>{product.priceLabel}</span>
-                      {product.unavailable ? <span>ناموجود</span> : null}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>کالای متصل فعلاً برای خرید در دسترس نیست.</p>
+            {productId ? null : (
+              <>
+                <h3>کالاهای این محتوا</h3>
+                {connectedProducts?.length ? (
+                  <ul>
+                    {connectedProducts.map((product) => (
+                      <li key={product.productId}>
+                        <Link href={product.href}>
+                          <span>{product.name}</span>
+                          <span>{product.priceLabel}</span>
+                          {product.unavailable ? <span>ناموجود</span> : null}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>کالای متصل فعلاً برای خرید در دسترس نیست.</p>
+                )}
+              </>
             )}
           </div>
         ) : null}

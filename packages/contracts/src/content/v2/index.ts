@@ -60,6 +60,11 @@ export const contentV2Operations = {
     method: "get",
     path: "/v2/sales-content",
   },
+  readProductSalesContent: {
+    operationId: "readProductSalesContentV2",
+    method: "get",
+    path: "/v2/products/{productId}/sales-content",
+  },
   listSellerSalesContent: {
     operationId: "listSellerSalesContentV2",
     method: "get",
@@ -246,6 +251,13 @@ export const publicSalesContentFeedV2Contract = z
   })
   .strict();
 
+export const publicProductSalesContentV2Contract = z
+  .object({
+    productId: productIdContract,
+    items: z.array(publicSalesContentItemV2Contract),
+  })
+  .strict();
+
 export const contentErrorV2Contract = z.union([
   contentErrorContract,
   z
@@ -292,6 +304,7 @@ export const contentV2Schemas = {
   PublicSalesContentProductV2: publicSalesContentProductV2Contract,
   PublicSalesContentItemV2: publicSalesContentItemV2Contract,
   PublicSalesContentFeedV2: publicSalesContentFeedV2Contract,
+  PublicProductSalesContentV2: publicProductSalesContentV2Contract,
   PurchaseExperience: purchaseExperienceContract,
   ContentError: contentErrorContract,
   ContentErrorV2: contentErrorV2Contract,
@@ -396,6 +409,10 @@ export const contentV2Examples = {
       },
     ],
   },
+  PublicProductSalesContentV2: {
+    productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4",
+    items: [],
+  },
 } as const;
 
 export {
@@ -458,4 +475,7 @@ export type PublicSalesContentProductV2 = z.infer<
 >;
 export type PublicSalesContentItemV2 = z.infer<typeof publicSalesContentItemV2Contract>;
 export type PublicSalesContentFeedV2 = z.infer<typeof publicSalesContentFeedV2Contract>;
+export type PublicProductSalesContentV2 = z.infer<
+  typeof publicProductSalesContentV2Contract
+>;
 export type ContentErrorV2 = z.infer<typeof contentErrorV2Contract>;

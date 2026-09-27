@@ -488,7 +488,11 @@ export class CartService {
     reviewChanges.push(...resolvedItems.flatMap((item) => item.changes));
     return cartContract.parse({
       cartId: stored.cartId,
-      store: { storeId: stored.storeId, name: store.displayIdentity.name },
+      store: {
+        storeId: stored.storeId,
+        name: store.displayIdentity.name,
+        ...(store.slug ? { slug: store.slug } : {}),
+      },
       revision: stored.revision,
       requiresResolution,
       reviewRequired: reviewChanges.length > 0,

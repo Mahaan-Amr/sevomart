@@ -218,6 +218,14 @@ export function CartView() {
                   />
                   <div className={styles.itemContent}>
                     <b>{item.name}</b>
+                    {cart.store.slug ? (
+                      <a
+                        className={styles.productDetailLink}
+                        href={`/s/${encodeURIComponent(cart.store.slug)}/products/${encodeURIComponent(item.productId)}`}
+                      >
+                        دیدن جزئیات کالا
+                      </a>
+                    ) : null}
                     <span className={styles.unitPrice}>
                       هر عدد {formatIrrAsToman(item.unitPrice.amount)}
                     </span>
