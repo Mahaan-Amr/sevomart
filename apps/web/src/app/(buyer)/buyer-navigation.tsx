@@ -61,11 +61,6 @@ export function BuyerNavigation() {
             <span className={styles.label}>{label}</span>
           </Link>
         ))}
-        <span
-          className={styles.activeLight}
-          aria-hidden="true"
-          style={activeIndicatorStyle}
-        />
       </nav>
     </div>
   );
