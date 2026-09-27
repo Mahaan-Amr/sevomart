@@ -195,16 +195,6 @@ export function ReadyStorefront({
           گفت‌وگو با فروشگاه
         </Link>
       </header>
-      <StoreSalesContent
-        store={{ id: store.id, name: store.name, slug: store.slug }}
-        products={products.map((product) => ({
-          productId: product.productId,
-          name: product.name,
-          href: `/s/${store.slug}/products/${product.productId}`,
-          priceLabel: formatSummaryPrice(product),
-          unavailable: product.availability !== "AVAILABLE",
-        }))}
-      />
       {products.length === 0 ? (
         <section className={styles.emptyState} aria-labelledby="empty-title">
           <span className={styles.emptyMark} aria-hidden="true" />
@@ -232,6 +222,16 @@ export function ReadyStorefront({
           </div>
         </section>
       )}
+      <StoreSalesContent
+        store={{ id: store.id, name: store.name, slug: store.slug }}
+        products={products.map((product) => ({
+          productId: product.productId,
+          name: product.name,
+          href: `/s/${store.slug}/products/${product.productId}`,
+          priceLabel: formatSummaryPrice(product),
+          unavailable: product.availability !== "AVAILABLE",
+        }))}
+      />
       <TrustDetails store={store} />
     </StorefrontFrame>
   );
