@@ -162,3 +162,4 @@ export class OrdersModule {
 export { PostgresCartRepository } from "./infrastructure/postgres-cart.repository";
 export { PostgresSavedAddressRepository } from "./infrastructure/postgres-saved-address.repository";
 export { PostgresCheckoutRepository } from "./infrastructure/postgres-checkout.repository";
+export { PostgresVerifiedPurchaseCountReader } from "./infrastructure/postgres-verified-purchase-count.reader";

@@ -205,6 +205,10 @@ describe("OpenAPI identity and store compatibility", () => {
     expect(document.components.schemas.PublicStore.properties).toHaveProperty(
       "publicContactPhone",
     );
+    expect(document.components.schemas.PublicStore.properties).toHaveProperty(
+      "verifiedPurchases",
+    );
+    expect(document.components.schemas.PublicStore.properties).toHaveProperty("rating");
     expect(document.components.schemas.PublicStore.required).not.toContain(
       "publicContactPhone",
     );
@@ -230,7 +234,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "a62f5819543169184c37bcd9367c9b29ddc77024577cedb50daf2bf1a84679e2",
+      "c1fcf98f64fbd8b46033ce30c7c9630dd55fc1ca5aafeea4bc3d906c83195b4f",
     );
   });
 

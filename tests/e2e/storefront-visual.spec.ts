@@ -7,6 +7,13 @@ import {
 } from "../helpers/release-playwright";
 import postgres from "postgres";
 import sharp from "sharp";
+import { createPaidOrderItemFixture } from "../../apps/api/src/modules/orders/testing/paid-order-item.fixture";
+import {
+  identityIdContract,
+  productIdContract,
+  storeIdContract,
+} from "@sevo/contracts/platform/v1";
+import { orderItemIdContract } from "@sevo/contracts/orders/v1";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
@@ -98,6 +105,7 @@ test("a guest reads a published empty storefront from the real API", async ({
   await expect(page.getByRole("heading", { name: "خانه سرو" })).toBeVisible();
   await expect(page.getByText("هنوز کالایی منتشر نشده")).toBeVisible();
   await expect(page.getByText("۰ کالای فعال")).toBeVisible();
+  await expect(page.getByText("۰ خرید تأییدشده")).toBeVisible();
   await expect(page.getByText("۰ دنبال‌کننده")).toBeVisible();
   await expect(
     page.getByRole("listitem").filter({ hasText: "پست پیشتاز" }),
@@ -118,6 +126,48 @@ test("a guest reads a published empty storefront from the real API", async ({
     name: "storefront-empty",
     sensitiveRegions: [],
   });
+});
+
+test("public purchase count and rating use only this store's verified data", async ({
+  page,
+}) => {
+  const sql = postgres(databaseUrl, { max: 1 });
+  const [store] = await sql<Array<{ id: string }>>`
+    select id from store_stores where slug = ${stores.defaultSlug}
+  `;
+  const storeId = storeIdContract.parse(store?.id);
+  const buyerId = identityIdContract.parse(crypto.randomUUID());
+  const productId = productIdContract.parse(crypto.randomUUID());
+  const fixtures: Awaited<ReturnType<typeof createPaidOrderItemFixture>>[] = [];
+  const experienceIds: string[] = [];
+  try {
+    for (const rating of [5, 4, 4]) {
+      const orderItemId = orderItemIdContract.parse(crypto.randomUUID());
+      fixtures.push(
+        await createPaidOrderItemFixture(databaseUrl, {
+          buyerId,
+          storeId,
+          productId,
+          orderItemId,
+        }),
+      );
+      const id = crypto.randomUUID();
+      experienceIds.push(id);
+      await sql`
+        insert into content_purchase_experiences
+          (id, buyer_identity_id, order_item_id, store_id, product_id, rating, text)
+        values (${id}, ${buyerId}, ${orderItemId}, ${storeId}, ${productId},
+          ${rating}, 'تجربهٔ خرید آزمون')
+      `;
+    }
+    await page.goto(`/s/${stores.defaultSlug}`);
+    await expect(page.getByText(/۳ خرید تأییدشده/)).toBeVisible();
+    await expect(page.getByText(/امتیاز ۴٫۳ از ۵/)).toBeVisible();
+  } finally {
+    await sql`delete from content_purchase_experiences where id in ${sql(experienceIds.length ? experienceIds : [crypto.randomUUID()])}`;
+    for (const fixture of fixtures.reverse()) await fixture.cleanup();
+    await sql.end();
+  }
 });
 
 test("draft and unknown slugs expose no private store data", async ({

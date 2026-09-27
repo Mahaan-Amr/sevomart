@@ -326,6 +326,19 @@ export const publicStoreContract = z.object({
   status: z.literal("PUBLISHED"),
   publishedAt: z.string().datetime({ offset: true }),
   activeProductCount: z.number().int().nonnegative(),
+  verifiedPurchases: z
+    .object({
+      count: z.number().int().nonnegative(),
+      updatedAt: z.string().datetime({ offset: true }).nullable(),
+    })
+    .optional(),
+  rating: z
+    .object({
+      sampleSize: z.number().int().min(3),
+      average: z.number().min(1).max(5),
+    })
+    .nullable()
+    .optional(),
   followerCount: publicFollowerCountV1Contract.optional(),
   viewer: viewerStoreFollowV1Contract.optional(),
   trust: z.object({

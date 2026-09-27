@@ -22,6 +22,22 @@ type IdempotencyRecord = { requestHash: string; response: JSONValue };
 export class PostgresContentRepository implements ContentRepository {
   readonly #sql: Sql;
 
+  async readPublicStoreRating(storeId: string) {
+    const [row] = await this.#sql<
+      Array<{ sampleSize: string; average: string | null }>
+    >`
+      select count(*)::text as "sampleSize",
+        round(avg(rating)::numeric, 1)::text as average
+      from content_purchase_experiences
+      where store_id = ${storeId}
+        and source = 'VERIFIED_PURCHASE'
+        and moderation_state = 'PUBLISHED'
+    `;
+    const sampleSize = Number(row?.sampleSize ?? 0);
+    if (!row || sampleSize < 3 || row.average === null) return null;
+    return { sampleSize, average: Number(row.average) };
+  }
+
   constructor(databaseUrl: string) {
     this.#sql = postgres(databaseUrl, { max: 5 });
   }
