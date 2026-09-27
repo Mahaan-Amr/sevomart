@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { salesContentPublishedV1Contract } from "@sevo/contracts/content/v1";
+import { salesContentPublishedV2Contract } from "@sevo/contracts/content/v2";
 import { productUnpublishedV1Contract } from "@sevo/contracts/product/v1";
 import {
   storePublishedV1Contract,
@@ -84,6 +85,7 @@ describe("public sales-content projection", () => {
           source: "SELLER",
           storeId: ids.store,
           media: { mediaId: ids.media, kind: "VIDEO" },
+          caption: null,
           products: [{ productId: ids.product, active: true }],
           publishedAt,
         },
@@ -95,9 +97,9 @@ describe("public sales-content projection", () => {
 
     await project(
       sql,
-      salesContentPublishedV1Contract.parse({
+      salesContentPublishedV2Contract.parse({
         ...envelope(
-          "SalesContentPublished.v1",
+          "SalesContentPublished.v2",
           ids.content,
           2,
           "2026-09-01T09:15:00.000Z",
@@ -107,6 +109,7 @@ describe("public sales-content projection", () => {
           source: "SELLER",
           storeId: ids.store,
           media: { mediaId: ids.replacementMedia, kind: "IMAGE" },
+          caption: "داستان این کالا و روش ساخت آن",
           productIds: [ids.replacementProduct],
           moderationState: "PUBLISHED",
         },
@@ -118,6 +121,7 @@ describe("public sales-content projection", () => {
     });
     expect(replaced.json().items[0]).toMatchObject({
       media: { mediaId: ids.replacementMedia, kind: "IMAGE" },
+      caption: "داستان این کالا و روش ساخت آن",
       products: [{ productId: ids.replacementProduct, active: true }],
       publishedAt,
     });

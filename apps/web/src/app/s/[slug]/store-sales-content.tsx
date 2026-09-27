@@ -160,6 +160,9 @@ export function StoreSalesContent({
                 }
               />
             )}
+            {selected.caption ? (
+              <p className={styles.salesContentCaption}>{selected.caption}</p>
+            ) : null}
             <h3>کالاهای این محتوا</h3>
             {connectedProducts?.length ? (
               <ul>
