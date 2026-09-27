@@ -23,6 +23,7 @@ type FeedWorkspaceValue = {
   setFeedState: (kind: FeedKind, update: SetStateAction<FeedState>) => void;
   rememberScroll: (kind: FeedKind, scrollY: number) => void;
   scrollFor: (kind: FeedKind) => number;
+  resetWorkspace: () => void;
   saveDiscoveryForLogin: () => void;
   saveForBrowse: (kind: FeedKind, scrollY: number, focusTarget: string) => void;
   restoredFocus: string | undefined;
@@ -102,6 +103,14 @@ export function FeedWorkspace({ children }: { children: ReactNode }) {
 
   const scrollFor = useCallback((kind: FeedKind) => scrollPositions.current[kind], []);
 
+  const resetWorkspace = useCallback(() => {
+    browseResume = undefined;
+    sessionStorage.removeItem(resumeStorageKey);
+    scrollPositions.current = { discovery: 0, following: 0 };
+    setStates(freshWorkspace());
+    setRestoredFocus(undefined);
+  }, []);
+
   const saveDiscoveryForLogin = useCallback(() => {
     sessionStorage.setItem(
       resumeStorageKey,
@@ -135,6 +144,7 @@ export function FeedWorkspace({ children }: { children: ReactNode }) {
       setFeedState,
       rememberScroll,
       scrollFor,
+      resetWorkspace,
       saveDiscoveryForLogin,
       saveForBrowse,
       restoredFocus,
@@ -142,6 +152,7 @@ export function FeedWorkspace({ children }: { children: ReactNode }) {
     }),
     [
       rememberScroll,
+      resetWorkspace,
       restored,
       restoredFocus,
       clearRestoredFocus,
