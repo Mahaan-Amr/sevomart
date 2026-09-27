@@ -25,6 +25,10 @@ export function BuyerNavigation() {
   if (!showBuyerNavigation(pathname)) return null;
   const active = activeBuyerDestination(pathname);
   const activeIndex = destinations.findIndex(({ href }) => href === active);
+  const activeIndicatorStyle = {
+    opacity: activeIndex < 0 ? 0 : 1,
+    transform: `translateX(calc(-${Math.max(activeIndex, 0) * 100}% - ${Math.max(activeIndex, 0) * 4}px))`,
+  };
 
   return (
     <div className={styles.area}>
@@ -32,10 +36,7 @@ export function BuyerNavigation() {
         <span
           className={styles.activeLens}
           aria-hidden="true"
-          style={{
-            opacity: activeIndex < 0 ? 0 : 1,
-            transform: `translateX(calc(-${Math.max(activeIndex, 0) * 100}% - ${Math.max(activeIndex, 0) * 4}px))`,
-          }}
+          style={activeIndicatorStyle}
         >
           <span key={active ?? "none"} className={styles.refraction} />
         </span>
@@ -60,6 +61,11 @@ export function BuyerNavigation() {
             <span className={styles.label}>{label}</span>
           </Link>
         ))}
+        <span
+          className={styles.activeLight}
+          aria-hidden="true"
+          style={activeIndicatorStyle}
+        />
       </nav>
     </div>
   );

@@ -64,17 +64,45 @@
     opacity 220ms ease;
 }
 
-.activeLens::before {
+.activeLight {
   position: absolute;
-  inset-block-start: -9px;
-  inset-inline-start: calc(50% - 11px);
-  width: 22px;
-  height: 3px;
-  border-radius: 0 0 3px 3px;
+  z-index: 2;
+  inset-block-start: -2px;
+  inset-inline-start: 8px;
+  width: calc((100% - 32px) / 5);
+  height: 0;
+  pointer-events: none;
+  transition:
+    transform 440ms cubic-bezier(0.2, 0.82, 0.24, 1),
+    opacity 220ms ease;
+}
+
+.activeLight::before {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: calc(50% - 16px);
+  width: 32px;
+  height: 4px;
+  border-radius: 0 0 4px 4px;
   background: var(--color-primary);
   box-shadow:
-    0 0 6px rgb(164 20 57 / 54%),
-    0 0 14px rgb(164 20 57 / 24%);
+    0 0 8px rgb(164 20 57 / 75%),
+    0 0 18px rgb(164 20 57 / 42%);
+  content: "";
+}
+
+.activeLight::after {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-start: calc(50% - 35px);
+  width: 70px;
+  height: 42px;
+  background: linear-gradient(
+    rgb(164 20 57 / 27%),
+    rgb(164 20 57 / 10%) 42%,
+    transparent
+  );
+  clip-path: polygon(35% 0, 65% 0, 100% 100%, 0 100%);
   content: "";
 }
 
@@ -193,6 +221,10 @@
     box-shadow: none;
   }
 
+  .activeLight::after {
+    display: none;
+  }
+
   .refraction {
     display: none;
   }
@@ -200,6 +232,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .activeLens,
+  .activeLight,
   .bar a {
     transition: none;
   }
