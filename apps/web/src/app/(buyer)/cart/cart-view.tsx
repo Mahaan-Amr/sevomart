@@ -20,6 +20,11 @@ export function CartView() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [checkoutReady, setCheckoutReady] = useState(false);
+  const subtotal =
+    cart?.items.reduce(
+      (total, item) => total + item.unitPrice.amount * item.quantity,
+      0,
+    ) ?? 0;
 
   useEffect(() => {
     void load();
@@ -173,30 +178,53 @@ export function CartView() {
   }
 
   if (loading) {
-    return <main className={styles.page}>در حال آماده‌کردن سبد…</main>;
+    return (
+      <main className={styles.page}>
+        <section className={styles.panel} role="status">
+          در حال آماده‌کردن سبد…
+        </section>
+      </main>
+    );
   }
 
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="cart-title">
-        <a href="/" className={styles.brand}>
-          سوو
-        </a>
-        <h1 id="cart-title">سبد شما</h1>
-        {!cart ? (
-          <p>سبد هنوز خالی است. از یک فروشگاه کالایی انتخاب کنید.</p>
+        <header className={styles.header}>
+          <a href="/" className={styles.brand}>
+            سوو
+          </a>
+          <h1 id="cart-title">سبد شما</h1>
+          {cart?.items.length ? (
+            <p className={styles.store}>از فروشگاه {cart.store.name}</p>
+          ) : null}
+        </header>
+        {!cart?.items.length ? (
+          <div className={styles.emptyState}>
+            <p>سبد شما خالی است. از یک فروشگاه کالایی انتخاب کنید.</p>
+            <a href="/">دیدن کالاها</a>
+          </div>
         ) : (
           <>
-            <p className={styles.store}>{cart.store.name}</p>
-            <ul className={styles.items}>
+            <ul className={styles.items} aria-label="کالاهای سبد">
               {cart.items.map((item) => (
-                <li key={item.variantId}>
-                  <img src={`/api/store/media/${item.image.id}`} alt="" />
-                  <span>
+                <li className={styles.item} key={item.variantId}>
+                  <img
+                    className={styles.itemImage}
+                    src={`/api/store/media/${item.image.id}`}
+                    alt=""
+                    width={88}
+                    height={88}
+                  />
+                  <div className={styles.itemContent}>
                     <b>{item.name}</b>
-                    <small>تعداد {item.quantity.toLocaleString("fa-IR")}</small>
+                    <span className={styles.unitPrice}>
+                      هر عدد {formatIrrAsToman(item.unitPrice.amount)}
+                    </span>
                     {item.availability !== "AVAILABLE" ? (
-                      <em>موجودی این مورد تغییر کرده است.</em>
+                      <em className={styles.availability}>
+                        موجودی این مورد تغییر کرده است.
+                      </em>
                     ) : null}
                     <ItemReviewChanges
                       changes={cart.reviewChanges.filter(
@@ -204,37 +232,59 @@ export function CartView() {
                           "variantId" in change && change.variantId === item.variantId,
                       )}
                     />
-                    <span className={styles.itemActions}>
-                      <button
-                        type="button"
-                        aria-label={`کم‌کردن تعداد ${item.name}`}
-                        disabled={pending || item.quantity <= 1}
-                        onClick={() => changeItem(item.variantId, item.quantity - 1)}
+                    <div className={styles.itemFooter}>
+                      <div
+                        className={styles.quantityControl}
+                        role="group"
+                        aria-label={`تعداد ${item.name}`}
                       >
-                        -
-                      </button>
+                        <button
+                          type="button"
+                          aria-label={`کم‌کردن تعداد ${item.name}`}
+                          disabled={pending || item.quantity <= 1}
+                          onClick={() => changeItem(item.variantId, item.quantity - 1)}
+                        >
+                          −
+                        </button>
+                        <span className={styles.quantityValue}>
+                          تعداد {item.quantity.toLocaleString("fa-IR")}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`بیشترکردن تعداد ${item.name}`}
+                          disabled={pending || item.quantity >= 99}
+                          onClick={() => changeItem(item.variantId, item.quantity + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
                       <button
                         type="button"
-                        aria-label={`بیشترکردن تعداد ${item.name}`}
-                        disabled={pending || item.quantity >= 99}
-                        onClick={() => changeItem(item.variantId, item.quantity + 1)}
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
+                        className={styles.removeAction}
                         aria-label={`حذف ${item.name}`}
                         disabled={pending}
                         onClick={() => changeItem(item.variantId, 0)}
                       >
                         حذف
                       </button>
-                    </span>
-                  </span>
-                  <strong>{formatIrrAsToman(item.unitPrice.amount)}</strong>
+                      <strong className={styles.lineTotal}>
+                        {formatIrrAsToman(item.unitPrice.amount * item.quantity)}
+                      </strong>
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>
+            <section className={styles.summary} aria-label="جمع سبد">
+              <div className={styles.subtotal}>
+                <span>جمع کالاها</span>
+                <strong>{formatIrrAsToman(subtotal)}</strong>
+              </div>
+              <p>
+                هزینه ارسال در قدم بعد مشخص می‌شود. مبلغ نهایی را پیش از ثبت سفارش
+                می‌بینید.
+              </p>
+            </section>
             {cart.reviewRequired ? (
               <section className={styles.review} aria-labelledby="review-title">
                 <h2 id="review-title">سبد تغییر کرده است</h2>
@@ -272,23 +322,24 @@ export function CartView() {
               </section>
             ) : null}
             {checkoutReady ? (
-              <a className={styles.addressLink} href="/checkout/delivery">
+              <a className={styles.primaryLink} href="/checkout/delivery">
                 ادامه به تحویل سفارش
               </a>
-            ) : null}
-            {conflict ? (
+            ) : conflict ? (
               <ConflictChoice conflict={conflict} pending={pending} resolve={resolve} />
             ) : !cart.reviewRequired ? (
-              <button type="button" onClick={continueCheckout} disabled={pending}>
+              <button
+                className={styles.primaryAction}
+                type="button"
+                onClick={continueCheckout}
+                disabled={pending}
+              >
                 {pending ? "در حال آماده‌سازی…" : "ادامه برای ثبت سفارش"}
               </button>
             ) : null}
           </>
         )}
         {message ? <p role="status">{message}</p> : null}
-        <a className={styles.addressLink} href="/account/addresses?returnTo=%2Fcart">
-          مدیریت نشانی‌های تحویل
-        </a>
       </section>
     </main>
   );

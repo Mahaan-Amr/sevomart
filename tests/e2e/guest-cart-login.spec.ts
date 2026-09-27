@@ -190,6 +190,24 @@ test("guest adds a product, signs in and continues the same cart", async ({
   });
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("تعداد ۲")).toBeVisible();
+  await expect(page.getByText("هر عدد ۴۵۰٬۰۰۰ تومان")).toBeVisible();
+  await expect(page.getByText("۹۰۰٬۰۰۰ تومان")).toHaveCount(2);
+  await expect(
+    page.getByText("هزینه ارسال در قدم بعد مشخص می‌شود.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "مدیریت نشانی‌های تحویل" })).toHaveCount(
+    0,
+  );
+  const quantityButtons = page.getByRole("group", { name: "تعداد فنجان سرامیکی" });
+  const lessBox = await quantityButtons
+    .getByRole("button", { name: "کم‌کردن تعداد فنجان سرامیکی" })
+    .boundingBox();
+  const moreBox = await quantityButtons
+    .getByRole("button", { name: "بیشترکردن تعداد فنجان سرامیکی" })
+    .boundingBox();
+  expect(lessBox).not.toBeNull();
+  expect(moreBox).not.toBeNull();
+  expect(Math.abs(lessBox!.y - moreBox!.y)).toBeLessThan(4);
   await page.reload();
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible({ timeout: 15_000 });
   await assertNoHorizontalOverflow(page);
@@ -199,6 +217,7 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await otherTab.goto("/cart");
   await otherTab.getByRole("button", { name: "بیشترکردن تعداد فنجان سرامیکی" }).click();
   await expect(otherTab.getByText("تعداد ۳")).toBeVisible();
+  await expect(otherTab.getByText("۱٬۳۵۰٬۰۰۰ تومان")).toHaveCount(2);
   await page.getByRole("button", { name: "حذف فنجان سرامیکی" }).click();
   await expect(
     page.getByText("سبد در جای دیگری تغییر کرده است. نسخه تازه را بررسی کنید."),
@@ -250,7 +269,10 @@ test("guest adds a product, signs in and continues the same cart", async ({
   ).toBeVisible();
   await page.getByRole("button", { name: "تغییرها را دیدم" }).click();
   await expect(page.getByText("تغییرهای سبد تأیید شد.")).toBeVisible();
-  await page.getByRole("link", { name: "مدیریت نشانی‌های تحویل" }).click();
+  await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
+  await page.getByRole("link", { name: "ادامه به تحویل سفارش" }).click();
+  await expect(page).toHaveURL(/\/checkout\/delivery$/);
+  await page.getByRole("link", { name: "افزودن یا ویرایش نشانی" }).click();
   await expect(page.getByRole("heading", { name: "نشانی تحویل" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await page.getByLabel("نام گیرنده").focus();
@@ -284,10 +306,8 @@ test("guest adds a product, signs in and continues the same cart", async ({
         Number.parseFloat(getComputedStyle(element).transitionDuration),
       ),
   ).toBeLessThan(0.001);
-  await page.getByRole("link", { name: "بازگشت به سبد" }).click();
-  await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
-  await page.getByRole("link", { name: "ادامه به تحویل سفارش" }).click();
-  await expect(page).toHaveURL(/\/checkout\/delivery$/);
+  await page.getByRole("link", { name: "بازگشت به تحویل سفارش" }).click();
+  await expect(page).toHaveURL(/\/checkout\/delivery/);
   await expect(page.getByRole("heading", { name: "تحویل سفارش" })).toBeVisible();
   await page.getByRole("button", { name: "دیدن مبلغ نهایی" }).click();
   await expect(page).toHaveURL(/\/checkout\/review$/);
