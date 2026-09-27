@@ -17,27 +17,44 @@ export async function convergeProductDemoState({ sql, baseline }) {
     const variants = baseline.variantsFor(product);
     const description = `نمونه نمایشی ${product.name}`;
     const hasNamedVariants = Array.isArray(product.variants);
-    const axis = hasNamedVariants
-      ? {
-          clientKey: "option",
-          name: "گزینه",
-          values: variants.map((variant) => ({
-            clientKey: variant.key,
-            name: variant.label,
-          })),
-        }
-      : undefined;
+    const axes =
+      product.axes ??
+      (hasNamedVariants
+        ? [
+            {
+              clientKey: "option",
+              name: "گزینه",
+              values: variants.map((variant) => ({
+                clientKey: variant.key,
+                name: variant.label,
+              })),
+            },
+          ]
+        : []);
+    const combinationFor = (variant) =>
+      variant.combination ??
+      (hasNamedVariants
+        ? [{ axisClientKey: "option", valueClientKey: variant.key }]
+        : []);
+    const publicCombinationFor = (variant) =>
+      combinationFor(variant).map((part) => {
+        const axis = axes.find(({ clientKey }) => clientKey === part.axisClientKey);
+        const value = axis?.values.find(
+          ({ clientKey }) => clientKey === part.valueClientKey,
+        );
+        if (!axis || !value)
+          throw new Error(`Invalid demo combination: ${product.key}`);
+        return { axis: axis.name, value: value.name };
+      });
     const definition = {
       name: product.name,
       description,
       orderedMediaIds: [id(`${product.key}.media`)],
-      axes: axis ? [axis] : [],
+      axes,
       variants: variants.map((variant) => ({
         clientKey: variant.key,
         variantId: id(`${product.key}.variant.${variant.key}`),
-        combination: axis
-          ? [{ axisClientKey: axis.clientKey, valueClientKey: variant.key }]
-          : [],
+        combination: combinationFor(variant),
       })),
     };
     const variantStructureChanged = !isDeepStrictEqual(
@@ -105,7 +122,7 @@ export async function convergeProductDemoState({ sql, baseline }) {
     if (publishedBefore && publicationChanged) {
       const publicVariants = variants.map((variant) => ({
         variantId: id(`${product.key}.variant.${variant.key}`),
-        combination: axis ? [{ axis: axis.name, value: variant.label }] : [],
+        combination: publicCombinationFor(variant),
         price: { amount: product.price, currency: "IRR" },
         availability: variant.onHand > 0 ? "AVAILABLE" : "OUT_OF_STOCK",
       }));
@@ -119,9 +136,10 @@ export async function convergeProductDemoState({ sql, baseline }) {
             url: `/v1/media/${id(`${product.key}.media`)}`,
           },
         ],
-        axes: axis
-          ? [{ name: axis.name, values: variants.map((variant) => variant.label) }]
-          : [],
+        axes: axes.map((axis) => ({
+          name: axis.name,
+          values: axis.values.map((value) => value.name),
+        })),
         variants: publicVariants,
         priceRange: {
           minimum: { amount: product.price, currency: "IRR" },

@@ -91,68 +91,6 @@
   min-width: 0;
 }
 
-.product {
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  min-width: 0;
-}
-
-.grid .imageLink {
-  display: block;
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-}
-
-.imageLink img {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 12px;
-  background: var(--color-surface);
-}
-
-.product h2 {
-  margin: 4px 0 0;
-  min-width: 0;
-  font-size: 15px;
-  line-height: 1.8;
-}
-
-.grid .product h2 a,
-.grid .storeLink {
-  justify-content: start;
-  max-width: 100%;
-  min-height: 40px;
-  padding: 4px 0;
-  overflow-wrap: anywhere;
-  text-align: start;
-}
-
-.grid .product h2 a {
-  color: var(--color-text);
-}
-
-.grid .storeLink {
-  color: var(--color-muted);
-  font-size: 13px;
-}
-
-.product strong {
-  color: var(--color-primary-dark);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.unavailable {
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .state,
 .inlineError {
   display: grid;
@@ -269,22 +207,12 @@
 @media (max-width: 480px) {
   .grid,
   .loadingGrid {
-    gap: 16px 8px;
-  }
-
-  .product h2,
-  .product strong {
-    font-size: 13px;
-  }
-
-  .grid .storeLink,
-  .unavailable {
-    font-size: 11px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 8px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .product,
   .loadingCard,
   .loadingCard i,
   .loadingCard b {

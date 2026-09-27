@@ -325,7 +325,7 @@ test("identity login preserves the current discovery cursor", async ({ page }) =
   ).toHaveAttribute("href", "/?cursor=resume-feed");
 });
 
-test("discovery keeps three columns with long Persian text and follows its cursor to an empty page", async ({
+test("discovery keeps a readable grid with long Persian text and follows its cursor to an empty page", async ({
   page,
 }, testInfo) => {
   const item = discoveryV1Examples.DiscoveryFeedItemV1;
@@ -364,7 +364,12 @@ test("discovery keeps three columns with long Persian text and follows its curso
   const tops = await cards.evaluateAll((elements) =>
     elements.map((element) => element.getBoundingClientRect().top),
   );
-  expect(new Set(tops).size).toBe(1);
+  if ((page.viewportSize()?.width ?? 0) <= 480) {
+    expect(tops[0]).toBe(tops[1]);
+    expect(tops[2]).toBeGreaterThan(tops[1]!);
+  } else {
+    expect(new Set(tops).size).toBe(1);
+  }
   await assertNoHorizontalOverflow(page);
   await assertMinimumContrast(page.locator("main h2, main strong, main span"));
   await page.screenshot({

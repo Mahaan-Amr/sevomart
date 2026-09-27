@@ -5,25 +5,49 @@ import { useState } from "react";
 import styles from "./product-public.module.css";
 
 export function AddToCart({
+  axes,
   variants,
 }: {
+  axes: Array<{ name: string; values: string[] }>;
   variants: Array<{
     variantId: string;
     label: string;
     priceLabel: string;
     available: boolean;
+    combination: Array<{ axis: string; value: string }>;
   }>;
 }) {
   const singleVariant = variants.length === 1 ? variants[0] : undefined;
-  const [variantId, setVariantId] = useState(singleVariant?.variantId ?? "");
+  const [choices, setChoices] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [replacementRevision, setReplacementRevision] = useState<number>();
-  const selectedVariant = variants.find((variant) => variant.variantId === variantId);
+  const selectedVariant =
+    singleVariant ??
+    (axes.every((axis) => choices[axis.name])
+      ? variants.find((variant) =>
+          axes.every((axis) =>
+            variant.combination.some(
+              (part) => part.axis === axis.name && part.value === choices[axis.name],
+            ),
+          ),
+        )
+      : undefined);
+  const variantId = selectedVariant?.variantId;
+
+  function choose(axisIndex: number, value: string) {
+    const axis = axes[axisIndex];
+    if (!axis) return;
+    const next = { ...choices, [axis.name]: value };
+    for (const later of axes.slice(axisIndex + 1)) delete next[later.name];
+    setChoices(next);
+    setMessage("");
+    setReplacementRevision(undefined);
+  }
 
   async function add() {
-    if (!selectedVariant) {
+    if (!selectedVariant || !variantId) {
       setMessage("ابتدا گونه کالا را انتخاب کنید.");
       return;
     }
@@ -99,6 +123,50 @@ export function AddToCart({
     <div className={styles.cartAction}>
       {variants.length > 1 ? (
         <>
+          <div className={styles.choiceGroups} aria-label="انتخاب ویژگی‌های کالا">
+            {axes.map((axis, axisIndex) => (
+              <fieldset className={styles.choiceGroup} key={axis.name}>
+                <legend>{axis.name}</legend>
+                <div className={styles.choiceOptions}>
+                  {axis.values.map((value) => {
+                    const matches = variants.filter(
+                      (variant) =>
+                        variant.combination.some(
+                          (part) => part.axis === axis.name && part.value === value,
+                        ) &&
+                        axes
+                          .slice(0, axisIndex)
+                          .every(
+                            (earlier) =>
+                              !choices[earlier.name] ||
+                              variant.combination.some(
+                                (part) =>
+                                  part.axis === earlier.name &&
+                                  part.value === choices[earlier.name],
+                              ),
+                          ),
+                    );
+                    const unavailable =
+                      matches.length > 0 &&
+                      matches.every((variant) => !variant.available);
+                    return (
+                      <button
+                        type="button"
+                        className={styles.choice}
+                        aria-pressed={choices[axis.name] === value}
+                        disabled={pending || matches.length === 0}
+                        onClick={() => choose(axisIndex, value)}
+                        key={value}
+                      >
+                        {value}
+                        {unavailable ? " · ناموجود" : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ))}
+          </div>
           <div className={styles.selectedOffer} role="status" aria-live="polite">
             {selectedVariant ? (
               <>
@@ -112,23 +180,6 @@ export function AddToCart({
               </span>
             )}
           </div>
-          <label htmlFor="cart-variant">گونه</label>
-          <select
-            id="cart-variant"
-            value={variantId}
-            onChange={(event) => setVariantId(event.target.value)}
-            disabled={pending}
-          >
-            <option value="" disabled>
-              انتخاب گونه
-            </option>
-            {variants.map((variant) => (
-              <option key={variant.variantId} value={variant.variantId}>
-                {variant.label}
-                {variant.available ? "" : " — ناموجود"}
-              </option>
-            ))}
-          </select>
         </>
       ) : null}
       <label htmlFor="cart-quantity">تعداد</label>
