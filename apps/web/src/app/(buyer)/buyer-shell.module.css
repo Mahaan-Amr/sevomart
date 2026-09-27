@@ -38,7 +38,6 @@
   font-weight: 700;
   font-size: 20px;
 }
-.navigation,
 .actions {
   display: flex;
   align-items: center;
@@ -47,15 +46,6 @@
 .actions {
   margin-inline-start: auto;
 }
-.navigation a {
-  color: var(--color-muted);
-}
-.navigation a[aria-current="page"] {
-  color: var(--color-primary-dark);
-  background: var(--color-cover-start);
-  font-weight: 600;
-}
-
 .identity {
   position: relative;
 }
@@ -65,6 +55,12 @@
 }
 .identity summary::-webkit-details-marker {
   display: none;
+}
+.mobileNumber {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .identityMenu {
   position: absolute;
@@ -139,46 +135,12 @@
     gap: 8px;
   }
   .content {
-    padding: 24px 16px calc(88px + env(safe-area-inset-bottom));
-  }
-  .navigation {
-    position: fixed;
-    inset-inline: 0;
-    inset-block-end: 0;
-    justify-content: space-evenly;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-    background: var(--color-surface);
-    border-block-start: 1px solid var(--color-divider);
-    z-index: 3;
-  }
-  .navigation a {
-    flex: 1;
-    padding-inline: 4px;
-    font-size: 13px;
+    padding: 24px 16px;
   }
 }
 
 @media (max-width: 300px) {
   .header {
     flex-wrap: wrap;
-  }
-
-  .navigation {
-    position: static;
-    order: 3;
-    flex: 1 0 100%;
-    flex-wrap: wrap;
-    width: 100%;
-    padding: 0;
-    border-block-start: 0;
-  }
-
-  .navigation a {
-    flex: 1 1 40%;
-    overflow-wrap: anywhere;
-  }
-
-  .content {
-    padding-block-end: 24px;
   }
 }

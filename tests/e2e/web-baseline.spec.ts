@@ -62,7 +62,10 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   await expect(
     navigation.getByRole("link", { name: "کشف", exact: true }),
   ).toHaveAttribute("aria-current", "page");
-  await expect(navigation.getByRole("link", { name: "سبد" })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "سبد" })).toHaveAttribute(
+    "href",
+    "/cart",
+  );
   await expect(
     page.getByRole("banner").getByRole("link", { name: "سبد" }),
   ).toBeVisible();

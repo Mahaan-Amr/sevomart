@@ -78,7 +78,7 @@ export function BuyerOrders() {
           {purchases.map((purchase) => (
             <li key={purchase.groupId}>
               <Link href={`/purchases/${purchase.groupId}`}>
-                <span>
+                <span className={styles.identity}>
                   <strong>
                     {purchase.stores.map((store) => store.name).join("، ")}
                   </strong>
@@ -87,17 +87,17 @@ export function BuyerOrders() {
                     {purchase.stores.length.toLocaleString("fa-IR")} فروشگاه
                   </small>
                 </span>
-                <span>
+                <span className={styles.amount}>
                   <strong>{formatIrrAsToman(purchase.total.amount)}</strong>
-                  <small>
-                    {purchase.status === "PAID"
-                      ? "پرداخت‌شده"
-                      : purchase.status === "PAYMENT_REVIEW"
-                        ? "در حال بررسی"
-                        : purchase.status === "EXPIRED"
-                          ? "منقضی‌شده"
-                          : "منتظر پرداخت"}
-                  </small>
+                </span>
+                <span className={styles.state}>
+                  {purchase.status === "PAID"
+                    ? "پرداخت‌شده"
+                    : purchase.status === "PAYMENT_REVIEW"
+                      ? "در حال بررسی"
+                      : purchase.status === "EXPIRED"
+                        ? "منقضی‌شده"
+                        : "منتظر پرداخت"}
                 </span>
               </Link>
             </li>
@@ -107,14 +107,14 @@ export function BuyerOrders() {
             return (
               <li key={order.orderId}>
                 <Link href={`/orders/${order.orderId}`}>
-                  <span>
+                  <span className={styles.identity}>
                     <strong>{order.store.name}</strong>
                     <small>{formatDate(order.createdAt)}</small>
                   </span>
-                  <span>
+                  <span className={styles.amount}>
                     <strong>{formatIrrAsToman(order.total.amount)}</strong>
-                    <small>{state.label}</small>
                   </span>
+                  <span className={styles.state}>{state.label}</span>
                 </Link>
               </li>
             );

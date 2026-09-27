@@ -1,0 +1,83 @@
+.area {
+  height: calc(96px + env(safe-area-inset-bottom));
+}
+
+.bar {
+  position: fixed;
+  inset-inline: 16px;
+  inset-block-end: calc(12px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  width: min(520px, calc(100% - 32px));
+  min-height: 68px;
+  margin-inline: auto;
+  padding: 8px;
+  border: 1px solid rgb(255 255 255 / 82%);
+  border-radius: 24px;
+  background: rgb(250 248 248 / 84%);
+  box-shadow:
+    0 12px 30px rgb(47 37 40 / 13%),
+    inset 0 1px 0 rgb(255 255 255 / 90%);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
+}
+
+.bar a {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  min-height: 48px;
+  border-radius: 16px;
+  color: var(--color-text);
+  text-decoration: none;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.bar a[aria-current="page"] {
+  background: rgb(164 20 57 / 11%);
+  color: var(--color-primary-dark);
+}
+
+.bar a[aria-current="page"]::before {
+  position: absolute;
+  inset-block-start: -9px;
+  width: 32px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--color-primary);
+  content: "";
+}
+
+.bar a:hover {
+  background: rgb(164 20 57 / 8%);
+}
+
+.bar a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 1px;
+}
+
+.bar svg {
+  width: 25px;
+  height: 25px;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .bar {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar a {
+    transition: none;
+  }
+}

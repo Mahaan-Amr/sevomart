@@ -9,14 +9,6 @@ import { loginHref } from "../../lib/navigation";
 import { useFeedWorkspace } from "./(browse)/feed-workspace";
 import styles from "./buyer-shell.module.css";
 
-// Enable each destination only with its complete journey; see buyer-shell-and-navigation.md.
-const destinations = [
-  { href: "/", label: "کشف", ready: true },
-  { href: "/following", label: "دنبال‌شده‌ها", ready: true },
-  { href: "/orders", label: "سفارش‌ها", ready: true },
-  { href: "/conversations", label: "گفت‌وگوها", ready: true },
-];
-
 export function BuyerShell({
   children,
   session,
@@ -29,7 +21,7 @@ export function BuyerShell({
   const query = useSearchParams().toString();
   const [endingSession, setEndingSession] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
-  const { clearRestoredFocus, rememberScroll, restored, restoredFocus, scrollFor } =
+  const { clearRestoredFocus, resetWorkspace, restored, restoredFocus, scrollFor } =
     useFeedWorkspace();
   const returnTo = `${pathname}${query ? `?${query}` : ""}`;
   const activeFeed =
@@ -40,8 +32,10 @@ export function BuyerShell({
     setSignOutError(false);
     try {
       const response = await fetch("/api/auth/session", { method: "DELETE" });
-      if (response.ok) router.refresh();
-      else setSignOutError(true);
+      if (response.ok) {
+        resetWorkspace();
+        router.refresh();
+      } else setSignOutError(true);
     } catch {
       setSignOutError(true);
     } finally {
@@ -82,40 +76,17 @@ export function BuyerShell({
         <Link href="/" className={styles.brand} aria-label="سوو؛ کشف تازه‌ها">
           سوو
         </Link>
-        <nav className={styles.navigation} aria-label="فضای خریدار">
-          {destinations
-            .filter((destination) => destination.ready)
-            .map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                scroll={href !== "/" && href !== "/following"}
-                onClick={() => {
-                  const feedKind =
-                    pathname === "/"
-                      ? "discovery"
-                      : pathname === "/following"
-                        ? "following"
-                        : undefined;
-                  if (feedKind) {
-                    rememberScroll(feedKind, window.scrollY);
-                  }
-                }}
-                aria-current={
-                  pathname === href || (href !== "/" && pathname.startsWith(`${href}/`))
-                    ? "page"
-                    : undefined
-                }
-              >
-                {label}
-              </Link>
-            ))}
-        </nav>
         <div className={styles.actions}>
           <Link href="/cart">سبد</Link>
           <details className={styles.identity}>
             <summary>
-              {session ? formatMaskedMobile(session.maskedMobile) : "هویت سوو"}
+              {session ? (
+                <bdi className={styles.mobileNumber} dir="ltr">
+                  {formatMaskedMobile(session.maskedMobile)}
+                </bdi>
+              ) : (
+                "هویت سوو"
+              )}
             </summary>
             <div className={styles.identityMenu}>
               {session ? (
