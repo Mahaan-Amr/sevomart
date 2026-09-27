@@ -1,9 +1,9 @@
 .page {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   width: min(100%, 640px);
   min-height: calc(100dvh - 130px);
   margin-inline: auto;
-  grid-template-rows: auto auto 1fr auto;
   gap: 12px;
 }
 
@@ -46,6 +46,7 @@
 
 .messages {
   display: flex;
+  flex-grow: 1;
   min-width: 0;
   flex-direction: column;
   justify-content: end;
@@ -55,16 +56,26 @@
   list-style: none;
 }
 
-.messages li {
+.messages li:not(.dateSeparator) {
   display: grid;
   width: fit-content;
-  max-width: min(86%, 480px);
-  gap: 6px;
-  padding: 10px 12px;
+  max-width: min(82%, 420px);
+  gap: 2px;
+  padding: 8px 10px;
   border: 1px solid var(--color-divider);
   border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.messages .dateSeparator {
+  align-self: center;
+  margin-block: 8px 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--color-surface);
 }
 
 .own {
@@ -106,13 +117,14 @@
 }
 
 .older {
-  justify-self: center;
+  align-self: center;
 }
 
 .composer {
   position: sticky;
   inset-block-end: 76px;
   display: grid;
+  flex: none;
   grid-template-columns: minmax(0, 1fr) 44px;
   align-items: center;
   gap: 4px 8px;
@@ -182,8 +194,8 @@
 }
 
 .composer button svg {
-  width: 21px;
-  height: 21px;
+  width: 24px;
+  height: 24px;
 }
 
 .composer button:disabled {

@@ -10,7 +10,14 @@ import {
   type ConversationThreadV1,
 } from "@sevo/contracts/conversations/v1";
 import Link from "next/link";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   conversationErrorPresentation,
@@ -20,6 +27,11 @@ import {
   conversationContextDescription,
   conversationContextTitle,
 } from "../../../../../lib/conversation-navigation";
+import {
+  conversationDayKey,
+  formatConversationDay,
+  formatConversationTime,
+} from "../../../../../lib/conversation-time";
 import { loginHref } from "../../../../../lib/navigation";
 import styles from "./conversation-thread.module.css";
 
@@ -237,45 +249,61 @@ export function ConversationThread({ conversationId }: { conversationId: string 
         </button>
       ) : null}
       <ol className={styles.messages} aria-label="پیام‌های گفت‌وگو">
-        {displayMessages.map((message) => {
+        {displayMessages.map((message, index) => {
           const key =
             message.status === "UNSENT" ? message.idempotencyKey : message.messageId;
           const own =
             message.status === "UNSENT" || message.senderRole === thread.viewerRole;
+          const previous = displayMessages[index - 1];
+          const showDate =
+            message.status !== "UNSENT" &&
+            (!previous ||
+              previous.status === "UNSENT" ||
+              conversationDayKey(previous.createdAt) !==
+                conversationDayKey(message.createdAt));
           return (
-            <li key={key} className={own ? styles.own : styles.theirs}>
-              <p>{messageText(message.content)}</p>
-              {message.status === "UNSENT" ? (
-                <div role="alert">
-                  {message.failure ? (
-                    <>
-                      <span>پیام فرستاده نشد.</span>
-                      <span>{message.failure.message}</span>
-                      <span>{message.failure.nextStep}</span>
-                      <button
-                        type="button"
-                        disabled={sending}
-                        onClick={() =>
-                          message.failure?.code === "MESSAGE_REJECTED"
-                            ? editUnsent(message)
-                            : void send(message.content, message.idempotencyKey, true)
-                        }
-                      >
-                        {message.failure.code === "MESSAGE_REJECTED"
-                          ? "ویرایش پیام"
-                          : "تلاش دوباره برای ارسال"}
-                      </button>
-                    </>
-                  ) : (
-                    <span role="status">در حال فرستادن پیام…</span>
-                  )}
-                </div>
-              ) : (
-                <time dateTime={message.createdAt}>
-                  {formatTime(message.createdAt)}
-                </time>
-              )}
-            </li>
+            <Fragment key={key}>
+              {showDate ? (
+                <li className={styles.dateSeparator}>
+                  <time dateTime={message.createdAt}>
+                    {formatConversationDay(message.createdAt)}
+                  </time>
+                </li>
+              ) : null}
+              <li className={own ? styles.own : styles.theirs}>
+                <p>{messageText(message.content)}</p>
+                {message.status === "UNSENT" ? (
+                  <div role="alert">
+                    {message.failure ? (
+                      <>
+                        <span>پیام فرستاده نشد.</span>
+                        <span>{message.failure.message}</span>
+                        <span>{message.failure.nextStep}</span>
+                        <button
+                          type="button"
+                          disabled={sending}
+                          onClick={() =>
+                            message.failure?.code === "MESSAGE_REJECTED"
+                              ? editUnsent(message)
+                              : void send(message.content, message.idempotencyKey, true)
+                          }
+                        >
+                          {message.failure.code === "MESSAGE_REJECTED"
+                            ? "ویرایش پیام"
+                            : "تلاش دوباره برای ارسال"}
+                        </button>
+                      </>
+                    ) : (
+                      <span role="status">در حال فرستادن پیام…</span>
+                    )}
+                  </div>
+                ) : (
+                  <time dateTime={message.createdAt}>
+                    {formatConversationTime(message.createdAt)}
+                  </time>
+                )}
+              </li>
+            </Fragment>
           );
         })}
       </ol>
@@ -306,8 +334,8 @@ export function ConversationThread({ conversationId }: { conversationId: string 
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M21 3 3 10.5l7.2 3.3L13.5 21 21 3Z" />
-            <path d="m10.2 13.8 4.3-4.3" />
+            <circle cx="12" cy="12" r="9.5" />
+            <path d="m8.5 11.5 3.5-3.5 3.5 3.5M12 8v8" />
           </svg>
         </button>
       </form>
@@ -318,11 +346,4 @@ export function ConversationThread({ conversationId }: { conversationId: string 
 function messageText(content: ConversationMessageContentV1) {
   if (content.type === "TEXT") return content.text;
   return content.caption ?? "رسانه فرستاده شد.";
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

@@ -24,10 +24,19 @@ export function BuyerNavigation() {
   const { rememberScroll } = useFeedWorkspace();
   if (!showBuyerNavigation(pathname)) return null;
   const active = activeBuyerDestination(pathname);
+  const activeIndex = destinations.findIndex(({ href }) => href === active);
 
   return (
     <div className={styles.area}>
       <nav className={styles.bar} aria-label="فضای خریدار">
+        <span
+          className={styles.activeLens}
+          aria-hidden="true"
+          style={{
+            opacity: activeIndex < 0 ? 0 : 1,
+            transform: `translateX(calc(-${Math.max(activeIndex, 0) * 100}% - ${Math.max(activeIndex, 0) * 4}px))`,
+          }}
+        />
         {destinations.map(({ href, label }) => (
           <Link
             key={href}
