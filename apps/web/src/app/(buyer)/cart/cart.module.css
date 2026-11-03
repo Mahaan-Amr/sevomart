@@ -350,6 +350,31 @@
   }
 }
 
+@media (max-width: 320px) {
+  .page {
+    padding-inline: 8px;
+  }
+
+  .panel {
+    padding: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .storeHeading,
+  .subtotal {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .quantityValue {
+    min-width: 48px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .panel button,
   .panel a {

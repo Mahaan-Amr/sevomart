@@ -260,7 +260,9 @@ test("guest adds a product, signs in and continues the same cart", async ({
   }
   await page.reload();
   await expect(
-    page.getByText("قیمت از ۴۵۰٬۰۰۰ تومان به ۵۰۰٬۰۰۰ تومان تغییر کرده است."),
+    page.getByText("قیمت از ۴۵۰٬۰۰۰ تومان به ۵۰۰٬۰۰۰ تومان تغییر کرده است.", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     page.getByText("تا هفت روز پس از تحویل می‌توانید درخواست مرجوعی ثبت کنید."),

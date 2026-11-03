@@ -54,10 +54,12 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
     "href",
     "#discovery-feed",
   );
-  await expect(page.getByRole("link", { name: "فروشنده شوید" })).toHaveAttribute(
-    "href",
-    "/seller/start",
-  );
+  await expect(
+    page
+      .getByRole("main")
+      .locator("header")
+      .getByRole("link", { name: "فروشنده شوید" }),
+  ).toHaveAttribute("href", "/seller/start");
   const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
   await expect(
     navigation.getByRole("link", { name: "کشف", exact: true }),
@@ -99,6 +101,43 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   );
 
   await assertMinimumContrast(page.locator("h1, main p, nav a"));
+});
+
+test("buyer navigation stays readable and touchable at a zoomed mobile width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 180, height: 400 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+
+  const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
+  const links = navigation.getByRole("link");
+  await expect(links).toHaveCount(5);
+  const boxes = [];
+  for (const link of await links.all()) {
+    await expect(link).toBeVisible();
+    const box = await link.boundingBox();
+    expect(box).not.toBeNull();
+    if (!box) throw new Error("Navigation destination has no visible bounds");
+    expect(box.width).toBeGreaterThanOrEqual(40);
+    expect(box.height).toBeGreaterThanOrEqual(40);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(180);
+    expect(box.y + box.height).toBeLessThanOrEqual(400);
+    boxes.push(box);
+  }
+  for (let i = 0; i < boxes.length; i++) {
+    for (const other of boxes.slice(i + 1)) {
+      const box = boxes[i];
+      const overlaps =
+        box.x < other.x + other.width &&
+        other.x < box.x + box.width &&
+        box.y < other.y + other.height &&
+        other.y < box.y + box.height;
+      expect(overlaps).toBe(false);
+    }
+  }
+  await assertNoHorizontalOverflow(page);
 });
 
 test("signed-in buyer shell shows the masked identity and supports sign out", async ({
