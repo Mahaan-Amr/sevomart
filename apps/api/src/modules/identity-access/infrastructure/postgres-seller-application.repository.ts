@@ -82,6 +82,7 @@ type IdempotencyRow = {
 };
 
 type PlatformQueueRow = {
+  maskedMobile: string | null;
   applicationId: string;
   applicantName: string;
   proposedStoreName: string;
@@ -252,6 +253,9 @@ export class PostgresSellerApplicationRepository
       : undefined;
     const rows = await this.#sql<PlatformQueueRow[]>`
       select a.id as "applicationId", r.applicant_name as "applicantName",
+        (select left(lm.mobile, 4) || '***' || right(lm.mobile, 4)
+         from identity_login_methods lm where lm.identity_id = a.identity_id
+           and lm.kind = 'MOBILE' order by lm.verified_at desc limit 1) as "maskedMobile",
         r.proposed_store_name as "proposedStoreName", a.status,
         a.aggregate_version as revision,
         a.last_submitted_at as "lastSubmittedAt"
@@ -1286,6 +1290,11 @@ async function readPlatformApplication(
   const rows = await readPlatformApplicationRows(sql, applicationId);
   const row = rows[0];
   if (!row) throw new SellerApplicationNotFoundError();
+  const mobiles = await sql<Array<{ mobile: string }>>`
+    select mobile from identity_login_methods
+    where identity_id = ${row.identityId} and kind = 'MOBILE'
+    order by verified_at desc limit 1
+  `;
   const decisions = await sql<PlatformDecisionRow[]>`
     select action, reason_code as "reasonCode", public_reason as "publicReason",
       internal_note as "internalNote", requested_fields as "requestedFields",
@@ -1297,6 +1306,7 @@ async function readPlatformApplication(
     order by occurred_at asc, id asc
   `;
   return platformSellerApplicationViewContract.parse({
+    applicantMobile: mobiles[0]?.mobile ?? null,
     applicationId: row.applicationId,
     isSelfReview: row.identityId === reviewerIdentityId,
     status: row.status,
