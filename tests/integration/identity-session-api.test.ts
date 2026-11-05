@@ -108,6 +108,33 @@ describe("identity session HTTP API with PostgreSQL", () => {
     }
   });
 
+  it("does not restore a session when activity races with logout", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const headers = { cookie: verified.headers["set-cookie"] };
+    const [, logout] = await Promise.all([
+      server.inject({ method: "GET", url: "/v1/auth/session", headers }),
+      server.inject({ method: "DELETE", url: "/v1/auth/session", headers }),
+    ]);
+    expect(logout.statusCode).toBe(204);
+    const after = await server.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers,
+    });
+    expect(after.statusCode).toBe(401);
+  });
+
   it("keeps the development OTP adapter in optimized local images", async () => {
     const app = await startApp({
       ...apiTestEnvironment,
