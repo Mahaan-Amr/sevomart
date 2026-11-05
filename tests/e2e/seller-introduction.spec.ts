@@ -1,6 +1,36 @@
 import { expect, test } from "../helpers/release-playwright";
 import { assertNoHorizontalOverflow } from "../helpers/visual-assertions";
 
+test("keyboard focus follows the introduction controls during animated steps", async ({
+  page,
+}) => {
+  await page.goto("/seller/start");
+  const next = page.getByRole("button", { name: "بعدی" });
+  await next.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "فروش با مسئولیت روشن" }),
+  ).toBeVisible();
+  await expect(next).toBeFocused();
+  await expect(next).toHaveAttribute("aria-disabled", "false");
+  await page.keyboard.press("Enter");
+  const start = page.getByRole("link", { name: "شروع درخواست فروشندگی" });
+  await expect(start).toBeFocused();
+  await page.getByRole("button", { name: "قبلی" }).focus();
+  await expect(page.getByRole("button", { name: "قبلی" })).toHaveAttribute(
+    "aria-disabled",
+    "false",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "قبلی" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "قبلی" })).toHaveAttribute(
+    "aria-disabled",
+    "false",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "بعدی" })).toBeFocused();
+});
+
 test("a prospective seller can explore the introduction and start an application", async ({
   page,
 }) => {
