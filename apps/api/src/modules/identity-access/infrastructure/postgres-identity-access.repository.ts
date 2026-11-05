@@ -120,8 +120,17 @@ export class PostgresIdentityAccessRepository
     const rows = await this.#sql<
       Array<{ identityId: string; mobile: IranianMobile; expiresAt: Date }>
     >`
+      with touched as (
+        update identity_sessions s
+        set expires_at = least(s.created_at + interval '90 days', greatest(s.expires_at, ${now}::timestamptz + interval '7 days'))
+        where s.token_hash = ${tokenHash} and s.audience = 'PUBLIC'
+          and s.revoked_at is null and s.expires_at > ${now}
+          and s.created_at + interval '90 days' > ${now}
+          and exists (select 1 from identity_identities i where i.id = s.identity_id and i.status = 'ACTIVE')
+        returning s.*
+      )
       select i.id as "identityId", login.mobile, s.expires_at as "expiresAt"
-      from identity_sessions s
+      from touched s
       join identity_identities i on i.id = s.identity_id
       join identity_login_methods login on login.identity_id = i.id
         and login.kind = 'MOBILE'
@@ -144,9 +153,19 @@ export class PostgresIdentityAccessRepository
         identityStatus: "ACTIVE" | "INACTIVE";
       }>
     >`
+      with touched as (
+        update identity_sessions s
+        set expires_at = case when exists (select 1 from identity_identities i where i.id = s.identity_id and i.status = 'ACTIVE')
+          then least(s.created_at + interval '90 days', greatest(s.expires_at, ${now}::timestamptz + interval '7 days'))
+          else s.expires_at end
+        where s.token_hash = ${tokenHash} and s.audience = 'PUBLIC'
+          and s.revoked_at is null and s.expires_at > ${now}
+          and s.created_at + interval '90 days' > ${now}
+        returning s.*
+      )
       select i.id as "identityId", login.mobile, s.expires_at as "expiresAt",
         i.status as "identityStatus"
-      from identity_sessions s
+      from touched s
       join identity_identities i on i.id = s.identity_id
       join identity_login_methods login on login.identity_id = i.id
         and login.kind = 'MOBILE'
@@ -175,6 +194,19 @@ export class PostgresIdentityAccessRepository
       set revoked_at = ${revokedAt}
       where token_hash = ${tokenHash} and revoked_at is null
       returning id
+    `;
+    return rows.length > 0;
+  }
+
+  async revokeAllSessions(tokenHash: string, revokedAt: Date): Promise<boolean> {
+    const rows = await this.#sql<Array<{ id: string }>>`
+      update identity_sessions set revoked_at = ${revokedAt}
+      where audience = 'PUBLIC' and revoked_at is null and identity_id = (
+        select identity_id from identity_sessions where token_hash = ${tokenHash}
+          and audience = 'PUBLIC' and revoked_at is null and expires_at > ${revokedAt}
+          and created_at + interval '90 days' > ${revokedAt}
+          and exists (select 1 from identity_identities i where i.id = identity_sessions.identity_id and i.status = 'ACTIVE')
+      ) returning id
     `;
     return rows.length > 0;
   }
