@@ -110,7 +110,7 @@
   outline: 3px solid #fff;
   outline-offset: 4px;
 }
-.page button:disabled {
+.page button[aria-disabled="true"] {
   opacity: 0.65;
 }
 .progress {
