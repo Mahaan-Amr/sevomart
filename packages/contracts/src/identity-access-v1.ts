@@ -150,6 +150,7 @@ export const rejectSellerApplicationContract =
 export const approveSellerApplicationContract =
   platformSellerApplicationDecisionBaseContract.extend({
     reasonCode: z.literal("ELIGIBILITY_CONFIRMED"),
+    publicReason: trimmedText(5, 1_000).default("شرایط فروشندگی شما تأیید شد."),
   });
 
 export const approveSellerApplicationResultContract = z.object({
@@ -214,6 +215,7 @@ export const platformSellerApplicationListQueryContract = z.object({
 });
 
 export const platformSellerApplicationSummaryContract = z.object({
+  maskedMobile: z.string().nullable(),
   applicationId: sellerApplicationIdContract,
   applicantName: trimmedText(2, 80),
   proposedStoreName: trimmedText(2, 80),
@@ -239,6 +241,7 @@ export const platformSellerApplicationDecisionContract = z.object({
 });
 
 export const platformSellerApplicationViewContract = z.object({
+  applicantMobile: iranianMobileContract.nullable(),
   applicationId: sellerApplicationIdContract,
   isSelfReview: z.boolean(),
   status: sellerApplicationStatusContract,
@@ -555,6 +558,7 @@ export const identityAccessV1Examples = {
     publicReason: "با اطلاعات فعلی امکان تأیید فروشندگی وجود ندارد.",
   },
   PlatformSellerApplicationSummary: {
+    maskedMobile: "0912***6789",
     applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
     applicantName: "نگار محمدی",
     proposedStoreName: "خانه ماه",
@@ -574,6 +578,7 @@ export const identityAccessV1Examples = {
     occurredAt: "2026-08-24T08:05:00.000Z",
   },
   PlatformSellerApplicationView: {
+    applicantMobile: "09123456789",
     applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
     isSelfReview: false,
     status: "SUBMITTED",

@@ -75,7 +75,6 @@ describe("platform seller application review API with PostgreSQL", () => {
     const payload = {
       expectedRevision: 1,
       reasonCode: "ELIGIBILITY_CONFIRMED",
-      publicReason: "شرایط فروشندگی شما تأیید شد.",
     };
     const request = () =>
       server.inject({
@@ -167,7 +166,7 @@ describe("platform seller application review API with PostgreSQL", () => {
           timeline: expect.arrayContaining([
             expect.objectContaining({
               status: "APPROVED",
-              publicReason: payload.publicReason,
+              publicReason: "شرایط فروشندگی شما تأیید شد.",
             }),
           ]),
         },
@@ -839,6 +838,13 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     expect(ungranted.statusCode).toBe(403);
     expect(ungranted.json()).toMatchObject({ code: "PLATFORM_PERMISSION_REQUIRED" });
+    const deniedDetail = await server.inject({
+      method: "GET",
+      url: `/v1/platform/seller-applications/${submitted.json<{ applicationId: string }>().applicationId}`,
+      headers: { cookie: platformCookie(ungrantedToken) },
+    });
+    expect(deniedDetail.statusCode).toBe(403);
+    expect(JSON.stringify(deniedDetail.json())).not.toContain("09123456789");
     expect(agentIdentityCookie).toContain("sevo_session=");
 
     await grantReviewPermission(agentIdentityId);
@@ -856,6 +862,7 @@ describe("platform seller application review API with PostgreSQL", () => {
       "applicantName",
       "applicationId",
       "lastSubmittedAt",
+      "maskedMobile",
       "proposedStoreName",
       "revision",
       "status",
@@ -911,6 +918,14 @@ describe("platform seller application review API with PostgreSQL", () => {
     const token = await seedPlatformSession(agentIdentityId);
     await grantReviewPermission(agentIdentityId);
     const correlationId = randomUUID();
+    const queue = await server.inject({
+      method: "GET",
+      url: "/v1/platform/seller-applications",
+      headers: { cookie: platformCookie(token) },
+    });
+    expect(queue.statusCode).toBe(200);
+    expect(queue.json()).toMatchObject({ items: [{ maskedMobile: "0912***6789" }] });
+    expect(JSON.stringify(queue.json())).not.toContain("09123456789");
     const detail = await server.inject({
       method: "GET",
       url: `/v1/platform/seller-applications/${applicationId}`,
@@ -931,7 +946,7 @@ describe("platform seller application review API with PostgreSQL", () => {
       decisions: [],
     });
     expect(detail.json()).not.toHaveProperty("identityId");
-    expect(JSON.stringify(detail.json())).not.toContain("09123456789");
+    expect(detail.json()).toHaveProperty("applicantMobile", "09123456789");
 
     const sql = postgres(environment.DATABASE_URL, { max: 1 });
     try {
