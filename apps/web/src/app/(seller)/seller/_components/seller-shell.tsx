@@ -33,10 +33,16 @@ export function SellerShell({ children }: { children: React.ReactNode }) {
         <Link className={styles.buyerLink} href="/">
           فضای خریدار
         </Link>
+        <Link className={styles.buyerLink} href="/login?manage=1&returnTo=%2Fseller">
+          مدیریت ورود
+        </Link>
       </aside>
       <div className={styles.content}>{children}</div>
       <nav className={styles.mobileNavigation} aria-label="ناوبری فضای کار فروشنده">
         <SellerNavigationLinks pathname={pathname} mobile />
+        <Link className={styles.mobileLink} href="/login?manage=1&returnTo=%2Fseller">
+          مدیریت ورود
+        </Link>
       </nav>
     </div>
   );
