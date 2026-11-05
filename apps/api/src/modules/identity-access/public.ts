@@ -113,6 +113,7 @@ export interface IdentityAccessRepository {
   ): Promise<ActiveIdentitySession | undefined>;
   findSession(tokenHash: string, now: Date): Promise<IdentitySessionStatus | undefined>;
   revokeSession(tokenHash: string, revokedAt: Date): Promise<boolean>;
+  revokeAllSessions(tokenHash: string, revokedAt: Date): Promise<boolean>;
 }
 
 export type SellerApplicationCommandContext = {

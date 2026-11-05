@@ -85,9 +85,7 @@ export class IdentityAccessController {
         parsed.data.challengeId,
         parsed.data.code,
       );
-      const maxAge = Math.floor(
-        (Date.parse(verified.session.expiresAt) - Date.now()) / 1_000,
-      );
+      const maxAge = 90 * 24 * 60 * 60;
       const secure =
         this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
       void reply.header(
@@ -138,6 +136,31 @@ export class IdentityAccessController {
   ) {
     const token = readIdentitySessionToken(request) ?? "";
     await this.service.revokeSession(token);
+    const secure = this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
+    void reply.header(
+      "Set-Cookie",
+      `sevo_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
+    );
+  }
+
+  @Delete("sessions")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async endAllSessions(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    if (
+      !(await this.service.revokeAllSessions(readIdentitySessionToken(request) ?? ""))
+    ) {
+      throw new HttpException(
+        {
+          code: "UNAUTHORIZED",
+          message: "نشست شما معتبر نیست. دوباره وارد شوید.",
+          correlationId: request.id,
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
     const secure = this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
     void reply.header(
       "Set-Cookie",
