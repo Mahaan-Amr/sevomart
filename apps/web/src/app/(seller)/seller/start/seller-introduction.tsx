@@ -23,14 +23,23 @@ export function SellerIntroduction() {
   const [step, setStep] = useState(0);
   const [transition, setTransition] = useState<"next" | "previous" | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const primary = useRef<HTMLButtonElement | HTMLAnchorElement>(null);
+  const focusPrimary = useRef(false);
+  useEffect(() => {
+    if (focusPrimary.current) {
+      primary.current?.focus();
+      focusPrimary.current = false;
+    }
+  }, [step]);
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
     },
     [],
   );
-  function move(to: number) {
+  function move(to: number, focusReplacement = false) {
     if (transition || to < 0 || to >= slides.length || to === step) return;
+    focusPrimary.current = focusReplacement;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setStep(to);
       return;
@@ -67,22 +76,37 @@ export function SellerIntroduction() {
         <div className={styles.actions}>
           {step < 2 ? (
             <button
+              ref={primary as React.RefObject<HTMLButtonElement>}
               className={styles.primary}
-              onClick={() => move(step + 1)}
-              disabled={!!transition}
+              onClick={(event) =>
+                move(
+                  step + 1,
+                  step === 1 && document.activeElement === event.currentTarget,
+                )
+              }
+              aria-disabled={!!transition}
             >
               بعدی
             </button>
           ) : (
-            <Link className={styles.primary} href="/seller/application">
+            <Link
+              ref={primary as React.RefObject<HTMLAnchorElement>}
+              className={styles.primary}
+              href="/seller/application"
+            >
               شروع درخواست فروشندگی
             </Link>
           )}
           {step > 0 && (
             <button
               className={styles.back}
-              onClick={() => move(step - 1)}
-              disabled={!!transition}
+              onClick={(event) =>
+                move(
+                  step - 1,
+                  step === 1 && document.activeElement === event.currentTarget,
+                )
+              }
+              aria-disabled={!!transition}
             >
               قبلی
             </button>
@@ -93,7 +117,7 @@ export function SellerIntroduction() {
             <button
               key={item.title}
               onClick={() => move(index)}
-              disabled={!!transition}
+              aria-disabled={!!transition}
               aria-label={`مرحله ${index + 1}: ${item.title}`}
               aria-current={index === step ? "step" : undefined}
             >
