@@ -11,17 +11,18 @@ export default async function LoginPage({
   searchParams: Promise<{
     returnTo?: string | string[];
     cancelTo?: string | string[];
+    manage?: string | string[];
   }>;
 }) {
   const parameters = await searchParams;
   const returnTo = safeReturnPath(firstParameter(parameters.returnTo), "/");
   const cancelTo = safeReturnPath(firstParameter(parameters.cancelTo), "/");
   const session = await readIdentitySession((await cookies()).toString());
-  if (session) redirect(returnTo);
+  if (session && firstParameter(parameters.manage) !== "1") redirect(returnTo);
 
   return (
     <IdentityLogin
-      initiallySignedIn={false}
+      initiallySignedIn={Boolean(session)}
       returnTo={returnTo}
       cancelTo={cancelTo}
       autoContinue

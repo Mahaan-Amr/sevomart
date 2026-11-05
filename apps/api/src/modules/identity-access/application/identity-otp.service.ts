@@ -142,6 +142,10 @@ export class IdentityOtpService {
     if (!token) return false;
     return this.repository.revokeSession(hashToken(token), this.now());
   }
+
+  async revokeAllSessions(token: string): Promise<boolean> {
+    return this.repository.revokeAllSessions(hashToken(token), this.now());
+  }
 }
 
 function maskMobile(mobile: IranianMobile): string {
