@@ -26,6 +26,7 @@ packageExtensionsChecksum: sha256-n2Gmb5MTSXDmABuMcRzgHXnmXzip7kGZg9YNSb2qNCU=
 
 patchedDependencies:
   minio@8.0.7: cdefe47ca587a7913bdda833a656e59566a535fcc15514026672c3f183b56d0d
+  zod@4.6.6: f06f852f3dfd42ab70013d07e1f73a69bc18bcf988125d6c5775ac719c69a075
 
 importers:
 
@@ -180,13 +181,13 @@ importers:
     dependencies:
       zod:
         specifier: 4.6.6
-        version: 4.6.6
+        version: 4.6.6(patch_hash=f06f852f3dfd42ab70013d07e1f73a69bc18bcf988125d6c5775ac719c69a075)
 
   packages/contracts:
     dependencies:
       zod:
         specifier: 4.6.6
-        version: 4.6.6
+        version: 4.6.6(patch_hash=f06f852f3dfd42ab70013d07e1f73a69bc18bcf988125d6c5775ac719c69a075)
 
   packages/database:
     dependencies:
@@ -6180,4 +6181,4 @@ snapshots:
       grammex: 3.1.13
       graphmatch: 1.1.1
 
-  zod@4.6.6: {}
+  zod@4.6.6(patch_hash=f06f852f3dfd42ab70013d07e1f73a69bc18bcf988125d6c5775ac719c69a075): {}

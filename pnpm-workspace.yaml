@@ -36,3 +36,4 @@ minimumReleaseAgeExclude:
 allowUnusedPatches: true
 patchedDependencies:
   minio@8.0.7: patches/minio@8.0.7.patch
+  zod@4.6.6: patches/zod@4.6.6.patch

@@ -1,0 +1,42 @@
+diff --git a/v4/core/regexes.cjs b/v4/core/regexes.cjs
+index 6846616cdb3358139aed229078ac5248cb53f27b..3ed62b038bb1ebfc3d8de6b4c849ad75be53fe5b 100644
+--- a/v4/core/regexes.cjs
++++ b/v4/core/regexes.cjs
+@@ -130,12 +130,13 @@ function time(args) {
+ // Adapted from https://stackoverflow.com/a/3143231
+ function datetime(args) {
+     const opts = ["Z"];
++    if (args.local)
++        opts.push("");
+     // if (args.offset) opts.push(`([+-]\\d{2}:\\d{2})`);
+     if (args.offset)
+         opts.push(`([+-](?:[01]\\d|2[0-3]):[0-5]\\d)`);
+-    // RFC 3339 mandates seconds wherever the time carries a `Z` or an offset, so only the unqualified form `local` adds may omit them
+-    const qualified = `${timeSource({ precision: args.precision, seconds: true })}(?:${opts.join("|")})`;
+-    const timeRegex = args.local ? `${qualified}|${timeSource({ precision: args.precision })}` : qualified;
++    // Preserve the previously published Sevo datetime contract.
++    const timeRegex = `${timeSource({ precision: args.precision })}(?:${opts.join("|")})`;
+     return new RegExp(`^${dateSource}T(?:${timeRegex})$`);
+ }
+ // the unbounded form of `string()` as a literal, so every plain string shares one instance instead of building its own
+diff --git a/v4/core/regexes.js b/v4/core/regexes.js
+index e433775ab3fd5fba02d9648ba05182a3bfcd0792..709c6445b887f799660bcb7ab24b22eba8e8084f 100644
+--- a/v4/core/regexes.js
++++ b/v4/core/regexes.js
+@@ -97,12 +97,13 @@ export function time(args) {
+ // Adapted from https://stackoverflow.com/a/3143231
+ export function datetime(args) {
+     const opts = ["Z"];
++    if (args.local)
++        opts.push("");
+     // if (args.offset) opts.push(`([+-]\\d{2}:\\d{2})`);
+     if (args.offset)
+         opts.push(`([+-](?:[01]\\d|2[0-3]):[0-5]\\d)`);
+-    // RFC 3339 mandates seconds wherever the time carries a `Z` or an offset, so only the unqualified form `local` adds may omit them
+-    const qualified = `${timeSource({ precision: args.precision, seconds: true })}(?:${opts.join("|")})`;
+-    const timeRegex = args.local ? `${qualified}|${timeSource({ precision: args.precision })}` : qualified;
++    // Preserve the previously published Sevo datetime contract.
++    const timeRegex = `${timeSource({ precision: args.precision })}(?:${opts.join("|")})`;
+     return new RegExp(`^${dateSource}T(?:${timeRegex})$`);
+ }
+ // the unbounded form of `string()` as a literal, so every plain string shares one instance instead of building its own
