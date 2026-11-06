@@ -1,5 +1,16 @@
 # دفتر وابستگی‌های خط پایه
 
+## رفع آسیب‌پذیری‌های مانع CI
+
+در [رفع آسیب‌پذیری وابستگی‌های مانع CI](https://github.com/Mahaan-Amr/sevomart/issues/283)،
+نسخه‌های Next.js، NestJS، Fastify، Zod و Sharp و وابستگی‌های غیرمستقیم آسیب‌پذیر به
+نسخه‌های اصلاح‌شده ارتقا می‌یابند. overrideهای glob و minimatch به نسخه‌های جدیدتر با
+مجوز BlueOak-1.0.0 می‌روند؛ metadata رجیستری پشتیبانی Node 22 را اعلام می‌کند. اثر این
+تغییر بر مصرف‌کنندگان و سازگاری عملی باید با آزمون قرارداد، ساخت، integration و هر دو
+مسیر native و Docker بررسی شود. بستهٔ runtime تازه‌ای به‌عنوان قابلیت محصول افزوده نمی‌شود.
+ارتقای Zod الگوی تاریخ‌زمان عمومی را از ثانیهٔ اختیاری به ثانیهٔ اجباری تغییر می‌دهد؛
+تا حفظ سازگاری یا تصمیم صریح نسخه‌بندی و آزمون آن، این ارتقا آمادهٔ ادغام نیست.
+
 ## اسکن دسترس‌پذیری نسخه نمایشی
 
 در [ثبت baselineهای بصری و evidence pack نسخه نمایشی](https://github.com/Mahaan-Amr/sevomart/issues/166)،
@@ -29,7 +40,7 @@
 | Fastify multipart                                 | دریافت stream محدود فایل بدون سربار Base64                 | فعال؛ MIT                                               | ورودی شبکه؛ سقف ۱۰ MB، یک فایل و یک field، decode کامل و rate limit                                                                                      |
 | MinIO SDK و MinIO Server                          | object storage خصوصی اصل و مشتق رسانه                      | فعال؛ Apache-2.0 / AGPL-3.0                             | credential فقط runtime، bucket خصوصی، bind محلی و تحویل فقط از API                                                                                       |
 | tsx                                               | اجرای watch در توسعه                                       | فعال؛ MIT                                               | فقط development؛ در image تولید نصب نمی‌شود                                                                                                               |
-| `js-yaml` override                                | بستن advisory زنجیره Swagger                               | فعال؛ MIT                                               | نسخه patch‌شده `5.2.2` در کل workspace تحمیل شده است                                                                                                      |
+| `js-yaml` override                                | بستن advisory زنجیره Swagger                               | فعال؛ MIT                                               | نسخه patch‌شده `5.4.1` در کل workspace تحمیل شده است                                                                                                      |
 
 وابستگی‌های `@sevo/*` داخلی و private هستند و مجوز خارجی ندارند. افزودن گروه یا package
 جدید باید دلیل، وضعیت نگهداری، مجوز، سطح حمله و کنترل آن را پیش از merge به همین سند بیفزاید.
