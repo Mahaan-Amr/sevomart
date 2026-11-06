@@ -36,6 +36,7 @@ test("a prospective seller can explore the introduction and start an application
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/seller/start");
+  await expect(page.getByRole("navigation", { name: "فضای خریدار" })).toHaveCount(0);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(
     page.getByRole("heading", { name: "فروشگاه خودتان در سوو" }),
@@ -59,6 +60,7 @@ test("a prospective seller can explore the introduction and start an application
   ).toBeVisible();
   await page.getByRole("link", { name: "شروع درخواست فروشندگی" }).click();
   await expect(page).toHaveURL(/\/seller\/login\?returnTo=%2Fseller%2Fapplication/);
+  await expect(page.getByRole("navigation", { name: "فضای خریدار" })).toBeVisible();
 });
 
 test("the introduction remains accessible with reduced motion", async ({ page }) => {

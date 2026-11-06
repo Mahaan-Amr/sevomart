@@ -1,11 +1,7 @@
 export type BuyerDestination =
   "/" | "/following" | "/cart" | "/orders" | "/conversations";
 
-const sellerEntryPaths = new Set([
-  "/seller/start",
-  "/seller/login",
-  "/seller/application",
-]);
+const sellerEntryPaths = new Set(["/seller/login", "/seller/application"]);
 
 export function showBuyerNavigation(pathname: string) {
   if (pathname === "/platform" || pathname.startsWith("/platform/")) return false;
