@@ -40,11 +40,12 @@ jobs:
           cache: pnpm
       - name: Start MinIO integration service
         run: |
+          docker build --file ops/minio/Dockerfile --tag sevo-local-minio:RELEASE.2025-04-22T22-12-26Z .
           docker run --detach --name sevo-ci-minio \
             --publish 9100:9000 \
             --env MINIO_ROOT_USER=sevo_local \
             --env MINIO_ROOT_PASSWORD=sevo_local_password \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+            sevo-local-minio:RELEASE.2025-04-22T22-12-26Z server /data
           for attempt in {1..30}; do
             if curl --fail --silent http://localhost:9100/minio/health/live; then
               exit 0

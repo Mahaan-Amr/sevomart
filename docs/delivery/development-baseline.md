@@ -13,6 +13,11 @@
 - web در `http://localhost:3200`، API در `http://localhost:3201` و OpenAPI در
   `http://localhost:3201/openapi` است؛ همهٔ این پورت‌ها از `.env` قابل تغییرند.
 
+Compose و CI تصویر محلی MinIO را با `ops/minio/Dockerfile` از فایل رسمی نسخهٔ
+`RELEASE.2025-04-22T22-12-26Z` می‌سازند و SHA-256 فایل را بررسی می‌کنند. این روش به
+GitHub Releases دسترسی می‌خواهد و از `amd64` و `arm64` پشتیبانی می‌کند؛ هر دو مسیر
+`pnpm dev` و `pnpm compose:up` از همین تصویر و نسخه استفاده می‌کنند.
+
 مقادیر محلی غیرحساس در `.env.example` ثبت شده‌اند. secret واقعی فقط در محیط اجرا نگهداری
 می‌شود و فایل `.env` وارد Git نیست. `pnpm infra:down` و `pnpm compose:down` volume را حذف
 نمی‌کنند. `pnpm local:reset` تنها فرمان حذف صریح دادهٔ PostgreSQL و MinIO است و پیش از حذف
