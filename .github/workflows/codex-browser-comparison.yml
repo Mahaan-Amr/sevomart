@@ -1,0 +1,32 @@
+name: Temporary browser regression comparison
+on:
+  push:
+    branches: [fix/283-browser-comparison]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [fix/249-official-minio-runtime, fix/283-security-audit]
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run failing buyer feed scenarios
+        run: pnpm test:e2e -- tests/e2e/buyer-feeds.spec.ts --project=chromium-360x800 --retries=0 --grep 'discovery and following keep independent|returning from product detail restores|following errors use safe code|sales content stays distinct'
