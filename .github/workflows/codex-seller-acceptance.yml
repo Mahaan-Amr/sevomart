@@ -1,0 +1,36 @@
+name: Temporary seller acceptance validation
+on:
+  push:
+    branches: [fix/283-browser-comparison]
+permissions:
+  contents: read
+jobs:
+  seller:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ref: feat/269-review-standalone
+            test_file: tests/e2e/platform-seller-application-review.spec.ts
+          - ref: feat/267-introduction-standalone
+            test_file: tests/e2e/seller-introduction.spec.ts
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run seller acceptance tests
+        run: pnpm test:e2e -- ${{ matrix.test_file }} --retries=0
