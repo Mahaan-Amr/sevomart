@@ -64,7 +64,7 @@ export function BuyerProductCard({
           {unavailable ? <span>ناموجود</span> : null}
         </div>
         <span className={styles.detailLink} aria-hidden="true">
-          دیدن کالا <span aria-hidden="true">←</span>
+          دیدن کالا
         </span>
       </div>
     </article>
