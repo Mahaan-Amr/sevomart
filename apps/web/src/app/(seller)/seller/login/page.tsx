@@ -18,6 +18,7 @@ export default async function SellerLoginPage({
   return (
     <IdentityLogin
       initiallySignedIn={Boolean(session)}
+      sellerPasswordEnabled
       returnTo={returnTo}
       cancelTo="/seller/start"
       autoContinue={returnTo === "/seller/application"}

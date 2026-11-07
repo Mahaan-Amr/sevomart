@@ -225,6 +225,14 @@ describe("OpenAPI identity and store compatibility", () => {
       );
     }
 
+    for (const path of [
+      "/v1/auth/password",
+      "/v1/auth/password/sessions",
+      "/v1/auth/password/recovery/requests",
+      "/v1/auth/password/recovery",
+    ]) {
+      expect(document.paths[path].post).toBeDefined();
+    }
     const completeSurfaceHash = createHash("sha256")
       .update(
         JSON.stringify({
@@ -235,7 +243,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "e4b65bdd321675aa74004c0f9bc1826cea88684cc28c489d5de8beec993b9e57",
+      "78fc4b65064cdb9472212809d4e58be3527959606ed34afae1a9d108cf7a4dbf",
     );
   });
 

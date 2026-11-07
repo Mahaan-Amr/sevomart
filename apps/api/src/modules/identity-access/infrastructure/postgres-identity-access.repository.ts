@@ -106,9 +106,14 @@ export class PostgresIdentityAccessRepository
     });
   }
 
-  async saveSession(session: StoredIdentitySession): Promise<void> {
-    await this.#sql.begin(async (sql) => {
+  async saveSession(session: StoredIdentitySession): Promise<boolean> {
+    return this.#sql.begin(async (sql) => {
       await sql`select pg_advisory_xact_lock(hashtextextended(${session.identityId}, 273))`;
+      if (session.challengeProof) {
+        const proof =
+          await sql`select id from identity_otp_challenges where id = ${session.challengeProof.id} and audience = 'PUBLIC' and code_hash = ${session.challengeProof.codeHash} and consumed_at is not null and expires_at > clock_timestamp()`;
+        if (proof.length === 0) return false;
+      }
       await sql`
       insert into identity_sessions
         (id, token_hash, identity_id, audience, expires_at)
@@ -116,6 +121,7 @@ export class PostgresIdentityAccessRepository
         (${session.id}, ${session.tokenHash}, ${session.identityId},
          ${session.audience}, ${session.expiresAt})
     `;
+      return true;
     });
   }
 
