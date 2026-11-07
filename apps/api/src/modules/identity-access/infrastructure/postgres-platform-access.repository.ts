@@ -62,6 +62,7 @@ import { readOpaquePlatformAccessTransaction } from "./opaque-platform-access-tr
 
 const HIGH_RISK = new Set<Responsibility>([
   "ACCESS_ADMINISTRATION",
+  "SESSION_SECURITY",
   "PAYMENT_OUTCOME_CHANGE",
   "SENSITIVE_IDENTITY_BANKING_BROAD_VIEW",
   "HIGH_RISK_BULK_EXPORT",

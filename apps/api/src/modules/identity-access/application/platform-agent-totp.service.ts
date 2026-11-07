@@ -11,6 +11,7 @@ import postgres, { type Sql } from "postgres";
 
 export class TotpDeniedError extends Error {}
 export class TotpUnavailableError extends Error {}
+export class TotpRateLimitedError extends Error {}
 
 type Keyring = Record<string, string>;
 type Session = { id: string; identityId: string; expiresAt: Date; createdAt: Date };
@@ -28,6 +29,7 @@ type Factor = {
 
 export class PlatformAgentTotpService {
   readonly #sql: Sql;
+  #cleanupTimer: ReturnType<typeof setInterval> | undefined;
   constructor(
     databaseUrl: string,
     private readonly activeKeyId: string | undefined,
@@ -72,6 +74,17 @@ export class PlatformAgentTotpService {
       throw new TotpDeniedError();
     return session;
   }
+  private async lockedSession(sql: Sql, token: string): Promise<Session> {
+    if (!token) throw new TotpDeniedError();
+    const rows = await sql<
+      { identityId: string }[]
+    >`select identity_id as "identityId" from identity_sessions where token_hash = ${createHash("sha256").update(token).digest("hex")} and audience = 'PLATFORM_AGENT'`;
+    if (!rows[0]) throw new TotpDeniedError();
+    await sql`select pg_advisory_xact_lock(hashtextextended(${rows[0].identityId}, 301))`;
+    const session = await this.session(sql, token);
+    if (session.identityId !== rows[0].identityId) throw new TotpDeniedError();
+    return session;
+  }
   private fresh(session: Session): boolean {
     const now = Date.now();
     return (
@@ -86,7 +99,7 @@ export class PlatformAgentTotpService {
     const keyId = this.activeKeyId;
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const auth = await sql<
         { expiresAt: Date; consumedAt: Date | null }[]
       >`select expires_at as "expiresAt", consumed_at as "consumedAt" from identity_totp_bootstrap_authorizations
@@ -116,7 +129,7 @@ export class PlatformAgentTotpService {
   async confirm(token: string, code: string, correlationId: string): Promise<void> {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const rows = await sql<
         Factor[]
       >`select generation_id as "generationId", expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
@@ -156,6 +169,20 @@ export class PlatformAgentTotpService {
     });
     if (!result) throw new TotpDeniedError();
   }
+  async recordProofAttempt(token: string, correlationId: string): Promise<void> {
+    void this.cleanupExpired().catch(() => {});
+    const allowed = await this.#sql.begin(async (transaction) => {
+      const sql = transaction as unknown as Sql;
+      const session = await this.lockedSession(sql, token);
+      const counts = await sql<
+        { count: number }[]
+      >`select count(*)::int as count from identity_totp_audit where identity_id = ${session.identityId} and action = 'PROOF_REQUESTED' and occurred_at > clock_timestamp() - interval '5 minutes'`;
+      const allowed = (counts[0]?.count ?? 0) < 10;
+      await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id, occurred_at) values (${randomUUID()}, ${session.identityId}, 'PROOF_REQUESTED', ${allowed ? "ATTEMPT" : "RATE_LIMITED"}, ${correlationId}, clock_timestamp())`;
+      return allowed;
+    });
+    if (!allowed) throw new TotpRateLimitedError();
+  }
   async createProof(
     token: string,
     input: {
@@ -169,7 +196,7 @@ export class PlatformAgentTotpService {
   ) {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const requiredPermission =
         input.action === "APPROVE_TOTP_RECOVERY"
           ? "ACCESS_ADMINISTRATION"
@@ -241,7 +268,7 @@ export class PlatformAgentTotpService {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       await sql`select pg_advisory_xact_lock(hashtextextended(${input.targetIdentityId}, 273))`;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const permission = await sql<
         { id: string }[]
       >`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'SESSION_SECURITY' and revoked_at is null for share`;
@@ -302,8 +329,7 @@ export class PlatformAgentTotpService {
   ) {
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
-      await sql`select pg_advisory_xact_lock(hashtextextended(${session.identityId}, 301))`;
+      const session = await this.lockedSession(sql, token);
       if (!this.fresh(session)) throw new TotpDeniedError();
       await sql`update identity_totp_recoveries set status = 'EXPIRED' where requester_identity_id = ${session.identityId} and status in ('PENDING','APPROVED','ENROLLING') and expires_at <= clock_timestamp()`;
       const open =
@@ -318,7 +344,7 @@ export class PlatformAgentTotpService {
   async readRecovery(token: string, recoveryId: string) {
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const rows = await sql<
         {
           requesterId: string;
@@ -358,7 +384,7 @@ export class PlatformAgentTotpService {
   ): Promise<void> {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const permissions = await sql<
         { id: string }[]
       >`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'ACCESS_ADMINISTRATION' and revoked_at is null for share`;
@@ -456,7 +482,7 @@ export class PlatformAgentTotpService {
     const key = this.key(keyId);
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const rows = await sql<
         { requesterId: string; status: string; expiresAt: Date }[]
       >`select requester_identity_id as "requesterId", status, expires_at as "expiresAt" from identity_totp_recoveries where id = ${recoveryId} for update`;
@@ -490,7 +516,7 @@ export class PlatformAgentTotpService {
   ): Promise<void> {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
-      const session = await this.session(sql, token);
+      const session = await this.lockedSession(sql, token);
       const recoveries = await sql<
         { requesterId: string; status: string; expiresAt: Date }[]
       >`select requester_identity_id as "requesterId", status, expires_at as "expiresAt" from identity_totp_recoveries where id = ${recoveryId} for update`;
@@ -535,6 +561,7 @@ export class PlatformAgentTotpService {
       }
       await sql`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at, last_counter, activated_at) values (${session.identityId}, ${session.id}, ${factor.keyId}, ${factor.ciphertext}, ${factor.nonce}, ${factor.tag}, 'ACTIVE', ${factor.expiresAt}, ${counter}, clock_timestamp()) on conflict (identity_id) do update set generation_id = gen_random_uuid(), enrollment_session_id = excluded.enrollment_session_id, key_id = excluded.key_id, ciphertext = excluded.ciphertext, nonce = excluded.nonce, tag = excluded.tag, status = 'ACTIVE', expires_at = excluded.expires_at, last_counter = excluded.last_counter, failed_attempts = 0, blocked_until = null, activated_at = excluded.activated_at`;
       await sql`update identity_totp_action_proofs set consumed_at = clock_timestamp() where actor_identity_id = ${session.identityId} and consumed_at is null`;
+      await sql`update identity_otp_challenges set consumed_at = clock_timestamp() where audience = 'PLATFORM_AGENT' and consumed_at is null and mobile in (select mobile from identity_login_methods where identity_id = ${session.identityId} and kind = 'MOBILE')`;
       await sql`update identity_sessions set revoked_at = clock_timestamp() where identity_id = ${session.identityId} and audience = 'PLATFORM_AGENT' and id <> ${session.id} and revoked_at is null`;
       await sql`delete from identity_totp_recovery_enrollment where recovery_id = ${recoveryId}`;
       await sql`update identity_totp_recoveries set status = 'COMPLETED' where id = ${recoveryId}`;
@@ -543,7 +570,27 @@ export class PlatformAgentTotpService {
     });
     if (!result) throw new TotpDeniedError();
   }
+  onModuleInit() {
+    const clean = () => {
+      void this.cleanupExpired().catch(() => {
+        /* Retry at the next interval without logging secret material. */
+      });
+    };
+    this.#cleanupTimer = setInterval(clean, 5 * 60 * 1000);
+    this.#cleanupTimer.unref();
+  }
+  private async cleanupExpired(): Promise<void> {
+    await this
+      .#sql`delete from identity_totp_action_proofs where id in (select id from identity_totp_action_proofs where expires_at <= clock_timestamp() for update skip locked)`;
+    await this
+      .#sql`delete from identity_totp_recovery_enrollment where recovery_id in (select recovery_id from identity_totp_recovery_enrollment where expires_at <= clock_timestamp() for update skip locked)`;
+    await this
+      .#sql`delete from identity_totp_factors where identity_id in (select identity_id from identity_totp_factors where status = 'PENDING' and expires_at <= clock_timestamp() for update skip locked)`;
+    await this
+      .#sql`update identity_totp_recoveries set status = 'EXPIRED' where id in (select id from identity_totp_recoveries where status in ('PENDING','APPROVED','ENROLLING') and expires_at <= clock_timestamp() for update skip locked)`;
+  }
   async onModuleDestroy() {
+    if (this.#cleanupTimer) clearInterval(this.#cleanupTimer);
     await this.#sql.end();
   }
 }

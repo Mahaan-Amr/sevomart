@@ -33,7 +33,10 @@ export async function proxyApiRequest(
           : await request.text(),
       cache: "no-store",
     });
-    const headers = new Headers({ "content-type": "application/json" });
+    const headers = new Headers({
+      "content-type": "application/json",
+      "cache-control": "no-store",
+    });
     const sessionCookie = upstream.headers.get("set-cookie");
     if (forwardSessionCookie && sessionCookie) {
       headers.set("set-cookie", sessionCookie);

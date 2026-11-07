@@ -1199,13 +1199,65 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     expect(replacement.statusCode).toBe(201);
     const newSecret = replacement.json<{ secret: string }>().secret;
-    const completed = await server.inject({
+    const pendingOtp = await server.inject({
       method: "POST",
-      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-      headers: requesterHeaders,
-      payload: { code: testTotp(newSecret) },
+      url: "/v1/platform/auth/otp/requests",
+      payload: { mobile: "09123456786" },
     });
-    expect(completed.statusCode).toBe(204);
+    expect(pendingOtp.statusCode).toBe(202);
+    const lockDb = postgres(environment.DATABASE_URL, { max: 3 });
+    let release!: () => void;
+    let acquired!: () => void;
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const holder = lockDb.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${requester}, 301))`;
+        acquired();
+        await gate;
+      });
+      await held;
+      async function waitForBlocked(count: number) {
+        for (let i = 0; i < 100; i++) {
+          const rows = await lockDb<
+            { count: number }[]
+          >`select count(*)::int as count from pg_stat_activity where datname = current_database() and wait_event = 'advisory' and pid <> pg_backend_pid()`;
+          if ((rows[0]?.count ?? 0) >= count) return;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error("Expected blocked identity operations");
+      }
+      const completing = server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+        headers: requesterHeaders,
+        payload: { code: testTotp(newSecret) },
+      });
+      await waitForBlocked(1);
+      const verifying = server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/verifications",
+        payload: {
+          challengeId: pendingOtp.json<{ challengeId: string }>().challengeId,
+          code: "111111",
+        },
+      });
+      await waitForBlocked(2);
+      release();
+      await holder;
+      expect((await completing).statusCode).toBe(204);
+      expect((await verifying).statusCode).toBe(401);
+    } finally {
+      release();
+      await lockDb.end();
+    }
+    expect((await platformLogin("09123456786")).cookie).toContain(
+      "sevo_platform_session=",
+    );
     const adminGrant = postgres(environment.DATABASE_URL, { max: 1 });
     try {
       await adminGrant`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${requester}, 'ACCESS_ADMINISTRATION', now())`;
@@ -1240,6 +1292,102 @@ describe("platform seller application review API with PostgreSQL", () => {
       payload: { proof: selfProof.json<{ proof: string }>().proof },
     });
     expect(selfApproval.statusCode).toBe(403);
+  });
+
+  it("limits proof requests across platform sessions even for malformed or unauthorized requests", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    await signIn(app, "09123456788");
+    const identityId = await identityIdForMobile("09123456788");
+    await grantReviewPermission(identityId);
+    async function login() {
+      const requested = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/requests",
+        payload: { mobile: "09123456788" },
+      });
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/verifications",
+        payload: {
+          challengeId: requested.json<{ challengeId: string }>().challengeId,
+          code: "111111",
+        },
+      });
+      return { cookie: String(verified.headers["set-cookie"]).split(";")[0] };
+    }
+    const first = await login();
+    const second = await login();
+    for (let index = 0; index < 10; index++) {
+      const result = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/proofs",
+        headers: index % 2 ? first : second,
+        payload:
+          index % 2
+            ? {}
+            : {
+                code: "123456",
+                action: "REVOKE_PUBLIC_SESSIONS",
+                targetIdentityId: randomUUID(),
+                incidentId: "INC-100",
+                reason: "بررسی نشست مشکوک",
+              },
+      });
+      expect([403, 422]).toContain(result.statusCode);
+    }
+    const limited = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/proofs",
+      headers: second,
+      payload: {},
+    });
+    expect(limited.statusCode).toBe(429);
+  });
+
+  it("removes expired pending factors and proofs during a security request", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    await signIn(app, "09123456788");
+    const identityId = await identityIdForMobile("09123456788");
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at) values (${identityId}, ${randomUUID()}, 'expired', ${Buffer.from("fixture")}, ${Buffer.alloc(12)}, ${Buffer.alloc(16)}, 'PENDING', clock_timestamp() - interval '1 minute')`;
+      await sql`insert into identity_totp_action_proofs (id, token_hash, actor_identity_id, session_id, action, target_identity_id, payload_hash, created_at, expires_at) values (${randomUUID()}, ${randomBytes(32).toString("hex")}, ${identityId}, ${randomUUID()}, 'REVOKE_PUBLIC_SESSIONS', ${identityId}, ${"0".repeat(64)}, clock_timestamp() - interval '10 minutes', clock_timestamp() - interval '1 minute')`;
+      await grantReviewPermission(identityId);
+      const server = app.getHttpAdapter().getInstance();
+      const challenge = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/requests",
+        payload: { mobile: "09123456788" },
+      });
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/verifications",
+        payload: {
+          challengeId: challenge.json<{ challengeId: string }>().challengeId,
+          code: "111111",
+        },
+      });
+      await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/proofs",
+        headers: { cookie: String(verified.headers["set-cookie"]).split(";")[0] },
+        payload: {},
+      });
+      let count = 2;
+      for (let i = 0; i < 100 && count; i++) {
+        const rows = await sql<
+          { count: number }[]
+        >`select ((select count(*) from identity_totp_factors where identity_id = ${identityId}) + (select count(*) from identity_totp_action_proofs where actor_identity_id = ${identityId}))::int as count`;
+        count = rows[0]!.count;
+        if (count) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(count).toBe(0);
+    } finally {
+      await sql.end();
+    }
   });
 
   it("fails closed when no TOTP encryption key is supplied", async () => {

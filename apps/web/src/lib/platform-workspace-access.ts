@@ -25,6 +25,12 @@ type PlatformDestinationRule = PlatformDestination & {
 
 const platformDestinations: readonly PlatformDestinationRule[] = [
   {
+    permission: "SESSION_SECURITY",
+    href: "/platform/security/sessions",
+    label: "امنیت نشست‌ها",
+    shortLabel: "امنیت نشست",
+  },
+  {
     permission: "SELLER_APPLICATION_REVIEW",
     href: "/platform/seller-applications",
     label: "بررسی درخواست‌های فروشندگی",

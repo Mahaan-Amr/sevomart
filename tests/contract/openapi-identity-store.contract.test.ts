@@ -235,7 +235,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "c89f3b965fa4041b43b789c95384d8f68dd34a7fb69affd272005e2d17bf0a21",
+      "e4b65bdd321675aa74004c0f9bc1826cea88684cc28c489d5de8beec993b9e57",
     );
   });
 
@@ -307,4 +307,3 @@ describe("OpenAPI identity and store compatibility", () => {
     ).toThrow("POST /v1/auth/otp/requests does not match its v1 OpenAPI contract");
   });
 });
-

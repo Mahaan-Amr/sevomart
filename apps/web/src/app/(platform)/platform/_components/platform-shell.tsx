@@ -70,6 +70,17 @@ function PlatformNavigation({
           pathname={pathname}
         />
       ))}
+      <Link
+        href="/platform/security/authenticator"
+        className={
+          pathname.startsWith("/platform/security/authenticator")
+            ? styles.activeLink
+            : styles.link
+        }
+      >
+        <span>امنیت ورود</span>
+        <small>برنامه تأیید و بازیابی</small>
+      </Link>
       {children}
     </nav>
   );

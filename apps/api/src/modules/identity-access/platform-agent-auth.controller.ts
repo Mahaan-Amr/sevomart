@@ -31,6 +31,7 @@ import {
 import {
   PlatformAgentTotpService,
   TotpDeniedError,
+  TotpRateLimitedError,
   TotpUnavailableError,
 } from "./application/platform-agent-totp.service";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
@@ -124,6 +125,14 @@ export class PlatformAgentAuthController {
     @Body() body: unknown,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
+    try {
+      await this.totp.recordProofAttempt(
+        readPlatformSessionToken(request) ?? "",
+        request.id,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
     const parsed = totpActionProofRequestContract.safeParse(body);
     if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
     void reply.header("Cache-Control", "no-store");
@@ -319,6 +328,8 @@ function platformAuthError(code: string, correlationId: string, status: number) 
 function totpError(error: unknown, correlationId: string): Error {
   if (error instanceof TotpDeniedError)
     return platformAuthError("PLATFORM_PERMISSION_REQUIRED", correlationId, 403);
+  if (error instanceof TotpRateLimitedError)
+    return platformAuthError("RATE_LIMITED", correlationId, 429);
   if (error instanceof TotpUnavailableError)
     return platformAuthError("UNAVAILABLE", correlationId, 503);
   return error instanceof Error ? error : new Error("TOTP operation failed");

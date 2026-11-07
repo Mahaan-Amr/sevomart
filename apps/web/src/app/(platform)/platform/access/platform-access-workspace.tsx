@@ -44,6 +44,7 @@ const responsibilityLabels: Record<Responsibility, string> = {
   SELLER_APPLICATION_REVIEW: "بررسی درخواست فروشندگی",
   PAYMENT_REVIEW: "بررسی پرداخت",
   ACCESS_ADMINISTRATION: "مدیریت دسترسی",
+  SESSION_SECURITY: "امنیت نشست‌ها",
   PAYMENT_OUTCOME_CHANGE: "تغییر نتیجه پرداخت",
   SENSITIVE_IDENTITY_BANKING_BROAD_VIEW: "مشاهده گسترده هویتی و بانکی",
   HIGH_RISK_BULK_EXPORT: "خروجی انبوه پرخطر",

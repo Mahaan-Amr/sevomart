@@ -379,6 +379,7 @@ const operations = [
       { status: 201, schema: "TotpActionProof" },
       { status: 403, schema: "TotpError" },
       { status: 422, schema: "TotpError" },
+      { status: 429, schema: "TotpError" },
       { status: 503, schema: "TotpError" },
     ],
   },

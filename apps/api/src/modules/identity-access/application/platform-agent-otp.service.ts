@@ -52,6 +52,7 @@ export class PlatformAgentOtpService {
     const occurredAt = this.now();
     const expiresAt = new Date(occurredAt.getTime() + CHALLENGE_LIFETIME_MS);
     const accepted = await this.#sql.begin(async (sql) => {
+      await sql`select pg_advisory_xact_lock(hashtextextended(${granted[0]!.identityId}, 301))`;
       await sql`select pg_advisory_xact_lock(hashtext(${`platform:${mobile}`}))`;
       const counts = await sql<Array<{ count: number }>>`
         select count(*)::int as count from identity_otp_challenges
@@ -83,7 +84,12 @@ export class PlatformAgentOtpService {
   }
 
   async verifyOtp(challengeId: OtpChallengeId, code: OtpCode) {
+    const observed = await this.#sql<
+      { identityId: string }[]
+    >`select lm.identity_id as "identityId" from identity_otp_challenges c join identity_login_methods lm on lm.kind = 'MOBILE' and lm.mobile = c.mobile where c.id = ${challengeId} and c.audience = 'PLATFORM_AGENT'`;
+    if (!observed[0]) throw new OtpRejectedError();
     const result = await this.#sql.begin(async (sql) => {
+      await sql`select pg_advisory_xact_lock(hashtextextended(${observed[0]!.identityId}, 301))`;
       const challenges = await sql<
         Array<{ mobile: IranianMobile; codeHash: string; attempts: number }>
       >`
@@ -130,7 +136,8 @@ export class PlatformAgentOtpService {
         for share of g
       `;
       const identity = identities[0];
-      if (!identity) throw new PlatformPermissionRequiredError();
+      if (!identity || identity.identityId !== observed[0]!.identityId)
+        throw new PlatformPermissionRequiredError();
 
       const token = randomBytes(32).toString("base64url");
       const expiresAt = new Date(this.now().getTime() + SESSION_LIFETIME_MS);
