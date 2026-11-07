@@ -49,7 +49,7 @@ test("guest signs in with the visible development OTP, returns to the prior acti
     "href",
     "/seller/store?step=shipping",
   );
-  await page.getByRole("button", { name: "خروج" }).click();
+  await page.getByRole("button", { name: "خروج", exact: true }).click();
   await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "ورود به سوو" })).toBeVisible();
