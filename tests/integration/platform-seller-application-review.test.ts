@@ -820,6 +820,48 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     const cookie = String(verified.headers["set-cookie"]).split(";")[0];
     const headers = { cookie };
+    const tableDb = postgres(environment.DATABASE_URL, { max: 3 });
+    let releaseTable!: () => void;
+    let acquiredTable!: () => void;
+    const tableHeld = new Promise<void>((resolve) => {
+      acquiredTable = resolve;
+    });
+    const tableGate = new Promise<void>((resolve) => {
+      releaseTable = resolve;
+    });
+    try {
+      const holder = tableDb.begin(async (tx) => {
+        await tx`lock table identity_totp_factors in share row exclusive mode`;
+        acquiredTable();
+        await tableGate;
+      });
+      await tableHeld;
+      const waiting = server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/enrollment",
+        headers,
+      });
+      let blocked = false;
+      for (let i = 0; i < 100; i++) {
+        const rows = await tableDb<
+          { blocked: boolean }[]
+        >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%lock table identity_totp_factors in row exclusive mode%' and pid <> pg_backend_pid()) as blocked`;
+        if (rows[0]?.blocked) {
+          blocked = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(true);
+      vi.mocked(Date.now).mockReturnValue(instant + 600000);
+      releaseTable();
+      await holder;
+      expect((await waiting).statusCode).toBe(403);
+    } finally {
+      releaseTable();
+      vi.mocked(Date.now).mockReturnValue(instant);
+      await tableDb.end();
+    }
     const started = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/totp/enrollment",
@@ -980,7 +1022,7 @@ describe("platform seller application review API with PostgreSQL", () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       expect(blocked).toBe(true);
-      vi.mocked(Date.now).mockReturnValue(instant + 301000);
+      vi.mocked(Date.now).mockReturnValue(instant + 600000);
       unlock();
       await holder;
       expect((await waiting).statusCode).toBe(403);
@@ -1023,7 +1065,7 @@ describe("platform seller application review API with PostgreSQL", () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       expect(blocked).toBe(true);
-      vi.mocked(Date.now).mockReturnValue(instant + 301000);
+      vi.mocked(Date.now).mockReturnValue(instant + 600000);
       releaseRow();
       await holder;
       expect((await waiting).statusCode).toBe(403);
@@ -1189,7 +1231,82 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     apps.push(rotatedApp);
     server = rotatedApp.getHttpAdapter().getInstance();
+    async function expireWhileBlocked(
+      kind: "recovery-table" | "approvals-table" | "factor-row" | "pending-row",
+      operation: () => PromiseLike<{ statusCode: number }>,
+      recoveryId?: string,
+    ) {
+      const db = postgres(environment.DATABASE_URL, { max: 3 });
+      let release!: () => void;
+      let acquired!: () => void;
+      const held = new Promise<void>((resolve) => {
+        acquired = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        const holder = db.begin(async (tx) => {
+          if (kind === "recovery-table")
+            await tx`lock table identity_totp_recoveries in share row exclusive mode`;
+          if (kind === "approvals-table")
+            await tx`lock table identity_totp_recovery_approvals in share row exclusive mode`;
+          if (kind === "factor-row")
+            await tx`select identity_id from identity_totp_factors where identity_id = ${requester} for update`;
+          if (kind === "pending-row")
+            await tx`select recovery_id from identity_totp_recovery_enrollment where recovery_id = ${recoveryId!} for update`;
+          acquired();
+          await gate;
+        });
+        await held;
+        const waiting = operation();
+        const patterns = {
+          "recovery-table":
+            "%lock table identity_totp_recoveries in row exclusive mode%",
+          "approvals-table":
+            "%lock table identity_totp_recovery_approvals in row exclusive mode%",
+          "factor-row":
+            "%select identity_id from identity_totp_factors where identity_id%",
+          "pending-row":
+            "%select recovery_id from identity_totp_recovery_enrollment where recovery_id%",
+        };
+        let blocked = false;
+        for (let i = 0; i < 100; i++) {
+          const rows = await db<
+            { blocked: boolean }[]
+          >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like ${patterns[kind]} and pid <> pg_backend_pid()) as blocked`;
+          if (rows[0]?.blocked) {
+            blocked = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(true);
+        vi.mocked(Date.now).mockReturnValue(instant + 600000);
+        release();
+        await holder;
+        expect((await waiting).statusCode).toBe(403);
+      } finally {
+        release();
+        vi.mocked(Date.now).mockReturnValue(instant);
+        await db.end();
+      }
+    }
+    const oldFactor = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await oldFactor`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at, activated_at) values (${requester}, ${randomUUID()}, 'test-v2', ${Buffer.from("old fixture")}, ${Buffer.alloc(12)}, ${Buffer.alloc(16)}, 'ACTIVE', clock_timestamp() + interval '1 hour', clock_timestamp())`;
+    } finally {
+      await oldFactor.end();
+    }
     const reason = "دستگاه قبلی در دسترس نیست";
+    await expireWhileBlocked("recovery-table", () =>
+      server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/recoveries",
+        headers: requesterHeaders,
+        payload: { incidentId: "INC-RECOVERY", reason },
+      }),
+    );
     const requested = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/totp/recoveries",
@@ -1223,6 +1340,9 @@ describe("platform seller application review API with PostgreSQL", () => {
         headers,
         payload: { proof },
       });
+    await expireWhileBlocked("approvals-table", () =>
+      approve(firstHeaders, firstProof),
+    );
     const before = await server.inject({
       method: "POST",
       url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
@@ -1242,6 +1362,16 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     expect(replacement.statusCode).toBe(201);
     const firstReplacementSecret = replacement.json<{ secret: string }>().secret;
+    await expireWhileBlocked(
+      "pending-row",
+      () =>
+        server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+          headers: requesterHeaders,
+        }),
+      recoveryId,
+    );
     const firstWrong =
       testTotp(firstReplacementSecret) === "000000" ? "000001" : "000000";
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -1255,6 +1385,7 @@ describe("platform seller application review API with PostgreSQL", () => {
     }
     const previousHeaders = requesterHeaders;
     requesterHeaders = await platformLogin("09123456786");
+    expect(requesterHeaders.cookie).not.toBe(previousHeaders.cookie);
     const resumed = await server.inject({
       method: "POST",
       url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
@@ -1297,6 +1428,14 @@ describe("platform seller application review API with PostgreSQL", () => {
       payload: { code: testTotp(firstReplacementSecret) },
     });
     expect(outdated.statusCode).toBe(403);
+    await expireWhileBlocked("factor-row", () =>
+      server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+        headers: requesterHeaders,
+        payload: { code: testTotp(newSecret) },
+      }),
+    );
     const pendingOtp = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/otp/requests",
@@ -1498,6 +1637,71 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     expect(response.statusCode).toBe(503);
   });
+
+  it.each(["challenge", "session-table"] as const)(
+    "rejects a platform SMS code that expires while waiting on %s",
+    async (lockKind) => {
+      const app = await createApiApp(environment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      await signIn(app, "09123456788");
+      await grantReviewPermission(await identityIdForMobile("09123456788"));
+      const request = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/requests",
+        payload: { mobile: "09123456788" },
+      });
+      const challengeId = request.json<{ challengeId: string }>().challengeId;
+      const db = postgres(environment.DATABASE_URL, { max: 3 });
+      let release!: () => void;
+      let acquired!: () => void;
+      const held = new Promise<void>((resolve) => {
+        acquired = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        await db`update identity_otp_challenges set expires_at = clock_timestamp() + interval '2 seconds' where id = ${challengeId}`;
+        const holder = db.begin(async (tx) => {
+          if (lockKind === "challenge")
+            await tx`select id from identity_otp_challenges where id = ${challengeId} for update`;
+          else await tx`lock table identity_sessions in share row exclusive mode`;
+          acquired();
+          await gate;
+        });
+        await held;
+        const verifying = server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/otp/verifications",
+          payload: { challengeId, code: "111111" },
+        });
+        const pattern =
+          lockKind === "challenge"
+            ? "%verification_attempts as attempts%"
+            : "%lock table identity_sessions in row exclusive mode%";
+        let blocked = false;
+        for (let i = 0; i < 100; i++) {
+          const rows = await db<
+            { blocked: boolean }[]
+          >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like ${pattern} and pid <> pg_backend_pid()) as blocked`;
+          if (rows[0]?.blocked) {
+            blocked = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(true);
+        await db`select pg_sleep(greatest(0, extract(epoch from (select expires_at from identity_otp_challenges where id = ${challengeId}) - clock_timestamp()) + 0.1))`;
+        release();
+        await holder;
+        expect((await verifying).statusCode).toBe(401);
+      } finally {
+        release();
+        await db.end();
+      }
+    },
+  );
 
   it("locks a platform OTP challenge after five incorrect attempts", async () => {
     const app = await createApiApp(environment);

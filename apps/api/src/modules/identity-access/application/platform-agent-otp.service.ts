@@ -91,9 +91,14 @@ export class PlatformAgentOtpService {
     const result = await this.#sql.begin(async (sql) => {
       await sql`select pg_advisory_xact_lock(hashtextextended(${observed[0]!.identityId}, 301))`;
       const challenges = await sql<
-        Array<{ mobile: IranianMobile; codeHash: string; attempts: number }>
+        Array<{
+          mobile: IranianMobile;
+          codeHash: string;
+          attempts: number;
+          expiresAt: Date;
+        }>
       >`
-        select mobile, code_hash as "codeHash", verification_attempts as attempts
+        select mobile, code_hash as "codeHash", verification_attempts as attempts, expires_at as "expiresAt"
         from identity_otp_challenges
         where id = ${challengeId} and audience = 'PLATFORM_AGENT'
           and consumed_at is null and expires_at > ${this.now()}
@@ -102,10 +107,15 @@ export class PlatformAgentOtpService {
       const challenge = challenges[0];
       if (
         !challenge ||
+        challenge.expiresAt.getTime() <= this.now().getTime() ||
         challenge.attempts >= MAX_ATTEMPTS ||
         challenge.codeHash !== hashChallengeCode(challengeId, code)
       ) {
-        if (challenge && challenge.attempts < MAX_ATTEMPTS) {
+        if (
+          challenge &&
+          challenge.expiresAt.getTime() > this.now().getTime() &&
+          challenge.attempts < MAX_ATTEMPTS
+        ) {
           await sql`update identity_otp_challenges
             set verification_attempts = verification_attempts + 1
             where id = ${challengeId}`;
@@ -138,6 +148,8 @@ export class PlatformAgentOtpService {
       const identity = identities[0];
       if (!identity || identity.identityId !== observed[0]!.identityId)
         throw new PlatformPermissionRequiredError();
+      await sql`lock table identity_sessions in row exclusive mode`;
+      if (challenge.expiresAt.getTime() <= this.now().getTime()) return null;
 
       const token = randomBytes(32).toString("base64url");
       const expiresAt = new Date(this.now().getTime() + SESSION_LIFETIME_MS);
