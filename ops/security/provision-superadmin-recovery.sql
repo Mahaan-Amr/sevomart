@@ -100,3 +100,30 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.identity_authorize_superadmin_totp(uuid, text, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.identity_authorize_superadmin_totp(uuid, text, uuid) TO sevo_superadmin_recovery;
+
+-- Owner-only password recovery also works when a previously registered TOTP factor is lost.
+REVOKE ALL ON public.identity_platform_passwords, public.identity_sessions FROM sevo_superadmin_recovery;
+CREATE OR REPLACE FUNCTION public.identity_owner_recover_platform_password(target_id uuid, login_name text, login_email text, encoded_password text, recovery_reason text, recovery_key uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+DECLARE normalized text;
+BEGIN
+  IF NOT coalesce(pg_has_role(session_user, to_regrole('sevo_superadmin_recovery'), 'member'), false) THEN RAISE EXCEPTION 'recovery authority required'; END IF;
+  login_name := lower(btrim(login_name));
+  login_email := nullif(lower(btrim(login_email)), '');
+  recovery_reason := btrim(recovery_reason);
+  normalized := regexp_replace(translate(recovery_reason, '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789'), '[[:space:]‌-]+', '', 'g');
+  IF target_id IS NULL OR recovery_key IS NULL OR login_name !~ '^[a-z][a-z0-9._-]{2,99}$' OR (login_email IS NOT NULL AND (length(login_email) > 254 OR login_email !~ '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$')) OR encoded_password !~ '^scrypt\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$' OR length(recovery_reason) NOT BETWEEN 10 AND 1000 OR length(regexp_replace(normalized, '[^0-9]', '', 'g')) >= 10 OR recovery_reason ~* '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}' THEN RAISE EXCEPTION 'invalid recovery input'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('identity_platform_superadmins'));
+  PERFORM pg_advisory_xact_lock(hashtextextended(target_id::text, 301));
+  PERFORM i.id FROM public.identity_identities i JOIN public.identity_platform_superadmins a ON a.identity_id = i.id AND a.revoked_at IS NULL WHERE i.id = target_id AND i.status = 'ACTIVE' FOR SHARE OF i, a;
+  IF NOT FOUND THEN RAISE EXCEPTION 'active target superadmin required'; END IF;
+  IF EXISTS (SELECT 1 FROM public.identity_platform_superadmin_recovery_idempotency WHERE key = recovery_key::text) THEN RAISE EXCEPTION 'recovery replay rejected'; END IF;
+  IF EXISTS (SELECT 1 FROM public.identity_platform_passwords p LEFT JOIN public.identity_login_methods m ON m.identity_id = p.identity_id AND m.kind = 'MOBILE' WHERE p.identity_id <> target_id AND (p.username IN (login_name, login_email) OR p.email IN (login_name, login_email) OR m.mobile IN (login_name, login_email))) THEN RAISE EXCEPTION 'identifier unavailable'; END IF;
+  INSERT INTO public.identity_platform_passwords (identity_id, username, email, password_hash) VALUES (target_id, login_name, login_email, encoded_password) ON CONFLICT (identity_id) DO UPDATE SET username = EXCLUDED.username, email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, changed_at = clock_timestamp();
+  UPDATE public.identity_sessions SET revoked_at = clock_timestamp() WHERE identity_id = target_id AND audience = 'PLATFORM_AGENT' AND revoked_at IS NULL;
+  INSERT INTO public.identity_platform_superadmin_audit (id, actor_identity_id, actor_kind, subject_identity_id, action, reason, correlation_id) VALUES (gen_random_uuid(), null, 'OWNER_RECOVERY', target_id, 'PASSWORD_RECOVERED', recovery_reason, gen_random_uuid());
+  INSERT INTO public.identity_platform_superadmin_recovery_idempotency (key, payload_hash, response) VALUES (recovery_key::text, encode(sha256(convert_to(target_id::text, 'UTF8')), 'hex'), jsonb_build_object('status', 'PASSWORD_RECOVERED'));
+END;
+$$;
+REVOKE ALL ON FUNCTION public.identity_owner_recover_platform_password(uuid, text, text, text, text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.identity_owner_recover_platform_password(uuid, text, text, text, text, uuid) TO sevo_superadmin_recovery;

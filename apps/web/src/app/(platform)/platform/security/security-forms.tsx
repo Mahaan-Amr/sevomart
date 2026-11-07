@@ -339,7 +339,6 @@ export function SessionSecurity() {
   const [targetIdentityId, setTarget] = useState("");
   const [incidentId, setIncidentId] = useState("");
   const [reason, setReason] = useState("");
-  const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
@@ -347,23 +346,9 @@ export function SessionSecurity() {
     setBusy(true);
     setMessage("");
     try {
-      const proof = await call("proofs", {
-        action: "REVOKE_PUBLIC_SESSIONS",
-        targetIdentityId,
-        incidentId,
-        reason,
-        code,
-      });
-      setCode("");
-      await call("session-revocations", {
-        targetIdentityId,
-        incidentId,
-        reason,
-        proof: proof.proof,
-      });
+      await call("session-revocations", { targetIdentityId, incidentId, reason });
       setMessage("نشست‌های فعلی بسته شدند. ورود بعدی همچنان ممکن است.");
     } catch (error) {
-      setCode("");
       setMessage((error as Error).message);
     } finally {
       setBusy(false);
@@ -406,7 +391,6 @@ export function SessionSecurity() {
             onChange={(event) => setReason(event.target.value)}
           />
         </label>
-        <Code value={code} onChange={setCode} />
         <button disabled={busy}>بستن نشست‌ها</button>
       </form>
       {message && (
