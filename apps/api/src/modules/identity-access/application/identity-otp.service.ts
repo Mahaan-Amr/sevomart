@@ -88,13 +88,18 @@ export class IdentityOtpService {
     const identity = await this.repository.findOrCreateIdentity(mobile);
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(this.now().getTime() + SESSION_LIFETIME_MS);
-    await this.repository.saveSession({
+    const saved = await this.repository.saveSession({
       id: randomUUID(),
       tokenHash: hashToken(token),
       identityId: identity.id,
       audience: "PUBLIC",
       expiresAt,
+      challengeProof: {
+        id: challengeId,
+        codeHash: hashChallengeCode(challengeId, code),
+      },
     });
+    if (!saved) throw new OtpRejectedError();
 
     return {
       token,
