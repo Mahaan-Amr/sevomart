@@ -22,7 +22,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:packages
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e -- tests/e2e/buyer-feeds.spec.ts --project=chromium-360x800 --retries=0
+      - run: pnpm test:e2e -- tests/e2e/buyer-feeds.spec.ts --retries=0
   development:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -57,3 +57,4 @@ jobs:
       - run: pnpm build:packages
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e -- tests/e2e/store-following.spec.ts --project=chromium-1440x900 --retries=0 --grep 'guest cancel preserves'
+
