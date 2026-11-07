@@ -314,7 +314,8 @@ model PlatformSuperadmin {
 
 model PlatformSuperadminAudit {
   id String @id @db.Uuid
-  actorIdentityId String @map("actor_identity_id") @db.Uuid
+  actorIdentityId String? @map("actor_identity_id") @db.Uuid
+  actorKind String @default("SUPERADMIN") @map("actor_kind")
   subjectIdentityId String @map("subject_identity_id") @db.Uuid
   action String
   reason String
@@ -331,6 +332,13 @@ model PlatformSuperadminIdempotency {
   response Json
   @@id([actorIdentityId, operation, key])
   @@map("identity_platform_superadmin_idempotency")
+}
+
+model PlatformSuperadminRecoveryIdempotency {
+  key String @id
+  payloadHash String @map("payload_hash")
+  response Json
+  @@map("identity_platform_superadmin_recovery_idempotency")
 }
 
 model PlatformSuperadminSensitiveAudit {

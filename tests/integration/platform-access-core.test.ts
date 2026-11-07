@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
 
 import postgres, { type Sql } from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -222,6 +223,92 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     >`select outcome from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${actor.identityId}`;
     expect(rows).toEqual([{ outcome: "DENIED" }]);
     await sql.end();
+  });
+
+  it("recovers an active identity without a platform session only when no superadmin remains", async () => {
+    const target = await seedAgent([]);
+    const input = JSON.stringify({
+      identityId: target.identityId,
+      reason: "بازیابی مدیریت پس از قطع دسترسی",
+      idempotencyKey: randomUUID(),
+    });
+    const run = () =>
+      spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+        input,
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+      });
+    expect(run().status).toBe(0);
+    expect(run().status).toBe(0);
+    const other = await seedAgent([]);
+    const rejected = spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+      input: JSON.stringify({
+        identityId: other.identityId,
+        reason: "بازیابی مدیریت پس از قطع دسترسی",
+        idempotencyKey: randomUUID(),
+      }),
+      encoding: "utf8",
+      env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+    });
+    expect(rejected.status).not.toBe(0);
+  });
+
+  it("serializes concurrent owner recoveries and records exactly one", async () => {
+    const first = await seedAgent([]);
+    const second = await seedAgent([]);
+    const run = (identityId: string) =>
+      new Promise<number | null>((resolve) => {
+        const processHandle = spawn(
+          process.execPath,
+          ["scripts/recover-superadmin.mjs"],
+          {
+            env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+            stdio: ["pipe", "ignore", "ignore"],
+          },
+        );
+        processHandle.on("close", resolve);
+        processHandle.stdin.end(
+          JSON.stringify({
+            identityId,
+            reason: "بازیابی مدیریت پس از قطع دسترسی",
+            idempotencyKey: randomUUID(),
+          }),
+        );
+      });
+    const results = await Promise.all([run(first.identityId), run(second.identityId)]);
+    expect(results.filter((code) => code === 0)).toHaveLength(1);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const rows = await sql<
+      Array<{ count: number }>
+    >`select count(*)::int as count from identity_platform_superadmin_audit where actor_kind = 'OWNER_RECOVERY' and action = 'RECOVERED'`;
+    expect(rows[0]?.count).toBe(1);
+    await sql.end();
+  });
+
+  it("rolls back recovery when its audit cannot be recorded", async () => {
+    const target = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`create function test_reject_superadmin_recovery_audit() returns trigger language plpgsql as $$ begin raise exception 'injected audit failure'; end $$`;
+    await sql`create trigger test_reject_superadmin_recovery_audit before insert on identity_platform_superadmin_audit for each row execute function test_reject_superadmin_recovery_audit()`;
+    try {
+      const result = spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+        input: JSON.stringify({
+          identityId: target.identityId,
+          reason: "بازیابی مدیریت پس از قطع دسترسی",
+          idempotencyKey: randomUUID(),
+        }),
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+      });
+      expect(result.status).not.toBe(0);
+      const rows =
+        await sql`select identity_id from identity_platform_superadmins where identity_id = ${target.identityId} and revoked_at is null`;
+      expect(rows).toHaveLength(0);
+    } finally {
+      await sql`drop trigger test_reject_superadmin_recovery_audit on identity_platform_superadmin_audit`;
+      await sql`drop function test_reject_superadmin_recovery_audit()`;
+      await sql.end();
+    }
   });
 
   it("lists responsibility and sensitive grants and exposes audit only to its reviewer", async () => {
@@ -2262,6 +2349,7 @@ async function resetPlatformAccessData() {
   await sql`truncate identity_platform_superadmin_sensitive_audit`;
   await sql`truncate identity_platform_superadmin_audit`;
   await sql`truncate identity_platform_superadmin_idempotency`;
+  await sql`truncate identity_platform_superadmin_recovery_idempotency`;
   await sql`truncate identity_platform_superadmins`;
   await sql`truncate identity_platform_access_audit`;
   await sql`truncate identity_platform_emergency_access_reviews`;
