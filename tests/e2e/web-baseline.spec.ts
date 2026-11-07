@@ -179,9 +179,10 @@ test("seller introduction explains responsibility and resumes the application af
   await page.goto("/seller/start");
   await expect(
     page.getByRole("heading", {
-      name: "فروشگاه خودتان را روشن و قابل پیگیری بسازید",
+      name: "فروشگاه خودتان در سوو",
     }),
   ).toBeVisible();
+  await page.getByRole("button", { name: /مرحله 3:/ }).click();
   await expect(page.getByText(/بازپرداخت را تضمین نمی‌کند/)).toBeVisible();
   await page.getByRole("link", { name: "شروع درخواست فروشندگی" }).click();
   await expect(page).toHaveURL(/\/seller\/login\?returnTo=/);

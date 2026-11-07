@@ -1,113 +1,186 @@
 .page {
-  min-height: 100dvh;
-  padding: 24px 16px;
-}
-
-.panel {
-  display: grid;
-  width: min(100%, 680px);
-  gap: 12px;
-  margin-inline: auto;
-  padding: 28px;
-  border: 1px solid var(--color-border-primary);
-  border-radius: 22px;
-  background: var(--color-surface);
-  box-shadow: var(--elevation-raised);
-}
-
-.brand {
-  width: fit-content;
-  min-height: 40px;
-  padding-block: 6px;
-  color: var(--color-primary-dark);
-  font-size: 20px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.eyebrow {
-  color: var(--color-primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.panel h1 {
-  max-width: 560px;
-  font-size: clamp(24px, 5vw, 34px);
-}
-
-.facts {
-  display: grid;
-  gap: 0;
-  margin: 12px 0 0;
-}
-
-.facts div {
-  display: grid;
-  gap: 4px;
-  padding-block: 14px;
-  border-block-end: 1px solid var(--color-divider);
-}
-
-.facts dt {
-  color: var(--color-text);
-  font-weight: 600;
-}
-
-.facts dd {
-  margin: 0;
-  color: var(--color-muted);
-  line-height: 1.9;
-}
-
-.actions {
+  position: relative;
+  min-height: 100svh;
+  overflow: hidden;
+  background: #211619;
+  color: #fff;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-block-start: 12px;
-}
-
-.actions a {
-  display: inline-flex;
-  min-height: 44px;
   align-items: center;
   justify-content: center;
-  padding: 9px 18px;
-  border-radius: 12px;
+  padding: 88px 24px 120px;
+}
+.photo,
+.shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.photo {
+  background: url("/seller/workshop.png") center 48% / cover;
+  transition:
+    transform 700ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    filter 700ms;
+}
+.photo1 {
+  transform: scale(1.12);
+  filter: saturate(0.8);
+}
+.photo2 {
+  transform: scale(1.2);
+  filter: saturate(0.7);
+}
+.shade {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 12, 15, 0.78),
+    rgba(20, 12, 15, 0.78) 44%,
+    rgba(20, 12, 15, 0.84)
+  );
+}
+.top {
+  position: absolute;
+  inset: 20px 32px auto;
+  z-index: 2;
+  font-size: 22px;
+  font-weight: 700;
+}
+.top a {
+  color: #fff;
   text-decoration: none;
 }
-
+.content {
+  position: relative;
+  z-index: 2;
+  max-width: 520px;
+  text-align: center;
+}
+.kicker {
+  font-size: 13px;
+  margin: 0 0 24px;
+}
+.content h1 {
+  font-size: 28px;
+  line-height: 1.6;
+  margin: 0 0 16px;
+  color: #fff;
+}
+.content p {
+  line-height: 1.9;
+  color: #fff;
+}
+.copy {
+  min-height: 130px;
+}
+.copy p {
+  font-size: 15px;
+  margin: 0;
+}
+.disclaimer {
+  font-size: 12px;
+  margin: 20px 0;
+}
+.actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.primary,
+.back {
+  font: inherit;
+  min-height: 44px;
+  border-radius: 12px;
+  padding: 9px 24px;
+  cursor: pointer;
+}
 .primary {
-  color: var(--color-on-primary);
-  background: var(--color-primary);
-  box-shadow: var(--elevation-action);
+  color: #fff;
+  background: #a41439;
+  border: 1px solid #a41439;
+  text-decoration: none;
+  font-weight: 600;
 }
-
-.secondary {
-  border: 1px solid var(--color-divider);
-  color: var(--color-primary-dark);
+.back {
+  color: #fff;
   background: transparent;
+  border: 1px solid #fff;
 }
-
-.actions a:focus-visible,
-.brand:focus-visible {
-  outline: 3px solid var(--color-primary-light);
-  outline-offset: 3px;
+.page :is(button, a):focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
 }
-
-@media (max-width: 480px) {
-  .panel {
-    padding: 22px 18px;
+.page button[aria-disabled="true"] {
+  opacity: 0.65;
+}
+.progress {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+  direction: rtl;
+}
+.progress button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.progress span {
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 8px;
+  opacity: 0.6;
+}
+.progress [aria-current] span {
+  width: 24px;
+  opacity: 1;
+}
+.count {
+  font-size: 12px;
+  margin: 0;
+}
+.transition {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: #521025;
+  animation: slide 340ms ease both;
+}
+.reverse {
+  animation-direction: reverse;
+}
+@keyframes slide {
+  0% {
+    transform: translateX(100%);
   }
-
-  .actions a {
-    width: 100%;
+  50% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-100%);
   }
 }
-
+@media (max-width: 600px) {
+  .top {
+    inset: 16px 16px auto;
+  }
+  .content h1 {
+    font-size: 24px;
+  }
+  .page {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .panel,
-  .actions a {
-    transition: none;
+  .page * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }
