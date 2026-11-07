@@ -112,6 +112,14 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page).toHaveURL(/\/seller\/store$/);
   expect((await readSavedDraft()).shippingMethods).toEqual([]);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
+  await expect(
+    page.getByText(
+      "برای انتشار هنوز لازم است: شناسه لینک، معرفی کوتاه، روش ارسال فعال، سیاست مرجوعی.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("تسویه آزمایشی است؛ فروش و پرداخت واقعی فعال نیست."),
+  ).toBeVisible();
   await page.goto("/seller/store/shipping");
   await expect(page.getByRole("checkbox", { name: "پست پیشتاز" })).not.toBeChecked();
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
