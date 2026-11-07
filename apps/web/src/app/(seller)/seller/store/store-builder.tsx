@@ -52,7 +52,7 @@ const emptyForm: {
   slug: string;
   bio: string;
   publicContactPhone: string;
-  shippingCode: ShippingCode;
+  shippingCode: ShippingCode | "";
   returnPolicy: string;
   themeColor: string;
   shippingMethods: ShippingForm[];
@@ -61,10 +61,10 @@ const emptyForm: {
   slug: "",
   bio: "",
   publicContactPhone: "",
-  shippingCode: "NATIONAL_POST",
+  shippingCode: "",
   returnPolicy: "",
   themeColor: "#A41439",
-  shippingMethods: [defaultShippingMethod("NATIONAL_POST")],
+  shippingMethods: [],
 };
 
 export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) {
@@ -142,16 +142,16 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       slug: draft.slug ?? "",
       bio: draft.bio ?? "",
       publicContactPhone: draft.publicContactPhone ?? "",
-      shippingCode: draft.shippingMethods?.[0]?.code ?? "NATIONAL_POST",
+      shippingCode: draft.shippingMethods?.find((method) => method.enabled)?.code ?? "",
       returnPolicy: draft.returnPolicy ?? "",
       themeColor: draft.themeColor ?? "#A41439",
-      shippingMethods: draft.shippingMethods?.map((method) => ({
+      shippingMethods: (draft.shippingMethods ?? []).map((method) => ({
         code: method.code,
         label: method.label,
         feeToman: String(method.fixedFee.amount / 10),
         estimatedDeliveryText: method.estimatedDeliveryText,
         enabled: method.enabled,
-      })) ?? [defaultShippingMethod("NATIONAL_POST")],
+      })),
     });
     setStoredMedia({
       logoMediaId: draft.logoMediaId ?? null,
@@ -186,7 +186,12 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     if (slugUnavailable) localErrors.slug = "این شناسه لینک قبلاً استفاده شده است.";
     setErrors(localErrors);
     if (Object.keys(localErrors).length > 0) {
-      setEditStep(localErrors.returnPolicy && !hasIdentityErrors(localErrors) ? 1 : 0);
+      setEditStep(
+        (localErrors.shipping || localErrors.returnPolicy) &&
+          !hasIdentityErrors(localErrors)
+          ? 1
+          : 0,
+      );
       return;
     }
     setPending(true);
@@ -329,9 +334,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
             ...(allErrors.slug ? { slug: allErrors.slug } : {}),
             ...(allErrors.bio ? { bio: allErrors.bio } : {}),
           }
-        : allErrors.returnPolicy
-          ? { returnPolicy: allErrors.returnPolicy }
-          : {};
+        : {
+            ...(allErrors.shipping ? { shipping: allErrors.shipping } : {}),
+            ...(allErrors.returnPolicy ? { returnPolicy: allErrors.returnPolicy } : {}),
+          };
     setErrors(stepErrors);
     if (Object.keys(stepErrors).length === 0) setEditStep((current) => current + 1);
   }
@@ -573,12 +579,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
           {editStep === 1 ? (
             <>
               <h2>ارسال و مرجوعی</h2>
-              <Field label="روش ارسال">
+              <Field label="روش ارسال" error={errors.shipping}>
                 <select
                   value={form.shippingCode}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    setErrors((current) => ({ ...current, shipping: undefined }));
                     setForm((current) => {
-                      const code = e.target.value as typeof form.shippingCode;
+                      const code = e.target.value as ShippingCode;
                       const selected =
                         current.shippingMethods.find(
                           (method) => method.code === code,
@@ -587,15 +594,20 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                         ...current,
                         shippingCode: code,
                         shippingMethods: [
-                          selected,
-                          ...current.shippingMethods
-                            .slice(1)
-                            .filter((method) => method.code !== code),
+                          { ...selected, enabled: true },
+                          ...current.shippingMethods.filter(
+                            (method) =>
+                              method.code !== code &&
+                              method.code !== current.shippingCode,
+                          ),
                         ],
                       };
-                    })
-                  }
+                    });
+                  }}
                 >
+                  <option value="" disabled>
+                    روش ارسال را انتخاب کنید
+                  </option>
                   <option value="NATIONAL_POST">پست پیشتاز</option>
                   <option value="COURIER">پیک</option>
                   <option value="PICKUP">دریافت حضوری</option>
@@ -1134,7 +1146,9 @@ function buildDraftInput(
       : {}),
     ...(complete || form.bio.trim().length >= 2 ? { bio: form.bio.trim() } : {}),
     publicContactPhone: normalizedContactPhone(form.publicContactPhone),
-    shippingMethods: form.shippingMethods.map(toShippingInput),
+    ...(form.shippingMethods.length > 0
+      ? { shippingMethods: form.shippingMethods.map(toShippingInput) }
+      : {}),
     ...(complete || form.returnPolicy.trim().length >= 10
       ? { returnPolicy: form.returnPolicy.trim() }
       : {}),
@@ -1207,6 +1221,9 @@ function validateForm(form: typeof emptyForm): FieldErrors {
     !/^0[1-9][0-9]{9}$/.test(latinDigits(form.publicContactPhone.trim()))
   ) {
     errors.publicContactPhone = "شماره کاری را با ۱۱ رقم و بدون فاصله وارد کنید.";
+  }
+  if (!form.shippingMethods.some((method) => method.enabled)) {
+    errors.shipping = "دست‌کم یک روش ارسال را فعال کنید.";
   }
   const returnPolicyLength = form.returnPolicy.trim().length;
   if (returnPolicyLength < 10)

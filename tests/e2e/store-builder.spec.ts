@@ -87,10 +87,28 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     name: "store-builder",
     sensitiveRegions: [],
   });
+  async function readSavedDraft() {
+    const response = await page.request.get("/api/store/seller/store/draft");
+    expect(response.ok()).toBe(true);
+    return response.json();
+  }
   await storeNameInput.fill("پیش‌نویس خانه ماه");
+  const draftSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/store/seller/store/draft") &&
+      response.request().method() === "PUT",
+  );
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  const draftResponse = await draftSave;
+  expect(draftResponse.ok()).toBe(true);
+  expect(draftResponse.request().postDataJSON()).not.toHaveProperty("shippingMethods");
   await expect(page).toHaveURL(/\/seller\/store$/);
+  expect((await readSavedDraft()).shippingMethods).toEqual([]);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
+  await page.goto("/seller/store/shipping");
+  await expect(page.getByRole("checkbox", { name: "پست پیشتاز" })).not.toBeChecked();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
   for (const [path, heading, firstControl] of [
     ["profile", "معرفی فروشگاه", "نام فروشگاه"],
     ["shipping", "روش‌های ارسال", "پست پیشتاز"],
@@ -181,8 +199,37 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.goto("/seller/store/profile");
   await expect(page.getByLabel("معرفی کوتاه")).toHaveValue(storeBio);
 
+  await page.goto("/seller/store/setup");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByLabel("روش ارسال")).toHaveValue("");
+  await page.getByLabel("سیاست مرجوعی").fill(returnPolicy);
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ارسال و مرجوعی" })).toBeVisible();
+  await page.getByLabel("روش ارسال").selectOption("NATIONAL_POST");
+  await page.getByLabel("روش ارسال").selectOption("COURIER");
+  const switchedSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/store/seller/store/draft") &&
+      response.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  const switchedResponse = await switchedSave;
+  expect(switchedResponse.ok()).toBe(true);
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  expect(
+    (await readSavedDraft()).shippingMethods.map(
+      (method: { code: string; enabled: boolean }) => ({
+        code: method.code,
+        enabled: method.enabled,
+      }),
+    ),
+  ).toEqual([{ code: "COURIER", enabled: true }]);
+
   await page.goto("/seller/store/shipping");
   let nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
+  await nationalPost.getByRole("checkbox").check();
+  await page.getByRole("group", { name: "پیک" }).getByRole("checkbox").uncheck();
   await nationalPost
     .getByLabel("عنوانی که خریدار می‌بیند")
     .fill("پست پیشتاز با تحویل قابل پیگیری در سراسر ایران");
@@ -516,6 +563,34 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page).toHaveURL(/\/seller\/store$/);
   await page.goto("/seller/store/profile");
   await expect(page.getByLabel("شماره تماس کاری (اختیاری)")).toHaveValue("09123456789");
+  await page.goto("/seller/store/setup");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByLabel("روش ارسال")).toHaveValue("NATIONAL_POST");
+  await page.getByLabel("روش ارسال").selectOption("PICKUP");
+  const preservedSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/store/seller/store/draft") &&
+      response.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  const preservedResponse = await preservedSave;
+  expect(preservedResponse.ok()).toBe(true);
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  const preservedDraft = await readSavedDraft();
+  expect(preservedDraft.shippingMethods).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "PICKUP", enabled: true }),
+      expect.objectContaining({
+        code: "COURIER",
+        enabled: true,
+        label: "پیک درون‌شهری",
+        fixedFee: { amount: 1200000, currency: "IRR" },
+      }),
+    ]),
+  );
+  expect(preservedDraft.shippingMethods).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ code: "NATIONAL_POST" })]),
+  );
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();

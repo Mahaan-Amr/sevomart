@@ -2,6 +2,26 @@ import * as store from "@sevo/contracts/store/v1";
 import { describe, expect, it } from "vitest";
 
 describe("Store v1 executable schema surface", () => {
+  it("reads an empty shipping list only for a draft", () => {
+    const draft = { ...store.storeV1Examples.StoreDraft, shippingMethods: [] };
+    expect(store.storeDraftContract.parse(draft)).toEqual(draft);
+    expect(
+      store.storePreviewContract.parse({
+        store: draft,
+        publicationReadiness: { ready: false, missingFields: ["SHIPPING_METHOD"] },
+      }).store.shippingMethods,
+    ).toEqual([]);
+    expect(
+      store.storeDraftContract.safeParse({ ...draft, status: "PUBLISHED" }).success,
+    ).toBe(false);
+    expect(
+      store.publicStoreContract.safeParse({
+        ...store.storeV1Examples.PublicStore,
+        shippingMethods: [],
+      }).success,
+    ).toBe(false);
+  });
+
   it("does not count whitespace-only information as publication prerequisites", () => {
     for (const field of ["name", "bio", "returnPolicy"]) {
       expect(
