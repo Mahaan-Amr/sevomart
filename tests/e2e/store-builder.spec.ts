@@ -93,6 +93,16 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     return response.json();
   }
   await storeNameInput.fill("پیش‌نویس خانه ماه");
+  await page.getByLabel("شناسه لینک").fill("x");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(
+    page
+      .locator("label")
+      .filter({ hasText: "شناسه لینک" })
+      .getByText("شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد."),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/seller\/store\/setup/);
+  await page.getByLabel("شناسه لینک").clear();
   const draftSave = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/store/seller/store/draft") &&
@@ -105,6 +115,30 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page).toHaveURL(/\/seller\/store$/);
   expect((await readSavedDraft()).shippingMethods).toEqual([]);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
+  await expect(
+    page.getByText(
+      "برای انتشار هنوز لازم است: شناسه لینک، معرفی کوتاه، روش ارسال فعال، سیاست مرجوعی.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("تسویه آزمایشی است؛ فروش و پرداخت واقعی فعال نیست."),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
+  await page.getByLabel("نام فروشگاه").clear();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page
+      .locator("label")
+      .filter({ hasText: "نام فروشگاه" })
+      .getByText("نام فروشگاه را کامل‌تر بنویسید."),
+  ).toBeVisible();
+  await expect(page.locator("form").getByRole("alert")).toContainText(
+    "نام فروشگاه را کامل‌تر بنویسید.",
+  );
+  await expect(page).toHaveURL(/\/seller\/store\/setup/);
+  await page.getByLabel("نام فروشگاه").fill("پیش‌نویس خانه ماه");
+  await page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" }).click();
   await page.goto("/seller/store/shipping");
   await expect(page.getByRole("checkbox", { name: "پست پیشتاز" })).not.toBeChecked();
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
@@ -307,6 +341,17 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
   await expect(page.getByText("قدم ۱ از ۳")).toBeVisible();
   await expect(
+    page.getByRole("list", { name: "وضعیت قدم‌های راه‌اندازی" }),
+  ).toBeVisible();
+  const setupSteps = page.getByRole("list", { name: "وضعیت قدم‌های راه‌اندازی" });
+  await expect(setupSteps.getByText("معرفی فروشگاه").locator("..")).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  await expect(setupSteps.getByText("ظاهر فروشگاه").locator("..")).toContainText(
+    "اختیاری",
+  );
+  await expect(
     page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" }),
   ).toBeVisible();
   await expect(page.getByLabel("نام فروشگاه")).toHaveValue(storeName);
@@ -346,6 +391,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByLabel("معرفی کوتاه").fill(storeBio);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("قدم ۲ از ۳")).toBeVisible();
+  await expect(
+    page.getByText("فروش و پرداخت واقعی با این تأیید فعال نیست."),
+  ).toBeVisible();
   await page.getByLabel("سیاست مرجوعی").fill(publishedReturnPolicy);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("قدم ۳ از ۳")).toBeVisible();
@@ -437,6 +485,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     timeout: 15_000,
   });
   await expect(page.getByText(/تأیید آزمایشی؛ بدون تضمین/)).toBeVisible();
+  await expect(
+    page.getByText("فروش و پرداخت واقعی با این تأیید فعال نیست."),
+  ).toBeVisible();
   await expect(page.getByText(/ساخته‌شده با سوو/)).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
@@ -503,6 +554,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "انتشار فروشگاه" }).click();
 
   await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
+  await expect(
+    page.getByText("فروش و پرداخت واقعی با این تأیید فعال نیست."),
+  ).toBeVisible();
   await expect(page.getByText(`/s/${slug}`, { exact: true })).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);

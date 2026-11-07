@@ -78,6 +78,7 @@ export type StoredIdentitySession = {
   identityId: string;
   audience: "PUBLIC";
   expiresAt: Date;
+  challengeProof?: { id: string; codeHash: string };
 };
 
 export type ActiveIdentitySession = {
@@ -106,7 +107,7 @@ export interface IdentityAccessRepository {
     now: Date,
   ): Promise<IranianMobile | undefined>;
   findOrCreateIdentity(mobile: IranianMobile): Promise<SevoIdentity>;
-  saveSession(session: StoredIdentitySession): Promise<void>;
+  saveSession(session: StoredIdentitySession): Promise<boolean>;
   findActiveSession(
     tokenHash: string,
     clock: () => Date,

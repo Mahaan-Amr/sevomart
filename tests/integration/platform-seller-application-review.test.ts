@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 import { storeDraftContract, storePreviewContract } from "@sevo/contracts/store/v1";
+import { DurableOutboxWorker } from "@sevo/outbox";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -154,6 +155,65 @@ describe("platform seller application review API with PostgreSQL", () => {
       ]);
     } finally {
       await sql.end();
+    }
+
+    // This test-only consumer exercises the existing durable queue. It is not an
+    // SMS provider or a production worker, and sends no message to a phone.
+    const delivered = new Set<string>();
+    let attempts = 0;
+    const worker = new DurableOutboxWorker(environment.DATABASE_URL, {
+      consumerName: "test-seller-approval-notification",
+      retryDelaysMs: [0],
+      log: () => {},
+      handlers: {
+        "SellerApplicationApproved.v1": async (event) => {
+          attempts += 1;
+          expect(event.aggregateId).toBe(applicationId);
+          if (attempts === 1) throw new Error("test sender unavailable");
+          delivered.add(event.eventId);
+        },
+      },
+    });
+    try {
+      expect(await worker.runOnce()).toBe("retry");
+      const notificationSql = postgres(environment.DATABASE_URL, { max: 1 });
+      try {
+        const pending = await notificationSql`
+          select status, attempt_count, last_error from platform_outbox_consumptions
+          where consumer_name = 'test-seller-approval-notification'
+        `;
+        expect(pending).toMatchObject([
+          { status: "READY", attempt_count: 1, last_error: "Error" },
+        ]);
+        // A failed sender has no bearing on the committed approval or access.
+        const status = await server.inject({
+          method: "GET",
+          url: "/v1/seller-applications/mine",
+          headers: { cookie: applicantCookie },
+        });
+        expect(status.json()).toMatchObject({ items: [{ status: "APPROVED" }] });
+        const access = await server.inject({
+          method: "GET",
+          url: "/v1/seller/store/draft",
+          headers: { cookie: applicantCookie },
+        });
+        expect(access.statusCode).toBe(200);
+        expect(await worker.runOnce()).toBe("processed");
+        expect(await worker.runOnce()).toBe("idle");
+        const result = await notificationSql`
+          select status, attempt_count, last_error from platform_outbox_consumptions
+          where consumer_name = 'test-seller-approval-notification'
+        `;
+        expect(result).toMatchObject([
+          { status: "PROCESSED", attempt_count: 2, last_error: null },
+        ]);
+        expect(attempts).toBe(2);
+        expect(delivered.size).toBe(1);
+      } finally {
+        await notificationSql.end();
+      }
+    } finally {
+      await worker.close();
     }
 
     const mine = await server.inject({

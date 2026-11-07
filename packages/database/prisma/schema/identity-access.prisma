@@ -8,8 +8,36 @@ model Identity {
   loginMethods LoginMethod[]
   sessions     IdentitySession[]
   platformPermissionGrants PlatformPermissionGrant[]
+  sellerPassword SellerPassword?
 
   @@map("identity_identities")
+}
+
+model SellerPassword {
+  identityId String @id @map("identity_id") @db.Uuid
+  passwordHash String @map("password_hash")
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(3)
+  identity Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@map("identity_seller_passwords")
+}
+
+model PasswordAttempt {
+  mobile String @id @db.VarChar(11)
+  attempts Int @default(0)
+  windowStartedAt DateTime @map("window_started_at") @db.Timestamptz(3)
+
+  @@index([windowStartedAt], map: "identity_password_attempts_window_idx")
+
+  @@map("identity_password_attempts")
+}
+
+model PasswordAdmission {
+  id Int @id @db.SmallInt
+  attempts Int
+  windowStartedAt DateTime @map("window_started_at") @db.Timestamptz(3)
+
+  @@map("identity_password_admission")
 }
 
 model LoginMethod {
