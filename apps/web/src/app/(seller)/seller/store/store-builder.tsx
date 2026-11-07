@@ -217,7 +217,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     } catch (error) {
       if (error instanceof MediaUploadError) {
         setErrors((current) => ({ ...current, [error.field]: error.message }));
-        setMessage("");
+        setEditStep(2);
+        setMessage(
+          `تصویر ${error.field === "logo" ? "لوگو" : "روی جلد"} را بررسی کنید.`,
+        );
         return;
       }
       setMessage(
@@ -268,7 +271,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     } catch (error) {
       if (error instanceof MediaUploadError) {
         setErrors((current) => ({ ...current, [error.field]: error.message }));
-        setMessage("");
+        setEditStep(2);
+        setMessage(
+          `تصویر ${error.field === "logo" ? "لوگو" : "روی جلد"} را بررسی کنید.`,
+        );
         return;
       }
       setMessage(
