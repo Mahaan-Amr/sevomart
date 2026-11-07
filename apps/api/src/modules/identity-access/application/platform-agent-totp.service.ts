@@ -292,7 +292,10 @@ export class PlatformAgentTotpService {
         select id, actor_identity_id as "actorId", session_id as "sessionId", target_identity_id as "targetId", action, payload_hash as "payloadHash", expires_at as "expiresAt", consumed_at as "consumedAt", permission_grant_id as "grantId", factor_generation_id as "factorGenerationId"
         from identity_totp_action_proofs where token_hash = ${createHash("sha256").update(input.proof).digest("hex")} for update`;
       const proof = proofs[0];
-      const now = new Date();
+      // The identity lock excludes new PUBLIC sessions, but existing session reads
+      // can hold row locks. Wait for them before sampling proof and session freshness.
+      await sql`select id from identity_sessions where identity_id = ${input.targetIdentityId} and audience = 'PUBLIC' and revoked_at is null for update`;
+      const now = new Date(Date.now());
       const valid =
         permission.length > 0 &&
         this.fresh(session) &&
@@ -490,7 +493,7 @@ export class PlatformAgentTotpService {
       if (
         !recovery ||
         recovery.requesterId !== session.identityId ||
-        recovery.status !== "APPROVED" ||
+        !["APPROVED", "ENROLLING"].includes(recovery.status) ||
         recovery.expiresAt.getTime() <= Date.now() ||
         !(await this.validRecoveryApprovals(sql, recoveryId, session.identityId)) ||
         !this.fresh(session) ||
@@ -502,7 +505,7 @@ export class PlatformAgentTotpService {
       const cipher = createCipheriv("aes-256-gcm", key, nonce);
       cipher.setAAD(Buffer.from(session.identityId));
       const ciphertext = Buffer.concat([cipher.update(secret), cipher.final()]);
-      await sql`insert into identity_totp_recovery_enrollment (recovery_id, session_id, key_id, ciphertext, nonce, tag, expires_at) values (${recoveryId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, clock_timestamp() + interval '10 minutes')`;
+      await sql`insert into identity_totp_recovery_enrollment (recovery_id, session_id, key_id, ciphertext, nonce, tag, expires_at) values (${recoveryId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, clock_timestamp() + interval '10 minutes') on conflict (recovery_id) do update set session_id = excluded.session_id, key_id = excluded.key_id, ciphertext = excluded.ciphertext, nonce = excluded.nonce, tag = excluded.tag, expires_at = excluded.expires_at`;
       await sql`update identity_totp_recoveries set status = 'ENROLLING' where id = ${recoveryId}`;
       await sql`insert into identity_totp_recovery_audit (id, recovery_id, actor_identity_id, requester_identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${recoveryId}, ${session.identityId}, ${session.identityId}, 'ENROLLMENT_STARTED', 'SUCCEEDED', ${correlationId})`;
       return { secret: base32(secret) };
@@ -583,9 +586,9 @@ export class PlatformAgentTotpService {
     await this
       .#sql`delete from identity_totp_action_proofs where id in (select id from identity_totp_action_proofs where expires_at <= clock_timestamp() for update skip locked)`;
     await this
-      .#sql`delete from identity_totp_recovery_enrollment where recovery_id in (select recovery_id from identity_totp_recovery_enrollment where expires_at <= clock_timestamp() for update skip locked)`;
+      .#sql`delete from identity_totp_recovery_enrollment where recovery_id in (select recovery_id from identity_totp_recovery_enrollment where expires_at <= clock_timestamp() and (blocked_until is null or blocked_until <= clock_timestamp()) for update skip locked)`;
     await this
-      .#sql`delete from identity_totp_factors where identity_id in (select identity_id from identity_totp_factors where status = 'PENDING' and expires_at <= clock_timestamp() for update skip locked)`;
+      .#sql`delete from identity_totp_factors where identity_id in (select identity_id from identity_totp_factors where status = 'PENDING' and expires_at <= clock_timestamp() and (blocked_until is null or blocked_until <= clock_timestamp()) for update skip locked)`;
     await this
       .#sql`update identity_totp_recoveries set status = 'EXPIRED' where id in (select id from identity_totp_recoveries where status in ('PENDING','APPROVED','ENROLLING') and expires_at <= clock_timestamp() for update skip locked)`;
   }
