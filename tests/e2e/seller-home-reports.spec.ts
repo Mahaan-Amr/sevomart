@@ -130,6 +130,22 @@ test("seller acts from the operational home and reads a private basic report", a
       "href",
       `/s/reports-${projectIndex}`,
     );
+    const preview = page.getByRole("link", { name: "پیش‌نمایش خریدار" });
+    await assertMinimumContrast(preview);
+    await assertMinimumContrast(page.getByRole("button", { name: "بستن راهنما" }));
+    await page.route("**/api/store/seller/products?*", (route) =>
+      route.fulfill({ status: 503 }),
+    );
+    await page.reload();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "وضعیت راهنمای آغاز دریافت نشد" }),
+    ).toBeVisible();
+    await expect(preview).toHaveAttribute("href", `/s/reports-${projectIndex}`);
+    await page.unroute("**/api/store/seller/products?*");
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "اولین کالا را اضافه کنید" }),
+    ).toBeVisible();
     await sql`
       insert into product_products
         (id, store_id, state, revision, publication_version, published_at)
