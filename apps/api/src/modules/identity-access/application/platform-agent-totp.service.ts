@@ -100,6 +100,7 @@ export class PlatformAgentTotpService {
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const session = await this.lockedSession(sql, token);
+      await sql`lock table identity_totp_factors in row exclusive mode`;
       const auth = await sql<
         { expiresAt: Date; consumedAt: Date | null }[]
       >`select expires_at as "expiresAt", consumed_at as "consumedAt" from identity_totp_bootstrap_authorizations
@@ -130,6 +131,7 @@ export class PlatformAgentTotpService {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const session = await this.lockedSession(sql, token);
+      await sql`lock table identity_totp_factors in row exclusive mode`;
       const rows = await sql<
         Factor[]
       >`select generation_id as "generationId", expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
@@ -208,6 +210,8 @@ export class PlatformAgentTotpService {
       const target =
         await sql`select id from identity_identities where id = ${input.targetIdentityId} and status = 'ACTIVE' for share`;
       if (!target.length) return null;
+      await sql`lock table identity_totp_factors in row exclusive mode`;
+      await sql`lock table identity_totp_action_proofs in row exclusive mode`;
       const factors = await sql<
         Factor[]
       >`select generation_id as "generationId", expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
@@ -333,6 +337,8 @@ export class PlatformAgentTotpService {
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const session = await this.lockedSession(sql, token);
+      await sql`lock table identity_totp_recoveries in row exclusive mode`;
+      await sql`select id from identity_totp_recoveries where requester_identity_id = ${session.identityId} and status in ('PENDING','APPROVED','ENROLLING') for update`;
       if (!this.fresh(session)) throw new TotpDeniedError();
       await sql`update identity_totp_recoveries set status = 'EXPIRED' where requester_identity_id = ${session.identityId} and status in ('PENDING','APPROVED','ENROLLING') and expires_at <= clock_timestamp()`;
       const open =
@@ -445,6 +451,7 @@ export class PlatformAgentTotpService {
           })
       )
         return deny();
+      await sql`lock table identity_totp_recovery_approvals in row exclusive mode`;
       const prior = await sql<
         { approverId: string; grantId: string; generationId: string | null }[]
       >`select approver_identity_id as "approverId", permission_grant_id as "grantId", factor_generation_id as "generationId" from identity_totp_recovery_approvals where recovery_id = ${recoveryId} for update`;
@@ -460,6 +467,12 @@ export class PlatformAgentTotpService {
         )
           return deny();
       }
+      if (
+        !this.fresh(session) ||
+        proof.expiresAt.getTime() <= Date.now() ||
+        recovery.expiresAt.getTime() <= Date.now()
+      )
+        return deny();
       await sql`insert into identity_totp_recovery_approvals (recovery_id, approver_identity_id, permission_grant_id, factor_generation_id, approved_at) values (${recoveryId}, ${session.identityId}, ${permissions[0]!.id}, ${activeFactor[0]!.generationId}, clock_timestamp())`;
       await sql`update identity_totp_action_proofs set consumed_at = clock_timestamp() where id = ${proof.id}`;
       if (prior.length === 1)
@@ -486,10 +499,13 @@ export class PlatformAgentTotpService {
     return this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const session = await this.lockedSession(sql, token);
+      await sql`lock table identity_totp_factors in row exclusive mode`;
+      await sql`lock table identity_totp_recovery_enrollment in row exclusive mode`;
       const rows = await sql<
         { requesterId: string; status: string; expiresAt: Date }[]
       >`select requester_identity_id as "requesterId", status, expires_at as "expiresAt" from identity_totp_recoveries where id = ${recoveryId} for update`;
       const recovery = rows[0];
+      await sql`select recovery_id from identity_totp_recovery_enrollment where recovery_id = ${recoveryId} for update`;
       if (
         !recovery ||
         recovery.requesterId !== session.identityId ||
@@ -520,6 +536,8 @@ export class PlatformAgentTotpService {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const session = await this.lockedSession(sql, token);
+      await sql`lock table identity_totp_factors in row exclusive mode`;
+      await sql`lock table identity_totp_recovery_enrollment in row exclusive mode`;
       const recoveries = await sql<
         { requesterId: string; status: string; expiresAt: Date }[]
       >`select requester_identity_id as "requesterId", status, expires_at as "expiresAt" from identity_totp_recoveries where id = ${recoveryId} for update`;
@@ -528,6 +546,7 @@ export class PlatformAgentTotpService {
         (Factor & { sessionId: string })[]
       >`select session_id as "sessionId", key_id as "keyId", ciphertext, nonce, tag, expires_at as "expiresAt", failed_attempts as "failedAttempts", blocked_until as "blockedUntil" from identity_totp_recovery_enrollment where recovery_id = ${recoveryId} for update`;
       const factor = pending[0];
+      await sql`select identity_id from identity_totp_factors where identity_id = ${session.identityId} for update`;
       if (
         !recovery ||
         recovery.requesterId !== session.identityId ||
