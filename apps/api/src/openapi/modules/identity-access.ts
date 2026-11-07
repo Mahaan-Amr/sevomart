@@ -178,6 +178,18 @@ const operations = [
     ],
   },
   {
+    operationId: "endAllIdentitySessions",
+    method: "delete",
+    path: identityAccessV1Paths.endAllSessions,
+    tag: "identity-access",
+    auth: "identity-session",
+    responses: [
+      { status: 204, noContent: true },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "submitSellerApplication",
     method: "post",
     path: sellerApplicationV1Paths.submit,

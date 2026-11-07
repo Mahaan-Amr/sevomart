@@ -6,6 +6,7 @@ import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
+import { createActiveSellerFixture } from "../../apps/api/src/modules/identity-access/testing/active-seller.fixture";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("identity session HTTP API with PostgreSQL", () => {
@@ -26,6 +27,154 @@ describe("identity session HTTP API with PostgreSQL", () => {
     apps.push(app);
     return app;
   }
+
+  it("logs out all public sessions of the current identity", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    async function login(mobile: string) {
+      const challenge = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile },
+      });
+      return server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: challenge.json().challengeId, code: "111111" },
+      });
+    }
+    const first = await login("09123456789");
+    const second = await login("09123456789");
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`update identity_identities set status = 'INACTIVE' where id = ${first.json().actor.identityId}`;
+      const denied = await server.inject({
+        method: "DELETE",
+        url: "/v1/auth/sessions",
+        headers: { cookie: first.headers["set-cookie"] },
+      });
+      expect(denied.statusCode).toBe(401);
+    } finally {
+      await sql`update identity_identities set status = 'ACTIVE' where id = ${first.json().actor.identityId}`;
+      await sql.end();
+    }
+    const result = await server.inject({
+      method: "DELETE",
+      url: "/v1/auth/sessions",
+      headers: { cookie: first.headers["set-cookie"] },
+    });
+    expect(result.statusCode).toBe(204);
+    const check = await server.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers: { cookie: second.headers["set-cookie"] },
+    });
+    expect(check.statusCode).toBe(401);
+  });
+
+  it("extends an active session after activity", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`update identity_sessions set expires_at = now() + interval '1 day' where identity_id = ${verified.json().actor.identityId} and audience = 'PUBLIC'`;
+      const response = await server.inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie: verified.headers["set-cookie"] },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(Date.parse(response.json().expiresAt)).toBeGreaterThan(
+        Date.now() + 6 * 86400000,
+      );
+      await sql`update identity_sessions set created_at = now() - interval '91 days', expires_at = now() + interval '1 day' where identity_id = ${verified.json().actor.identityId} and audience = 'PUBLIC'`;
+      const expired = await server.inject({
+        method: "GET",
+        url: "/v1/me/feeds/following",
+        headers: { cookie: verified.headers["set-cookie"] },
+      });
+      expect(expired.statusCode).toBe(401);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("does not restore a session when activity races with logout", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const headers = { cookie: verified.headers["set-cookie"] };
+    const [, logout] = await Promise.all([
+      server.inject({ method: "GET", url: "/v1/auth/session", headers }),
+      server.inject({ method: "DELETE", url: "/v1/auth/session", headers }),
+    ]);
+    expect(logout.statusCode).toBe(204);
+    const after = await server.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers,
+    });
+    expect(after.statusCode).toBe(401);
+  });
+
+  it("denies seller access after revocation while keeping the buyer session", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const identityId = verified.json().actor.identityId;
+    const seller = await createActiveSellerFixture(
+      apiTestEnvironment.DATABASE_URL,
+      identityId,
+    );
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const headers = { cookie: verified.headers["set-cookie"] };
+    try {
+      expect(
+        (await server.inject({ method: "GET", url: "/v1/seller/orders", headers }))
+          .statusCode,
+      ).not.toBe(403);
+      await sql`update identity_seller_access set status = 'REVOKED' where identity_id = ${identityId}`;
+      expect(
+        (await server.inject({ method: "GET", url: "/v1/seller/orders", headers }))
+          .statusCode,
+      ).toBe(403);
+      expect(
+        (await server.inject({ method: "GET", url: "/v1/auth/session", headers }))
+          .statusCode,
+      ).toBe(200);
+    } finally {
+      await seller.cleanup();
+      await sql.end();
+    }
+  });
 
   it("keeps the development OTP adapter in optimized local images", async () => {
     const app = await startApp({
@@ -250,6 +399,7 @@ describe("identity session HTTP API with PostgreSQL", () => {
     expect(JSON.stringify(verifyResponse.json())).not.toContain("09123456789");
     expect(JSON.stringify(verifyResponse.json())).not.toMatch(/role/i);
     expect(verifyResponse.headers["set-cookie"]).toContain("sevo_session=");
+    expect(verifyResponse.headers["set-cookie"]).toContain("Max-Age=7776000");
     expect(verifyResponse.headers["set-cookie"]).toContain("HttpOnly");
     expect(verifyResponse.headers["set-cookie"]).toContain("SameSite=Lax");
 
@@ -267,7 +417,10 @@ describe("identity session HTTP API with PostgreSQL", () => {
         headers: { cookie: sessionCookie },
       });
     expect(sessionResponse.statusCode).toBe(200);
-    expect(sessionResponse.json()).toEqual(verifyResponse.json());
+    expect(sessionResponse.json()).toMatchObject({
+      actor: verifyResponse.json().actor,
+      maskedMobile: verifyResponse.json().maskedMobile,
+    });
 
     const logoutResponse = await refreshedApp
       .getHttpAdapter()

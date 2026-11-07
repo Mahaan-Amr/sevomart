@@ -38,6 +38,7 @@ export const identityAccessV1Paths = {
   verifyOtp: "/v1/auth/otp/verifications",
   readSession: "/v1/auth/session",
   endSession: "/v1/auth/session",
+  endAllSessions: "/v1/auth/sessions",
 } as const;
 
 export const sellerApplicationV1Paths = {

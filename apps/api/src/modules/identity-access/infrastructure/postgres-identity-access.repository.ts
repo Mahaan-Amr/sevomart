@@ -107,21 +107,33 @@ export class PostgresIdentityAccessRepository
   }
 
   async saveSession(session: StoredIdentitySession): Promise<void> {
-    await this.#sql`
+    await this.#sql.begin(async (sql) => {
+      await sql`select pg_advisory_xact_lock(hashtextextended(${session.identityId}, 273))`;
+      await sql`
       insert into identity_sessions
         (id, token_hash, identity_id, audience, expires_at)
       values
         (${session.id}, ${session.tokenHash}, ${session.identityId},
          ${session.audience}, ${session.expiresAt})
     `;
+    });
   }
 
   async findActiveSession(tokenHash: string, now: Date) {
     const rows = await this.#sql<
       Array<{ identityId: string; mobile: IranianMobile; expiresAt: Date }>
     >`
+      with touched as (
+        update identity_sessions s
+        set expires_at = least(s.created_at + interval '90 days', greatest(s.expires_at, ${now}::timestamptz + interval '7 days'))
+        where s.token_hash = ${tokenHash} and s.audience = 'PUBLIC'
+          and s.revoked_at is null and s.expires_at > ${now}
+          and s.created_at + interval '90 days' > ${now}
+          and exists (select 1 from identity_identities i where i.id = s.identity_id and i.status = 'ACTIVE')
+        returning s.*
+      )
       select i.id as "identityId", login.mobile, s.expires_at as "expiresAt"
-      from identity_sessions s
+      from touched s
       join identity_identities i on i.id = s.identity_id
       join identity_login_methods login on login.identity_id = i.id
         and login.kind = 'MOBILE'
@@ -144,9 +156,19 @@ export class PostgresIdentityAccessRepository
         identityStatus: "ACTIVE" | "INACTIVE";
       }>
     >`
+      with touched as (
+        update identity_sessions s
+        set expires_at = case when exists (select 1 from identity_identities i where i.id = s.identity_id and i.status = 'ACTIVE')
+          then least(s.created_at + interval '90 days', greatest(s.expires_at, ${now}::timestamptz + interval '7 days'))
+          else s.expires_at end
+        where s.token_hash = ${tokenHash} and s.audience = 'PUBLIC'
+          and s.revoked_at is null and s.expires_at > ${now}
+          and s.created_at + interval '90 days' > ${now}
+        returning s.*
+      )
       select i.id as "identityId", login.mobile, s.expires_at as "expiresAt",
         i.status as "identityStatus"
-      from identity_sessions s
+      from touched s
       join identity_identities i on i.id = s.identity_id
       join identity_login_methods login on login.identity_id = i.id
         and login.kind = 'MOBILE'
@@ -177,6 +199,32 @@ export class PostgresIdentityAccessRepository
       returning id
     `;
     return rows.length > 0;
+  }
+
+  async revokeAllSessions(tokenHash: string, revokedAt: Date): Promise<boolean> {
+    return this.#sql.begin(async (sql) => {
+      const identities = await sql<Array<{ identityId: string }>>`
+        select identity_id as "identityId" from identity_sessions
+        where token_hash = ${tokenHash} and audience = 'PUBLIC'
+      `;
+      const identityId = identities[0]?.identityId;
+      if (!identityId) return false;
+      await sql`select pg_advisory_xact_lock(hashtextextended(${identityId}, 273))`;
+      const rows = await sql<Array<{ id: string }>>`
+        update identity_sessions set revoked_at = ${revokedAt}
+        where audience = 'PUBLIC' and revoked_at is null and identity_id = ${identityId}
+          and exists (
+            select 1 from identity_sessions current_session
+            join identity_identities i on i.id = current_session.identity_id
+            where current_session.token_hash = ${tokenHash}
+              and current_session.audience = 'PUBLIC' and current_session.revoked_at is null
+              and current_session.expires_at > ${revokedAt}
+              and current_session.created_at + interval '90 days' > ${revokedAt}
+              and i.status = 'ACTIVE'
+          ) returning id
+      `;
+      return rows.length > 0;
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
