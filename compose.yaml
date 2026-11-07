@@ -70,6 +70,19 @@ services:
         condition: service_healthy
     restart: "no"
 
+  superadmin-recovery:
+    profiles: ["recovery"]
+    build:
+      context: .
+      dockerfile: ops/security/Dockerfile
+    environment:
+      DATABASE_URL: ${SEVO_RECOVERY_DATABASE_URL:-}
+    stdin_open: true
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
   demo-seed:
     profiles: ["demo"]
     build:

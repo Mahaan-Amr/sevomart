@@ -38,11 +38,9 @@ export class PlatformAgentOtpService {
       select i.id as "identityId"
       from identity_login_methods lm
       join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
-      join identity_platform_permission_grants g
-        on g.identity_id = i.id
-       and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW', 'SESSION_SECURITY', 'ACCESS_ADMINISTRATION')
-       and g.revoked_at is null
       where lm.kind = 'MOBILE' and lm.mobile = ${mobile}
+        and (exists (select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null)
+          or exists (select 1 from identity_platform_permission_grants g where g.identity_id = i.id and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW', 'SESSION_SECURITY', 'ACCESS_ADMINISTRATION') and g.revoked_at is null))
       limit 1
     `;
     if (!granted[0]) throw new PlatformPermissionRequiredError();
@@ -123,6 +121,12 @@ export class PlatformAgentOtpService {
         return null;
       }
 
+      const roles = await sql<Array<{ identityId: string }>>`
+        select i.id as "identityId" from identity_login_methods lm
+        join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
+        join identity_platform_superadmins a on a.identity_id = i.id and a.revoked_at is null
+        where lm.kind = 'MOBILE' and lm.mobile = ${challenge.mobile}
+        for share of i, a`;
       const identities = await sql<
         Array<{
           identityId: string;
@@ -145,7 +149,7 @@ export class PlatformAgentOtpService {
         limit 1
         for share of g
       `;
-      const identity = identities[0];
+      const identity = identities[0] ?? roles[0];
       if (!identity || identity.identityId !== observed[0]!.identityId)
         throw new PlatformPermissionRequiredError();
       await sql`lock table identity_sessions in row exclusive mode`;
@@ -170,7 +174,9 @@ export class PlatformAgentOtpService {
             identityId: identity.identityId,
             audience: "PLATFORM_AGENT" as const,
           },
-          permission: identity.permission,
+          ...(identities[0]
+            ? { permission: identities[0].permission }
+            : { role: "SUPERADMIN" as const }),
           expiresAt: expiresAt.toISOString(),
         },
       };

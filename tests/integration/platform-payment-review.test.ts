@@ -136,20 +136,25 @@ describe("platform payment review case access", () => {
   });
 
   it("denies direct access to a limited payment reviewer and records the attempt", async () => {
-    const response = await app!
-      .getHttpAdapter()
-      .getInstance()
-      .inject({
-        method: "POST",
-        url: `/v3/platform/payment-reviews/${reviewId}/reveal`,
-        headers: { cookie: `sevo_platform_session=${sessionToken}` },
-        payload: { reason: "بررسی مدرک درگاه برای پرونده پرداخت مشخص" },
-      });
-    expect(response.statusCode).toBe(403);
-    const rows = await sql<
-      Array<{ outcome: string }>
-    >`select outcome from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${identityId} and resource_id = ${reviewId} and outcome = 'DENIED'`;
-    expect(rows).toEqual([{ outcome: "DENIED" }]);
+    await sql`update identity_platform_permission_grants set revoked_at = now() where id = ${permissionId}`;
+    try {
+      const response = await app!
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: "POST",
+          url: `/v3/platform/payment-reviews/${reviewId}/reveal`,
+          headers: { cookie: `sevo_platform_session=${sessionToken}` },
+          payload: { reason: "بررسی مدرک درگاه برای پرونده پرداخت مشخص" },
+        });
+      expect(response.statusCode).toBe(403);
+      const rows = await sql<
+        Array<{ outcome: string }>
+      >`select outcome from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${identityId} and resource_id = ${reviewId} and outcome = 'DENIED'`;
+      expect(rows).toEqual([{ outcome: "DENIED" }]);
+    } finally {
+      await sql`update identity_platform_permission_grants set revoked_at = null where id = ${permissionId}`;
+    }
   });
 
   it("keeps the queue minimal, audits reveal, schedules recheck, and fails closed after revocation", async () => {

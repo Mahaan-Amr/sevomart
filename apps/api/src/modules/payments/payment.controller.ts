@@ -507,12 +507,12 @@ export class PlatformPaymentReviewDirectController {
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     try {
-      const actor = await this.sessions.authorizePaymentReview(
+      const actor = await this.sessions.readWorkspaceSession(
         readPlatformSessionToken(request) ?? "",
       );
       return await this.payments.revealReviewDirect({
         reviewId: reviewId.data,
-        actorIdentityId: actor.identityId,
+        actorIdentityId: actor.actor.identityId,
         reason: input.data.reason,
         correlationId: request.id,
       });
@@ -556,12 +556,12 @@ export class PlatformPaymentReviewDirectController {
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     try {
-      const actor = await this.sessions.authorizePaymentReview(
+      const actor = await this.sessions.readWorkspaceSession(
         readPlatformSessionToken(request) ?? "",
       );
       return await this.payments.requestReconciliationDirect({
         reviewId: reviewId.data,
-        actorIdentityId: actor.identityId,
+        actorIdentityId: actor.actor.identityId,
         reason: input.data.reason,
         correlationId: request.id,
       });

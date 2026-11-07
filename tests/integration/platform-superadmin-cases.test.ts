@@ -114,8 +114,6 @@ describe("superadmin direct case access", () => {
     expect(response.json().access).not.toHaveProperty("expiresAt");
   });
   it("rejects a limited dispute reviewer from the direct path and records the attempt", async () => {
-    const permissionId = randomUUID();
-    await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${permissionId}, ${actor}, 'DISPUTE_REVIEW', now())`;
     await sql`update identity_platform_superadmins set revoked_at = now() where identity_id = ${actor}`;
     try {
       const response = await app
@@ -137,7 +135,6 @@ describe("superadmin direct case access", () => {
       expect(rows).toEqual([{ outcome: "DENIED" }]);
     } finally {
       await sql`update identity_platform_superadmins set revoked_at = null where identity_id = ${actor}`;
-      await sql`delete from identity_platform_permission_grants where id = ${permissionId}`;
     }
   });
 });

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import postgres, { type Sql } from "postgres";
 import {
@@ -90,6 +91,47 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       ),
     );
     expect(results.map((result) => result.statusCode).sort()).toEqual([200, 409]);
+    await sql.end();
+  });
+
+  it("changes role generation when a revoked superadmin is granted again", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const owner = await seedAgent([]);
+    const other = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${owner.identityId}, now()), (${other.identityId}, now())`;
+    const before = await sql<
+      Array<{ generation: string }>
+    >`select generation_id as generation from identity_platform_superadmins where identity_id = ${other.identityId}`;
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: `/v1/platform/access/superadmins/${other.identityId}/revocation`,
+          headers: accessHeaders(owner.token),
+          payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: "/v1/platform/access/superadmins",
+          headers: accessHeaders(owner.token),
+          payload: {
+            identityId: other.identityId,
+            reason: "واگذاری دوباره مدیریت پلتفرم",
+          },
+        })
+      ).statusCode,
+    ).toBe(201);
+    const after = await sql<
+      Array<{ generation: string }>
+    >`select generation_id as generation from identity_platform_superadmins where identity_id = ${other.identityId}`;
+    expect(after[0]!.generation).not.toBe(before[0]!.generation);
     await sql.end();
   });
 
@@ -506,6 +548,50 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       await sql`drop trigger test_reject_superadmin_recovery_audit on identity_platform_superadmin_audit`;
       await sql`drop function test_reject_superadmin_recovery_audit()`;
       await sql.end();
+    }
+  });
+
+  it("requires the separately provisioned recovery role for the owner credential", async () => {
+    const target = await seedAgent([]);
+    const admin = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const login = `recovery_test_${randomUUID().replaceAll("-", "")}`;
+    const password = "temporary-test-only-credential";
+    await admin.unsafe(
+      readFileSync("ops/security/provision-superadmin-recovery.sql", "utf8"),
+    );
+    await admin.unsafe(`create role "${login}" login password '${password}'`);
+    const connection = new URL(apiTestEnvironment.DATABASE_URL);
+    connection.username = login;
+    connection.password = password;
+    const input = JSON.stringify({
+      identityId: target.identityId,
+      reason: "بازیابی مدیریت پس از قطع دسترسی",
+      idempotencyKey: randomUUID(),
+    });
+    const run = () =>
+      spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+        input,
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: connection.toString() },
+      });
+    try {
+      expect(run().status).not.toBe(0);
+      await admin.unsafe(`grant sevo_superadmin_recovery to "${login}"`);
+      const restricted = postgres(connection.toString(), { max: 1 });
+      try {
+        await expect(
+          restricted`insert into identity_platform_superadmins (identity_id, granted_at) values (${target.identityId}, now())`,
+        ).rejects.toThrow();
+        await expect(
+          restricted`insert into identity_platform_superadmin_audit (id, actor_kind, subject_identity_id, action, reason, correlation_id) values (${randomUUID()}, 'OWNER_RECOVERY', ${target.identityId}, 'RECOVERED', 'بازیابی مدیریت پس از قطع دسترسی', ${randomUUID()})`,
+        ).rejects.toThrow();
+      } finally {
+        await restricted.end();
+      }
+      expect(run().status).toBe(0);
+    } finally {
+      await admin.unsafe(`drop role "${login}"`);
+      await admin.end();
     }
   });
 
@@ -2513,7 +2599,9 @@ function accessHeaders(token: string) {
 
 async function ensureTestRecoveryRole() {
   const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
-  await sql`do $$ begin if not exists (select 1 from pg_roles where rolname = 'sevo_superadmin_recovery') then create role sevo_superadmin_recovery nologin; end if; end $$`;
+  await sql.unsafe(
+    readFileSync("ops/security/provision-superadmin-recovery.sql", "utf8"),
+  );
   await sql.end();
 }
 
@@ -2551,6 +2639,7 @@ function hash(value: string) {
 async function resetPlatformAccessData() {
   const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
   await sql`truncate identity_platform_superadmin_sensitive_audit`;
+  await sql`truncate identity_platform_permission_audit`;
   await sql`truncate identity_platform_superadmin_audit`;
   await sql`truncate identity_platform_superadmin_idempotency`;
   await sql`truncate identity_platform_superadmin_recovery_idempotency`;

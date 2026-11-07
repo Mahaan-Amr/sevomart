@@ -429,14 +429,26 @@ export const identitySessionContract = z.object({
   expiresAt: z.string().datetime({ offset: true }),
 });
 
-export const platformAgentSessionContract = z.object({
-  actor: z.object({
-    identityId: z.string().uuid(),
-    audience: z.literal("PLATFORM_AGENT"),
-  }),
-  permission: platformPermissionContract,
-  expiresAt: z.string().datetime({ offset: true }),
+const platformAgentSessionActorContract = z.object({
+  identityId: z.string().uuid(),
+  audience: z.literal("PLATFORM_AGENT"),
 });
+export const platformAgentSessionContract = z.union([
+  z
+    .object({
+      actor: platformAgentSessionActorContract,
+      permission: platformPermissionContract,
+      expiresAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      actor: platformAgentSessionActorContract,
+      role: z.literal("SUPERADMIN"),
+      expiresAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+]);
 
 export const platformAgentWorkspaceSessionContract = z.object({
   isSuperadmin: z.boolean().optional(),

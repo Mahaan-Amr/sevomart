@@ -97,7 +97,7 @@ export class SuperadminService {
       if (action === "GRANTED") {
         const changed =
           await sql`insert into identity_platform_superadmins (identity_id, granted_at)
-          values (${subject}, now()) on conflict (identity_id) do update set granted_at = now(), revoked_at = null
+          values (${subject}, now()) on conflict (identity_id) do update set granted_at = now(), revoked_at = null, generation_id = gen_random_uuid()
           where identity_platform_superadmins.revoked_at is not null returning identity_id`;
         if (!changed.length)
           throw superadminError(correlationId, "INVALID_ACCESS_TRANSITION", 409);

@@ -1,4 +1,3 @@
-import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import {
@@ -6,8 +5,7 @@ import {
   superadminGrantInputContract,
 } from "@sevo/contracts/identity-access/v1";
 
-// This executable must be run only with the owner's separately provisioned, restricted
-// recovery credential. It does not authenticate an operating-system user by itself.
+// Provision a separate, owner-only recovery login before using this command.
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
   process.stderr.write("Recovery database access is not configured.\n");
@@ -30,33 +28,7 @@ try {
 }
 const sql = postgres(databaseUrl, { max: 1 });
 try {
-  const payloadHash = createHash("sha256")
-    .update(JSON.stringify({ identityId: command.identityId, reason: command.reason }))
-    .digest("hex");
-  await sql.begin(async (tx) => {
-    const authorization =
-      await tx`select coalesce(pg_has_role(current_user, to_regrole('sevo_superadmin_recovery'), 'member'), false) as allowed`;
-    if (!authorization[0]?.allowed) throw new Error("recovery role required");
-    await tx`select pg_advisory_xact_lock(hashtext('identity_platform_superadmins'))`;
-    const previous =
-      await tx`select payload_hash from identity_platform_superadmin_recovery_idempotency where key = ${command.idempotencyKey}`;
-    if (previous[0]) {
-      if (previous[0].payload_hash !== payloadHash) throw new Error("conflict");
-      const stillActive =
-        await tx`select 1 from identity_platform_superadmins a join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE' where a.identity_id = ${command.identityId} and a.revoked_at is null`;
-      if (!stillActive.length) throw new Error("previous recovery is no longer active");
-      return;
-    }
-    const active =
-      await tx`select 1 from identity_platform_superadmins a join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE' where a.revoked_at is null limit 1`;
-    if (active.length) throw new Error("active superadmin exists");
-    const target =
-      await tx`select id from identity_identities where id = ${command.identityId} and status = 'ACTIVE' for share`;
-    if (!target.length) throw new Error("target unavailable");
-    await tx`insert into identity_platform_superadmins (identity_id, granted_at, revoked_at) values (${command.identityId}, now(), null) on conflict (identity_id) do update set granted_at = now(), revoked_at = null`;
-    await tx`insert into identity_platform_superadmin_audit (id, actor_identity_id, actor_kind, subject_identity_id, action, reason, correlation_id) values (${randomUUID()}, null, 'OWNER_RECOVERY', ${command.identityId}, 'RECOVERED', ${command.reason}, ${randomUUID()})`;
-    await tx`insert into identity_platform_superadmin_recovery_idempotency (key, payload_hash, response) values (${command.idempotencyKey}, ${payloadHash}, ${tx.json({ status: "RECOVERED" })})`;
-  });
+  await sql`select public.identity_recover_superadmin(${command.identityId}::uuid, ${command.reason}, ${command.idempotencyKey}::uuid)`;
   process.stdout.write("Recovery recorded.\n");
 } catch {
   process.stderr.write(

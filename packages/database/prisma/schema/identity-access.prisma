@@ -307,6 +307,7 @@ model SellerApprovalRecovery {
 
 model PlatformSuperadmin {
   identityId String @id @map("identity_id") @db.Uuid
+  generationId String @default(dbgenerated("gen_random_uuid()")) @map("generation_id") @db.Uuid
   grantedAt DateTime @map("granted_at") @db.Timestamptz
   revokedAt DateTime? @map("revoked_at") @db.Timestamptz
   @@map("identity_platform_superadmins")

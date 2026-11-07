@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 import { storeDraftContract, storePreviewContract } from "@sevo/contracts/store/v1";
@@ -89,6 +90,140 @@ describe("platform seller application review API with PostgreSQL", () => {
     } finally {
       await sql`delete from identity_platform_superadmins where identity_id = ${actor}`;
       await sql.end();
+    }
+  });
+
+  it("lets an owner-recovered role-only superadmin enter using the existing OTP flow", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    await signIn(app, "09123456785");
+    const actor = await identityIdForMobile("09123456785");
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    await sql.unsafe(
+      readFileSync("ops/security/provision-superadmin-recovery.sql", "utf8"),
+    );
+    execFileSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+      input: JSON.stringify({
+        identityId: actor,
+        reason: "بازیابی مدیریت پس از قطع دسترسی",
+        idempotencyKey: randomUUID(),
+      }),
+      env: { ...process.env, DATABASE_URL: environment.DATABASE_URL },
+    });
+    try {
+      const requested = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/requests",
+        payload: { mobile: "09123456785" },
+      });
+      expect(requested.statusCode).toBe(202);
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/verifications",
+        payload: { challengeId: requested.json().challengeId, code: "111111" },
+      });
+      expect(verified.statusCode).toBe(200);
+      expect(verified.json()).toMatchObject({
+        actor: { identityId: actor },
+        role: "SUPERADMIN",
+      });
+      expect(verified.json()).not.toHaveProperty("permission");
+    } finally {
+      await sql`delete from identity_platform_superadmins where identity_id = ${actor}`;
+      await sql.end();
+    }
+  });
+
+  it("binds TOTP security proof to the live superadmin role generation", async () => {
+    const instant = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(instant);
+    const app = await createApiApp({
+      ...environment,
+      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v1",
+      PLATFORM_TOTP_KEYRING: { "test-v1": Buffer.alloc(32, 9).toString("base64") },
+    });
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    await signIn(app, "09123456785");
+    await signIn(app, "09123456786");
+    const actor = await identityIdForMobile("09123456785");
+    const target = await identityIdForMobile("09123456786");
+    const token = await seedPlatformSession(actor);
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor}, now())`;
+    await sql`insert into identity_totp_bootstrap_authorizations (identity_id, expires_at) values (${actor}, now() + interval '10 minutes')`;
+    try {
+      const headers = { cookie: platformCookie(token) };
+      const started = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/enrollment",
+        headers,
+      });
+      expect(started.statusCode).toBe(201);
+      const secret = started.json<{ secret: string }>().secret;
+      expect(
+        (
+          await server.inject({
+            method: "POST",
+            url: "/v1/platform/auth/totp/enrollment/confirmation",
+            headers,
+            payload: { code: testTotp(secret) },
+          })
+        ).statusCode,
+      ).toBe(204);
+      vi.mocked(Date.now).mockReturnValue(instant + 30000);
+      const input = {
+        action: "REVOKE_PUBLIC_SESSIONS",
+        targetIdentityId: target,
+        incidentId: "INC-ROLE-001",
+        reason: "مهار رخداد امنیتی نشست خریدار",
+      };
+      const proof = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/proofs",
+        headers,
+        payload: { ...input, code: testTotp(secret) },
+      });
+      expect(proof.statusCode).toBe(201);
+      await sql`update identity_platform_superadmins set revoked_at = now() where identity_id = ${actor}`;
+      await sql`update identity_platform_superadmins set revoked_at = null, generation_id = gen_random_uuid() where identity_id = ${actor}`;
+      const rejected = await server.inject({
+        method: "POST",
+        url: "/v1/platform/security/session-revocations",
+        headers,
+        payload: {
+          targetIdentityId: target,
+          incidentId: input.incidentId,
+          reason: input.reason,
+          proof: proof.json().proof,
+        },
+      });
+      expect(rejected.statusCode).toBe(403);
+      vi.mocked(Date.now).mockReturnValue(instant + 60000);
+      const freshProof = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/proofs",
+        headers,
+        payload: { ...input, code: testTotp(secret) },
+      });
+      expect(freshProof.statusCode).toBe(201);
+      const completed = await server.inject({
+        method: "POST",
+        url: "/v1/platform/security/session-revocations",
+        headers,
+        payload: {
+          targetIdentityId: target,
+          incidentId: input.incidentId,
+          reason: input.reason,
+          proof: freshProof.json().proof,
+        },
+      });
+      expect(completed.statusCode).toBe(204);
+    } finally {
+      await sql`delete from identity_platform_superadmins where identity_id = ${actor}`;
+      await sql.end();
+      vi.mocked(Date.now).mockRestore();
     }
   });
 
@@ -1295,120 +1430,359 @@ describe("platform seller application review API with PostgreSQL", () => {
     expect(repeated.statusCode).toBe(403);
   });
 
-  it("requires two different authenticated administrators to recover a TOTP factor", async () => {
-    const instant = Date.now();
-    vi.spyOn(Date, "now").mockReturnValue(instant);
-    const app = await createApiApp({
-      ...environment,
-      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v1",
-      PLATFORM_TOTP_KEYRING: { "test-v1": Buffer.alloc(32, 9).toString("base64") },
-    });
-    apps.push(app);
-    let server = app.getHttpAdapter().getInstance();
-    for (const mobile of ["09123456788", "09123456787", "09123456786"])
-      await signIn(app, mobile);
-    const first = await identityIdForMobile("09123456788");
-    const second = await identityIdForMobile("09123456787");
-    const requester = await identityIdForMobile("09123456786");
-    await grantReviewPermission(requester);
-    execFileSync(
-      process.execPath,
-      [
-        "scripts/bootstrap-platform-totp.mjs",
-        "--first",
-        first,
-        "--second",
-        second,
-        "--reason",
-        "Independent identity checks completed",
-      ],
-      { env: { ...process.env, DATABASE_URL: environment.DATABASE_URL } },
-    );
-    async function platformLogin(mobile: string) {
-      const req = await server.inject({
-        method: "POST",
-        url: "/v1/platform/auth/otp/requests",
-        payload: { mobile },
+  it.each(["grant", "superadmin"])(
+    "requires two different authenticated administrators to recover a TOTP factor (%s)",
+    async (authorityKind) => {
+      const instant = Date.now();
+      vi.spyOn(Date, "now").mockReturnValue(instant);
+      const app = await createApiApp({
+        ...environment,
+        PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v1",
+        PLATFORM_TOTP_KEYRING: { "test-v1": Buffer.alloc(32, 9).toString("base64") },
       });
-      const res = await server.inject({
-        method: "POST",
-        url: "/v1/platform/auth/otp/verifications",
-        payload: {
-          challengeId: req.json<{ challengeId: string }>().challengeId,
-          code: "111111",
-        },
-      });
-      expect(res.statusCode).toBe(200);
-      return { cookie: String(res.headers["set-cookie"]).split(";")[0] };
-    }
-    async function enroll(headers: { cookie: string }) {
-      const res = await server.inject({
-        method: "POST",
-        url: "/v1/platform/auth/totp/enrollment",
-        headers,
-      });
-      expect(res.statusCode).toBe(201);
-      const secret = res.json<{ secret: string }>().secret;
-      const confirm = await server.inject({
-        method: "POST",
-        url: "/v1/platform/auth/totp/enrollment/confirmation",
-        headers,
-        payload: { code: testTotp(secret) },
-      });
-      expect(confirm.statusCode).toBe(204);
-      return secret;
-    }
-    const firstHeaders = await platformLogin("09123456788");
-    const secondHeaders = await platformLogin("09123456787");
-    let requesterHeaders = await platformLogin("09123456786");
-    const firstSecret = await enroll(firstHeaders);
-    const secondSecret = await enroll(secondHeaders);
-    const secondKey = Buffer.alloc(32, 10).toString("base64");
-    const rotationEnv = {
-      ...process.env,
-      DATABASE_URL: environment.DATABASE_URL,
-      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v2",
-      PLATFORM_TOTP_KEYRING: JSON.stringify({ "test-v2": secondKey }),
-    };
-    expect(() =>
+      apps.push(app);
+      let server = app.getHttpAdapter().getInstance();
+      for (const mobile of ["09123456788", "09123456787", "09123456786"])
+        await signIn(app, mobile);
+      const first = await identityIdForMobile("09123456788");
+      const second = await identityIdForMobile("09123456787");
+      const requester = await identityIdForMobile("09123456786");
+      await grantReviewPermission(requester);
+      execFileSync(
+        process.execPath,
+        [
+          "scripts/bootstrap-platform-totp.mjs",
+          "--first",
+          first,
+          "--second",
+          second,
+          "--reason",
+          "Independent identity checks completed",
+        ],
+        { env: { ...process.env, DATABASE_URL: environment.DATABASE_URL } },
+      );
+      async function platformLogin(mobile: string) {
+        const req = await server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/otp/requests",
+          payload: { mobile },
+        });
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/otp/verifications",
+          payload: {
+            challengeId: req.json<{ challengeId: string }>().challengeId,
+            code: "111111",
+          },
+        });
+        expect(res.statusCode).toBe(200);
+        return { cookie: String(res.headers["set-cookie"]).split(";")[0] };
+      }
+      async function enroll(headers: { cookie: string }) {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/totp/enrollment",
+          headers,
+        });
+        expect(res.statusCode).toBe(201);
+        const secret = res.json<{ secret: string }>().secret;
+        const confirm = await server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/totp/enrollment/confirmation",
+          headers,
+          payload: { code: testTotp(secret) },
+        });
+        expect(confirm.statusCode).toBe(204);
+        return secret;
+      }
+      const firstHeaders = await platformLogin("09123456788");
+      const secondHeaders = await platformLogin("09123456787");
+      let requesterHeaders = await platformLogin("09123456786");
+      const firstSecret = await enroll(firstHeaders);
+      const secondSecret = await enroll(secondHeaders);
+      if (authorityKind === "superadmin") {
+        const roleDb = postgres(environment.DATABASE_URL, { max: 1 });
+        await roleDb`update identity_platform_permission_grants set revoked_at = now() where identity_id = ${first} and permission = 'ACCESS_ADMINISTRATION' and revoked_at is null`;
+        await roleDb`insert into identity_platform_superadmins (identity_id, granted_at) values (${first}, now())`;
+        await roleDb.end();
+      }
+      const secondKey = Buffer.alloc(32, 10).toString("base64");
+      const rotationEnv = {
+        ...process.env,
+        DATABASE_URL: environment.DATABASE_URL,
+        PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v2",
+        PLATFORM_TOTP_KEYRING: JSON.stringify({ "test-v2": secondKey }),
+      };
+      expect(() =>
+        execFileSync(
+          process.execPath,
+          ["scripts/rotate-platform-totp-keys.mjs", "--reason", "Routine key rotation"],
+          { env: rotationEnv, stdio: "pipe" },
+        ),
+      ).toThrow();
       execFileSync(
         process.execPath,
         ["scripts/rotate-platform-totp-keys.mjs", "--reason", "Routine key rotation"],
-        { env: rotationEnv, stdio: "pipe" },
-      ),
-    ).toThrow();
-    execFileSync(
-      process.execPath,
-      ["scripts/rotate-platform-totp-keys.mjs", "--reason", "Routine key rotation"],
-      {
-        env: {
-          ...rotationEnv,
-          PLATFORM_TOTP_KEYRING: JSON.stringify({
-            "test-v1": Buffer.alloc(32, 9).toString("base64"),
-            "test-v2": secondKey,
-          }),
+        {
+          env: {
+            ...rotationEnv,
+            PLATFORM_TOTP_KEYRING: JSON.stringify({
+              "test-v1": Buffer.alloc(32, 9).toString("base64"),
+              "test-v2": secondKey,
+            }),
+          },
         },
-      },
-    );
-    const rotatedApp = await createApiApp({
-      ...environment,
-      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v2",
-      PLATFORM_TOTP_KEYRING: { "test-v2": secondKey },
-    });
-    apps.push(rotatedApp);
-    server = rotatedApp.getHttpAdapter().getInstance();
-    async function expireWhileBlocked(
-      kind:
-        | "recovery-table"
-        | "approvals-table"
-        | "factor-row"
-        | "pending-row"
-        | "challenge-row"
-        | "other-session-row",
-      operation: () => PromiseLike<{ statusCode: number }>,
-      recoveryId?: string,
-    ) {
-      const db = postgres(environment.DATABASE_URL, { max: 3 });
+      );
+      const rotatedApp = await createApiApp({
+        ...environment,
+        PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v2",
+        PLATFORM_TOTP_KEYRING: { "test-v2": secondKey },
+      });
+      apps.push(rotatedApp);
+      server = rotatedApp.getHttpAdapter().getInstance();
+      async function expireWhileBlocked(
+        kind:
+          | "recovery-table"
+          | "approvals-table"
+          | "factor-row"
+          | "pending-row"
+          | "challenge-row"
+          | "other-session-row",
+        operation: () => PromiseLike<{ statusCode: number }>,
+        recoveryId?: string,
+      ) {
+        const db = postgres(environment.DATABASE_URL, { max: 3 });
+        let release!: () => void;
+        let acquired!: () => void;
+        const held = new Promise<void>((resolve) => {
+          acquired = resolve;
+        });
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        try {
+          const holder = db.begin(async (tx) => {
+            if (kind === "recovery-table")
+              await tx`lock table identity_totp_recoveries in share row exclusive mode`;
+            if (kind === "approvals-table")
+              await tx`lock table identity_totp_recovery_approvals in share row exclusive mode`;
+            if (kind === "factor-row")
+              await tx`select identity_id from identity_totp_factors where identity_id = ${requester} for update`;
+            if (kind === "pending-row")
+              await tx`select recovery_id from identity_totp_recovery_enrollment where recovery_id = ${recoveryId!} for update`;
+            if (kind === "challenge-row")
+              await tx`select id from identity_otp_challenges where id = ${recoveryId!} for update`;
+            if (kind === "other-session-row")
+              await tx`select id from identity_sessions where token_hash = ${createHash("sha256").update(previousHeaders.cookie.split("=")[1]!).digest("hex")} for update`;
+            acquired();
+            await gate;
+          });
+          await held;
+          const waiting = operation();
+          const patterns = {
+            "recovery-table":
+              "%lock table identity_totp_recoveries in row exclusive mode%",
+            "approvals-table":
+              "%lock table identity_totp_recovery_approvals in row exclusive mode%",
+            "factor-row":
+              "%select identity_id from identity_totp_factors where identity_id%",
+            "pending-row":
+              "%select recovery_id from identity_totp_recovery_enrollment where recovery_id%",
+            "challenge-row": "%update identity_otp_challenges set consumed_at%",
+            "other-session-row": "%update identity_sessions set revoked_at%",
+          };
+          let blocked = false;
+          for (let i = 0; i < 100; i++) {
+            const rows = await db<
+              { blocked: boolean }[]
+            >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like ${patterns[kind]} and pid <> pg_backend_pid()) as blocked`;
+            if (rows[0]?.blocked) {
+              blocked = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          expect(blocked).toBe(true);
+          vi.mocked(Date.now).mockReturnValue(instant + 600000);
+          release();
+          await holder;
+          expect((await waiting).statusCode).toBe(403);
+        } finally {
+          release();
+          vi.mocked(Date.now).mockReturnValue(instant);
+          await db.end();
+        }
+      }
+      const oldFactor = postgres(environment.DATABASE_URL, { max: 1 });
+      try {
+        await oldFactor`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at, activated_at) values (${requester}, ${randomUUID()}, 'test-v2', ${Buffer.from("old fixture")}, ${Buffer.alloc(12)}, ${Buffer.alloc(16)}, 'ACTIVE', clock_timestamp() + interval '1 hour', clock_timestamp())`;
+      } finally {
+        await oldFactor.end();
+      }
+      const reason = "دستگاه قبلی در دسترس نیست";
+      await expireWhileBlocked("recovery-table", () =>
+        server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/totp/recoveries",
+          headers: requesterHeaders,
+          payload: { incidentId: "INC-RECOVERY", reason },
+        }),
+      );
+      const requested = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/recoveries",
+        headers: requesterHeaders,
+        payload: { incidentId: "INC-RECOVERY", reason },
+      });
+      expect(requested.statusCode).toBe(201);
+      const recoveryId = requested.json<{ recoveryId: string }>().recoveryId;
+      async function approvalProof(headers: { cookie: string }, secret: string) {
+        const response = await server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/totp/proofs",
+          headers,
+          payload: {
+            code: testTotp(secret, 1),
+            action: "APPROVE_TOTP_RECOVERY",
+            targetIdentityId: requester,
+            incidentId: recoveryId,
+            reason,
+          },
+        });
+        expect(response.statusCode).toBe(201);
+        return response.json<{ proof: string }>().proof;
+      }
+      const firstProof = await approvalProof(firstHeaders, firstSecret);
+      const secondProof = await approvalProof(secondHeaders, secondSecret);
+      const approve = (headers: { cookie: string }, proof: string) =>
+        server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/approvals`,
+          headers,
+          payload: { proof },
+        });
+      await expireWhileBlocked("approvals-table", () =>
+        approve(firstHeaders, firstProof),
+      );
+      const before = await server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+        headers: requesterHeaders,
+      });
+      expect(before.statusCode).toBe(403);
+      const approvals = await Promise.all([
+        approve(firstHeaders, firstProof),
+        approve(secondHeaders, secondProof),
+      ]);
+      expect(approvals.map((item) => item.statusCode)).toEqual([204, 204]);
+      expect((await approve(firstHeaders, firstProof)).statusCode).toBe(403);
+      const replacement = await server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+        headers: requesterHeaders,
+      });
+      expect(replacement.statusCode).toBe(201);
+      const firstReplacementSecret = replacement.json<{ secret: string }>().secret;
+      await expireWhileBlocked(
+        "pending-row",
+        () =>
+          server.inject({
+            method: "POST",
+            url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+            headers: requesterHeaders,
+          }),
+        recoveryId,
+      );
+      const firstWrong =
+        testTotp(firstReplacementSecret) === "000000" ? "000001" : "000000";
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const denied = await server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+          headers: requesterHeaders,
+          payload: { code: firstWrong },
+        });
+        expect(denied.statusCode).toBe(403);
+      }
+      const previousHeaders = requesterHeaders;
+      requesterHeaders = await platformLogin("09123456786");
+      expect(requesterHeaders.cookie).not.toBe(previousHeaders.cookie);
+      const resumed = await server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+        headers: requesterHeaders,
+      });
+      expect(resumed.statusCode).toBe(201);
+      const newSecret = resumed.json<{ secret: string }>().secret;
+      expect(newSecret).not.toBe(firstReplacementSecret);
+      const newWrong = testTotp(newSecret) === "000000" ? "000001" : "000000";
+      expect(
+        (
+          await server.inject({
+            method: "POST",
+            url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+            headers: requesterHeaders,
+            payload: { code: newWrong },
+          })
+        ).statusCode,
+      ).toBe(403);
+      expect(
+        (
+          await server.inject({
+            method: "POST",
+            url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+            headers: requesterHeaders,
+            payload: { code: testTotp(newSecret) },
+          })
+        ).statusCode,
+      ).toBe(403);
+      const unblock = postgres(environment.DATABASE_URL, { max: 1 });
+      try {
+        await unblock`update identity_totp_recovery_enrollment set blocked_until = clock_timestamp() - interval '1 second' where recovery_id = ${recoveryId}`;
+      } finally {
+        await unblock.end();
+      }
+      const outdated = await server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+        headers: previousHeaders,
+        payload: { code: testTotp(firstReplacementSecret) },
+      });
+      expect(outdated.statusCode).toBe(403);
+      await expireWhileBlocked("factor-row", () =>
+        server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+          headers: requesterHeaders,
+          payload: { code: testTotp(newSecret) },
+        }),
+      );
+      const pendingOtp = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/requests",
+        payload: { mobile: "09123456786" },
+      });
+      expect(pendingOtp.statusCode).toBe(202);
+      await expireWhileBlocked(
+        "challenge-row",
+        () =>
+          server.inject({
+            method: "POST",
+            url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+            headers: requesterHeaders,
+            payload: { code: testTotp(newSecret) },
+          }),
+        pendingOtp.json<{ challengeId: string }>().challengeId,
+      );
+      await expireWhileBlocked("other-session-row", () =>
+        server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+          headers: requesterHeaders,
+          payload: { code: testTotp(newSecret) },
+        }),
+      );
+      const lockDb = postgres(environment.DATABASE_URL, { max: 3 });
       let release!: () => void;
       let acquired!: () => void;
       const held = new Promise<void>((resolve) => {
@@ -1418,315 +1792,85 @@ describe("platform seller application review API with PostgreSQL", () => {
         release = resolve;
       });
       try {
-        const holder = db.begin(async (tx) => {
-          if (kind === "recovery-table")
-            await tx`lock table identity_totp_recoveries in share row exclusive mode`;
-          if (kind === "approvals-table")
-            await tx`lock table identity_totp_recovery_approvals in share row exclusive mode`;
-          if (kind === "factor-row")
-            await tx`select identity_id from identity_totp_factors where identity_id = ${requester} for update`;
-          if (kind === "pending-row")
-            await tx`select recovery_id from identity_totp_recovery_enrollment where recovery_id = ${recoveryId!} for update`;
-          if (kind === "challenge-row")
-            await tx`select id from identity_otp_challenges where id = ${recoveryId!} for update`;
-          if (kind === "other-session-row")
-            await tx`select id from identity_sessions where token_hash = ${createHash("sha256").update(previousHeaders.cookie.split("=")[1]!).digest("hex")} for update`;
+        const holder = lockDb.begin(async (tx) => {
+          await tx`select pg_advisory_xact_lock(hashtextextended(${requester}, 301))`;
           acquired();
           await gate;
         });
         await held;
-        const waiting = operation();
-        const patterns = {
-          "recovery-table":
-            "%lock table identity_totp_recoveries in row exclusive mode%",
-          "approvals-table":
-            "%lock table identity_totp_recovery_approvals in row exclusive mode%",
-          "factor-row":
-            "%select identity_id from identity_totp_factors where identity_id%",
-          "pending-row":
-            "%select recovery_id from identity_totp_recovery_enrollment where recovery_id%",
-          "challenge-row": "%update identity_otp_challenges set consumed_at%",
-          "other-session-row": "%update identity_sessions set revoked_at%",
-        };
-        let blocked = false;
-        for (let i = 0; i < 100; i++) {
-          const rows = await db<
-            { blocked: boolean }[]
-          >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like ${patterns[kind]} and pid <> pg_backend_pid()) as blocked`;
-          if (rows[0]?.blocked) {
-            blocked = true;
-            break;
+        async function waitForBlocked(count: number) {
+          for (let i = 0; i < 100; i++) {
+            const rows = await lockDb<
+              { count: number }[]
+            >`select count(*)::int as count from pg_stat_activity where datname = current_database() and wait_event = 'advisory' and pid <> pg_backend_pid()`;
+            if ((rows[0]?.count ?? 0) >= count) return;
+            await new Promise((resolve) => setTimeout(resolve, 20));
           }
-          await new Promise((resolve) => setTimeout(resolve, 20));
+          throw new Error("Expected blocked identity operations");
         }
-        expect(blocked).toBe(true);
-        vi.mocked(Date.now).mockReturnValue(instant + 600000);
+        const completing = server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+          headers: requesterHeaders,
+          payload: { code: testTotp(newSecret) },
+        });
+        await waitForBlocked(1);
+        const verifying = server.inject({
+          method: "POST",
+          url: "/v1/platform/auth/otp/verifications",
+          payload: {
+            challengeId: pendingOtp.json<{ challengeId: string }>().challengeId,
+            code: "111111",
+          },
+        });
+        await waitForBlocked(2);
         release();
         await holder;
-        expect((await waiting).statusCode).toBe(403);
+        expect((await completing).statusCode).toBe(204);
+        expect((await verifying).statusCode).toBe(401);
       } finally {
         release();
-        vi.mocked(Date.now).mockReturnValue(instant);
-        await db.end();
+        await lockDb.end();
       }
-    }
-    const oldFactor = postgres(environment.DATABASE_URL, { max: 1 });
-    try {
-      await oldFactor`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at, activated_at) values (${requester}, ${randomUUID()}, 'test-v2', ${Buffer.from("old fixture")}, ${Buffer.alloc(12)}, ${Buffer.alloc(16)}, 'ACTIVE', clock_timestamp() + interval '1 hour', clock_timestamp())`;
-    } finally {
-      await oldFactor.end();
-    }
-    const reason = "دستگاه قبلی در دسترس نیست";
-    await expireWhileBlocked("recovery-table", () =>
-      server.inject({
+      expect((await platformLogin("09123456786")).cookie).toContain(
+        "sevo_platform_session=",
+      );
+      const adminGrant = postgres(environment.DATABASE_URL, { max: 1 });
+      try {
+        await adminGrant`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${requester}, 'ACCESS_ADMINISTRATION', now())`;
+      } finally {
+        await adminGrant.end();
+      }
+      const selfRequest = await server.inject({
         method: "POST",
         url: "/v1/platform/auth/totp/recoveries",
         headers: requesterHeaders,
-        payload: { incidentId: "INC-RECOVERY", reason },
-      }),
-    );
-    const requested = await server.inject({
-      method: "POST",
-      url: "/v1/platform/auth/totp/recoveries",
-      headers: requesterHeaders,
-      payload: { incidentId: "INC-RECOVERY", reason },
-    });
-    expect(requested.statusCode).toBe(201);
-    const recoveryId = requested.json<{ recoveryId: string }>().recoveryId;
-    async function approvalProof(headers: { cookie: string }, secret: string) {
-      const response = await server.inject({
+        payload: { incidentId: "INC-SELF", reason },
+      });
+      expect(selfRequest.statusCode).toBe(201);
+      const selfId = selfRequest.json<{ recoveryId: string }>().recoveryId;
+      const selfProof = await server.inject({
         method: "POST",
         url: "/v1/platform/auth/totp/proofs",
-        headers,
+        headers: requesterHeaders,
         payload: {
-          code: testTotp(secret, 1),
+          code: testTotp(newSecret, 1),
           action: "APPROVE_TOTP_RECOVERY",
           targetIdentityId: requester,
-          incidentId: recoveryId,
+          incidentId: selfId,
           reason,
         },
       });
-      expect(response.statusCode).toBe(201);
-      return response.json<{ proof: string }>().proof;
-    }
-    const firstProof = await approvalProof(firstHeaders, firstSecret);
-    const secondProof = await approvalProof(secondHeaders, secondSecret);
-    const approve = (headers: { cookie: string }, proof: string) =>
-      server.inject({
+      expect(selfProof.statusCode).toBe(201);
+      const selfApproval = await server.inject({
         method: "POST",
-        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/approvals`,
-        headers,
-        payload: { proof },
-      });
-    await expireWhileBlocked("approvals-table", () =>
-      approve(firstHeaders, firstProof),
-    );
-    const before = await server.inject({
-      method: "POST",
-      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
-      headers: requesterHeaders,
-    });
-    expect(before.statusCode).toBe(403);
-    const approvals = await Promise.all([
-      approve(firstHeaders, firstProof),
-      approve(secondHeaders, secondProof),
-    ]);
-    expect(approvals.map((item) => item.statusCode)).toEqual([204, 204]);
-    expect((await approve(firstHeaders, firstProof)).statusCode).toBe(403);
-    const replacement = await server.inject({
-      method: "POST",
-      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
-      headers: requesterHeaders,
-    });
-    expect(replacement.statusCode).toBe(201);
-    const firstReplacementSecret = replacement.json<{ secret: string }>().secret;
-    await expireWhileBlocked(
-      "pending-row",
-      () =>
-        server.inject({
-          method: "POST",
-          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
-          headers: requesterHeaders,
-        }),
-      recoveryId,
-    );
-    const firstWrong =
-      testTotp(firstReplacementSecret) === "000000" ? "000001" : "000000";
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const denied = await server.inject({
-        method: "POST",
-        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+        url: `/v1/platform/auth/totp/recoveries/${selfId}/approvals`,
         headers: requesterHeaders,
-        payload: { code: firstWrong },
+        payload: { proof: selfProof.json<{ proof: string }>().proof },
       });
-      expect(denied.statusCode).toBe(403);
-    }
-    const previousHeaders = requesterHeaders;
-    requesterHeaders = await platformLogin("09123456786");
-    expect(requesterHeaders.cookie).not.toBe(previousHeaders.cookie);
-    const resumed = await server.inject({
-      method: "POST",
-      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
-      headers: requesterHeaders,
-    });
-    expect(resumed.statusCode).toBe(201);
-    const newSecret = resumed.json<{ secret: string }>().secret;
-    expect(newSecret).not.toBe(firstReplacementSecret);
-    const newWrong = testTotp(newSecret) === "000000" ? "000001" : "000000";
-    expect(
-      (
-        await server.inject({
-          method: "POST",
-          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-          headers: requesterHeaders,
-          payload: { code: newWrong },
-        })
-      ).statusCode,
-    ).toBe(403);
-    expect(
-      (
-        await server.inject({
-          method: "POST",
-          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-          headers: requesterHeaders,
-          payload: { code: testTotp(newSecret) },
-        })
-      ).statusCode,
-    ).toBe(403);
-    const unblock = postgres(environment.DATABASE_URL, { max: 1 });
-    try {
-      await unblock`update identity_totp_recovery_enrollment set blocked_until = clock_timestamp() - interval '1 second' where recovery_id = ${recoveryId}`;
-    } finally {
-      await unblock.end();
-    }
-    const outdated = await server.inject({
-      method: "POST",
-      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-      headers: previousHeaders,
-      payload: { code: testTotp(firstReplacementSecret) },
-    });
-    expect(outdated.statusCode).toBe(403);
-    await expireWhileBlocked("factor-row", () =>
-      server.inject({
-        method: "POST",
-        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-        headers: requesterHeaders,
-        payload: { code: testTotp(newSecret) },
-      }),
-    );
-    const pendingOtp = await server.inject({
-      method: "POST",
-      url: "/v1/platform/auth/otp/requests",
-      payload: { mobile: "09123456786" },
-    });
-    expect(pendingOtp.statusCode).toBe(202);
-    await expireWhileBlocked(
-      "challenge-row",
-      () =>
-        server.inject({
-          method: "POST",
-          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-          headers: requesterHeaders,
-          payload: { code: testTotp(newSecret) },
-        }),
-      pendingOtp.json<{ challengeId: string }>().challengeId,
-    );
-    await expireWhileBlocked("other-session-row", () =>
-      server.inject({
-        method: "POST",
-        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-        headers: requesterHeaders,
-        payload: { code: testTotp(newSecret) },
-      }),
-    );
-    const lockDb = postgres(environment.DATABASE_URL, { max: 3 });
-    let release!: () => void;
-    let acquired!: () => void;
-    const held = new Promise<void>((resolve) => {
-      acquired = resolve;
-    });
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    try {
-      const holder = lockDb.begin(async (tx) => {
-        await tx`select pg_advisory_xact_lock(hashtextextended(${requester}, 301))`;
-        acquired();
-        await gate;
-      });
-      await held;
-      async function waitForBlocked(count: number) {
-        for (let i = 0; i < 100; i++) {
-          const rows = await lockDb<
-            { count: number }[]
-          >`select count(*)::int as count from pg_stat_activity where datname = current_database() and wait_event = 'advisory' and pid <> pg_backend_pid()`;
-          if ((rows[0]?.count ?? 0) >= count) return;
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        throw new Error("Expected blocked identity operations");
-      }
-      const completing = server.inject({
-        method: "POST",
-        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
-        headers: requesterHeaders,
-        payload: { code: testTotp(newSecret) },
-      });
-      await waitForBlocked(1);
-      const verifying = server.inject({
-        method: "POST",
-        url: "/v1/platform/auth/otp/verifications",
-        payload: {
-          challengeId: pendingOtp.json<{ challengeId: string }>().challengeId,
-          code: "111111",
-        },
-      });
-      await waitForBlocked(2);
-      release();
-      await holder;
-      expect((await completing).statusCode).toBe(204);
-      expect((await verifying).statusCode).toBe(401);
-    } finally {
-      release();
-      await lockDb.end();
-    }
-    expect((await platformLogin("09123456786")).cookie).toContain(
-      "sevo_platform_session=",
-    );
-    const adminGrant = postgres(environment.DATABASE_URL, { max: 1 });
-    try {
-      await adminGrant`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${requester}, 'ACCESS_ADMINISTRATION', now())`;
-    } finally {
-      await adminGrant.end();
-    }
-    const selfRequest = await server.inject({
-      method: "POST",
-      url: "/v1/platform/auth/totp/recoveries",
-      headers: requesterHeaders,
-      payload: { incidentId: "INC-SELF", reason },
-    });
-    expect(selfRequest.statusCode).toBe(201);
-    const selfId = selfRequest.json<{ recoveryId: string }>().recoveryId;
-    const selfProof = await server.inject({
-      method: "POST",
-      url: "/v1/platform/auth/totp/proofs",
-      headers: requesterHeaders,
-      payload: {
-        code: testTotp(newSecret, 1),
-        action: "APPROVE_TOTP_RECOVERY",
-        targetIdentityId: requester,
-        incidentId: selfId,
-        reason,
-      },
-    });
-    expect(selfProof.statusCode).toBe(201);
-    const selfApproval = await server.inject({
-      method: "POST",
-      url: `/v1/platform/auth/totp/recoveries/${selfId}/approvals`,
-      headers: requesterHeaders,
-      payload: { proof: selfProof.json<{ proof: string }>().proof },
-    });
-    expect(selfApproval.statusCode).toBe(403);
-  });
+      expect(selfApproval.statusCode).toBe(403);
+    },
+  );
 
   it("limits proof requests across platform sessions even for malformed or unauthorized requests", async () => {
     const app = await createApiApp(environment);
