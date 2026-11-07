@@ -888,7 +888,7 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   ).toBeLessThan(0.001);
   await page.goto(`/s/${slug}`);
   await expect(page.getByRole("heading", { name: "کالاهای فروشگاه" })).toBeVisible();
-  await page.getByRole("link", { name: "دیدن فنجان سرامیکی و گزینه‌های آن" }).click();
+  await page.getByRole("link", { name: "دیدن فنجان تازه سرور و گزینه‌های آن" }).click();
   await expect(page.getByRole("group", { name: "رنگ" })).toBeVisible();
 });
 
