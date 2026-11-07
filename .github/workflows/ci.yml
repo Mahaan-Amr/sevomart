@@ -59,6 +59,8 @@ jobs:
       - run: pnpm quality
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Run discovery and storefront layout tests
+        run: pnpm exec playwright test --config playwright.grid.config.ts
       - name: Run Playwright acceptance and visual regression
         id: playwright
         run: pnpm test:e2e

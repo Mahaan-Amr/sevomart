@@ -4,6 +4,34 @@ import {
   assertNoHorizontalOverflow,
 } from "../helpers/visual-assertions";
 
+test("guest browses discovery and finds seller entry in the identity menu", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  const products = page
+    .getByRole("list", { name: "کالاهای تازه" })
+    .getByRole("listitem");
+  await expect(products).toHaveCount(3);
+  expect(
+    new Set(
+      await products.evaluateAll((items) =>
+        items.map((item) => item.getBoundingClientRect().top),
+      ),
+    ).size,
+  ).toBe(1);
+  const identity = page.locator("summary").filter({ hasText: "هویت سوو" });
+  await identity.focus();
+  await page.keyboard.press("Enter");
+  const entry = page.getByRole("banner").getByRole("link", { name: "فروشنده شوید" });
+  await expect(entry).toBeVisible();
+  await expect(entry).toHaveAttribute("href", "/seller/start");
+  await page.keyboard.press("Tab");
+  await expect(entry).toBeFocused();
+  await assertNoHorizontalOverflow(page);
+  await assertMinimumContrast(page.locator("main h1, main strong, main h2 a"));
+});
+
 test("signed-in buyer finds seller entry in the identity menu while browsing discovery", async ({
   page,
   context,
