@@ -122,7 +122,8 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   ).toBeVisible();
   await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
   await page.getByLabel("نام فروشگاه").clear();
-  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).focus();
+  await page.keyboard.press("Enter");
   await expect(
     page
       .locator("label")
