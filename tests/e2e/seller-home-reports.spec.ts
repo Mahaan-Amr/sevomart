@@ -97,6 +97,7 @@ test("seller acts from the operational home and reads a private basic report", a
   });
 
   try {
+    await page.route("**/api/store/seller/products?*", (route) => route.abort());
     await page.goto("/seller");
     await expect(
       page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
@@ -105,6 +106,7 @@ test("seller acts from the operational home and reads a private basic report", a
       "href",
       "/seller/store/setup",
     );
+    await page.unroute("**/api/store/seller/products?*");
     await page.getByRole("button", { name: "بستن راهنما" }).click();
     await expect(
       page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
