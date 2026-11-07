@@ -384,7 +384,7 @@ test("discovery shows products without a separate seller-media feed", async ({
 
   const productList = page.getByRole("list", { name: "کالاهای تازه" });
   await expect(
-    productList.getByRole("link", { name: item.product.name }),
+    productList.getByRole("link", { name: item.product.name, exact: true }),
   ).toBeVisible();
   await expect(productList.getByText("ناموجود", { exact: true })).toBeVisible();
   await expect(
