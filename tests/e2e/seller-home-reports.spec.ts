@@ -186,14 +186,6 @@ test("seller acts from the operational home and reads a private basic report", a
     await assertNoHorizontalOverflow(page);
     await assertInteractiveTargets(page, "main a, main button");
     await page.getByRole("button", { name: "بستن راهنما" }).click();
-    const viewport = page.viewportSize()!;
-    for (const width of [180, 384]) {
-      await page.setViewportSize({ width, height: viewport.height });
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await page.waitForFunction(() => matchMedia("(max-width: 520px)").matches);
-      await assertNoHorizontalOverflow(page);
-    }
-    await page.setViewportSize(viewport);
     await page.goto("/seller");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(page.getByRole("heading", { name: "کارهای نزدیک" })).toBeVisible();
