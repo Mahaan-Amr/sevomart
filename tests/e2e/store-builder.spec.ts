@@ -295,6 +295,11 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     page.getByText("هزینه هر روش ارسال فعال را وارد کنید.").first(),
   ).toBeVisible();
   await page.getByLabel("هزینه ارسال (تومان)").fill("۱۲۰۰۰۰");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).not.toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(page.getByText("هزینه هر روش ارسال فعال را وارد کنید.")).toHaveCount(0);
   const switchedSave = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/store/seller/store/draft") &&

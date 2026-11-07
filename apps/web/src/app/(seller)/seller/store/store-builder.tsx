@@ -756,6 +756,14 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                     }
                     onChange={(event) => {
                       const feeToman = event.target.value;
+                      if (validShippingFee(feeToman)) {
+                        setErrors((current) => ({ ...current, shipping: undefined }));
+                        setMessage((current) =>
+                          current
+                            .replace("هزینه هر روش ارسال فعال را وارد کنید.", "")
+                            .trim(),
+                        );
+                      }
                       setForm((current) => ({
                         ...current,
                         shippingMethods: current.shippingMethods.map((method) =>
