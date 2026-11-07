@@ -12,6 +12,7 @@ import * as ordersV1 from "@sevo/contracts/orders/v1";
 import * as ordersV2 from "@sevo/contracts/orders/v2";
 import * as paymentsV1 from "@sevo/contracts/payments/v1";
 import * as paymentsV2 from "@sevo/contracts/payments/v2";
+import * as paymentsV3 from "@sevo/contracts/payments/v3";
 import {
   errorEnvelopeV1Contract,
   eventEnvelopeV1Contract,
@@ -19,6 +20,7 @@ import {
 } from "@sevo/contracts/platform/v1";
 import * as problemFollowUpV1 from "@sevo/contracts/problem-follow-up/v1";
 import * as problemFollowUpV2 from "@sevo/contracts/problem-follow-up/v2";
+import * as problemFollowUpV3 from "@sevo/contracts/problem-follow-up/v3";
 import * as productV1 from "@sevo/contracts/product/v1";
 import * as reportingAnalyticsV1 from "@sevo/contracts/reporting-analytics/v1";
 import * as storeV1 from "@sevo/contracts/store/v1";
@@ -54,10 +56,12 @@ const canonicalDomainEntrypoints: Record<string, Record<string, unknown>> = {
   "@sevo/contracts/orders/v2": ordersV2,
   "@sevo/contracts/payments/v1": paymentsV1,
   "@sevo/contracts/payments/v2": paymentsV2,
+  "@sevo/contracts/payments/v3": paymentsV3,
   "@sevo/contracts/fulfillment/v1": fulfillmentV1,
   "@sevo/contracts/conversations/v1": conversationsV1,
   "@sevo/contracts/problem-follow-up/v1": problemFollowUpV1,
   "@sevo/contracts/problem-follow-up/v2": problemFollowUpV2,
+  "@sevo/contracts/problem-follow-up/v3": problemFollowUpV3,
   "@sevo/contracts/content/v1": contentV1,
   "@sevo/contracts/content/v2": contentV2,
   "@sevo/contracts/discovery/v1": discoveryV1,
@@ -110,7 +114,7 @@ function expectOperations(value: unknown, label: string) {
     expect(operation, label).toMatchObject({
       operationId: expect.any(String),
       method: expect.stringMatching(/^(delete|get|post|put)$/),
-      path: expect.stringMatching(/^\/(?:internal\/)?v[12]\//),
+      path: expect.stringMatching(/^\/(?:internal\/)?v[123]\//),
     });
   }
 }

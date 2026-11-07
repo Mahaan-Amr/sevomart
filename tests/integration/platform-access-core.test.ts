@@ -2,6 +2,11 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 
 import postgres, { type Sql } from "postgres";
+import {
+  superadminListContract,
+  superadminAuditListContract,
+  superadminSensitiveAuditListContract,
+} from "@sevo/contracts/identity-access/v1";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
@@ -201,6 +206,7 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       headers: { cookie: `sevo_platform_session=${owner.token}` },
     });
     expect(list.statusCode).toBe(200);
+    expect(superadminListContract.safeParse(list.json()).success).toBe(true);
     expect(list.json().items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ identityId: other.identityId, status: "ACTIVE" }),
@@ -212,6 +218,7 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       headers: { cookie: `sevo_platform_session=${owner.token}` },
     });
     expect(audit.statusCode).toBe(200);
+    expect(superadminAuditListContract.safeParse(audit.json()).success).toBe(true);
     expect(audit.json().items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -365,6 +372,9 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
         headers: { cookie: `sevo_platform_session=${actor.token}` },
       });
     expect(history.statusCode).toBe(200);
+    expect(superadminSensitiveAuditListContract.safeParse(history.json()).success).toBe(
+      true,
+    );
     expect(history.json().items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

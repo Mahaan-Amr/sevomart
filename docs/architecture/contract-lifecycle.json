@@ -123,6 +123,18 @@
         "events": []
       }
     },
+    "@sevo/contracts/payments/v3": {
+      "owner": "payments",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": ["paymentReviewDetailV3Contract"],
+        "operations": ["paymentsV3Operations"],
+        "events": []
+      }
+    },
     "@sevo/contracts/fulfillment/v1": {
       "owner": "fulfillment",
       "approved": true,
@@ -175,6 +187,21 @@
           "problemFollowUpV1ReadOperations",
           "problemFollowUpV2Operations"
         ],
+        "events": []
+      }
+    },
+    "@sevo/contracts/problem-follow-up/v3": {
+      "owner": "problem-follow-up",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": [
+          "platformDisputeDirectViewContract",
+          "platformViolationDirectViewContract"
+        ],
+        "operations": ["problemFollowUpV3Operations"],
         "events": []
       }
     },
