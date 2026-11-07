@@ -3,7 +3,7 @@ import {
   iranianMobileContract,
 } from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
@@ -145,6 +145,141 @@ describe("identity session HTTP API with PostgreSQL", () => {
       headers: { cookie: second.headers["set-cookie"] },
     });
     expect(check.statusCode).toBe(401);
+  });
+
+  it("preserves the platform session when all public sessions are ended", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const token = randomBytes(32).toString("base64url");
+    const hash = createHash("sha256").update(token).digest("hex");
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`insert into identity_sessions (id, token_hash, identity_id, audience, expires_at) values (${randomUUID()}, ${hash}, ${verified.json().actor.identityId}, 'PLATFORM_AGENT', now() + interval '1 hour')`;
+      const platformHeaders = { cookie: `sevo_platform_session=${token}` };
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/platform/auth/session",
+            headers: platformHeaders,
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await server.inject({
+            method: "DELETE",
+            url: "/v1/auth/sessions",
+            headers: { cookie: verified.headers["set-cookie"] },
+          })
+        ).statusCode,
+      ).toBe(204);
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/platform/auth/session",
+            headers: platformHeaders,
+          })
+        ).statusCode,
+      ).toBe(200);
+    } finally {
+      await sql`delete from identity_sessions where token_hash = ${hash}`;
+      await sql.end();
+    }
+  });
+
+  it("serializes a new public login after an in-flight logout of all devices", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    async function requestChallenge() {
+      return server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+    }
+    async function verify(challengeId: string) {
+      return server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId, code: "111111" },
+      });
+    }
+    const first = await verify((await requestChallenge()).json().challengeId);
+    const nextChallenge = await requestChallenge();
+    const identityId = first.json().actor.identityId;
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
+    let release!: () => void;
+    let acquired!: () => void;
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const holder = sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${identityId}, 273))`;
+        acquired();
+        await gate;
+      });
+      await held;
+      async function waitForBlocked(count: number) {
+        for (let attempt = 0; attempt < 150; attempt++) {
+          const [row] = await sql<
+            Array<{ count: number }>
+          >`select count(*)::int as count from pg_stat_activity where datname = current_database() and wait_event = 'advisory' and pid <> pg_backend_pid()`;
+          if ((row?.count ?? 0) >= count) return;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error(`Expected ${count} advisory lock waiters`);
+      }
+      const logout = server.inject({
+        method: "DELETE",
+        url: "/v1/auth/sessions",
+        headers: { cookie: first.headers["set-cookie"] },
+      });
+      await waitForBlocked(1);
+      const login = verify(nextChallenge.json().challengeId);
+      await waitForBlocked(2);
+      release();
+      await holder;
+      expect((await logout).statusCode).toBe(204);
+      const next = await login;
+      expect(next.statusCode).toBe(200);
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/auth/session",
+            headers: { cookie: first.headers["set-cookie"] },
+          })
+        ).statusCode,
+      ).toBe(401);
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/auth/session",
+            headers: { cookie: next.headers["set-cookie"] },
+          })
+        ).statusCode,
+      ).toBe(200);
+    } finally {
+      release();
+      await sql.end();
+    }
   });
 
   it("extends an active session after activity", async () => {
