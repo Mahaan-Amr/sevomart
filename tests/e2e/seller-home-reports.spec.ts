@@ -23,7 +23,7 @@ test("seller acts from the operational home and reads a private basic report", a
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
   const storeId = randomUUID();
-  const productId = `00000000-0000-4000-8000-${String(projectIndex + 1).padStart(12, "0")}`;
+  const productId = `00000000${randomUUID().slice(8)}`;
   const variantId = randomUUID();
   const mediaId = randomUUID();
   const orderIds = [randomUUID(), randomUUID(), randomUUID()] as const;
@@ -184,9 +184,8 @@ test("seller acts from the operational home and reads a private basic report", a
     // the published product after all the empty drafts.
     await sql`
       insert into product_products (id, store_id, state, revision)
-      select format('10000000-0000-4000-8000-%s',
-        lpad((${projectIndex} * 100 + number)::text, 12, '0'))::uuid,
-        ${storeId}, 'DRAFT', 0 from generate_series(1, 50) as number
+      select ('10000000' || substring(gen_random_uuid()::text from 9))::uuid,
+        ${storeId}, 'DRAFT', 0 from generate_series(1, 50)
     `;
     await sql`update product_products set created_at = '2026-01-01T10:00:00.123456Z' where store_id = ${storeId}::uuid`;
     await sql`
@@ -315,7 +314,7 @@ test("seller acts from the operational home and reads a private basic report", a
     await sql`delete from reporting_fulfillment_states where order_id in ${sql(orderIds)}`;
     await sql`delete from reporting_seller_order_facts where store_id = ${storeId}`;
     await sql`delete from inventory_levels where variant_id = ${variantId}`;
-    await sql`delete from product_products where id = ${productId}`;
+    await sql`delete from product_products where store_id = ${storeId}`;
     await sql`delete from store_memberships where store_id = ${storeId}`;
     await sql`delete from store_stores where id = ${storeId}`;
     await sql`delete from identity_seller_access where identity_id = ${identityId}`;
