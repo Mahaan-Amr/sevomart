@@ -78,7 +78,7 @@ describe("seller password HTTP API", () => {
           }),
         ),
       );
-      expect(results.map((response) => response.statusCode)).toEqual([401, 401, 401]);
+      expect(results.map((response) => response.statusCode)).toEqual([429, 429, 429]);
       expect(new Set(results.map((response) => response.json().message)).size).toBe(1);
       const [count] = await sql<
         Array<{ count: number }>
@@ -103,7 +103,7 @@ describe("seller password HTTP API", () => {
       await sql`delete from identity_password_attempts where mobile like '090%' or mobile in ${sql(mobiles)}`;
       await sql`insert into identity_password_attempts (mobile, attempts, window_started_at) select '090' || lpad(n::text, 8, '0'), 1, '2000-01-01'::timestamptz from generate_series(1, 102) n`;
       await sql`update identity_password_admission set attempts = 59, window_started_at = clock_timestamp() where id = 1`;
-      for (const mobile of mobiles) {
+      for (const [index, mobile] of mobiles.entries()) {
         expect(
           (
             await server.inject({
@@ -112,7 +112,7 @@ describe("seller password HTTP API", () => {
               payload: { mobile, password: "wrong secure password" },
             })
           ).statusCode,
-        ).toBe(401);
+        ).toBe(index === 0 ? 401 : 429);
       }
       const [created] = await sql<
         Array<{ count: number }>
@@ -151,6 +151,18 @@ describe("seller password HTTP API", () => {
     const platformToken = randomBytes(32).toString("base64url");
     const platformHash = createHash("sha256").update(platformToken).digest("hex");
     try {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const bogus = await server.inject({
+          method: "POST",
+          url: "/v1/auth/password/recovery",
+          payload: {
+            challengeId: randomUUID(),
+            code: "111111",
+            password: "invalid reset password",
+          },
+        });
+        expect(bogus.statusCode).toBe(401);
+      }
       await sql`insert into identity_sessions (id, token_hash, identity_id, audience, expires_at) values (${randomUUID()}, ${platformHash}, ${otp.json().actor.identityId}, 'PLATFORM_AGENT', now() + interval '1 hour')`;
       const enrollment = await server.inject({
         method: "POST",
