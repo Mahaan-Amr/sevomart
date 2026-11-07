@@ -370,16 +370,12 @@ model PlatformPasswordAttempt {
   windowStartedAt DateTime @map("window_started_at") @db.Timestamptz
   @@map("identity_platform_password_attempts")
 }
-model PlatformPasswordAdmission {
-  id Int @id @db.SmallInt
-  attempts Int
-  windowStartedAt DateTime @map("window_started_at") @db.Timestamptz
-  @@map("identity_platform_password_admission")
-}
 model PlatformPasswordRecovery {
   id String @id @db.Uuid
   identityId String @map("identity_id") @db.Uuid
   tokenHash String @unique @map("token_hash") @db.Char(64)
+  permissionGrantId String? @map("permission_grant_id") @db.Uuid
+  superadminGenerationId String? @map("superadmin_generation_id") @db.Uuid
   expiresAt DateTime @map("expires_at") @db.Timestamptz
   consumedAt DateTime? @map("consumed_at") @db.Timestamptz
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz

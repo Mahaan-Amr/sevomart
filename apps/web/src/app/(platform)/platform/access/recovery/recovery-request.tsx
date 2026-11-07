@@ -4,6 +4,7 @@ import styles from "../../_components/platform-workspace.module.css";
 export function RecoveryRequest() {
   const [identityId, setIdentityId] = useState("");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [reason, setReason] = useState("");
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
@@ -17,7 +18,12 @@ export function RecoveryRequest() {
       const response = await fetch("/api/platform/auth/password/recovery-requests", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ identityId, reason, ...(username ? { username } : {}) }),
+        body: JSON.stringify({
+          identityId,
+          reason,
+          ...(username ? { username } : {}),
+          ...(email ? { email } : {}),
+        }),
       });
       if (!response.ok) {
         setMessage("درخواست انجام نشد. دسترسی و شناسه همکار را بررسی کنید.");
@@ -69,6 +75,15 @@ export function RecoveryRequest() {
               onChange={(event) => setUsername(event.target.value)}
             />
             <p>اگر همکار پیش‌تر حساب نداشته، نام کاربری تازه را وارد کنید.</p>
+            <label htmlFor="recovery-email">ایمیل همکار (اختیاری)</label>
+            <input
+              id="recovery-email"
+              type="email"
+              dir="ltr"
+              maxLength={254}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
             <label htmlFor="recovery-reason">دلیل بازیابی</label>
             <textarea
               id="recovery-reason"

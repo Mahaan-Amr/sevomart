@@ -74,6 +74,7 @@ const HIGH_RISK = new Set<Responsibility>([
 ]);
 
 type AccessSession = {
+  platformAuthMethod: string | null;
   identityId: string;
   strongAuthenticationAt: Date;
 };
@@ -2578,7 +2579,7 @@ async function authorizePlatformSession(
 ): Promise<AccessSession> {
   if (!token) throw new PlatformAgentSessionUnauthorizedError();
   const rows = await sql<AccessSession[]>`
-    select s.identity_id as "identityId", s.created_at as "strongAuthenticationAt"
+    select s.identity_id as "identityId", s.created_at as "strongAuthenticationAt", s.platform_auth_method as "platformAuthMethod"
     from identity_sessions s
     join identity_identities i on i.id = s.identity_id and i.status = 'ACTIVE'
     where s.token_hash = ${hashToken(token)}
@@ -2590,6 +2591,7 @@ async function authorizePlatformSession(
   if (!session) throw new PlatformAgentSessionUnauthorizedError();
   if (
     requireStrongAuthentication &&
+    session.platformAuthMethod !== "PASSWORD" &&
     Date.now() - session.strongAuthenticationAt.getTime() > 5 * 60 * 1000
   ) {
     throw new PlatformAccessError("STRONG_AUTHENTICATION_STALE");

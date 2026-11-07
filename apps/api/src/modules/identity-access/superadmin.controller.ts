@@ -78,7 +78,7 @@ export class SuperadminService {
         join identity_platform_superadmins a on a.identity_id = i.id and a.revoked_at is null
         where s.token_hash = ${tokenHash} and s.audience = 'PLATFORM_AGENT'
           and s.revoked_at is null and s.expires_at > now()
-          and s.created_at > now() - interval '5 minutes' for share of s, i, a`;
+          and (s.platform_auth_method = 'PASSWORD' or s.created_at > now() - interval '5 minutes') for share of s, i, a`;
       const actor = actors[0];
       if (!actor) throw superadminError(correlationId, "RESPONSIBILITY_REQUIRED", 403);
       const prior = await sql<Array<{ payloadHash: string; response: unknown }>>`

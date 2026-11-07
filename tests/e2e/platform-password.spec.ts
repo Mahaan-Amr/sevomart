@@ -55,6 +55,7 @@ test("superadmin gives a one-time recovery code to a colleague", async ({ page }
     await expect(page).toHaveURL(/\/platform(?:\/seller-applications)?$/);
     await page.goto("/platform/access/recovery");
     await page.getByLabel("شناسه همکار").fill(colleague);
+    await page.getByLabel("ایمیل همکار (اختیاری)").fill(`${suffix}@example.test`);
     await page.getByLabel("دلیل بازیابی").fill("بازیابی دسترسی همکار مجاز");
     await page.getByRole("button", { name: "دریافت کد بازیابی" }).click();
     const code = await page.locator("bdi").last().innerText();
@@ -67,7 +68,9 @@ test("superadmin gives a one-time recovery code to a colleague", async ({ page }
     await page.getByRole("button", { name: "ثبت رمز تازه" }).click();
     await expect(page.getByRole("status")).toContainText("رمز تازه ثبت شد");
     await page.goto("/platform/login");
-    await page.getByLabel("نام کاربری، شماره موبایل یا ایمیل").fill(colleagueName);
+    await page
+      .getByLabel("نام کاربری، شماره موبایل یا ایمیل")
+      .fill(`${suffix}@example.test`);
     await page.getByLabel("رمز عبور").fill("browser new secure password");
     await page.getByRole("button", { name: "ورود" }).click();
     await expect(page).toHaveURL(/\/platform(?:\/seller-applications)?$/);

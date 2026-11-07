@@ -273,16 +273,30 @@ describe("platform password login API", () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
     const admin = randomUUID(),
       colleague = randomUUID(),
+      other = randomUUID(),
       token = randomUUID();
     const username = `new${colleague.replaceAll("-", "")}`;
     try {
-      await sql`insert into identity_identities (id, status) values (${admin}, 'ACTIVE'), (${colleague}, 'ACTIVE')`;
+      await sql`insert into identity_identities (id, status) values (${admin}, 'ACTIVE'), (${colleague}, 'ACTIVE'), (${other}, 'ACTIVE')`;
+      await sql`insert into identity_platform_passwords (identity_id, username, email, password_hash) values (${other}, ${`other${other.replaceAll("-", "")}`}, 'taken@example.test', null)`;
       await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${admin}, now())`;
       await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${colleague}, 'SELLER_APPLICATION_REVIEW', now())`;
       await sql`insert into identity_sessions (id, identity_id, token_hash, audience, expires_at, platform_auth_method) values (${randomUUID()}, ${admin}, ${createHash("sha256").update(token).digest("hex")}, 'PLATFORM_AGENT', now() + interval '1 hour', 'PASSWORD')`;
       const app = await createApiApp(apiTestEnvironment);
       apps.push(app);
       const server = app.getHttpAdapter().getInstance();
+      const collision = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/recovery-requests",
+        headers: { cookie: `sevo_platform_session=${token}` },
+        payload: {
+          identityId: colleague,
+          username,
+          email: "TAKEN@example.test",
+          reason: "راه‌اندازی دسترسی همکار مجاز",
+        },
+      });
+      expect(collision.statusCode).toBe(403);
       const issue = await server.inject({
         method: "POST",
         url: "/v2/platform/auth/password/recovery-requests",
@@ -290,6 +304,7 @@ describe("platform password login API", () => {
         payload: {
           identityId: colleague,
           username,
+          email: "first.colleague@example.test",
           reason: "راه‌اندازی دسترسی همکار مجاز",
         },
       });
@@ -303,7 +318,10 @@ describe("platform password login API", () => {
       const login = await server.inject({
         method: "POST",
         url: "/v2/platform/auth/password/sessions",
-        payload: { identifier: username, password: "first secure password" },
+        payload: {
+          identifier: "first.colleague@example.test",
+          password: "first secure password",
+        },
       });
       expect(login.statusCode).toBe(200);
     } finally {
@@ -312,7 +330,7 @@ describe("platform password login API", () => {
       await sql`delete from identity_sessions where identity_id in (${admin}, ${colleague})`;
       await sql`delete from identity_platform_permission_grants where identity_id = ${colleague}`;
       await sql`truncate identity_platform_superadmins`;
-      await sql`delete from identity_identities where id in (${admin}, ${colleague})`;
+      await sql`delete from identity_identities where id in (${admin}, ${colleague}, ${other})`;
       await sql.end();
     }
   });
@@ -392,26 +410,156 @@ describe("platform password login API", () => {
     }
   });
 
-  it("bounds total password guesses across many different identifiers", async () => {
-    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  it("keeps a real account available when unknown identifiers exhaust the attempt table and general work slots", async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
+    const identity = randomUUID();
+    const username = `known${identity.replaceAll("-", "")}`;
+    const salt = Buffer.alloc(16, 7).toString("base64url");
+    const key = scryptSync("known secure password", salt, 64, {
+      N: 16384,
+      r: 8,
+      p: 5,
+      maxmem: 64 * 1024 * 1024,
+    }).toString("base64url");
+    let release!: () => void;
+    let acquired!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
     try {
-      await sql`update identity_platform_password_admission set attempts = 60, window_started_at = clock_timestamp() where id = 1`;
+      await sql`insert into identity_identities (id, status) values (${identity}, 'ACTIVE')`;
+      await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${identity}, 'DISPUTE_REVIEW', now())`;
+      await sql`insert into identity_platform_passwords (identity_id, username, password_hash) values (${identity}, ${username}, ${`scrypt$${salt}$${key}`})`;
+      await sql`insert into identity_platform_password_attempts (identifier_hash, attempts, window_started_at) select encode(sha256(convert_to('flood' || n::text, 'UTF8')), 'hex'), 1, clock_timestamp() from generate_series(1, 10000) n on conflict do nothing`;
+      const holder = sql.begin(async (tx) => {
+        for (let slot = 0; slot < 3; slot++)
+          await tx`select pg_advisory_xact_lock(hashtextextended('platform-password-work', 276) + ${slot})`;
+        acquired();
+        await gate;
+      });
+      await held;
       const app = await createApiApp(apiTestEnvironment);
       apps.push(app);
-      const result = await app
+      const login = await app
         .getHttpAdapter()
         .getInstance()
         .inject({
           method: "POST",
           url: "/v2/platform/auth/password/sessions",
+          payload: { identifier: username, password: "known secure password" },
+        });
+      expect(login.statusCode).toBe(200);
+      release();
+      await holder;
+    } finally {
+      release();
+      await sql`delete from identity_platform_password_attempts`;
+      await sql`delete from identity_sessions where identity_id = ${identity}`;
+      await sql`delete from identity_platform_permission_grants where identity_id = ${identity}`;
+      await sql`delete from identity_identities where id = ${identity}`;
+      await sql.end();
+    }
+  });
+  it("shares the attempt limit across username, email and mobile for one account", async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const identity = randomUUID(),
+      mobile = "09111119992",
+      username = `shared${identity.replaceAll("-", "")}`,
+      email = `${identity}@example.test`;
+    const salt = Buffer.alloc(16, 8).toString("base64url");
+    const key = scryptSync("known secure password", salt, 64, {
+      N: 16384,
+      r: 8,
+      p: 5,
+      maxmem: 64 * 1024 * 1024,
+    }).toString("base64url");
+    try {
+      await sql`insert into identity_identities (id, status) values (${identity}, 'ACTIVE')`;
+      await sql`insert into identity_login_methods (id, identity_id, kind, mobile, verified_at) values (${randomUUID()}, ${identity}, 'MOBILE', ${mobile}, now())`;
+      await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${identity}, 'DISPUTE_REVIEW', now())`;
+      await sql`insert into identity_platform_passwords (identity_id, username, email, password_hash) values (${identity}, ${username}, ${email}, ${`scrypt$${salt}$${key}`})`;
+      const app = await createApiApp(apiTestEnvironment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      for (let i = 0; i < 10; i++) {
+        const bad = await server.inject({
+          method: "POST",
+          url: "/v2/platform/auth/password/sessions",
           payload: {
-            identifier: "new-attacker@example.test",
-            password: "a valid password",
+            identifier: [username, email, mobile][i % 3],
+            password: "wrong secure password",
           },
         });
-      expect(result.statusCode).toBe(429);
+        expect(bad.statusCode).toBe(401);
+      }
+      const blocked = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/sessions",
+        payload: { identifier: mobile, password: "known secure password" },
+      });
+      expect(blocked.statusCode).toBe(401);
     } finally {
-      await sql`update identity_platform_password_admission set attempts = 0, window_started_at = clock_timestamp() where id = 1`;
+      await sql`delete from identity_platform_password_attempts`;
+      await sql`delete from identity_sessions where identity_id = ${identity}`;
+      await sql`delete from identity_platform_permission_grants where identity_id = ${identity}`;
+      await sql`delete from identity_identities where id = ${identity}`;
+      await sql.end();
+    }
+  });
+  it("invalidates recovery after the colleague's permission is revoked and regranted", async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const admin = randomUUID(),
+      colleague = randomUUID(),
+      token = randomUUID();
+    try {
+      await sql`insert into identity_identities (id, status) values (${admin}, 'ACTIVE'), (${colleague}, 'ACTIVE')`;
+      await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${admin}, now())`;
+      await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${colleague}, 'DISPUTE_REVIEW', now())`;
+      await sql`insert into identity_platform_passwords (identity_id, username, password_hash) values (${colleague}, ${`regrant${colleague.replaceAll("-", "")}`}, null)`;
+      await sql`insert into identity_sessions (id, identity_id, token_hash, audience, expires_at, platform_auth_method) values (${randomUUID()}, ${admin}, ${createHash("sha256").update(token).digest("hex")}, 'PLATFORM_AGENT', now() + interval '1 hour', 'PASSWORD')`;
+      const app = await createApiApp(apiTestEnvironment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      const issued = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/recovery-requests",
+        headers: { cookie: `sevo_platform_session=${token}` },
+        payload: { identityId: colleague, reason: "بازیابی دسترسی همکار مجاز" },
+      });
+      expect(issued.statusCode).toBe(201);
+      await sql`update identity_platform_permission_grants set revoked_at = clock_timestamp() where identity_id = ${colleague}`;
+      await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${colleague}, 'DISPUTE_REVIEW', now())`;
+      const redeem = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/recovery",
+        payload: { code: issued.json().code, password: "first secure password" },
+      });
+      expect(redeem.statusCode).toBe(401);
+      const second = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/recovery-requests",
+        headers: { cookie: `sevo_platform_session=${token}` },
+        payload: { identityId: colleague, reason: "بازیابی دسترسی همکار مجاز" },
+      });
+      expect(second.statusCode).toBe(201);
+      await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${colleague}, now())`;
+      await sql`update identity_platform_superadmins set revoked_at = clock_timestamp() where identity_id = ${colleague}`;
+      const afterDemotion = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/recovery",
+        payload: { code: second.json().code, password: "first secure password" },
+      });
+      expect(afterDemotion.statusCode).toBe(401);
+    } finally {
+      await sql`truncate identity_platform_password_recovery_audit`;
+      await sql`delete from identity_platform_password_recoveries where identity_id = ${colleague}`;
+      await sql`delete from identity_sessions where identity_id in (${admin}, ${colleague})`;
+      await sql`delete from identity_platform_permission_grants where identity_id = ${colleague}`;
+      await sql`truncate identity_platform_superadmins`;
+      await sql`delete from identity_identities where id in (${admin}, ${colleague})`;
       await sql.end();
     }
   });

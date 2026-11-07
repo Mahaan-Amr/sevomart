@@ -41,24 +41,25 @@ export class PlatformPasswordBusyError extends Error {}
 export class PlatformPasswordSessionExpiredError extends Error {}
 export class PlatformPasswordService {
   readonly #sql: postgres.Sql;
-  readonly #admissionSql: postgres.Sql;
   constructor(databaseUrl: string) {
     this.#sql = postgres(databaseUrl, { max: 5 });
-    this.#admissionSql = postgres(databaseUrl, { max: 2 });
   }
   async login(rawIdentifier: string, password: string) {
-    const admitted = await this
-      .#admissionSql`update identity_platform_password_admission set attempts = case when window_started_at < clock_timestamp() - interval '1 minute' then 1 else attempts + 1 end, window_started_at = case when window_started_at < clock_timestamp() - interval '1 minute' then clock_timestamp() else window_started_at end where id = 1 and (attempts < 60 or window_started_at < clock_timestamp() - interval '1 minute') returning id`;
-    if (!admitted.length) throw new PlatformPasswordBusyError();
     const identifier = rawIdentifier.trim().toLowerCase();
-    const identifierHash = digest(identifier);
     return this.#sql.begin(async (sql) => {
+      const credentials = await sql<
+        { identityId: string; passwordHash: string | null }[]
+      >`select p.identity_id as "identityId", p.password_hash as "passwordHash" from identity_platform_passwords p left join identity_login_methods m on m.identity_id = p.identity_id and m.kind = 'MOBILE' where p.username = ${identifier} or p.email = ${identifier} or m.mobile = ${identifier} limit 2`;
+      const credential = credentials.length === 1 ? credentials[0] : undefined;
+      const bucket = digest(
+        credential ? `identity:${credential.identityId}` : `unknown:${identifier}`,
+      );
       const [lock] = await sql<
         { acquired: boolean }[]
-      >`select pg_try_advisory_xact_lock(hashtextextended(${identifierHash}, 276)) as acquired`;
+      >`select pg_try_advisory_xact_lock(hashtextextended(${bucket}, 276)) as acquired`;
       if (!lock?.acquired) throw new PlatformPasswordBusyError();
       let admitted = false;
-      for (let slot = 0; slot < 4; slot++) {
+      for (const slot of credential ? [3, 0, 1, 2] : [0, 1, 2]) {
         const [capacity] = await sql<
           { acquired: boolean }[]
         >`select pg_try_advisory_xact_lock(hashtextextended('platform-password-work', 276) + ${slot}) as acquired`;
@@ -74,18 +75,14 @@ export class PlatformPasswordService {
       >`select count(*)::int as total from identity_platform_password_attempts`;
       const [existing] = await sql<
         { attempts: number }[]
-      >`select attempts from identity_platform_password_attempts where identifier_hash = ${identifierHash}`;
-      if (!existing && (count?.total ?? 0) >= 10000) {
+      >`select attempts from identity_platform_password_attempts where identifier_hash = ${bucket}`;
+      if (!credential && !existing && (count?.total ?? 0) >= 10000) {
         await verify(password, dummy);
         return;
       }
       const [attempt] = await sql<
         { attempts: number }[]
-      >`insert into identity_platform_password_attempts (identifier_hash, attempts, window_started_at) values (${identifierHash}, 1, now()) on conflict (identifier_hash) do update set attempts = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then 1 else identity_platform_password_attempts.attempts + 1 end, window_started_at = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then now() else identity_platform_password_attempts.window_started_at end returning attempts`;
-      const credentials = await sql<
-        { identityId: string; passwordHash: string | null }[]
-      >`select p.identity_id as "identityId", p.password_hash as "passwordHash" from identity_platform_passwords p left join identity_login_methods m on m.identity_id = p.identity_id and m.kind = 'MOBILE' where p.username = ${identifier} or p.email = ${identifier} or m.mobile = ${identifier} limit 2`;
-      const credential = credentials.length === 1 ? credentials[0] : undefined;
+      >`insert into identity_platform_password_attempts (identifier_hash, attempts, window_started_at) values (${bucket}, 1, now()) on conflict (identifier_hash) do update set attempts = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then 1 else least(identity_platform_password_attempts.attempts + 1, 11) end, window_started_at = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then now() else identity_platform_password_attempts.window_started_at end returning attempts`;
       const valid = await verify(
         password,
         attempt && attempt.attempts <= 10 ? (credential?.passwordHash ?? dummy) : dummy,
@@ -101,12 +98,12 @@ export class PlatformPasswordService {
       await sql`select pg_advisory_xact_lock(hashtextextended(${credential.identityId}, 301))`;
       const [identity] = await sql<
         { isSuperadmin: boolean; permission: string | null }[]
-      >`select exists(select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null) as "isSuperadmin", (select permission from identity_platform_permission_grants g where g.identity_id = i.id and g.revoked_at is null order by permission limit 1) as permission from identity_identities i join identity_platform_passwords p on p.identity_id = i.id where i.id = ${credential.identityId} and i.status = 'ACTIVE' and p.password_hash = ${credential.passwordHash} for share of i, p`;
+      >`select exists(select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null) as "isSuperadmin", (select permission from identity_platform_permission_grants g where g.identity_id = i.id and g.revoked_at is null order by permission limit 1) as permission from identity_identities i join identity_platform_passwords p on p.identity_id = i.id where i.id = ${credential.identityId} and i.status = 'ACTIVE' and p.password_hash = ${credential.passwordHash} and (p.username = ${identifier} or p.email = ${identifier} or exists (select 1 from identity_login_methods m where m.identity_id = i.id and m.kind = 'MOBILE' and m.mobile = ${identifier})) for share of i, p`;
       if (!identity || (!identity.isSuperadmin && !identity.permission)) return;
       const token = randomBytes(32).toString("base64url");
       const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
       await sql`insert into identity_sessions (id, token_hash, identity_id, audience, expires_at, platform_auth_method) values (${randomUUID()}, ${digest(token)}, ${credential.identityId}, 'PLATFORM_AGENT', ${expiresAt}, 'PASSWORD')`;
-      await sql`delete from identity_platform_password_attempts where identifier_hash = ${identifierHash}`;
+      await sql`delete from identity_platform_password_attempts where identifier_hash = ${bucket}`;
       return {
         token,
         session: {
@@ -128,6 +125,7 @@ export class PlatformPasswordService {
     reason: string,
     correlationId: string,
     username?: string,
+    email?: string,
   ) {
     return this.#sql.begin(async (sql) => {
       await sql`select pg_advisory_xact_lock(hashtext('identity_platform_superadmins'))`;
@@ -140,23 +138,30 @@ export class PlatformPasswordService {
         { id: string }[]
       >`select i.id from identity_identities i where i.id = ${targetId} and i.status = 'ACTIVE' and i.id <> ${actor.identityId} and exists (select 1 from identity_platform_permission_grants g where g.identity_id = i.id and g.revoked_at is null) and not exists (select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null) for share of i`;
       if (!target) return;
-      const grants =
-        await sql`select id from identity_platform_permission_grants where identity_id = ${targetId} and revoked_at is null for share`;
-      if (!grants.length) return;
+      const grants = await sql<
+        { id: string }[]
+      >`select id from identity_platform_permission_grants where identity_id = ${targetId} and revoked_at is null order by id for share`;
+      if (!grants[0]) return;
+      const [role] = await sql<
+        { generationId: string }[]
+      >`select generation_id as "generationId" from identity_platform_superadmins where identity_id = ${targetId} for share`;
       const [existing] = await sql<
         { username: string }[]
       >`select username from identity_platform_passwords where identity_id = ${targetId} for update`;
+      if (!existing && !username) return;
+      if (existing && username && username !== existing.username) return;
+      const collision =
+        await sql`select identity_id from identity_platform_passwords where identity_id <> ${targetId} and (username = ${username ?? null} or email = ${username ?? null} or username = ${email ?? null} or email = ${email ?? null})`;
+      if (collision.length) return;
       if (!existing) {
-        if (!username) return;
-        const collision =
-          await sql`select identity_id from identity_platform_passwords where username = ${username} or email = ${username}`;
-        if (collision.length) return;
-        await sql`insert into identity_platform_passwords (identity_id, username, password_hash) values (${targetId}, ${username}, null)`;
-      } else if (username && username !== existing.username) return;
+        await sql`insert into identity_platform_passwords (identity_id, username, email, password_hash) values (${targetId}, ${username!}, ${email ?? null}, null)`;
+      } else if (email) {
+        await sql`update identity_platform_passwords set email = ${email} where identity_id = ${targetId}`;
+      }
       const token = randomBytes(32).toString("base64url");
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
       await sql`update identity_platform_password_recoveries set consumed_at = clock_timestamp() where identity_id = ${targetId} and consumed_at is null`;
-      await sql`insert into identity_platform_password_recoveries (id, identity_id, token_hash, expires_at) values (${randomUUID()}, ${targetId}, ${digest(token)}, ${expiresAt})`;
+      await sql`insert into identity_platform_password_recoveries (id, identity_id, token_hash, expires_at, permission_grant_id, superadmin_generation_id) values (${randomUUID()}, ${targetId}, ${digest(token)}, ${expiresAt}, ${grants[0].id}, ${role?.generationId ?? null})`;
       await sql`insert into identity_platform_password_recovery_audit (id, actor_identity_id, target_identity_id, action, reason, correlation_id) values (${randomUUID()}, ${actor.identityId}, ${targetId}, 'REQUESTED', ${reason}, ${correlationId})`;
       const [fresh] =
         await sql`select id from identity_sessions where token_hash = ${digest(sessionToken)} and revoked_at is null and expires_at > clock_timestamp()`;
@@ -168,8 +173,13 @@ export class PlatformPasswordService {
     return this.#sql.begin(async (sql) => {
       await sql`select pg_advisory_xact_lock(hashtext('identity_platform_superadmins'))`;
       const [recovery] = await sql<
-        { id: string; identityId: string }[]
-      >`select id, identity_id as "identityId" from identity_platform_password_recoveries where token_hash = ${digest(code)} and consumed_at is null and expires_at > clock_timestamp() for update`;
+        {
+          id: string;
+          identityId: string;
+          permissionGrantId: string | null;
+          roleGenerationId: string | null;
+        }[]
+      >`select id, identity_id as "identityId", permission_grant_id as "permissionGrantId", superadmin_generation_id as "roleGenerationId" from identity_platform_password_recoveries where token_hash = ${digest(code)} and consumed_at is null and expires_at > clock_timestamp() for update`;
       if (!recovery) return false;
       await sql`select pg_advisory_xact_lock(hashtextextended(${recovery.identityId}, 301))`;
       const [target] = await sql<
@@ -177,8 +187,15 @@ export class PlatformPasswordService {
       >`select i.id from identity_identities i join identity_platform_passwords p on p.identity_id = i.id where i.id = ${recovery.identityId} and i.status = 'ACTIVE' and not exists (select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null) for share of i, p`;
       if (!target) return false;
       const activeGrants =
-        await sql`select id from identity_platform_permission_grants where identity_id = ${recovery.identityId} and revoked_at is null for share`;
-      if (!activeGrants.length) return false;
+        await sql`select id from identity_platform_permission_grants where id = ${recovery.permissionGrantId} and identity_id = ${recovery.identityId} and revoked_at is null for share`;
+      const [role] = await sql<
+        { generationId: string }[]
+      >`select generation_id as "generationId" from identity_platform_superadmins where identity_id = ${recovery.identityId} for share`;
+      if (
+        !activeGrants.length ||
+        (role?.generationId ?? null) !== recovery.roleGenerationId
+      )
+        return false;
       let admitted = false;
       for (let slot = 0; slot < 4; slot++) {
         const [capacity] = await sql<
@@ -236,6 +253,5 @@ export class PlatformPasswordService {
   }
   async onModuleDestroy() {
     await this.#sql.end();
-    await this.#admissionSql.end();
   }
 }

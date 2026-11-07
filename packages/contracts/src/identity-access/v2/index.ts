@@ -30,6 +30,7 @@ export const platformPasswordRecoveryRequestContract = superadminGrantInputContr
       .string()
       .regex(/^[a-z][a-z0-9._-]{2,99}$/)
       .optional(),
+    email: z.string().trim().toLowerCase().email().max(254).optional(),
   })
   .strict();
 export const platformPasswordRecoveryContract = z

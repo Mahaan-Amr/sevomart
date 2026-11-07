@@ -31,6 +31,52 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     await resetPlatformAccessData();
   });
 
+  it("allows an older password session to manage superadmins and responsibility grants without a new factor", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const actor = await seedAgent([]);
+    const newAdmin = await seedAgent([]);
+    const recipient = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+      await sql`update identity_sessions set created_at = now() - interval '6 minutes' where identity_id = ${actor.identityId}`;
+      const body = {
+        identityId: newAdmin.identityId,
+        reason: "واگذاری مسئولیت مدیریت پلتفرم",
+      };
+      const otp = await server.inject({
+        method: "POST",
+        url: "/v1/platform/access/superadmins",
+        headers: accessHeaders(actor.token),
+        payload: body,
+      });
+      expect(otp.statusCode).toBe(403);
+      await sql`update identity_sessions set platform_auth_method = 'PASSWORD' where identity_id = ${actor.identityId}`;
+      const grant = await server.inject({
+        method: "POST",
+        url: "/v1/platform/access/superadmins",
+        headers: accessHeaders(actor.token),
+        payload: body,
+      });
+      expect(grant.statusCode).toBe(201);
+      const responsibility = await server.inject({
+        method: "POST",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: accessHeaders(actor.token),
+        payload: {
+          recipientIdentityId: recipient.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          reason: "واگذاری مسئولیت بررسی پرداخت برای صف عملیاتی",
+        },
+      });
+      expect(responsibility.statusCode).toBe(202);
+    } finally {
+      await sql.end();
+    }
+  });
+
   it("allows a superadmin to grant another superadmin but refuses revoking the last one", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);

@@ -354,6 +354,7 @@ export class PlatformAgentAuthV2Controller {
         parsed.data.reason,
         request.id,
         parsed.data.username,
+        parsed.data.email,
       );
     } catch (error) {
       if (error instanceof PlatformPasswordSessionExpiredError)
