@@ -151,12 +151,25 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       attemptId: attempt.attemptId,
       duplicate: true,
     });
+    if (visualProjectIndex(testInfo.project.name) % 2 === 0) {
+      // Exercise the conflict path where the worker already created a pending row.
+      await sql`
+        insert into fulfillment_orders
+          (order_id, store_id, status, version, accepted_event_id, created_at, updated_at)
+        values
+          (${ids.order}, null, 'ACTION_REQUIRED', 1, ${randomUUID()}, now(), now())
+        on conflict (order_id) do update set
+          store_id = null,
+          status = 'ACTION_REQUIRED'
+      `;
+    }
     await sql`
       insert into fulfillment_orders
         (order_id, store_id, status, version, accepted_event_id, created_at, updated_at)
       values
         (${ids.order}, ${ids.store}, 'SHIPPED', 1, ${randomUUID()}, now(), now())
       on conflict (order_id) do update set
+        store_id = excluded.store_id,
         status = excluded.status,
         version = excluded.version,
         accepted_event_id = excluded.accepted_event_id,
