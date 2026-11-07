@@ -3,9 +3,11 @@ import {
   iranianMobileContract,
 } from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
+import { createActiveSellerFixture } from "../../apps/api/src/modules/identity-access/testing/active-seller.fixture";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("identity session HTTP API with PostgreSQL", () => {
@@ -26,6 +28,363 @@ describe("identity session HTTP API with PostgreSQL", () => {
     apps.push(app);
     return app;
   }
+
+  it.each([
+    ["GET", "/v1/auth/session", "row", "idle"],
+    ["GET", "/v1/me/feeds/following", "row", "idle"],
+    ["DELETE", "/v1/auth/sessions", "identity", "idle"],
+    ["DELETE", "/v1/auth/sessions", "row", "idle"],
+    ["GET", "/v1/auth/session", "row", "absolute"],
+    ["DELETE", "/v1/auth/sessions", "identity", "absolute"],
+  ] as const)(
+    "rejects %s %s when %s lock waits past %s expiry",
+    async (method, url, lock, deadline) => {
+      const app = await startApp();
+      const server = app.getHttpAdapter().getInstance();
+      const challenge = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: challenge.json().challengeId, code: "111111" },
+      });
+      const cookie = String(verified.headers["set-cookie"]);
+      const token = cookie.match(/sevo_session=([^;]+)/)![1]!;
+      const hash = createHash("sha256").update(token).digest("hex");
+      const identityId = verified.json().actor.identityId;
+      const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 3 });
+      let release!: () => void;
+      let acquired!: () => void;
+      const held = new Promise<void>((resolve) => {
+        acquired = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        if (deadline === "idle") {
+          await sql`update identity_sessions set expires_at = clock_timestamp() + interval '3 seconds' where token_hash = ${hash}`;
+        } else {
+          await sql`update identity_sessions set created_at = clock_timestamp() - interval '90 days' + interval '3 seconds', expires_at = clock_timestamp() + interval '1 day' where token_hash = ${hash}`;
+        }
+        const holder = sql.begin(async (tx) => {
+          if (lock === "row")
+            await tx`select id from identity_sessions where token_hash = ${hash} for update`;
+          else
+            await tx`select pg_advisory_xact_lock(hashtextextended(${identityId}, 273))`;
+          acquired();
+          await gate;
+        });
+        await held;
+        const request = server.inject({ method, url, headers: { cookie } });
+        let blocked = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const rows = await sql<
+            Array<{ blocked: boolean }>
+          >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()) as blocked`;
+          if (rows[0]?.blocked) {
+            blocked = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(true);
+        await sql`select pg_sleep(greatest(0, extract(epoch from (select least(expires_at, created_at + interval '90 days') from identity_sessions where token_hash = ${hash}) - clock_timestamp()) + 0.1))`;
+        release();
+        await holder;
+        expect((await request).statusCode).toBe(401);
+      } finally {
+        release();
+        await sql.end();
+      }
+    },
+  );
+
+  it("logs out all public sessions of the current identity", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    async function login(mobile: string) {
+      const challenge = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile },
+      });
+      return server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: challenge.json().challengeId, code: "111111" },
+      });
+    }
+    const first = await login("09123456789");
+    const second = await login("09123456789");
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`update identity_identities set status = 'INACTIVE' where id = ${first.json().actor.identityId}`;
+      const denied = await server.inject({
+        method: "DELETE",
+        url: "/v1/auth/sessions",
+        headers: { cookie: first.headers["set-cookie"] },
+      });
+      expect(denied.statusCode).toBe(401);
+    } finally {
+      await sql`update identity_identities set status = 'ACTIVE' where id = ${first.json().actor.identityId}`;
+      await sql.end();
+    }
+    const result = await server.inject({
+      method: "DELETE",
+      url: "/v1/auth/sessions",
+      headers: { cookie: first.headers["set-cookie"] },
+    });
+    expect(result.statusCode).toBe(204);
+    const check = await server.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers: { cookie: second.headers["set-cookie"] },
+    });
+    expect(check.statusCode).toBe(401);
+  });
+
+  it("preserves the platform session when all public sessions are ended", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const token = randomBytes(32).toString("base64url");
+    const hash = createHash("sha256").update(token).digest("hex");
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`insert into identity_sessions (id, token_hash, identity_id, audience, expires_at) values (${randomUUID()}, ${hash}, ${verified.json().actor.identityId}, 'PLATFORM_AGENT', now() + interval '1 hour')`;
+      const platformHeaders = { cookie: `sevo_platform_session=${token}` };
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/platform/auth/session",
+            headers: platformHeaders,
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await server.inject({
+            method: "DELETE",
+            url: "/v1/auth/sessions",
+            headers: { cookie: verified.headers["set-cookie"] },
+          })
+        ).statusCode,
+      ).toBe(204);
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/platform/auth/session",
+            headers: platformHeaders,
+          })
+        ).statusCode,
+      ).toBe(200);
+    } finally {
+      await sql`delete from identity_sessions where token_hash = ${hash}`;
+      await sql.end();
+    }
+  });
+
+  it("serializes a new public login after an in-flight logout of all devices", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    async function requestChallenge() {
+      return server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+    }
+    async function verify(challengeId: string) {
+      return server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId, code: "111111" },
+      });
+    }
+    const first = await verify((await requestChallenge()).json().challengeId);
+    const nextChallenge = await requestChallenge();
+    const identityId = first.json().actor.identityId;
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
+    let release!: () => void;
+    let acquired!: () => void;
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const holder = sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${identityId}, 273))`;
+        acquired();
+        await gate;
+      });
+      await held;
+      async function waitForBlocked(count: number) {
+        for (let attempt = 0; attempt < 150; attempt++) {
+          const [row] = await sql<
+            Array<{ count: number }>
+          >`select count(*)::int as count from pg_stat_activity where datname = current_database() and wait_event = 'advisory' and pid <> pg_backend_pid()`;
+          if ((row?.count ?? 0) >= count) return;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error(`Expected ${count} advisory lock waiters`);
+      }
+      const logout = server.inject({
+        method: "DELETE",
+        url: "/v1/auth/sessions",
+        headers: { cookie: first.headers["set-cookie"] },
+      });
+      await waitForBlocked(1);
+      const login = verify(nextChallenge.json().challengeId);
+      await waitForBlocked(2);
+      release();
+      await holder;
+      expect((await logout).statusCode).toBe(204);
+      const next = await login;
+      expect(next.statusCode).toBe(200);
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/auth/session",
+            headers: { cookie: first.headers["set-cookie"] },
+          })
+        ).statusCode,
+      ).toBe(401);
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: "/v1/auth/session",
+            headers: { cookie: next.headers["set-cookie"] },
+          })
+        ).statusCode,
+      ).toBe(200);
+    } finally {
+      release();
+      await sql.end();
+    }
+  });
+
+  it("extends an active session after activity", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`update identity_sessions set expires_at = now() + interval '1 day' where identity_id = ${verified.json().actor.identityId} and audience = 'PUBLIC'`;
+      const response = await server.inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie: verified.headers["set-cookie"] },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(Date.parse(response.json().expiresAt)).toBeGreaterThan(
+        Date.now() + 6 * 86400000,
+      );
+      await sql`update identity_sessions set created_at = now() - interval '91 days', expires_at = now() + interval '1 day' where identity_id = ${verified.json().actor.identityId} and audience = 'PUBLIC'`;
+      const expired = await server.inject({
+        method: "GET",
+        url: "/v1/me/feeds/following",
+        headers: { cookie: verified.headers["set-cookie"] },
+      });
+      expect(expired.statusCode).toBe(401);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("does not restore a session when activity races with logout", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const headers = { cookie: verified.headers["set-cookie"] };
+    const [, logout] = await Promise.all([
+      server.inject({ method: "GET", url: "/v1/auth/session", headers }),
+      server.inject({ method: "DELETE", url: "/v1/auth/session", headers }),
+    ]);
+    expect(logout.statusCode).toBe(204);
+    const after = await server.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers,
+    });
+    expect(after.statusCode).toBe(401);
+  });
+
+  it("denies seller access after revocation while keeping the buyer session", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: challenge.json().challengeId, code: "111111" },
+    });
+    const identityId = verified.json().actor.identityId;
+    const seller = await createActiveSellerFixture(
+      apiTestEnvironment.DATABASE_URL,
+      identityId,
+    );
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const headers = { cookie: verified.headers["set-cookie"] };
+    try {
+      expect(
+        (await server.inject({ method: "GET", url: "/v1/seller/orders", headers }))
+          .statusCode,
+      ).not.toBe(403);
+      await sql`update identity_seller_access set status = 'REVOKED' where identity_id = ${identityId}`;
+      expect(
+        (await server.inject({ method: "GET", url: "/v1/seller/orders", headers }))
+          .statusCode,
+      ).toBe(403);
+      expect(
+        (await server.inject({ method: "GET", url: "/v1/auth/session", headers }))
+          .statusCode,
+      ).toBe(200);
+    } finally {
+      await seller.cleanup();
+      await sql.end();
+    }
+  });
 
   it("keeps the development OTP adapter in optimized local images", async () => {
     const app = await startApp({
@@ -250,6 +609,7 @@ describe("identity session HTTP API with PostgreSQL", () => {
     expect(JSON.stringify(verifyResponse.json())).not.toContain("09123456789");
     expect(JSON.stringify(verifyResponse.json())).not.toMatch(/role/i);
     expect(verifyResponse.headers["set-cookie"]).toContain("sevo_session=");
+    expect(verifyResponse.headers["set-cookie"]).toContain("Max-Age=7776000");
     expect(verifyResponse.headers["set-cookie"]).toContain("HttpOnly");
     expect(verifyResponse.headers["set-cookie"]).toContain("SameSite=Lax");
 
@@ -267,7 +627,10 @@ describe("identity session HTTP API with PostgreSQL", () => {
         headers: { cookie: sessionCookie },
       });
     expect(sessionResponse.statusCode).toBe(200);
-    expect(sessionResponse.json()).toEqual(verifyResponse.json());
+    expect(sessionResponse.json()).toMatchObject({
+      actor: verifyResponse.json().actor,
+      maskedMobile: verifyResponse.json().maskedMobile,
+    });
 
     const logoutResponse = await refreshedApp
       .getHttpAdapter()

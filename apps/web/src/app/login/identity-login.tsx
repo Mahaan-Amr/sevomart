@@ -110,11 +110,14 @@ export function IdentityLogin({
     }
   }
 
-  async function signOut() {
+  async function signOut(allDevices = false) {
     setPending(true);
     setMessage("");
     try {
-      const response = await fetch("/api/auth/session", { method: "DELETE" });
+      const response = await fetch(
+        allDevices ? "/api/auth/sessions" : "/api/auth/session",
+        { method: "DELETE" },
+      );
       if (!response.ok) {
         setMessage("خروج انجام نشد. دوباره تلاش کنید.");
         return;
@@ -137,16 +140,25 @@ export function IdentityLogin({
           <span className={styles.brand}>سوو</span>
           <h1 id="signed-in-title">وارد شدید</h1>
           <p>نشست شما حفظ شده و می‌توانید کار قبلی را ادامه دهید.</p>
+          <p>خروج از همه دستگاه‌ها، شما را از فضای خریدار هم خارج می‌کند.</p>
           <a href={returnTo} className={styles.continueLink}>
             ادامه کار
           </a>
           <button
             type="button"
             className={styles.signOut}
-            onClick={signOut}
+            onClick={() => signOut()}
             disabled={!ready || pending}
           >
             {pending ? "در حال خروج…" : "خروج"}
+          </button>
+          <button
+            type="button"
+            className={styles.signOut}
+            onClick={() => signOut(true)}
+            disabled={!ready || pending}
+          >
+            خروج از همه دستگاه‌ها
           </button>
           <StatusMessage message={message} />
         </section>

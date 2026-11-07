@@ -126,6 +126,9 @@ export default async function SellerHomePage() {
           <Link className={styles.secondary} href="/seller/reports">
             دیدن گزارش فروش
           </Link>
+          <Link className={styles.secondary} href="/seller/login">
+            مدیریت ورود و خروج
+          </Link>
         </nav>
       </section>
     </main>

@@ -52,6 +52,7 @@ const frozenConsumerOperations = [
   ["post", "/v1/auth/otp/verifications", "none", [200, 401, 422, 500]],
   ["get", "/v1/auth/session", "identity", [200, 401, 500]],
   ["delete", "/v1/auth/session", "none", [204, 500]],
+  ["delete", "/v1/auth/sessions", "identity", [204, 401, 500]],
   ["post", "/v1/seller-applications", "identity", [201, 401, 409, 422, 500]],
   ["get", "/v1/seller-applications/mine", "identity", [200, 401, 422, 500]],
   [
@@ -234,7 +235,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "62933a89b7c6554cf1b1553157b3872291b7e64d7ab377a3aa177191dc715f75",
+      "84580e686773b31696991fdb4805f3729e309d072550e6d67d04e5af1f42d12d",
     );
   });
 
