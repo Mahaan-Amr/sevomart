@@ -1,0 +1,34 @@
+name: Temporary navigation visual verification
+on:
+  push:
+    branches: [fix/271-preview-red]
+permissions:
+  contents: read
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Render candidate visual baselines
+        run: pnpm test:e2e -- tests/e2e/seller-home-reports.spec.ts tests/e2e/seller-workspace-shell.spec.ts --project=chromium-390x844 --workers=1 --retries=0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: navigation-visual-candidate
+          path: |
+            output/playwright-results
+            output/playwright-report
+          if-no-files-found: warn
