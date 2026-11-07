@@ -7,38 +7,41 @@ import { useEffect, useState } from "react";
 import { guideProgress } from "./seller-home-progress";
 import styles from "./workspace-page.module.css";
 
-type Progress = { step: 1 | 2 | 3; slug: string | null };
+type Progress = { step: 1 | 2 | 3 };
 export function SellerHomeGuide() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [failed, setFailed] = useState(false);
+  const [slug, setSlug] = useState<string | null>(null);
   const [open, setOpen] = useState<boolean | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       try {
-        const [storeResponse, productsResponse] = await Promise.all([
-          fetch("/api/store/seller/store/draft", {
-            cache: "no-store",
-            signal: controller.signal,
-          }),
-          fetch("/api/store/seller/products?limit=1", {
-            cache: "no-store",
-            signal: controller.signal,
-          }),
-        ]);
+        const storeResponse = await fetch("/api/store/seller/store/draft", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const store =
           storeResponse.status === 404
             ? null
             : storeDraftContract.parse(await storeResponse.json());
         if (!storeResponse.ok && storeResponse.status !== 404) throw new Error();
-        if (!productsResponse.ok && store !== null) throw new Error();
+        if (store?.status === "PUBLISHED") setSlug(store.slug);
+        const productsResponse =
+          store === null
+            ? null
+            : await fetch("/api/store/seller/products?limit=1", {
+                cache: "no-store",
+                signal: controller.signal,
+              });
+        if (productsResponse && !productsResponse.ok) throw new Error();
         const hasProduct =
           store === null
             ? false
-            : sellerProductListContract.parse(await productsResponse.json()).items
+            : sellerProductListContract.parse(await productsResponse!.json()).items
                 .length > 0;
         const step = guideProgress(store?.status === "PUBLISHED", hasProduct);
-        setProgress({ step, slug: store?.status === "PUBLISHED" ? store.slug : null });
+        setProgress({ step });
         setOpen(step !== 3);
       } catch {
         if (!controller.signal.aborted) setFailed(true);
@@ -49,10 +52,17 @@ export function SellerHomeGuide() {
   }, []);
   if (failed)
     return (
-      <p role="alert">وضعیت راهنمای آغاز دریافت نشد. صفحه را دوباره بررسی کنید.</p>
+      <div className={styles.guide}>
+        {slug && (
+          <Link className={styles.secondary} href={`/s/${slug}`}>
+            پیش‌نمایش خریدار
+          </Link>
+        )}
+        <p role="alert">وضعیت راهنمای آغاز دریافت نشد. صفحه را دوباره بررسی کنید.</p>
+      </div>
     );
   if (!progress) return <p role="status">در حال بررسی مسیر آغاز…</p>;
-  const { step, slug } = progress;
+  const { step } = progress;
   return (
     <section className={styles.guide} aria-labelledby="guide-title">
       <div className={styles.guideHeader}>

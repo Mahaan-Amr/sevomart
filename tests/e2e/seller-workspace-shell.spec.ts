@@ -72,6 +72,7 @@ test("active seller gets the canonical shell and loses it after a live suspensio
     `;
   });
 
+  await page.route("**/api/store/seller/products?*", (route) => route.abort());
   await page.getByRole("link", { name: "ادامه کار" }).click();
   await expect(page).toHaveURL(/\/seller$/);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -79,6 +80,7 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   await expect(
     page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
   ).toBeVisible();
+  await page.unroute("**/api/store/seller/products?*");
   const sellerNavigation = page.getByRole("navigation", {
     name: "ناوبری فضای کار فروشنده",
   });
