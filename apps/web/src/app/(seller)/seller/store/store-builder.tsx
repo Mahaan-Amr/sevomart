@@ -707,9 +707,22 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                         shippingCode: code,
                         shippingMethods: [
                           { ...selected, enabled: true },
-                          ...current.shippingMethods.filter(
-                            (method) => method.code !== code,
-                          ),
+                          ...current.shippingMethods
+                            .filter((method) => method.code !== code)
+                            .map((method) => {
+                              if (method.code !== current.shippingCode) return method;
+                              const saved = savedDraft?.shippingMethods?.find(
+                                (item) => item.code === method.code,
+                              );
+                              return {
+                                ...method,
+                                enabled: saved?.enabled ?? false,
+                                feeToman:
+                                  !validShippingFee(method.feeToman) && saved
+                                    ? String(saved.fixedFee.amount / 10)
+                                    : method.feeToman,
+                              };
+                            }),
                         ],
                       };
                     });
@@ -1301,8 +1314,12 @@ function buildDraftInput(
       : {}),
     ...(complete || form.bio.trim().length >= 2 ? { bio: form.bio.trim() } : {}),
     publicContactPhone: normalizedContactPhone(form.publicContactPhone),
-    ...(form.shippingMethods.length > 0
-      ? { shippingMethods: form.shippingMethods.map(toShippingInput) }
+    ...(form.shippingMethods.some((method) => validShippingFee(method.feeToman))
+      ? {
+          shippingMethods: form.shippingMethods
+            .filter((method) => validShippingFee(method.feeToman))
+            .map(toShippingInput),
+        }
       : {}),
     ...(complete || form.returnPolicy.trim().length >= 10
       ? { returnPolicy: form.returnPolicy.trim() }

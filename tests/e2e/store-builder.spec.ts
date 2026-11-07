@@ -285,6 +285,8 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.getByRole("heading", { name: "ارسال و مرجوعی" })).toBeVisible();
   await page.getByLabel("روش ارسال").selectOption("NATIONAL_POST");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
+  await page.getByLabel("روش ارسال").selectOption("PICKUP");
+  await page.getByLabel("روش ارسال").selectOption("NATIONAL_POST");
   await page.getByLabel("هزینه ارسال (تومان)").fill("۸۵۰۰۰");
   await page.getByLabel("روش ارسال").selectOption("COURIER");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
@@ -312,7 +314,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   ).toEqual(
     expect.arrayContaining([
       { code: "COURIER", enabled: true },
-      { code: "NATIONAL_POST", enabled: true },
+      { code: "NATIONAL_POST", enabled: false },
     ]),
   );
 
@@ -684,7 +686,6 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByLabel("هزینه ارسال (تومان)").fill("۳۰۰۰۰");
   await page.getByLabel("روش ارسال").selectOption("COURIER");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).toHaveValue("120000");
-  await page.getByLabel("روش ارسال").selectOption("PICKUP");
   const preservedSave = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/store/seller/store/draft") &&
@@ -699,7 +700,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     expect.arrayContaining([
       expect.objectContaining({
         code: "PICKUP",
-        enabled: true,
+        enabled: false,
         fixedFee: { amount: 300000, currency: "IRR" },
       }),
       expect.objectContaining({
@@ -730,6 +731,22 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.getByRole("heading", { name: "پیش‌نمایش فروشگاه" })).toBeVisible();
   await page.getByRole("button", { name: "انتشار فروشگاه" }).click();
   await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
+  const publicResponse = await page.request.get(
+    `http://127.0.0.1:${process.env.SEVO_E2E_API_PORT ?? "3109"}/v1/stores/${slug}`,
+  );
+  expect(publicResponse.ok()).toBe(true);
+  const publicStore = await publicResponse.json();
+  expect(
+    publicStore.shippingMethods.filter(
+      (method: { enabled: boolean }) => method.enabled,
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      code: "COURIER",
+      fixedFee: { amount: 1200000, currency: "IRR" },
+      estimatedDeliveryText: "همان روز کاری",
+    }),
+  ]);
   await page.goto(`/s/${slug}`);
   const contact = page.getByRole("button", { name: "اطلاعات تماس" });
   await expect(contact).toBeVisible();
