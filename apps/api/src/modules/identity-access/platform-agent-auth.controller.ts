@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Inject,
   Post,
+  Param,
   Req,
   Res,
 } from "@nestjs/common";
@@ -17,6 +18,9 @@ import {
   otpVerificationContract,
   totpConfirmationContract,
   totpActionProofRequestContract,
+  totpRecoveryRequestContract,
+  totpRecoveryApprovalContract,
+  totpRecoveryContract,
 } from "@sevo/contracts/identity-access/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
@@ -127,6 +131,106 @@ export class PlatformAgentAuthController {
       return await this.totp.createProof(
         readPlatformSessionToken(request) ?? "",
         parsed.data,
+        request.id,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
+  }
+
+  @Post("totp/recoveries")
+  @HttpCode(HttpStatus.CREATED)
+  async requestRecovery(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const parsed = totpRecoveryRequestContract.safeParse(body);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    try {
+      return await this.totp.requestRecovery(
+        readPlatformSessionToken(request) ?? "",
+        parsed.data,
+        request.id,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
+  }
+
+  @Get("totp/recoveries/:recoveryId")
+  async readRecovery(
+    @Req() request: FastifyRequest,
+    @Param("recoveryId") recoveryId: string,
+  ) {
+    const id = totpRecoveryContract.shape.recoveryId.safeParse(recoveryId);
+    if (!id.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    try {
+      return await this.totp.readRecovery(
+        readPlatformSessionToken(request) ?? "",
+        id.data,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
+  }
+
+  @Post("totp/recoveries/:recoveryId/approvals")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async approveRecovery(
+    @Req() request: FastifyRequest,
+    @Param("recoveryId") recoveryId: string,
+    @Body() body: unknown,
+  ) {
+    const id = totpRecoveryContract.shape.recoveryId.safeParse(recoveryId);
+    const parsed = totpRecoveryApprovalContract.safeParse(body);
+    if (!id.success || !parsed.success)
+      throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    try {
+      await this.totp.approveRecovery(
+        readPlatformSessionToken(request) ?? "",
+        id.data,
+        parsed.data.proof,
+        request.id,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
+  }
+
+  @Post("totp/recoveries/:recoveryId/enrollment")
+  @HttpCode(HttpStatus.CREATED)
+  async beginRecovery(
+    @Req() request: FastifyRequest,
+    @Param("recoveryId") recoveryId: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const id = totpRecoveryContract.shape.recoveryId.safeParse(recoveryId);
+    if (!id.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    void reply.header("Cache-Control", "no-store");
+    try {
+      return await this.totp.beginRecovery(
+        readPlatformSessionToken(request) ?? "",
+        id.data,
+        request.id,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
+  }
+
+  @Post("totp/recoveries/:recoveryId/confirmation")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async confirmRecovery(
+    @Req() request: FastifyRequest,
+    @Param("recoveryId") recoveryId: string,
+    @Body() body: unknown,
+  ) {
+    const id = totpRecoveryContract.shape.recoveryId.safeParse(recoveryId);
+    const parsed = totpConfirmationContract.safeParse(body);
+    if (!id.success || !parsed.success)
+      throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    try {
+      await this.totp.confirmRecovery(
+        readPlatformSessionToken(request) ?? "",
+        id.data,
+        parsed.data.code,
         request.id,
       );
     } catch (error) {

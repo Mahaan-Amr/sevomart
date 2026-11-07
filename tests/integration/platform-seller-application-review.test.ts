@@ -995,6 +995,204 @@ describe("platform seller application review API with PostgreSQL", () => {
     expect(repeated.statusCode).toBe(403);
   });
 
+  it("requires two different authenticated administrators to recover a TOTP factor", async () => {
+    const instant = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(instant);
+    const app = await createApiApp({
+      ...environment,
+      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v1",
+      PLATFORM_TOTP_KEYRING: { "test-v1": Buffer.alloc(32, 9).toString("base64") },
+    });
+    apps.push(app);
+    let server = app.getHttpAdapter().getInstance();
+    for (const mobile of ["09123456788", "09123456787", "09123456786"])
+      await signIn(app, mobile);
+    const first = await identityIdForMobile("09123456788");
+    const second = await identityIdForMobile("09123456787");
+    const requester = await identityIdForMobile("09123456786");
+    await grantReviewPermission(requester);
+    execFileSync(
+      process.execPath,
+      [
+        "scripts/bootstrap-platform-totp.mjs",
+        "--first",
+        first,
+        "--second",
+        second,
+        "--reason",
+        "Independent identity checks completed",
+      ],
+      { env: { ...process.env, DATABASE_URL: environment.DATABASE_URL } },
+    );
+    async function platformLogin(mobile: string) {
+      const req = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/requests",
+        payload: { mobile },
+      });
+      const res = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/verifications",
+        payload: {
+          challengeId: req.json<{ challengeId: string }>().challengeId,
+          code: "111111",
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      return { cookie: String(res.headers["set-cookie"]).split(";")[0] };
+    }
+    async function enroll(headers: { cookie: string }) {
+      const res = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/enrollment",
+        headers,
+      });
+      expect(res.statusCode).toBe(201);
+      const secret = res.json<{ secret: string }>().secret;
+      const confirm = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/enrollment/confirmation",
+        headers,
+        payload: { code: testTotp(secret) },
+      });
+      expect(confirm.statusCode).toBe(204);
+      return secret;
+    }
+    const firstHeaders = await platformLogin("09123456788");
+    const secondHeaders = await platformLogin("09123456787");
+    const requesterHeaders = await platformLogin("09123456786");
+    const firstSecret = await enroll(firstHeaders);
+    const secondSecret = await enroll(secondHeaders);
+    const secondKey = Buffer.alloc(32, 10).toString("base64");
+    const rotationEnv = {
+      ...process.env,
+      DATABASE_URL: environment.DATABASE_URL,
+      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v2",
+      PLATFORM_TOTP_KEYRING: JSON.stringify({ "test-v2": secondKey }),
+    };
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        ["scripts/rotate-platform-totp-keys.mjs", "--reason", "Routine key rotation"],
+        { env: rotationEnv, stdio: "pipe" },
+      ),
+    ).toThrow();
+    execFileSync(
+      process.execPath,
+      ["scripts/rotate-platform-totp-keys.mjs", "--reason", "Routine key rotation"],
+      {
+        env: {
+          ...rotationEnv,
+          PLATFORM_TOTP_KEYRING: JSON.stringify({
+            "test-v1": Buffer.alloc(32, 9).toString("base64"),
+            "test-v2": secondKey,
+          }),
+        },
+      },
+    );
+    const rotatedApp = await createApiApp({
+      ...environment,
+      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v2",
+      PLATFORM_TOTP_KEYRING: { "test-v2": secondKey },
+    });
+    apps.push(rotatedApp);
+    server = rotatedApp.getHttpAdapter().getInstance();
+    const reason = "دستگاه قبلی در دسترس نیست";
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/recoveries",
+      headers: requesterHeaders,
+      payload: { incidentId: "INC-RECOVERY", reason },
+    });
+    expect(requested.statusCode).toBe(201);
+    const recoveryId = requested.json<{ recoveryId: string }>().recoveryId;
+    async function approvalProof(headers: { cookie: string }, secret: string) {
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/proofs",
+        headers,
+        payload: {
+          code: testTotp(secret, 1),
+          action: "APPROVE_TOTP_RECOVERY",
+          targetIdentityId: requester,
+          incidentId: recoveryId,
+          reason,
+        },
+      });
+      expect(response.statusCode).toBe(201);
+      return response.json<{ proof: string }>().proof;
+    }
+    const firstProof = await approvalProof(firstHeaders, firstSecret);
+    const secondProof = await approvalProof(secondHeaders, secondSecret);
+    const approve = (headers: { cookie: string }, proof: string) =>
+      server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/approvals`,
+        headers,
+        payload: { proof },
+      });
+    const before = await server.inject({
+      method: "POST",
+      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+      headers: requesterHeaders,
+    });
+    expect(before.statusCode).toBe(403);
+    const approvals = await Promise.all([
+      approve(firstHeaders, firstProof),
+      approve(secondHeaders, secondProof),
+    ]);
+    expect(approvals.map((item) => item.statusCode)).toEqual([204, 204]);
+    expect((await approve(firstHeaders, firstProof)).statusCode).toBe(403);
+    const replacement = await server.inject({
+      method: "POST",
+      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+      headers: requesterHeaders,
+    });
+    expect(replacement.statusCode).toBe(201);
+    const newSecret = replacement.json<{ secret: string }>().secret;
+    const completed = await server.inject({
+      method: "POST",
+      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+      headers: requesterHeaders,
+      payload: { code: testTotp(newSecret) },
+    });
+    expect(completed.statusCode).toBe(204);
+    const adminGrant = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await adminGrant`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${requester}, 'ACCESS_ADMINISTRATION', now())`;
+    } finally {
+      await adminGrant.end();
+    }
+    const selfRequest = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/recoveries",
+      headers: requesterHeaders,
+      payload: { incidentId: "INC-SELF", reason },
+    });
+    expect(selfRequest.statusCode).toBe(201);
+    const selfId = selfRequest.json<{ recoveryId: string }>().recoveryId;
+    const selfProof = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/proofs",
+      headers: requesterHeaders,
+      payload: {
+        code: testTotp(newSecret, 1),
+        action: "APPROVE_TOTP_RECOVERY",
+        targetIdentityId: requester,
+        incidentId: selfId,
+        reason,
+      },
+    });
+    expect(selfProof.statusCode).toBe(201);
+    const selfApproval = await server.inject({
+      method: "POST",
+      url: `/v1/platform/auth/totp/recoveries/${selfId}/approvals`,
+      headers: requesterHeaders,
+      payload: { proof: selfProof.json<{ proof: string }>().proof },
+    });
+    expect(selfApproval.statusCode).toBe(403);
+  });
+
   it("fails closed when no TOTP encryption key is supplied", async () => {
     const app = await createApiApp(environment);
     apps.push(app);

@@ -63,6 +63,11 @@ export const platformAgentAuthV1Paths = {
   beginTotpEnrollment: "/v1/platform/auth/totp/enrollment",
   createTotpProof: "/v1/platform/auth/totp/proofs",
   revokePublicSessions: "/v1/platform/security/session-revocations",
+  requestTotpRecovery: "/v1/platform/auth/totp/recoveries",
+  readTotpRecovery: "/v1/platform/auth/totp/recoveries/{recoveryId}",
+  approveTotpRecovery: "/v1/platform/auth/totp/recoveries/{recoveryId}/approvals",
+  beginTotpRecovery: "/v1/platform/auth/totp/recoveries/{recoveryId}/enrollment",
+  confirmTotpRecovery: "/v1/platform/auth/totp/recoveries/{recoveryId}/confirmation",
   confirmTotpEnrollment: "/v1/platform/auth/totp/enrollment/confirmation",
 } as const;
 
@@ -363,7 +368,7 @@ export const totpConfirmationContract = z.object({
 export const totpActionProofRequestContract = z
   .object({
     code: z.string().regex(/^[0-9]{6}$/),
-    action: z.literal("REVOKE_PUBLIC_SESSIONS"),
+    action: z.enum(["REVOKE_PUBLIC_SESSIONS", "APPROVE_TOTP_RECOVERY"]),
     targetIdentityId: z.string().uuid(),
     incidentId: z.string().trim().min(3).max(100),
     reason: z.string().trim().min(5).max(500),
@@ -378,6 +383,27 @@ export const sessionSecurityRevocationRequestContract = totpActionProofRequestCo
   .omit({ code: true, action: true })
   .extend({ proof: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
   .strict();
+
+export const totpRecoveryRequestContract = z
+  .object({
+    incidentId: z.string().trim().min(3).max(100),
+    reason: z.string().trim().min(5).max(500),
+  })
+  .strict();
+export const totpRecoveryApprovalContract = z
+  .object({ proof: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
+  .strict();
+export const totpRecoveryContract = z.object({ recoveryId: z.string().uuid() });
+
+export const totpRecoveryViewContract = z.object({
+  recoveryId: z.string().uuid(),
+  targetIdentityId: z.string().uuid(),
+  incidentId: z.string(),
+  reason: z.string(),
+  status: z.enum(["PENDING", "APPROVED", "ENROLLING", "COMPLETED", "EXPIRED"]),
+  expiresAt: z.string().datetime({ offset: true }),
+  approvalCount: z.number().int().min(0).max(2),
+});
 
 export const actorContextContract = z.object({
   identityId: z.string().uuid(),
@@ -434,6 +460,11 @@ export const identityAccessV1Schemas = {
   TotpActionProofRequest: totpActionProofRequestContract,
   TotpActionProof: totpActionProofContract,
   SessionSecurityRevocationRequest: sessionSecurityRevocationRequestContract,
+  TotpRecoveryRequest: totpRecoveryRequestContract,
+  TotpRecoveryApproval: totpRecoveryApprovalContract,
+  TotpRecovery: totpRecoveryContract,
+  TotpRecoveryView: totpRecoveryViewContract,
+  TotpRecoveryId: totpRecoveryContract.shape.recoveryId,
   TotpError: z.object({
     code: z.string(),
     message: z.string(),
