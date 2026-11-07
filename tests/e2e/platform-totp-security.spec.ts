@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { assertMinimumContrast } from "../helpers/visual-assertions";
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import postgres from "postgres";
 
@@ -124,7 +124,21 @@ test("real agents enroll, approve recovery, and revoke sessions across responsiv
     await c.page.getByRole("button", { name: "تأیید برنامه تازه" }).click();
     await expect(c.page.getByRole("status")).toContainText("برنامه تازه فعال شد");
     await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${target}, 'SESSION_SECURITY', now())`;
-    await c.page.goto("/platform/security/sessions");
+    const salt = randomBytes(16).toString("base64url");
+    const password = "local security test password";
+    const passwordHash = scryptSync(password, salt, 64, {
+      N: 16384,
+      r: 8,
+      p: 5,
+      maxmem: 64 * 1024 * 1024,
+    }).toString("base64url");
+    const username = `security${randomUUID().replaceAll("-", "")}`;
+    await sql`insert into identity_platform_passwords (identity_id, username, password_hash) values (${target}, ${username}, ${`scrypt$${salt}$${passwordHash}`})`;
+    await c.page.goto("/platform/login?returnTo=%2Fplatform%2Fsecurity%2Fsessions");
+    await c.page.getByLabel("نام کاربری، شماره موبایل یا ایمیل").fill(username);
+    await c.page.getByLabel("رمز عبور").fill(password);
+    await c.page.getByRole("button", { name: "ورود" }).click();
+    await expect(c.page).toHaveURL(/\/platform\/security\/sessions$/);
     await expect(c.page.locator("html")).toHaveAttribute("dir", "rtl");
     expect(
       await c.page.evaluate(
@@ -147,7 +161,6 @@ test("real agents enroll, approve recovery, and revoke sessions across responsiv
     await c.page.getByLabel("شناسه هویت").fill(first!);
     await c.page.getByLabel("شناسه حادثه").fill("INC-TEST-SESSION");
     await c.page.getByLabel("دلیل اقدام").fill("بررسی نشست مشکوک");
-    await c.page.getByLabel("کد برنامه تأیید").fill(totp(replacement, 1));
     await c.page.getByRole("button", { name: "بستن نشست‌ها" }).click();
     await expect(c.page.getByRole("status")).toContainText("نشست‌های فعلی بسته شدند");
     expect(

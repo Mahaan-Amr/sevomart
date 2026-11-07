@@ -1,6 +1,10 @@
 import postgres from "postgres";
 import { expect, test } from "../helpers/release-playwright";
-import { createActiveSellerFixture } from "../../apps/api/src/modules/identity-access/testing/active-seller.fixture";
+import { createRequire } from "node:module";
+
+const { createActiveSellerFixture } = createRequire(import.meta.url)(
+  "../../apps/api/src/modules/identity-access/testing/active-seller.fixture",
+) as typeof import("../../apps/api/src/modules/identity-access/testing/active-seller.fixture");
 import {
   sellerPasswordTestMobiles,
   visualProjectIndex,
