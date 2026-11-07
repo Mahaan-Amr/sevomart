@@ -1,3 +1,4 @@
+import { PlatformPasswordService } from "./application/platform-password.service";
 import {
   Body,
   Controller,
@@ -66,5 +67,44 @@ export class PlatformSessionSecurityController {
         );
       throw error;
     }
+  }
+}
+
+@ApiExcludeController()
+@Controller("v2/platform/security")
+export class PlatformPasswordSessionSecurityController {
+  constructor(
+    @Inject(PlatformPasswordService) private readonly password: PlatformPasswordService,
+  ) {}
+  @Post("session-revocations")
+  @HttpCode(204)
+  async revoke(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const parsed = sessionSecurityRevocationRequestContract
+      .omit({ proof: true })
+      .safeParse(body);
+    if (!parsed.success)
+      throw new HttpException(
+        {
+          code: "VALIDATION_ERROR",
+          message: "اطلاعات اقدام معتبر نیست.",
+          correlationId: request.id,
+        },
+        422,
+      );
+    if (
+      !(await this.password.revokePublicSessions(
+        readPlatformSessionToken(request) ?? "",
+        parsed.data,
+        request.id,
+      ))
+    )
+      throw new HttpException(
+        {
+          code: "PLATFORM_PERMISSION_REQUIRED",
+          message: "اجازه انجام این اقدام معتبر نیست.",
+          correlationId: request.id,
+        },
+        403,
+      );
   }
 }

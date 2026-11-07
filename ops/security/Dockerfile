@@ -35,6 +35,7 @@ ENV NODE_ENV=production
 WORKDIR /workspace
 COPY --from=build --chown=node:node /runtime/node_modules ./node_modules
 COPY --chown=node:node scripts/recover-superadmin.mjs ./scripts/recover-superadmin.mjs
+COPY --chown=node:node scripts/recover-superadmin-password.mjs ./scripts/recover-superadmin-password.mjs
 COPY --chown=node:node scripts/authorize-superadmin-totp.mjs ./scripts/authorize-superadmin-totp.mjs
 USER node
 ENTRYPOINT ["/usr/bin/tini", "--", "node"]

@@ -1,4 +1,15 @@
 import {
+  platformPasswordRecoveryRequestContract,
+  platformPasswordRecoveryContract,
+  platformPasswordLoginContract,
+} from "@sevo/contracts/identity-access/v2";
+import {
+  PlatformPasswordBusyError,
+  PlatformPasswordSessionExpiredError,
+  PlatformPasswordService,
+  normalizePlatformDigits,
+} from "./application/platform-password.service";
+import {
   Body,
   Controller,
   Get,
@@ -307,10 +318,91 @@ export class PlatformAgentAuthController {
 @Controller("v2/platform/auth")
 export class PlatformAgentAuthV2Controller {
   constructor(
+    @Inject(PlatformPasswordService) private readonly password: PlatformPasswordService,
     @Inject(PLATFORM_AGENT_OTP_SERVICE)
     private readonly service: PlatformAgentOtpService,
     @Inject(RUNTIME_ENVIRONMENT) private readonly environment: RuntimeEnvironment,
   ) {}
+  @Post("password/recovery")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async redeemPasswordRecovery(@Body() body: unknown, @Req() request: FastifyRequest) {
+    const candidate =
+      body &&
+      typeof body === "object" &&
+      "code" in body &&
+      typeof body.code === "string"
+        ? { ...body, code: normalizePlatformDigits(body.code) }
+        : body;
+    const parsed = platformPasswordRecoveryContract.safeParse(candidate);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    const input = parsed.data;
+    try {
+      if (!(await this.password.redeemRecovery(input.code, input.password, request.id)))
+        throw platformAuthError("UNAUTHORIZED", request.id, 401);
+    } catch (error) {
+      if (error instanceof PlatformPasswordBusyError)
+        throw platformAuthError("RATE_LIMITED", request.id, 429);
+      throw error;
+    }
+  }
+  @Post("password/recovery-requests")
+  @HttpCode(HttpStatus.CREATED)
+  async requestPasswordRecovery(
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const parsed = platformPasswordRecoveryRequestContract.safeParse(body);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    let recovery;
+    try {
+      recovery = await this.password.requestRecovery(
+        readPlatformSessionToken(request) ?? "",
+        parsed.data.identityId,
+        parsed.data.reason,
+        request.id,
+        parsed.data.username,
+        parsed.data.email,
+      );
+    } catch (error) {
+      if (error instanceof PlatformPasswordSessionExpiredError)
+        throw platformAuthError("PLATFORM_PERMISSION_REQUIRED", request.id, 403);
+      throw error;
+    }
+    if (!recovery)
+      throw platformAuthError("PLATFORM_PERMISSION_REQUIRED", request.id, 403);
+    void reply.header("Cache-Control", "no-store");
+    return recovery;
+  }
+  @Post("password/sessions")
+  @HttpCode(HttpStatus.OK)
+  async passwordLogin(
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const parsed = platformPasswordLoginContract.safeParse(body);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    const input = parsed.data;
+    try {
+      const result = await this.password.login(input.identifier, input.password);
+      if (!result) throw platformAuthError("UNAUTHORIZED", request.id, 401);
+      void reply.header("Cache-Control", "no-store");
+      void reply.header(
+        "Set-Cookie",
+        platformSessionCookie(
+          result.token,
+          Math.floor((Date.parse(result.session.expiresAt) - Date.now()) / 1000),
+          this.environment.SEVO_RUNTIME_ENV === "production",
+        ),
+      );
+      return result.session;
+    } catch (error) {
+      if (error instanceof PlatformPasswordBusyError)
+        throw platformAuthError("RATE_LIMITED", request.id, 429);
+      throw error;
+    }
+  }
   @Post("otp/requests")
   @HttpCode(HttpStatus.ACCEPTED)
   async requestOtp(@Body() body: unknown, @Req() request: FastifyRequest) {

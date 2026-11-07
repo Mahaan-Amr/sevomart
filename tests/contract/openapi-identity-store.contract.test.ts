@@ -230,9 +230,23 @@ describe("OpenAPI identity and store compatibility", () => {
       "/v1/auth/password/sessions",
       "/v1/auth/password/recovery/requests",
       "/v1/auth/password/recovery",
+      "/v2/platform/auth/password/sessions",
+      "/v2/platform/auth/password/recovery-requests",
+      "/v2/platform/auth/password/recovery",
+      "/v2/platform/security/session-revocations",
     ]) {
       expect(document.paths[path].post).toBeDefined();
     }
+    const recoveryInputPattern = new RegExp(
+      document.components.schemas.PlatformPasswordRecovery.properties.code.pattern,
+    );
+    expect(recoveryInputPattern.test("۰".repeat(43))).toBe(true);
+    expect(recoveryInputPattern.test("٠".repeat(43))).toBe(true);
+    const recoveryOutputPattern = new RegExp(
+      document.components.schemas.PlatformPasswordRecoveryIssued.properties.code
+        .pattern,
+    );
+    expect(recoveryOutputPattern.test("۰".repeat(43))).toBe(false);
     const completeSurfaceHash = createHash("sha256")
       .update(
         JSON.stringify({
@@ -243,7 +257,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "45f4e591cf4c03c33d9b195bca2260affb5c5e86c9cef92bb0eb9efd3f4d118b",
+      "91ee51d9b8bcb2883e13e22f38d46677761fa7fc080809b7d0f028e7273309ee",
     );
   });
 

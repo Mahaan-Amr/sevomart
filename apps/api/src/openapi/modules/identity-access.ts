@@ -389,6 +389,72 @@ const operations = [
     ],
   },
   {
+    operationId: "createPlatformPasswordSession",
+    method: "post",
+    path: platformAgentAuthV2Paths.passwordSession,
+    tag: "identity-access",
+    auth: "none",
+    request: {
+      schema: "PlatformPasswordLogin",
+      example: identityAccessV2Examples.PlatformPasswordLogin,
+    },
+    responses: [
+      { status: 200, schema: "PlatformAgentSessionV2" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 429, schema: "RateLimitError" },
+    ],
+  },
+  {
+    operationId: "requestPlatformPasswordRecovery",
+    method: "post",
+    path: platformAgentAuthV2Paths.passwordRecoveryRequest,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    request: {
+      schema: "PlatformPasswordRecoveryRequest",
+      example: identityAccessV2Examples.PlatformPasswordRecoveryRequest,
+    },
+    responses: [
+      { status: 201, schema: "PlatformPasswordRecoveryIssued" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 422, schema: "ValidationError" },
+    ],
+  },
+  {
+    operationId: "redeemPlatformPasswordRecovery",
+    method: "post",
+    path: platformAgentAuthV2Paths.passwordRecovery,
+    tag: "identity-access",
+    auth: "none",
+    request: {
+      schema: "PlatformPasswordRecovery",
+      example: identityAccessV2Examples.PlatformPasswordRecovery,
+    },
+    responses: [
+      { status: 204, noContent: true },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 429, schema: "RateLimitError" },
+    ],
+  },
+  {
+    operationId: "revokePublicSessionsWithPlatformPassword",
+    method: "post",
+    path: platformAgentAuthV2Paths.passwordSessionRevocation,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    request: {
+      schema: "PlatformPasswordSessionRevocation",
+      example: identityAccessV2Examples.PlatformPasswordSessionRevocation,
+    },
+    responses: [
+      { status: 204, noContent: true },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 422, schema: "ValidationError" },
+    ],
+  },
+  {
     operationId: "requestPlatformAgentOtpV2",
     method: "post",
     path: platformAgentAuthV2Paths.requestOtp,

@@ -1,0 +1,4 @@
+ALTER TABLE identity_platform_superadmin_audit DROP CONSTRAINT identity_platform_superadmin_audit_action_check;
+ALTER TABLE identity_platform_superadmin_audit ADD CONSTRAINT identity_platform_superadmin_audit_action_check CHECK (action IN ('GRANTED', 'REVOKED', 'RECOVERED', 'TOTP_ENROLLMENT_AUTHORIZED', 'PASSWORD_RECOVERED'));
+ALTER TABLE identity_platform_superadmin_audit DROP CONSTRAINT identity_platform_superadmin_audit_actor_check;
+ALTER TABLE identity_platform_superadmin_audit ADD CONSTRAINT identity_platform_superadmin_audit_actor_check CHECK ((actor_kind = 'SUPERADMIN' AND actor_identity_id IS NOT NULL AND action IN ('GRANTED', 'REVOKED')) OR (actor_kind = 'OWNER_RECOVERY' AND actor_identity_id IS NULL AND action IN ('RECOVERED', 'TOTP_ENROLLMENT_AUTHORIZED', 'PASSWORD_RECOVERED')));
