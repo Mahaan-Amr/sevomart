@@ -3,6 +3,11 @@ import { discoveryV1Examples } from "@sevo/contracts/discovery/v1";
 import { ordersV1Examples } from "@sevo/contracts/orders/v1";
 
 import {
+  sellerIntroductionTestMobiles,
+  visualProjectIndex,
+} from "../helpers/visual-projects";
+
+import {
   assertMinimumContrast,
   assertNoHorizontalOverflow,
   assertInteractiveTargets,
@@ -175,7 +180,7 @@ test("signed-in buyer shell shows the masked identity and supports sign out", as
 
 test("seller introduction explains responsibility and resumes the application after OTP", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto("/seller/start");
   await expect(
     page.getByRole("heading", {
@@ -186,7 +191,9 @@ test("seller introduction explains responsibility and resumes the application af
   await expect(page.getByText(/بازپرداخت را تضمین نمی‌کند/)).toBeVisible();
   await page.getByRole("link", { name: "شروع درخواست فروشندگی" }).click();
   await expect(page).toHaveURL(/\/seller\/login\?returnTo=/);
-  await page.getByLabel("شماره موبایل").fill("09123456789");
+  await page
+    .getByLabel("شماره موبایل")
+    .fill(sellerIntroductionTestMobiles[visualProjectIndex(testInfo.project.name)]!);
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
