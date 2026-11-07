@@ -249,10 +249,17 @@ describe("seller password HTTP API", () => {
         payload: { challengeId: old.json().challengeId, code: "111111" },
       });
       await waitForLocks(2);
+      const passwordLogin = server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09123456789", password: "old secure password" },
+      });
+      await waitForLocks(3);
       release();
       await holder;
       expect((await reset).statusCode).toBe(204);
       expect((await oldLogin).statusCode).toBe(401);
+      expect((await passwordLogin).statusCode).toBe(401);
     } finally {
       release();
       await sql`delete from identity_seller_passwords where identity_id = ${identityId}`;
