@@ -237,6 +237,16 @@ describe("OpenAPI identity and store compatibility", () => {
     ]) {
       expect(document.paths[path].post).toBeDefined();
     }
+    const recoveryInputPattern = new RegExp(
+      document.components.schemas.PlatformPasswordRecovery.properties.code.pattern,
+    );
+    expect(recoveryInputPattern.test("۰".repeat(43))).toBe(true);
+    expect(recoveryInputPattern.test("٠".repeat(43))).toBe(true);
+    const recoveryOutputPattern = new RegExp(
+      document.components.schemas.PlatformPasswordRecoveryIssued.properties.code
+        .pattern,
+    );
+    expect(recoveryOutputPattern.test("۰".repeat(43))).toBe(false);
     const completeSurfaceHash = createHash("sha256")
       .update(
         JSON.stringify({
@@ -247,7 +257,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "9a3a8112231797875c0ffd5fa8ed0688e89cc35297ab45cf7b11ea57b0243d3c",
+      "91ee51d9b8bcb2883e13e22f38d46677761fa7fc080809b7d0f028e7273309ee",
     );
   });
 

@@ -35,7 +35,7 @@ export const platformPasswordRecoveryRequestContract = superadminGrantInputContr
   .strict();
 export const platformPasswordRecoveryContract = z
   .object({
-    code: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    code: z.string().regex(/^[A-Za-z0-9۰-۹٠-٩_-]{43}$/),
     password: z.string().min(12).max(128),
   })
   .strict();
