@@ -183,6 +183,11 @@ test("seller acts from the operational home and reads a private basic report", a
     await expect(
       page.getByRole("heading", { name: "راه‌اندازی کامل شد" }),
     ).toBeVisible();
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-home-reporting:success",
+      name: "seller-guide-open",
+      sensitiveRegions: [],
+    });
     await assertNoHorizontalOverflow(page);
     await assertInteractiveTargets(page, "main a, main button");
     await page.getByRole("button", { name: "بستن راهنما" }).click();
