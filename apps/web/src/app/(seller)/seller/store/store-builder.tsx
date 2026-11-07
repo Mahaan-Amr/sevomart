@@ -696,36 +696,51 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                   }
                   value={form.shippingCode}
                   onChange={(e) => {
-                    setErrors((current) => ({ ...current, shipping: undefined }));
-                    setForm((current) => {
-                      const code = e.target.value as ShippingCode;
-                      const selected = current.shippingMethods.find(
-                        (method) => method.code === code,
-                      ) ?? { ...defaultShippingMethod(code), feeToman: "" };
-                      return {
-                        ...current,
-                        shippingCode: code,
-                        shippingMethods: [
-                          { ...selected, enabled: true },
-                          ...current.shippingMethods
-                            .filter((method) => method.code !== code)
-                            .map((method) => {
-                              if (method.code !== current.shippingCode) return method;
-                              const saved = savedDraft?.shippingMethods?.find(
-                                (item) => item.code === method.code,
-                              );
-                              return {
-                                ...method,
-                                enabled: saved?.enabled ?? false,
-                                feeToman:
-                                  !validShippingFee(method.feeToman) && saved
-                                    ? String(saved.fixedFee.amount / 10)
-                                    : method.feeToman,
-                              };
-                            }),
-                        ],
-                      };
-                    });
+                    const code = e.target.value as ShippingCode;
+                    const selected = form.shippingMethods.find(
+                      (method) => method.code === code,
+                    ) ?? { ...defaultShippingMethod(code), feeToman: "" };
+                    const nextForm = {
+                      ...form,
+                      shippingCode: code,
+                      shippingMethods: [
+                        { ...selected, enabled: true },
+                        ...form.shippingMethods
+                          .filter((method) => method.code !== code)
+                          .map((method) => {
+                            if (method.code !== form.shippingCode) return method;
+                            const saved = savedDraft?.shippingMethods?.find(
+                              (item) => item.code === method.code,
+                            );
+                            return {
+                              ...method,
+                              enabled: saved?.enabled ?? false,
+                              feeToman:
+                                !validShippingFee(method.feeToman) && saved
+                                  ? String(saved.fixedFee.amount / 10)
+                                  : method.feeToman,
+                            };
+                          }),
+                      ],
+                    };
+                    const shippingError = validateForm(nextForm).shipping;
+                    setForm(nextForm);
+                    setErrors((current) => ({
+                      ...current,
+                      shipping: current.shipping ? shippingError : undefined,
+                    }));
+                    setMessage((current) =>
+                      current
+                        .replace(
+                          "هزینه هر روش ارسال فعال را وارد کنید.",
+                          shippingError ?? "",
+                        )
+                        .replace(
+                          "دست‌کم یک روش ارسال را فعال کنید.",
+                          shippingError ?? "",
+                        )
+                        .trim(),
+                    );
                   }}
                 >
                   <option value="" disabled>

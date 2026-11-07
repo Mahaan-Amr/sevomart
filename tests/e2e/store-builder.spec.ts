@@ -278,22 +278,30 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
 
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
-  await expect(page.getByLabel("روش ارسال")).toHaveValue("");
+  await expect(page.getByRole("combobox")).toHaveValue("");
   await page.getByLabel("سیاست مرجوعی").fill(returnPolicy);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "ارسال و مرجوعی" })).toBeVisible();
-  await page.getByLabel("روش ارسال").selectOption("NATIONAL_POST");
+  await page.getByRole("combobox").selectOption("NATIONAL_POST");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
-  await page.getByLabel("روش ارسال").selectOption("PICKUP");
-  await page.getByLabel("روش ارسال").selectOption("NATIONAL_POST");
+  await page.getByRole("combobox").selectOption("PICKUP");
+  await page.getByRole("combobox").selectOption("NATIONAL_POST");
   await page.getByLabel("هزینه ارسال (تومان)").fill("۸۵۰۰۰");
-  await page.getByLabel("روش ارسال").selectOption("COURIER");
+  await page.getByRole("combobox").selectOption("COURIER");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(
     page.getByText("هزینه هر روش ارسال فعال را وارد کنید.").first(),
   ).toBeVisible();
+  await page.getByRole("combobox").selectOption("NATIONAL_POST");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).toHaveValue("۸۵۰۰۰");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).not.toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(page.getByText("هزینه هر روش ارسال فعال را وارد کنید.")).toHaveCount(0);
+  await page.getByRole("combobox").selectOption("COURIER");
   await page.getByLabel("هزینه ارسال (تومان)").fill("۱۲۰۰۰۰");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).not.toHaveAttribute(
     "aria-invalid",
@@ -685,11 +693,24 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.getByLabel("شماره تماس کاری (اختیاری)")).toHaveValue("09123456789");
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
-  await expect(page.getByLabel("روش ارسال")).toHaveValue("COURIER");
-  await page.getByLabel("روش ارسال").selectOption("PICKUP");
+  await expect(page.getByRole("combobox")).toHaveValue("COURIER");
+  await page.getByRole("combobox").selectOption("PICKUP");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await page.getByRole("combobox").selectOption("COURIER");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).toHaveValue("120000");
+  await expect(page.getByText("هزینه هر روش ارسال فعال را وارد کنید.")).toHaveCount(0);
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).not.toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await page.getByRole("combobox").selectOption("PICKUP");
   await page.getByLabel("هزینه ارسال (تومان)").fill("۳۰۰۰۰");
-  await page.getByLabel("روش ارسال").selectOption("COURIER");
+  await page.getByRole("combobox").selectOption("COURIER");
   await expect(page.getByLabel("هزینه ارسال (تومان)")).toHaveValue("120000");
   const preservedSave = page.waitForResponse(
     (response) =>
