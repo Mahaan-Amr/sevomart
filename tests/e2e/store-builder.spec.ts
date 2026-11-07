@@ -120,6 +120,13 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(
     page.getByText("تسویه آزمایشی است؛ فروش و پرداخت واقعی فعال نیست."),
   ).toBeVisible();
+  await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
+  await page.getByLabel("نام فروشگاه").clear();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.getByText("نام فروشگاه را کامل‌تر بنویسید.")).toBeVisible();
+  await expect(page).toHaveURL(/\/seller\/store\/setup/);
+  await page.getByLabel("نام فروشگاه").fill("پیش‌نویس خانه ماه");
+  await page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" }).click();
   await page.goto("/seller/store/shipping");
   await expect(page.getByRole("checkbox", { name: "پست پیشتاز" })).not.toBeChecked();
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
