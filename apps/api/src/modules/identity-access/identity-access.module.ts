@@ -44,6 +44,11 @@ import { PlatformAgentOtpService } from "./application/platform-agent-otp.servic
 import { SellerApprovalRecoveryController } from "./seller-approval-recovery.controller";
 import { PlatformAccessController } from "./platform-access.controller";
 import { PostgresPlatformAccessRepository } from "./infrastructure/postgres-platform-access.repository";
+import {
+  SuperadminController,
+  SuperadminService,
+  SUPERADMIN_SERVICE,
+} from "./superadmin.controller";
 import type {
   ApprovedSellerStoreProvisioner,
   OpaqueStoreTransactionContext,
@@ -79,8 +84,13 @@ export class IdentityAccessModule {
         PlatformSessionSecurityController,
         SellerApprovalRecoveryController,
         PlatformAccessController,
+        SuperadminController,
       ],
       providers: [
+        {
+          provide: SUPERADMIN_SERVICE,
+          useValue: new SuperadminService(environment.DATABASE_URL),
+        },
         {
           provide: SELLER_PASSWORD_SERVICE,
           useValue: new SellerPasswordService(

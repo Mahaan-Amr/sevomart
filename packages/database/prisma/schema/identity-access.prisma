@@ -304,3 +304,31 @@ model SellerApprovalRecovery {
   @@index([applicationId, status])
   @@map("identity_seller_approval_recoveries")
 }
+
+model PlatformSuperadmin {
+  identityId String @id @map("identity_id") @db.Uuid
+  grantedAt DateTime @map("granted_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  @@map("identity_platform_superadmins")
+}
+
+model PlatformSuperadminAudit {
+  id String @id @db.Uuid
+  actorIdentityId String @map("actor_identity_id") @db.Uuid
+  subjectIdentityId String @map("subject_identity_id") @db.Uuid
+  action String
+  reason String
+  correlationId String @map("correlation_id") @db.Uuid
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  @@map("identity_platform_superadmin_audit")
+}
+
+model PlatformSuperadminIdempotency {
+  actorIdentityId String @map("actor_identity_id") @db.Uuid
+  operation String
+  key String
+  payloadHash String @map("payload_hash")
+  response Json
+  @@id([actorIdentityId, operation, key])
+  @@map("identity_platform_superadmin_idempotency")
+}

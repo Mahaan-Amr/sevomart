@@ -24,6 +24,137 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     await resetPlatformAccessData();
   });
 
+  it("allows a superadmin to grant another superadmin but refuses revoking the last one", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const owner = await seedAgent([]);
+    const recipient = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at)
+      values (${owner.identityId}, now())`;
+
+    const grant = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/superadmins",
+      headers: accessHeaders(owner.token),
+      payload: {
+        identityId: recipient.identityId,
+        reason: "واگذاری مسئولیت مدیریت پلتفرم",
+      },
+    });
+    expect(grant.statusCode).toBe(201);
+    const revoke = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/superadmins/${recipient.identityId}/revocation`,
+      headers: accessHeaders(owner.token),
+      payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+    });
+    expect(revoke.statusCode).toBe(200);
+    const last = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/superadmins/${owner.identityId}/revocation`,
+      headers: accessHeaders(owner.token),
+      payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+    });
+    expect(last.statusCode).toBe(409);
+    await expect(
+      sql`update identity_identities set status = 'INACTIVE' where id = ${owner.identityId}`,
+    ).rejects.toThrow();
+    await sql.end();
+  });
+
+  it("serializes concurrent revocations so one active superadmin remains", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await seedAgent([]);
+    const second = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at)
+      values (${first.identityId}, now()), (${second.identityId}, now())`;
+    const results = await Promise.all(
+      [first, second].map((agent) =>
+        server.inject({
+          method: "POST",
+          url: `/v1/platform/access/superadmins/${agent.identityId}/revocation`,
+          headers: accessHeaders(agent.token),
+          payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+        }),
+      ),
+    );
+    expect(results.map((result) => result.statusCode).sort()).toEqual([200, 409]);
+    await sql.end();
+  });
+
+  it("keeps a superadmin active when two identities are deactivated concurrently", async () => {
+    const first = await seedAgent([]);
+    const second = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${first.identityId}, now()), (${second.identityId}, now())`;
+    const results = await Promise.allSettled(
+      [first, second].map(
+        (agent) =>
+          sql`update identity_identities set status = 'INACTIVE' where id = ${agent.identityId}`,
+      ),
+    );
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    await sql.end();
+  });
+
+  it("replays a grant once and rejects a different payload with the same key", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const actor = await seedAgent([]);
+    const subject = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const headers = accessHeaders(actor.token);
+    const payload = {
+      identityId: subject.identityId,
+      reason: "واگذاری مسئولیت مدیریت پلتفرم",
+    };
+    const submit = (body: typeof payload) =>
+      server.inject({
+        method: "POST",
+        url: "/v1/platform/access/superadmins",
+        headers,
+        payload: body,
+      });
+    expect((await submit(payload)).statusCode).toBe(201);
+    expect((await submit(payload)).statusCode).toBe(201);
+    expect(
+      (await submit({ ...payload, reason: "واگذاری مدیریت برای پشتیبانی عملیاتی" }))
+        .statusCode,
+    ).toBe(409);
+    const audit = await sql<
+      Array<{ count: number }>
+    >`select count(*)::int as count from identity_platform_superadmin_audit where subject_identity_id = ${subject.identityId}`;
+    expect(audit[0]?.count).toBe(1);
+    await sql.end();
+  });
+
+  it("rejects a grant by an agent without a live superadmin role", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const subject = await seedAgent([]);
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/platform/access/superadmins",
+        headers: accessHeaders(actor.token),
+        payload: {
+          identityId: subject.identityId,
+          reason: "واگذاری مسئولیت مدیریت پلتفرم",
+        },
+      });
+    expect(response.statusCode).toBe(403);
+  });
+
   it("lists responsibility and sensitive grants and exposes audit only to its reviewer", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -2059,6 +2190,9 @@ function hash(value: string) {
 
 async function resetPlatformAccessData() {
   const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  await sql`truncate identity_platform_superadmin_audit`;
+  await sql`truncate identity_platform_superadmin_idempotency`;
+  await sql`truncate identity_platform_superadmins`;
   await sql`truncate identity_platform_access_audit`;
   await sql`truncate identity_platform_emergency_access_reviews`;
   await sql`delete from identity_platform_access_idempotency`;
