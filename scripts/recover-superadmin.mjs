@@ -34,6 +34,9 @@ try {
     .update(JSON.stringify({ identityId: command.identityId, reason: command.reason }))
     .digest("hex");
   await sql.begin(async (tx) => {
+    const authorization =
+      await tx`select coalesce(pg_has_role(current_user, to_regrole('sevo_superadmin_recovery'), 'member'), false) as allowed`;
+    if (!authorization[0]?.allowed) throw new Error("recovery role required");
     await tx`select pg_advisory_xact_lock(hashtext('identity_platform_superadmins'))`;
     const previous =
       await tx`select payload_hash from identity_platform_superadmin_recovery_idempotency where key = ${command.idempotencyKey}`;

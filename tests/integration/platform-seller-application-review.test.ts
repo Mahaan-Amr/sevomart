@@ -26,6 +26,11 @@ describe("platform seller application review API with PostgreSQL", () => {
 
   beforeEach(async () => {
     const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    await sql`truncate identity_platform_superadmin_sensitive_audit`;
+    await sql`truncate identity_platform_superadmin_audit`;
+    await sql`truncate identity_platform_superadmin_idempotency`;
+    await sql`truncate identity_platform_superadmin_recovery_idempotency`;
+    await sql`truncate identity_platform_superadmins`;
     await sql`truncate identity_totp_bootstrap_run`;
     await sql`truncate identity_platform_permission_audit`;
     await sql`delete from identity_platform_permission_grants`;
@@ -54,6 +59,37 @@ describe("platform seller application review API with PostgreSQL", () => {
     await sql`delete from identity_login_methods`;
     await sql`delete from identity_identities`;
     await sql.end();
+  });
+
+  it("lets a superadmin review an application without an individual permission grant", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const applicantCookie = await signIn(app, "09123456786");
+    const submitted = await server.inject({
+      method: "POST",
+      url: "/v1/seller-applications",
+      headers: { cookie: applicantCookie, "idempotency-key": randomUUID() },
+      payload: applicationPayload(),
+    });
+    const applicationId = submitted.json<{ applicationId: string }>().applicationId;
+    await signIn(app, "09123456785");
+    const actor = await identityIdForMobile("09123456785");
+    const token = await seedPlatformSession(actor);
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor}, now())`;
+    try {
+      const response = await server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers: { cookie: platformCookie(token), "idempotency-key": randomUUID() },
+        payload: { expectedRevision: 1, reasonCode: "ELIGIBILITY_CONFIRMED" },
+      });
+      expect(response.statusCode).toBe(200);
+    } finally {
+      await sql`delete from identity_platform_superadmins where identity_id = ${actor}`;
+      await sql.end();
+    }
   });
 
   it("approves once and atomically provisions active seller access with an unpublished store", async () => {

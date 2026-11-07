@@ -2589,6 +2589,7 @@ async function authorizePlatformSession(
 }
 
 async function requireAccessAdministrator(sql: Sql, identityId: string): Promise<void> {
+  if (await lockLiveSuperadmin(sql, identityId)) return;
   const rows = await sql<Array<{ id: string }>>`
     select p.id from identity_platform_permission_grants p
     where p.identity_id = ${identityId}
@@ -2603,6 +2604,7 @@ async function requireResponsibility(
   identityId: string,
   responsibility: Responsibility,
 ): Promise<void> {
+  if (await lockLiveSuperadmin(sql, identityId)) return;
   const rows = await sql<Array<{ id: string }>>`
     select p.id from identity_platform_permission_grants p
     join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
@@ -2618,6 +2620,7 @@ async function hasResponsibility(
   identityId: string,
   responsibility: Responsibility,
 ): Promise<boolean> {
+  if (await lockLiveSuperadmin(sql, identityId)) return true;
   const rows = await sql<Array<{ exists: boolean }>>`
     select exists(
       select 1 from identity_platform_permission_grants p
@@ -2629,12 +2632,24 @@ async function hasResponsibility(
   return rows[0]?.exists ?? false;
 }
 
+async function lockLiveSuperadmin(sql: Sql, identityId: string): Promise<boolean> {
+  const rows = await sql`select a.identity_id from identity_platform_superadmins a
+    join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE'
+    where a.identity_id = ${identityId} and a.revoked_at is null for share of a, i`;
+  return rows.length > 0;
+}
+
 async function countActiveAccessManagers(sql: Sql): Promise<number> {
   const rows = await sql<Array<{ count: number }>>`
-    select count(distinct p.identity_id)::int as count
-    from identity_platform_permission_grants p
-    join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
-    where p.permission = 'ACCESS_ADMINISTRATION' and p.revoked_at is null
+    select count(distinct candidates.identity_id)::int as count from (
+      select p.identity_id from identity_platform_permission_grants p
+      join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
+      where p.permission = 'ACCESS_ADMINISTRATION' and p.revoked_at is null
+      union all
+      select a.identity_id from identity_platform_superadmins a
+      join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE'
+      where a.revoked_at is null
+    ) candidates
   `;
   return rows[0]?.count ?? 0;
 }

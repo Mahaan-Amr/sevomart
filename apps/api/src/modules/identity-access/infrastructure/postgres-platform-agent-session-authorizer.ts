@@ -5,6 +5,7 @@ import type {
   PlatformAgentWorkspaceSession,
   PlatformPermission,
 } from "@sevo/contracts/identity-access/v1";
+import { platformPermissionContract } from "@sevo/contracts/identity-access/v1";
 
 import {
   PlatformAgentSessionUnauthorizedError,
@@ -22,6 +23,7 @@ type PlatformWorkspaceSessionRow = {
   identityId: string;
   expiresAt: Date;
   permissions: PlatformPermission[];
+  isSuperadmin: boolean;
 };
 
 export class PostgresPlatformAgentSessionAuthorizer implements PlatformAgentSessionAuthorizer {
@@ -35,6 +37,7 @@ export class PostgresPlatformAgentSessionAuthorizer implements PlatformAgentSess
     if (!token) throw new PlatformAgentSessionUnauthorizedError();
     const rows = await this.#sql<PlatformWorkspaceSessionRow[]>`
       select s.identity_id as "identityId", s.expires_at as "expiresAt",
+        exists (select 1 from identity_platform_superadmins a where a.identity_id = s.identity_id and a.revoked_at is null) as "isSuperadmin",
         coalesce(
           array_agg(g.permission order by g.permission)
             filter (where g.permission is not null),
@@ -59,7 +62,10 @@ export class PostgresPlatformAgentSessionAuthorizer implements PlatformAgentSess
         identityId: session.identityId,
         audience: "PLATFORM_AGENT",
       },
-      permissions: session.permissions,
+      ...(session.isSuperadmin ? { isSuperadmin: true } : {}),
+      permissions: session.isSuperadmin
+        ? [...platformPermissionContract.options]
+        : session.permissions,
       expiresAt: session.expiresAt.toISOString(),
     };
   }
@@ -92,12 +98,12 @@ export class PostgresPlatformAgentSessionAuthorizer implements PlatformAgentSess
     if (!token) throw new PlatformAgentSessionUnauthorizedError();
     const rows = await this.#sql<PlatformSessionRow[]>`
       select s.identity_id as "identityId",
-        exists (
+        (exists (select 1 from identity_platform_superadmins a where a.identity_id = s.identity_id and a.revoked_at is null) or exists (
           select 1 from identity_platform_permission_grants g
           where g.identity_id = s.identity_id
             and g.permission = ${permission}
             and g.revoked_at is null
-        ) as "hasPermission"
+        )) as "hasPermission"
       from identity_sessions s
       join identity_identities i on i.id = s.identity_id
       where s.token_hash = ${hashToken(token)}

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Headers,
+  Get,
   HttpCode,
   HttpException,
   Inject,
@@ -27,6 +28,26 @@ export class SuperadminService {
   readonly #sql: ReturnType<typeof postgres>;
   constructor(databaseUrl: string) {
     this.#sql = postgres(databaseUrl, { max: 5 });
+  }
+  async list(token: string, correlationId: string, audit: boolean) {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    return this.#sql.begin(async (sql) => {
+      const actors = await sql`select 1 from identity_sessions s
+      join identity_identities i on i.id = s.identity_id and i.status = 'ACTIVE'
+      join identity_platform_superadmins a on a.identity_id = i.id and a.revoked_at is null
+      where s.token_hash = ${tokenHash} and s.audience = 'PLATFORM_AGENT'
+      and s.revoked_at is null and s.expires_at > now() for share of s, i, a`;
+      if (!actors.length)
+        throw superadminError(correlationId, "RESPONSIBILITY_REQUIRED", 403);
+      if (audit) {
+        const items =
+          await sql`select actor_identity_id as "actorIdentityId", actor_kind as "actorKind", subject_identity_id as "subjectIdentityId", action, reason, occurred_at as "occurredAt" from identity_platform_superadmin_audit order by occurred_at desc, id desc`;
+        return { items };
+      }
+      const items =
+        await sql`select identity_id as "identityId", case when revoked_at is null then 'ACTIVE' else 'REVOKED' end as status, granted_at as "grantedAt", revoked_at as "revokedAt" from identity_platform_superadmins order by granted_at desc, identity_id`;
+      return { items };
+    });
   }
   async change(
     token: string,
@@ -102,6 +123,18 @@ export class SuperadminController {
   constructor(
     @Inject(SUPERADMIN_SERVICE) private readonly service: SuperadminService,
   ) {}
+  @Get()
+  async list(@Req() request: FastifyRequest) {
+    return this.service.list(
+      readPlatformSessionToken(request) ?? "",
+      request.id,
+      false,
+    );
+  }
+  @Get("audit")
+  async audit(@Req() request: FastifyRequest) {
+    return this.service.list(readPlatformSessionToken(request) ?? "", request.id, true);
+  }
   @Post()
   @HttpCode(201)
   async grant(
