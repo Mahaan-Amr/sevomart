@@ -387,7 +387,11 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     const body: unknown = await response.json();
     if (!response.ok) {
       setMessage(humanError());
-      setErrors(apiFieldErrors(body));
+      const fieldErrors = apiFieldErrors(body);
+      setErrors(fieldErrors);
+      if (section === "setup" && Object.keys(fieldErrors).length > 0) {
+        setEditStep(hasIdentityErrors(fieldErrors) ? 0 : 1);
+      }
       throw new StoreDraftSaveError(humanError());
     }
     const parsed = storeDraftContract.safeParse(body);
@@ -753,6 +757,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <Field label="لوگو" error={errors.logo}>
                 <FilePicker
                   label="لوگو"
+                  error={errors.logo}
                   file={logo}
                   onChange={(file) => {
                     setLogo(file);
@@ -763,6 +768,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <Field label="تصویر روی جلد" error={errors.cover}>
                 <FilePicker
                   label="تصویر روی جلد"
+                  error={errors.cover}
                   file={cover}
                   onChange={(file) => {
                     setCover(file);
@@ -1230,10 +1236,12 @@ function buildDraftInput(
 
 function FilePicker({
   label,
+  error,
   file,
   onChange,
 }: {
   label: string;
+  error?: string;
   file?: File;
   onChange: (file?: File) => void;
 }) {
@@ -1243,6 +1251,8 @@ function FilePicker({
         className={styles.filePickerInput}
         type="file"
         aria-label={label}
+        aria-invalid={Boolean(error) || undefined}
+        aria-describedby={error ? `field-error-${label}` : undefined}
         accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
         onChange={(event) => onChange(event.target.files?.[0])}
       />
