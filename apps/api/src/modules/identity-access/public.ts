@@ -109,11 +109,14 @@ export interface IdentityAccessRepository {
   saveSession(session: StoredIdentitySession): Promise<void>;
   findActiveSession(
     tokenHash: string,
-    now: Date,
+    clock: () => Date,
   ): Promise<ActiveIdentitySession | undefined>;
-  findSession(tokenHash: string, now: Date): Promise<IdentitySessionStatus | undefined>;
+  findSession(
+    tokenHash: string,
+    clock: () => Date,
+  ): Promise<IdentitySessionStatus | undefined>;
   revokeSession(tokenHash: string, revokedAt: Date): Promise<boolean>;
-  revokeAllSessions(tokenHash: string, revokedAt: Date): Promise<boolean>;
+  revokeAllSessions(tokenHash: string, clock: () => Date): Promise<boolean>;
 }
 
 export type SellerApplicationCommandContext = {

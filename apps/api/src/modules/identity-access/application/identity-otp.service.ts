@@ -115,7 +115,7 @@ export class IdentityOtpService {
   async readActiveIdentitySession(token: string): Promise<IdentitySession | undefined> {
     const activeSession = await this.repository.findActiveSession(
       hashToken(token),
-      this.now(),
+      this.now,
     );
     if (!activeSession) return undefined;
     return {
@@ -126,7 +126,7 @@ export class IdentityOtpService {
   }
 
   async readIdentitySession(token: string) {
-    const result = await this.repository.findSession(hashToken(token), this.now());
+    const result = await this.repository.findSession(hashToken(token), this.now);
     if (!result) return undefined;
     return {
       session: {
@@ -144,7 +144,7 @@ export class IdentityOtpService {
   }
 
   async revokeAllSessions(token: string): Promise<boolean> {
-    return this.repository.revokeAllSessions(hashToken(token), this.now());
+    return this.repository.revokeAllSessions(hashToken(token), this.now);
   }
 }
 

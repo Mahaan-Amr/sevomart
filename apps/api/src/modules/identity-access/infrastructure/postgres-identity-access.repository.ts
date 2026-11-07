@@ -119,10 +119,13 @@ export class PostgresIdentityAccessRepository
     });
   }
 
-  async findActiveSession(tokenHash: string, now: Date) {
-    const rows = await this.#sql<
-      Array<{ identityId: string; mobile: IranianMobile; expiresAt: Date }>
-    >`
+  async findActiveSession(tokenHash: string, clock: () => Date) {
+    return this.#sql.begin(async (sql) => {
+      await sql`select id from identity_sessions where token_hash = ${tokenHash} and audience = 'PUBLIC' for update`;
+      const now = clock();
+      const rows = await sql<
+        Array<{ identityId: string; mobile: IranianMobile; expiresAt: Date }>
+      >`
       with touched as (
         update identity_sessions s
         set expires_at = least(s.created_at + interval '90 days', greatest(s.expires_at, ${now}::timestamptz + interval '7 days'))
@@ -144,18 +147,22 @@ export class PostgresIdentityAccessRepository
         and i.status = 'ACTIVE'
       limit 1
     `;
-    return rows[0];
+      return rows[0];
+    });
   }
 
-  async findSession(tokenHash: string, now: Date) {
-    const rows = await this.#sql<
-      Array<{
-        identityId: string;
-        mobile: IranianMobile;
-        expiresAt: Date;
-        identityStatus: "ACTIVE" | "INACTIVE";
-      }>
-    >`
+  async findSession(tokenHash: string, clock: () => Date) {
+    return this.#sql.begin(async (sql) => {
+      await sql`select id from identity_sessions where token_hash = ${tokenHash} and audience = 'PUBLIC' for update`;
+      const now = clock();
+      const rows = await sql<
+        Array<{
+          identityId: string;
+          mobile: IranianMobile;
+          expiresAt: Date;
+          identityStatus: "ACTIVE" | "INACTIVE";
+        }>
+      >`
       with touched as (
         update identity_sessions s
         set expires_at = case when exists (select 1 from identity_identities i where i.id = s.identity_id and i.status = 'ACTIVE')
@@ -178,7 +185,8 @@ export class PostgresIdentityAccessRepository
         and s.expires_at > ${now}
       limit 1
     `;
-    return rows[0];
+      return rows[0];
+    });
   }
 
   async isActiveSeller(identityId: IdentityId): Promise<boolean> {
@@ -201,7 +209,7 @@ export class PostgresIdentityAccessRepository
     return rows.length > 0;
   }
 
-  async revokeAllSessions(tokenHash: string, revokedAt: Date): Promise<boolean> {
+  async revokeAllSessions(tokenHash: string, clock: () => Date): Promise<boolean> {
     return this.#sql.begin(async (sql) => {
       const identities = await sql<Array<{ identityId: string }>>`
         select identity_id as "identityId" from identity_sessions
@@ -210,6 +218,8 @@ export class PostgresIdentityAccessRepository
       const identityId = identities[0]?.identityId;
       if (!identityId) return false;
       await sql`select pg_advisory_xact_lock(hashtextextended(${identityId}, 273))`;
+      await sql`select id from identity_sessions where token_hash = ${tokenHash} and audience = 'PUBLIC' for update`;
+      const revokedAt = clock();
       const rows = await sql<Array<{ id: string }>>`
         update identity_sessions set revoked_at = ${revokedAt}
         where audience = 'PUBLIC' and revoked_at is null and identity_id = ${identityId}

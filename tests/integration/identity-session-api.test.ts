@@ -3,6 +3,7 @@ import {
   iranianMobileContract,
 } from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
@@ -27,6 +28,80 @@ describe("identity session HTTP API with PostgreSQL", () => {
     apps.push(app);
     return app;
   }
+
+  it.each([
+    ["GET", "/v1/auth/session", "row", "idle"],
+    ["GET", "/v1/me/feeds/following", "row", "idle"],
+    ["DELETE", "/v1/auth/sessions", "identity", "idle"],
+    ["DELETE", "/v1/auth/sessions", "row", "idle"],
+    ["GET", "/v1/auth/session", "row", "absolute"],
+    ["DELETE", "/v1/auth/sessions", "identity", "absolute"],
+  ] as const)(
+    "rejects %s %s when %s lock waits past %s expiry",
+    async (method, url, lock, deadline) => {
+      const app = await startApp();
+      const server = app.getHttpAdapter().getInstance();
+      const challenge = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: challenge.json().challengeId, code: "111111" },
+      });
+      const cookie = String(verified.headers["set-cookie"]);
+      const token = cookie.match(/sevo_session=([^;]+)/)![1]!;
+      const hash = createHash("sha256").update(token).digest("hex");
+      const identityId = verified.json().actor.identityId;
+      const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 3 });
+      let release!: () => void;
+      let acquired!: () => void;
+      const held = new Promise<void>((resolve) => {
+        acquired = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        if (deadline === "idle") {
+          await sql`update identity_sessions set expires_at = clock_timestamp() + interval '3 seconds' where token_hash = ${hash}`;
+        } else {
+          await sql`update identity_sessions set created_at = clock_timestamp() - interval '90 days' + interval '3 seconds', expires_at = clock_timestamp() + interval '1 day' where token_hash = ${hash}`;
+        }
+        const holder = sql.begin(async (tx) => {
+          if (lock === "row")
+            await tx`select id from identity_sessions where token_hash = ${hash} for update`;
+          else
+            await tx`select pg_advisory_xact_lock(hashtextextended(${identityId}, 273))`;
+          acquired();
+          await gate;
+        });
+        await held;
+        const request = server.inject({ method, url, headers: { cookie } });
+        let blocked = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const rows = await sql<
+            Array<{ blocked: boolean }>
+          >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()) as blocked`;
+          if (rows[0]?.blocked) {
+            blocked = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(true);
+        await sql`select pg_sleep(greatest(0, extract(epoch from (select least(expires_at, created_at + interval '90 days') from identity_sessions where token_hash = ${hash}) - clock_timestamp()) + 0.1))`;
+        release();
+        await holder;
+        expect((await request).statusCode).toBe(401);
+      } finally {
+        release();
+        await sql.end();
+      }
+    },
+  );
 
   it("logs out all public sessions of the current identity", async () => {
     const app = await startApp();
