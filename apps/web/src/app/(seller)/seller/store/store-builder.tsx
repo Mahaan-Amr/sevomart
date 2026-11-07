@@ -271,7 +271,11 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
         setMessage("");
         return;
       }
-      setMessage("ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.");
+      setMessage(
+        error instanceof StoreDraftSaveError
+          ? error.message
+          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+      );
     } finally {
       setPending(false);
     }
@@ -386,13 +390,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     });
     const body: unknown = await response.json();
     if (!response.ok) {
-      setMessage(humanError());
+      setMessage(humanError(body));
       const fieldErrors = apiFieldErrors(body);
       setErrors(fieldErrors);
       if (section === "setup" && Object.keys(fieldErrors).length > 0) {
         setEditStep(hasIdentityErrors(fieldErrors) ? 0 : 1);
       }
-      throw new StoreDraftSaveError(humanError());
+      throw new StoreDraftSaveError(humanError(body));
     }
     const parsed = storeDraftContract.safeParse(body);
     if (!parsed.success) throw new Error("invalid draft response");
@@ -1411,7 +1415,7 @@ async function uploadMedia(
   const body: unknown = await response.json();
   const parsed = mediaReferenceContract.safeParse(body);
   if (!response.ok || !parsed.success)
-    throw new MediaUploadError(humanError(), mediaField(purpose));
+    throw new MediaUploadError(humanError(body), mediaField(purpose));
   return parsed.data;
 }
 
@@ -1429,7 +1433,14 @@ class MediaUploadError extends Error {
 }
 class StoreDraftSaveError extends Error {}
 
-function humanError() {
+function humanError(body: unknown) {
+  if (typeof body === "object" && body !== null && "code" in body) {
+    if (body.code === "STORE_REVISION_CONFLICT") {
+      return "فروشگاه تغییر کرده است. پیش از تازه‌کردن صفحه، تغییرات خود را نگه دارید؛ سپس صفحه را تازه کنید.";
+    }
+    if (body.code === "SLUG_CONFLICT")
+      return "این شناسه لینک قبلاً استفاده شده است؛ شناسه دیگری انتخاب کنید.";
+  }
   return "درخواست انجام نشد. دوباره تلاش کنید.";
 }
 
@@ -1445,7 +1456,7 @@ function apiFieldErrors(body: unknown): FieldErrors {
 
 function publicationError(body: unknown) {
   if (typeof body !== "object" || body === null || !("details" in body)) {
-    return humanError();
+    return humanError(body);
   }
   const details = body.details as { issues?: Array<{ field?: string }> };
   const labels: Record<string, string> = {
@@ -1465,5 +1476,5 @@ function publicationError(body: unknown) {
   ];
   return missing.length > 0
     ? `برای انتشار این بخش‌ها را کامل کنید: ${missing.join("، ")}.`
-    : humanError();
+    : humanError(body);
 }

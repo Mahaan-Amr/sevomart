@@ -620,4 +620,11 @@ test("application submission keeps server diagnostics private", async ({
     "درخواست انجام نشد. دوباره تلاش کنید.",
   );
   await expect(page.locator("main")).not.toContainText("secret-value");
+  await page.unroute("**/api/seller-applications/*/resubmission");
+  await page.route("**/api/seller-applications/*/resubmission", (route) =>
+    route.fulfill({ status: 409, json: { code: "APPLICATION_REVISION_CONFLICT" } }),
+  );
+  await page.getByRole("button", { name: "ثبت اطلاعات تکمیلی" }).click();
+  await expect(page.getByRole("alert")).toContainText("صفحه را تازه کنید");
+  await expect(field).toHaveValue("فروش حضوری");
 });

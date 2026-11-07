@@ -197,7 +197,7 @@ export function SellerApplicationJourney({
       );
       const body: unknown = await response.json();
       if (!response.ok) {
-        setMessage("درخواست انجام نشد. دوباره تلاش کنید.");
+        setMessage(humanError(body));
         return;
       }
       const withdrawn = sellerApplicationViewContract.parse(body);
@@ -291,7 +291,7 @@ export function SellerApplicationJourney({
       );
       const body: unknown = await response.json();
       if (!response.ok) {
-        setMessage("درخواست انجام نشد. دوباره تلاش کنید.");
+        setMessage(humanError(body));
         return;
       }
       const submitted = sellerApplicationViewContract.parse(body);
@@ -548,4 +548,16 @@ function persistentWithdrawalKey(storageKey: string): string {
   const created = crypto.randomUUID();
   localStorage.setItem(key, created);
   return created;
+}
+
+function humanError(body: unknown): string {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "code" in body &&
+    body.code === "APPLICATION_REVISION_CONFLICT"
+  ) {
+    return "درخواست تغییر کرده است. پیش از تازه‌کردن صفحه، تغییرات خود را نگه دارید؛ سپس صفحه را تازه کنید.";
+  }
+  return "درخواست انجام نشد. دوباره تلاش کنید.";
 }
