@@ -8,6 +8,8 @@ export default defineConfig({
     browserName: "chromium",
     ...(process.env.CI ? {} : { channel: "chrome" }),
     locale: "fa-IR",
+    screenshot: "only-on-failure",
+    trace: "retain-on-failure",
   },
   projects: [
     { name: "mobile-360", use: { viewport: { width: 360, height: 800 } } },
