@@ -16,6 +16,9 @@ import type { RuntimeEnvironment } from "@sevo/config";
 import {
   otpRequestContract,
   otpVerificationContract,
+  passwordEnrollmentContract,
+  passwordLoginContract,
+  passwordRecoveryContract,
 } from "@sevo/contracts/identity-access/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
@@ -27,7 +30,15 @@ import {
   OtpRequestRateLimitedError,
   IdentityOtpService,
 } from "./application/identity-otp.service";
-import { IDENTITY_OTP_SERVICE, RUNTIME_ENVIRONMENT } from "./identity-access.tokens";
+import {
+  IDENTITY_OTP_SERVICE,
+  RUNTIME_ENVIRONMENT,
+  SELLER_PASSWORD_SERVICE,
+} from "./identity-access.tokens";
+import {
+  PasswordBusyError,
+  SellerPasswordService,
+} from "./application/seller-password.service";
 
 @ApiExcludeController()
 @Controller("v1/auth")
@@ -35,7 +46,120 @@ export class IdentityAccessController {
   constructor(
     @Inject(IDENTITY_OTP_SERVICE) private readonly service: IdentityOtpService,
     @Inject(RUNTIME_ENVIRONMENT) private readonly environment: RuntimeEnvironment,
+    @Inject(SELLER_PASSWORD_SERVICE) private readonly passwords: SellerPasswordService,
   ) {}
+
+  @Post("password")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async enrollPassword(@Body() body: unknown, @Req() request: FastifyRequest) {
+    const parsed = passwordEnrollmentContract.safeParse(body);
+    if (!parsed.success)
+      throw validationError(request.id, "رمز باید بین ۱۲ تا ۱۲۸ نویسه باشد.", [
+        { field: "password", code: "INVALID_FORMAT" },
+      ]);
+    if (
+      !(await passwordAdmission(request.id, () =>
+        this.passwords.enroll(
+          readIdentitySessionToken(request) ?? "",
+          parsed.data.password,
+        ),
+      ))
+    ) {
+      throw new HttpException(
+        {
+          code: "UNAUTHORIZED",
+          message: "ساخت رمز انجام نشد. دوباره وارد شوید یا رمز را بازیابی کنید.",
+          correlationId: request.id,
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+  }
+
+  @Post("password/sessions")
+  @HttpCode(HttpStatus.OK)
+  async passwordSession(
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const parsed = passwordLoginContract.safeParse(body);
+    if (!parsed.success)
+      throw validationError(
+        request.id,
+        "شماره و رمز را بررسی کنید.",
+        invalidPasswordFields(parsed.error.issues),
+      );
+    const result = await passwordAdmission(request.id, () =>
+      this.passwords.login(parsed.data.mobile, parsed.data.password),
+    );
+    if (!result)
+      throw new HttpException(
+        {
+          code: "UNAUTHORIZED",
+          message: "شماره یا رمز درست نیست، یا تلاش‌ها زیاد شده است.",
+          correlationId: request.id,
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    const secure = this.environment.SEVO_RUNTIME_ENV === "production" ? "; Secure" : "";
+    void reply.header(
+      "Set-Cookie",
+      `sevo_session=${result.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000${secure}`,
+    );
+    return result.session;
+  }
+
+  @Post("password/recovery/requests")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async requestPasswordRecovery(@Body() body: unknown, @Req() request: FastifyRequest) {
+    const parsed = otpRequestContract.safeParse(body);
+    if (!parsed.success)
+      throw validationError(request.id, "شماره موبایل را بررسی کنید.", [
+        { field: "mobile", code: "INVALID_FORMAT" },
+      ]);
+    const result = await this.passwords.requestRecovery(parsed.data.mobile, request.id);
+    if (!result)
+      throw new HttpException(
+        {
+          code: "RATE_LIMITED",
+          message: "درخواست‌ها زیاد شده است؛ کمی بعد دوباره تلاش کنید.",
+          correlationId: request.id,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    return result;
+  }
+
+  @Post("password/recovery")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resetPassword(@Body() body: unknown, @Req() request: FastifyRequest) {
+    const parsed = passwordRecoveryContract.safeParse(body);
+    if (!parsed.success)
+      throw validationError(
+        request.id,
+        "کد و رمز تازه را بررسی کنید.",
+        invalidPasswordFields(parsed.error.issues),
+      );
+    if (
+      !(await passwordAdmission(request.id, () =>
+        this.passwords.reset(
+          parsed.data.challengeId,
+          parsed.data.code,
+          parsed.data.password,
+        ),
+      ))
+    ) {
+      throw new HttpException(
+        {
+          code: "UNAUTHORIZED",
+          message: "بازیابی انجام نشد. کد را بررسی کنید یا دوباره درخواست دهید.",
+          correlationId: request.id,
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+  }
 
   @Post("otp/requests")
   @HttpCode(HttpStatus.ACCEPTED)
@@ -167,6 +291,33 @@ export class IdentityAccessController {
       `sevo_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
     );
   }
+}
+
+async function passwordAdmission<T>(
+  correlationId: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof PasswordBusyError)
+      throw new HttpException(
+        {
+          code: "RATE_LIMITED",
+          message: "درخواست‌ها زیاد شده است؛ کمی بعد دوباره تلاش کنید.",
+          correlationId,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    throw error;
+  }
+}
+
+function invalidPasswordFields(issues: readonly { path: readonly PropertyKey[] }[]) {
+  const fields = new Set(
+    issues.map((issue) => (typeof issue.path[0] === "string" ? issue.path[0] : "form")),
+  );
+  return [...fields].map((field) => ({ field, code: "INVALID_FORMAT" as const }));
 }
 
 function validationError(
