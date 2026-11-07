@@ -23,7 +23,7 @@ jobs:
       - run: pnpm build:packages
       - run: pnpm exec playwright install --with-deps chromium
       - name: Render candidate visual baselines
-        run: pnpm test:e2e -- tests/e2e/store-builder.spec.ts tests/e2e/storefront-visual.spec.ts --retries=0
+        run: pnpm test:e2e -- tests/e2e/seller-application.spec.ts --retries=0 --grep "applicant and platform agent complete the real seller approval journey"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
