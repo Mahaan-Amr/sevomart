@@ -90,7 +90,10 @@ export function SellerApplicationJourney({
           return;
         }
         const body: unknown = await response.json();
-        if (!response.ok) throw new Error(humanError(body));
+        if (!response.ok) {
+          if (active) setLoadError(humanError(body));
+          return;
+        }
         const parsed = mySellerApplicationsContract.parse(body);
         const current = parsed.items[0];
         if (!active || !current) return;
@@ -126,13 +129,9 @@ export function SellerApplicationJourney({
           localStorage.removeItem(draftStorageKey);
         }
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (active) {
-          setLoadError(
-            error instanceof Error
-              ? error.message
-              : "پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.",
-          );
+          setLoadError("پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.");
         }
       })
       .finally(() => {
