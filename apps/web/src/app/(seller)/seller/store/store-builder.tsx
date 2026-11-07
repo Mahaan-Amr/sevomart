@@ -1436,7 +1436,7 @@ class StoreDraftSaveError extends Error {}
 function humanError(body: unknown) {
   if (typeof body === "object" && body !== null && "code" in body) {
     if (body.code === "STORE_REVISION_CONFLICT") {
-      return "فروشگاه تغییر کرده است. پیش از تازه‌کردن صفحه، تغییرات خود را نگه دارید؛ سپس صفحه را تازه کنید.";
+      return "فروشگاه تغییر کرده است. پیش از تازه‌کردن صفحه، متن تغییرات خود را جایی کپی کنید؛ سپس صفحه را تازه کنید.";
     }
     if (body.code === "SLUG_CONFLICT")
       return "این شناسه لینک قبلاً استفاده شده است؛ شناسه دیگری انتخاب کنید.";
