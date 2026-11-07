@@ -61,7 +61,17 @@ export function SellerHomeGuide() {
         <p role="alert">وضعیت راهنمای آغاز دریافت نشد. صفحه را دوباره بررسی کنید.</p>
       </div>
     );
-  if (!progress) return <p role="status">در حال بررسی مسیر آغاز…</p>;
+  if (!progress)
+    return (
+      <div className={styles.guide}>
+        {slug && (
+          <Link className={styles.secondary} href={`/s/${slug}`}>
+            پیش‌نمایش خریدار
+          </Link>
+        )}
+        <p role="status">در حال بررسی مسیر آغاز…</p>
+      </div>
+    );
   const { step } = progress;
   return (
     <section className={styles.guide} aria-labelledby="guide-title">
