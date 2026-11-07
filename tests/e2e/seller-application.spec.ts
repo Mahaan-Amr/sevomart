@@ -391,6 +391,20 @@ test("a legacy store draft loads in the existing form and saves with its revisio
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByLabel("سیاست مرجوعی").fill("قانون اصلاح‌شده مرجوعی فروشگاه");
   await page.getByRole("button", { name: "ادامه" }).click();
+  await page.route(
+    "**/api/store/seller/store/draft",
+    (route) =>
+      route.fulfill({
+        status: 500,
+        json: { message: "private diagnostic secret-value" },
+      }),
+    { times: 1 },
+  );
+  await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
+  await expect(page.locator("form").getByRole("alert")).toContainText(
+    "درخواست انجام نشد. دوباره تلاش کنید.",
+  );
+  await expect(page.locator("main")).not.toContainText("secret-value");
   await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).click();
 
   await expect(page.getByRole("heading", { name: "پیش‌نمایش فروشگاه" })).toBeVisible();
@@ -578,12 +592,32 @@ async function establishIdentitySession(context: BrowserContext) {
   }
 }
 
-test("application submission keeps server diagnostics private", async ({ context, page }) => {
+test("application submission keeps server diagnostics private", async ({
+  context,
+  page,
+}) => {
   await establishIdentitySession(context);
-  await page.route("**/api/seller-applications/mine", (route) => route.fulfill({ json: { items: [informationRequestApplication()], nextCursor: null } }));
-  await page.route("**/api/seller-applications/*/resubmission", (route) => route.fulfill({ status: 500, json: { message: "private diagnostic secret-value" } }));
+  await page.route("**/api/seller-applications/mine", (route) =>
+    route.fulfill({
+      json: { items: [informationRequestApplication()], nextCursor: null },
+    }),
+  );
+  await page.route("**/api/seller-applications/*/resubmission", (route) =>
+    route.fulfill({
+      status: 500,
+      json: { message: "private diagnostic secret-value" },
+    }),
+  );
   await page.goto("/seller/application");
+  const field = page.getByLabel("الان چطور می‌فروشید؟");
+  await field.fill("");
   await page.getByRole("button", { name: "ثبت اطلاعات تکمیلی" }).click();
-  await expect(page.getByRole("alert")).toContainText("درخواست انجام نشد. دوباره تلاش کنید.");
+  await expect(field).toHaveAccessibleDescription(/دست‌کم دو نویسه/);
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await field.fill("فروش حضوری");
+  await page.getByRole("button", { name: "ثبت اطلاعات تکمیلی" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "درخواست انجام نشد. دوباره تلاش کنید.",
+  );
   await expect(page.locator("main")).not.toContainText("secret-value");
 });

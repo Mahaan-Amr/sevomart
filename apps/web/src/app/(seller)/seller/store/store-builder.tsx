@@ -386,9 +386,9 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     });
     const body: unknown = await response.json();
     if (!response.ok) {
-      setMessage(humanError(body));
+      setMessage(humanError());
       setErrors(apiFieldErrors(body));
-      throw new StoreDraftSaveError(humanError(body));
+      throw new StoreDraftSaveError(humanError());
     }
     const parsed = storeDraftContract.safeParse(body);
     if (!parsed.success) throw new Error("invalid draft response");
@@ -544,7 +544,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
             <footer>ساخته‌شده با سوو · اطلاعات اعتماد همیشه نمایش داده می‌شود</footer>
           </article>
           <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
-          <p className={styles.message} role="status">
+          <p
+            className={styles.message}
+            role={message.startsWith("پیش‌نویس") ? "status" : "alert"}
+          >
             {message}
           </p>
           <button className={styles.primaryButton} onClick={publish} disabled={pending}>
@@ -599,6 +602,8 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <h2>معرفی فروشگاه</h2>
               <Field label="نام فروشگاه" error={errors.name}>
                 <input
+                  aria-invalid={Boolean(errors.name) || undefined}
+                  aria-describedby={errors.name ? "field-error-نام فروشگاه" : undefined}
                   value={form.name}
                   onChange={(e) => updateFormField("name", e.target.value)}
                 />
@@ -612,6 +617,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                   <span dir="ltr">/s/</span>
                   <input
                     dir="ltr"
+                    aria-invalid={Boolean(errors.slug) || undefined}
+                    aria-describedby={
+                      errors.slug ? "field-error-شناسه لینک" : undefined
+                    }
                     value={form.slug}
                     onChange={(e) => updateFormField("slug", e.target.value)}
                     onBlur={() => void checkSlug()}
@@ -620,6 +629,8 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               </Field>
               <Field label="معرفی کوتاه" error={errors.bio}>
                 <textarea
+                  aria-invalid={Boolean(errors.bio) || undefined}
+                  aria-describedby={errors.bio ? "field-error-معرفی کوتاه" : undefined}
                   value={form.bio}
                   onChange={(e) => updateFormField("bio", e.target.value)}
                 />
@@ -631,6 +642,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <h2>ارسال و مرجوعی</h2>
               <Field label="روش ارسال" error={errors.shipping}>
                 <select
+                  aria-invalid={Boolean(errors.shipping) || undefined}
+                  aria-describedby={
+                    errors.shipping ? "field-error-روش ارسال" : undefined
+                  }
                   value={form.shippingCode}
                   onChange={(e) => {
                     setErrors((current) => ({ ...current, shipping: undefined }));
@@ -665,6 +680,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               </Field>
               <Field label="سیاست مرجوعی" error={errors.returnPolicy}>
                 <textarea
+                  aria-invalid={Boolean(errors.returnPolicy) || undefined}
+                  aria-describedby={
+                    errors.returnPolicy ? "field-error-سیاست مرجوعی" : undefined
+                  }
                   value={form.returnPolicy}
                   onChange={(e) => updateFormField("returnPolicy", e.target.value)}
                 />
@@ -1251,7 +1270,11 @@ function Field({
       <span>{label}</span>
       {children}
       {hint ? <small>{hint}</small> : null}
-      {error ? <small className={styles.error}>{error}</small> : null}
+      {error ? (
+        <small id={`field-error-${label}`} className={styles.error}>
+          {error}
+        </small>
+      ) : null}
     </label>
   );
 }
@@ -1378,7 +1401,7 @@ async function uploadMedia(
   const body: unknown = await response.json();
   const parsed = mediaReferenceContract.safeParse(body);
   if (!response.ok || !parsed.success)
-    throw new MediaUploadError(humanError(body), mediaField(purpose));
+    throw new MediaUploadError(humanError(), mediaField(purpose));
   return parsed.data;
 }
 
@@ -1396,14 +1419,10 @@ class MediaUploadError extends Error {
 }
 class StoreDraftSaveError extends Error {}
 
-function humanError(body: unknown) {
-  return typeof body === "object" &&
-    body !== null &&
-    "message" in body &&
-    typeof body.message === "string"
-    ? body.message
-    : "درخواست انجام نشد. دوباره تلاش کنید.";
+function humanError() {
+  return "درخواست انجام نشد. دوباره تلاش کنید.";
 }
+
 function apiFieldErrors(body: unknown): FieldErrors {
   if (typeof body !== "object" || body === null || !("details" in body)) return {};
   const details = body.details as { issues?: Array<{ field?: string }> };
@@ -1416,7 +1435,7 @@ function apiFieldErrors(body: unknown): FieldErrors {
 
 function publicationError(body: unknown) {
   if (typeof body !== "object" || body === null || !("details" in body)) {
-    return humanError(body);
+    return humanError();
   }
   const details = body.details as { issues?: Array<{ field?: string }> };
   const labels: Record<string, string> = {
@@ -1436,5 +1455,5 @@ function publicationError(body: unknown) {
   ];
   return missing.length > 0
     ? `برای انتشار این بخش‌ها را کامل کنید: ${missing.join("، ")}.`
-    : humanError(body);
+    : humanError();
 }

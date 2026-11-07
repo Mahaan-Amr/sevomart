@@ -102,7 +102,30 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
       .getByText("شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد."),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/seller\/store\/setup/);
+  await expect(page.getByLabel("شناسه لینک")).toHaveAccessibleDescription(
+    /دست‌کم سه نویسه/,
+  );
+  await expect(page.getByLabel("شناسه لینک")).toHaveAttribute("aria-invalid", "true");
   await page.getByLabel("شناسه لینک").clear();
+  await page.route(
+    "**/api/store/seller/store/draft",
+    async (route) => {
+      if (route.request().method() === "PUT") {
+        await route.fulfill({
+          status: 500,
+          json: { message: "private diagnostic secret-value" },
+        });
+      } else {
+        await route.continue();
+      }
+    },
+    { times: 1 },
+  );
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.locator("form").getByRole("alert")).toContainText(
+    "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+  );
+  await expect(page.locator("main")).not.toContainText("secret-value");
   const draftSave = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/store/seller/store/draft") &&

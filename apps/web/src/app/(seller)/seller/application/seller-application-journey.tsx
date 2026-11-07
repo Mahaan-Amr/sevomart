@@ -197,7 +197,7 @@ export function SellerApplicationJourney({
       );
       const body: unknown = await response.json();
       if (!response.ok) {
-        setMessage(humanError(body));
+        setMessage("درخواست انجام نشد. دوباره تلاش کنید.");
         return;
       }
       const withdrawn = sellerApplicationViewContract.parse(body);
@@ -291,7 +291,7 @@ export function SellerApplicationJourney({
       );
       const body: unknown = await response.json();
       if (!response.ok) {
-        setMessage(humanError(body));
+        setMessage("درخواست انجام نشد. دوباره تلاش کنید.");
         return;
       }
       const submitted = sellerApplicationViewContract.parse(body);
@@ -331,10 +331,14 @@ export function SellerApplicationJourney({
               value={value}
               maxLength={field.maxLength}
               rows={4}
-              aria-describedby="application-field-help application-message"
-              onChange={(event) =>
-                setDraft({ ...draft, [field.key]: event.target.value })
+              aria-invalid={
+                message === "این بخش را با دست‌کم دو نویسه کامل کنید." || undefined
               }
+              aria-describedby="application-field-help application-message"
+              onChange={(event) => {
+                setDraft({ ...draft, [field.key]: event.target.value });
+                setMessage("");
+              }}
             />
           ) : (
             <input
@@ -343,10 +347,14 @@ export function SellerApplicationJourney({
               value={value}
               maxLength={field.maxLength}
               autoComplete={field.key === "applicantName" ? "name" : "off"}
-              aria-describedby="application-field-help application-message"
-              onChange={(event) =>
-                setDraft({ ...draft, [field.key]: event.target.value })
+              aria-invalid={
+                message === "این بخش را با دست‌کم دو نویسه کامل کنید." || undefined
               }
+              aria-describedby="application-field-help application-message"
+              onChange={(event) => {
+                setDraft({ ...draft, [field.key]: event.target.value });
+                setMessage("");
+              }}
             />
           )}
           <p
@@ -540,12 +548,4 @@ function persistentWithdrawalKey(storageKey: string): string {
   const created = crypto.randomUUID();
   localStorage.setItem(key, created);
   return created;
-}
-
-function humanError(body: unknown): string {
-  if (typeof body === "object" && body !== null && "message" in body) {
-    const message = (body as { message?: unknown }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return "درخواست انجام نشد. دوباره تلاش کنید.";
 }
