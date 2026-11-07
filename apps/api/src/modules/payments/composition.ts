@@ -60,12 +60,17 @@ export class PaymentsModule {
       resolveSellerStore: (identityId: string) => Promise<string | undefined>;
     },
   ): DynamicModule {
-    const devProvider =
-      !options.provider && environment.SEVO_RUNTIME_ENV !== "production"
-        ? new DevDirectPaymentProvider("sevo-local-dev-payment-fixture-secret")
-        : undefined;
-    const provider = options.provider ?? devProvider;
-    if (!provider) throw new Error("The selected payment provider is not configured");
+    // Store currently proves only TEST_VERIFIED destinations. Do not allow an
+    // injected provider to turn those fixtures into real payment attempts.
+    if (options.provider || environment.SEVO_RUNTIME_ENV === "production") {
+      throw new Error(
+        "Only test settlement destinations are supported; real payment is unavailable",
+      );
+    }
+    const devProvider = new DevDirectPaymentProvider(
+      "sevo-local-dev-payment-fixture-secret",
+    );
+    const provider = devProvider;
     const refundRepository = new PostgresDirectRefundRepository(
       environment.DATABASE_URL,
       options.inventory,
