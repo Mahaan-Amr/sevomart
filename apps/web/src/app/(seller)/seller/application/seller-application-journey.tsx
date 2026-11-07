@@ -91,7 +91,7 @@ export function SellerApplicationJourney({
         }
         const body: unknown = await response.json();
         if (!response.ok) {
-          if (active) setLoadError(humanError(body));
+          if (active) setLoadError("پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.");
           return;
         }
         const parsed = mySellerApplicationsContract.parse(body);
