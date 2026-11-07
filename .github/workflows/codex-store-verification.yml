@@ -23,7 +23,7 @@ jobs:
       - run: pnpm build:packages
       - run: pnpm exec playwright install --with-deps chromium
       - name: Render candidate visual baselines
-        run: pnpm test:e2e -- tests/e2e/store-builder.spec.ts --project=chromium-390x844 --workers=1 --retries=0 --grep 'seller builds, refreshes, previews and publishes a minimal store'
+        run: pnpm test:e2e -- tests/e2e/store-builder.spec.ts --project=chromium-390x844 --workers=1 --retries=0 --update-snapshots --grep 'seller builds, refreshes, previews and publishes a minimal store'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
