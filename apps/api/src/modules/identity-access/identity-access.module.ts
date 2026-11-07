@@ -1,3 +1,4 @@
+import { PlatformPasswordService } from "./application/platform-password.service";
 import { DynamicModule, Module } from "@nestjs/common";
 import type { RuntimeEnvironment } from "@sevo/config";
 import type { OtpCode } from "@sevo/contracts/identity-access/v1";
@@ -37,7 +38,10 @@ import {
 } from "./public";
 import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
-import { PlatformSessionSecurityController } from "./platform-session-security.controller";
+import {
+  PlatformSessionSecurityController,
+  PlatformPasswordSessionSecurityController,
+} from "./platform-session-security.controller";
 import {
   PlatformAgentAuthController,
   PlatformAgentAuthV2Controller,
@@ -86,11 +90,16 @@ export class IdentityAccessModule {
         PlatformAgentAuthController,
         PlatformAgentAuthV2Controller,
         PlatformSessionSecurityController,
+        PlatformPasswordSessionSecurityController,
         SellerApprovalRecoveryController,
         PlatformAccessController,
         SuperadminController,
       ],
       providers: [
+        {
+          provide: PlatformPasswordService,
+          useValue: new PlatformPasswordService(environment.DATABASE_URL),
+        },
         {
           provide: SUPERADMIN_SERVICE,
           useValue: new SuperadminService(environment.DATABASE_URL),

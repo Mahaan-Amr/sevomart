@@ -230,6 +230,10 @@ describe("OpenAPI identity and store compatibility", () => {
       "/v1/auth/password/sessions",
       "/v1/auth/password/recovery/requests",
       "/v1/auth/password/recovery",
+      "/v2/platform/auth/password/sessions",
+      "/v2/platform/auth/password/recovery-requests",
+      "/v2/platform/auth/password/recovery",
+      "/v2/platform/security/session-revocations",
     ]) {
       expect(document.paths[path].post).toBeDefined();
     }
@@ -243,7 +247,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "45f4e591cf4c03c33d9b195bca2260affb5c5e86c9cef92bb0eb9efd3f4d118b",
+      "5b29b106a2e42b36098fb202c8da7b4a9cde71e8352c3b3a177b229748803335",
     );
   });
 

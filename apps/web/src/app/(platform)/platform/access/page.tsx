@@ -31,6 +31,7 @@ export default async function PlatformAccessPage() {
       {access.session.isSuperadmin && (
         <p>
           <Link href="/platform/superadmins">مدیریت سوپرادمین‌ها</Link>
+          {" · "}<Link href="/platform/access/recovery">بازیابی دسترسی همکار</Link>
         </p>
       )}
       <PlatformAccessWorkspace

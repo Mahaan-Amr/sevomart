@@ -1,3 +1,5 @@
+import { randomBytes, scryptSync } from "node:crypto";
+import postgres from "postgres";
 import { expect, test } from "../helpers/release-playwright";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
@@ -14,7 +16,10 @@ test("platform agent establishes the separate session through the Web journey", 
   const mobile = iranianMobileContract.parse(
     releaseAgentTestMobiles[visualProjectIndex(testInfo.project.name) + 4],
   );
-  await establishPlatformAgentIdentity(mobile, ["SELLER_APPLICATION_REVIEW"]);
+  const identityId = await establishPlatformAgentIdentity(mobile, [
+    "SELLER_APPLICATION_REVIEW",
+  ]);
+  await seedPassword(identityId);
 
   await page.goto("/platform/login");
   await captureReleaseCheckpoint(page, testInfo, {
@@ -22,9 +27,8 @@ test("platform agent establishes the separate session through the Web journey", 
     name: "platform-login",
     sensitiveRegions: [],
   });
-  await page.getByLabel("شماره موبایل").fill(mobile);
-  await page.getByRole("button", { name: "دریافت کد" }).click();
-  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByLabel("نام کاربری، شماره موبایل یا ایمیل").fill(mobile);
+  await page.getByLabel("رمز عبور").fill("test platform password");
   await page.getByRole("button", { name: "ورود" }).click();
   await expect(page).toHaveURL(/\/platform\/seller-applications$/);
 });
@@ -35,19 +39,38 @@ test("platform agent resumes the protected responsibility requested before login
   const mobile = iranianMobileContract.parse(
     releaseAgentTestMobiles[visualProjectIndex(testInfo.project.name) + 8],
   );
-  await establishPlatformAgentIdentity(mobile, [
+  const identityId = await establishPlatformAgentIdentity(mobile, [
     "SELLER_APPLICATION_REVIEW",
     "PAYMENT_REVIEW",
   ]);
+  await seedPassword(identityId);
 
   await page.goto("/platform/payment-reviews");
   await expect(page).toHaveURL(
     /\/platform\/login\?returnTo=%2Fplatform%2Fpayment-reviews$/,
   );
-  await page.getByLabel("شماره موبایل").fill(mobile);
-  await page.getByRole("button", { name: "دریافت کد" }).click();
-  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByLabel("نام کاربری، شماره موبایل یا ایمیل").fill(mobile);
+  await page.getByLabel("رمز عبور").fill("test platform password");
   await page.getByRole("button", { name: "ورود" }).click();
 
   await expect(page).toHaveURL(/\/platform\/payment-reviews$/);
 });
+
+async function seedPassword(identityId: string) {
+  const sql = postgres(
+    process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo",
+    { max: 1 },
+  );
+  const salt = randomBytes(16).toString("base64url");
+  const key = scryptSync("test platform password", salt, 64, {
+    N: 16384,
+    r: 8,
+    p: 5,
+    maxmem: 64 * 1024 * 1024,
+  }).toString("base64url");
+  try {
+    await sql`insert into identity_platform_passwords (identity_id, username, password_hash) values (${identityId}, ${`test${identityId.replaceAll("-", "")}`}, ${`scrypt$${salt}$${key}`})`;
+  } finally {
+    await sql.end();
+  }
+}

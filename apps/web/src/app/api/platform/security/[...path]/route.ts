@@ -9,7 +9,7 @@ async function proxy(
   const parts = (await context.params).path;
   let upstream: string | undefined;
   if (parts.join("/") === "session-revocations" && request.method === "POST")
-    upstream = "/v1/platform/security/session-revocations";
+    upstream = "/v2/platform/security/session-revocations";
   else if (
     ["enrollment", "enrollment/confirmation", "proofs", "recoveries"].includes(
       parts.join("/"),
