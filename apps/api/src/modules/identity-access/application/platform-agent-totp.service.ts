@@ -124,6 +124,8 @@ export class PlatformAgentTotpService {
         values (${session.identityId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, 'PENDING', clock_timestamp() + interval '10 minutes')`;
       await sql`update identity_totp_bootstrap_authorizations set consumed_at = clock_timestamp() where identity_id = ${session.identityId}`;
       await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'ENROLLMENT_STARTED', 'SUCCEEDED', ${correlationId})`;
+      if (!this.fresh(session) || auth[0].expiresAt.getTime() <= Date.now())
+        throw new TotpDeniedError();
       return { secret: base32(secret) };
     });
   }
@@ -167,6 +169,8 @@ export class PlatformAgentTotpService {
       }
       await sql`update identity_totp_factors set status = 'ACTIVE', activated_at = clock_timestamp(), last_counter = ${counter}, failed_attempts = 0 where identity_id = ${session.identityId}`;
       await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'ENROLLMENT_CONFIRMED', 'SUCCEEDED', ${correlationId})`;
+      if (!this.fresh(session) || factor.expiresAt.getTime() <= Date.now())
+        throw new TotpDeniedError();
       return true;
     });
     if (!result) throw new TotpDeniedError();
@@ -254,6 +258,8 @@ export class PlatformAgentTotpService {
       await sql`insert into identity_totp_action_proofs (id, token_hash, actor_identity_id, session_id, action, target_identity_id, payload_hash, created_at, expires_at, permission_grant_id, factor_generation_id)
         values (${randomUUID()}, ${createHash("sha256").update(proof).digest("hex")}, ${session.identityId}, ${session.id}, ${input.action}, ${input.targetIdentityId}, ${hashTotpAction(input)}, ${new Date(now)}, ${expiresAt}, ${permission[0]!.id}, ${factor.generationId})`;
       await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'PROOF_CREATED', 'SUCCEEDED', ${correlationId})`;
+      if (!this.fresh(session) || expiresAt.getTime() <= Date.now())
+        throw new TotpDeniedError();
       return { proof, expiresAt: expiresAt.toISOString() };
     });
     if (!result) throw new TotpDeniedError();
@@ -325,6 +331,8 @@ export class PlatformAgentTotpService {
       await sql`update identity_totp_action_proofs set consumed_at = ${now} where id = ${proof.id}`;
       await sql`insert into identity_session_security_audit (id, actor_identity_id, target_identity_id, action, incident_id, reason, revoked_count, outcome, correlation_id, occurred_at)
         values (${randomUUID()}, ${session.identityId}, ${input.targetIdentityId}, 'REVOKE_PUBLIC_SESSIONS', ${input.incidentId}, ${input.reason}, ${revoked.length}, 'SUCCEEDED', ${correlationId}, ${now})`;
+      if (!this.fresh(session) || proof.expiresAt.getTime() <= Date.now())
+        throw new TotpDeniedError();
       return true;
     });
     if (!result) throw new TotpDeniedError();
@@ -347,6 +355,7 @@ export class PlatformAgentTotpService {
       const id = randomUUID();
       await sql`insert into identity_totp_recoveries (id, requester_identity_id, incident_id, reason, status, expires_at) values (${id}, ${session.identityId}, ${input.incidentId}, ${input.reason}, 'PENDING', clock_timestamp() + interval '1 hour')`;
       await sql`insert into identity_totp_recovery_audit (id, recovery_id, actor_identity_id, requester_identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${id}, ${session.identityId}, ${session.identityId}, 'REQUESTED', 'SUCCEEDED', ${correlationId})`;
+      if (!this.fresh(session)) throw new TotpDeniedError();
       return { recoveryId: id };
     });
   }
@@ -478,6 +487,12 @@ export class PlatformAgentTotpService {
       if (prior.length === 1)
         await sql`update identity_totp_recoveries set status = 'APPROVED' where id = ${recoveryId}`;
       await sql`insert into identity_totp_recovery_audit (id, recovery_id, actor_identity_id, requester_identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${recoveryId}, ${session.identityId}, ${recovery.requesterId}, 'APPROVED', 'SUCCEEDED', ${correlationId})`;
+      if (
+        !this.fresh(session) ||
+        proof.expiresAt.getTime() <= Date.now() ||
+        recovery.expiresAt.getTime() <= Date.now()
+      )
+        throw new TotpDeniedError();
       return true;
     });
     if (!result) throw new TotpDeniedError();
@@ -524,6 +539,8 @@ export class PlatformAgentTotpService {
       await sql`insert into identity_totp_recovery_enrollment (recovery_id, session_id, key_id, ciphertext, nonce, tag, expires_at) values (${recoveryId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, clock_timestamp() + interval '10 minutes') on conflict (recovery_id) do update set session_id = excluded.session_id, key_id = excluded.key_id, ciphertext = excluded.ciphertext, nonce = excluded.nonce, tag = excluded.tag, expires_at = excluded.expires_at`;
       await sql`update identity_totp_recoveries set status = 'ENROLLING' where id = ${recoveryId}`;
       await sql`insert into identity_totp_recovery_audit (id, recovery_id, actor_identity_id, requester_identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${recoveryId}, ${session.identityId}, ${session.identityId}, 'ENROLLMENT_STARTED', 'SUCCEEDED', ${correlationId})`;
+      if (!this.fresh(session) || recovery.expiresAt.getTime() <= Date.now())
+        throw new TotpDeniedError();
       return { secret: base32(secret) };
     });
   }
@@ -588,6 +605,12 @@ export class PlatformAgentTotpService {
       await sql`delete from identity_totp_recovery_enrollment where recovery_id = ${recoveryId}`;
       await sql`update identity_totp_recoveries set status = 'COMPLETED' where id = ${recoveryId}`;
       await sql`insert into identity_totp_recovery_audit (id, recovery_id, actor_identity_id, requester_identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${recoveryId}, ${session.identityId}, ${session.identityId}, 'CONFIRMED', 'SUCCEEDED', ${correlationId})`;
+      if (
+        !this.fresh(session) ||
+        recovery.expiresAt.getTime() <= Date.now() ||
+        factor.expiresAt.getTime() <= Date.now()
+      )
+        throw new TotpDeniedError();
       return true;
     });
     if (!result) throw new TotpDeniedError();
