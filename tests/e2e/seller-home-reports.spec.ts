@@ -190,20 +190,7 @@ test("seller acts from the operational home and reads a private basic report", a
     for (const width of [180, 384]) {
       await page.setViewportSize({ width, height: viewport.height });
       await page.evaluate(() => window.scrollTo(0, 0));
-      const geometry = await page.evaluate(() => ({
-        width: innerWidth,
-        scrollWidth: document.documentElement.scrollWidth,
-        scrollX,
-        elements: [...document.querySelectorAll("body *")]
-          .map((el) => ({
-            tag: el.tagName,
-            cls: el.className,
-            left: el.getBoundingClientRect().left,
-            right: el.getBoundingClientRect().right,
-          }))
-          .filter((el) => el.left < -1 || el.right > innerWidth + 1),
-      }));
-      expect(geometry.scrollWidth, JSON.stringify(geometry)).toBeLessThanOrEqual(width);
+      await page.waitForFunction(() => matchMedia("(max-width: 520px)").matches);
       await assertNoHorizontalOverflow(page);
     }
     await page.setViewportSize(viewport);
