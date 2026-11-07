@@ -23,3 +23,37 @@ jobs:
       - run: pnpm build:packages
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e -- tests/e2e/buyer-feeds.spec.ts --project=chromium-360x800 --retries=0
+  development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test --config codex-feed-dev.config.ts tests/e2e/buyer-feeds.spec.ts --grep 'discovery and following keep independent'
+  following:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e -- tests/e2e/store-following.spec.ts --project=chromium-1440x900 --retries=0 --grep 'guest cancel preserves'
