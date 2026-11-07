@@ -90,6 +90,20 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   const [slugStatus, setSlugStatus] = useState("");
   const [slugUnavailable, setSlugUnavailable] = useState(false);
   const slugCheckSequence = useRef(0);
+  const feedbackRef = useRef<HTMLParagraphElement>(null);
+  const focusInvalidField = useRef(false);
+  const [feedbackFocusRequest, setFeedbackFocusRequest] = useState(0);
+
+  useEffect(() => {
+    if (feedbackFocusRequest === 0) return;
+    const field = focusInvalidField.current
+      ? feedbackRef.current
+          ?.closest("form")
+          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+      : null;
+    (field ?? feedbackRef.current)?.focus();
+    focusInvalidField.current = false;
+  }, [feedbackFocusRequest]);
 
   useEffect(() => {
     void loadDraft();
@@ -198,11 +212,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     }
     setPending(true);
     setMessage("");
+    let draftSaved = false;
     try {
       const media = await resolveDraftMedia();
       const input = buildDraftInput(form, media, true);
       const { logoMediaId, coverMediaId } = media;
       await persistDraft(input, logoMediaId, coverMediaId);
+      draftSaved = true;
       const previewResponse = await fetch("/api/store/seller/store/preview", {
         cache: "no-store",
       });
@@ -217,13 +233,19 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     } catch (error) {
       if (error instanceof MediaUploadError) {
         setErrors((current) => ({ ...current, [error.field]: error.message }));
-        setMessage("");
+        setEditStep(2);
+        setFeedbackFocusRequest((current) => current + 1);
+        setMessage(
+          `تصویر ${error.field === "logo" ? "لوگو" : "روی جلد"} را بررسی کنید.`,
+        );
         return;
       }
       setMessage(
-        error instanceof StoreDraftSaveError
-          ? error.message
-          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+        draftSaved
+          ? "پیش‌نویس ذخیره شد، اما پیش‌نمایش آماده نشد. دوباره تلاش کنید."
+          : error instanceof StoreDraftSaveError
+            ? error.message
+            : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
       );
     } finally {
       setPending(false);
@@ -268,10 +290,18 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     } catch (error) {
       if (error instanceof MediaUploadError) {
         setErrors((current) => ({ ...current, [error.field]: error.message }));
-        setMessage("");
+        setEditStep(2);
+        setFeedbackFocusRequest((current) => current + 1);
+        setMessage(
+          `تصویر ${error.field === "logo" ? "لوگو" : "روی جلد"} را بررسی کنید.`,
+        );
         return;
       }
-      setMessage("ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.");
+      setMessage(
+        error instanceof StoreDraftSaveError
+          ? error.message
+          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+      );
     } finally {
       setPending(false);
     }
@@ -387,7 +417,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     const body: unknown = await response.json();
     if (!response.ok) {
       setMessage(humanError(body));
-      setErrors(apiFieldErrors(body));
+      const fieldErrors = apiFieldErrors(body);
+      setErrors(fieldErrors);
+      if (section === "setup" && Object.keys(fieldErrors).length > 0) {
+        setEditStep(hasIdentityErrors(fieldErrors) ? 0 : 1);
+        focusInvalidField.current = true;
+        setFeedbackFocusRequest((current) => current + 1);
+      }
       throw new StoreDraftSaveError(humanError(body));
     }
     const parsed = storeDraftContract.safeParse(body);
@@ -544,7 +580,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
             <footer>ساخته‌شده با سوو · اطلاعات اعتماد همیشه نمایش داده می‌شود</footer>
           </article>
           <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
-          <p className={styles.message} role="status">
+          <p
+            className={styles.message}
+            role={message.startsWith("پیش‌نویس") ? "status" : "alert"}
+          >
             {message}
           </p>
           <button className={styles.primaryButton} onClick={publish} disabled={pending}>
@@ -599,6 +638,8 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <h2>معرفی فروشگاه</h2>
               <Field label="نام فروشگاه" error={errors.name}>
                 <input
+                  aria-invalid={Boolean(errors.name) || undefined}
+                  aria-describedby={errors.name ? "field-error-نام-فروشگاه" : undefined}
                   value={form.name}
                   onChange={(e) => updateFormField("name", e.target.value)}
                 />
@@ -612,6 +653,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                   <span dir="ltr">/s/</span>
                   <input
                     dir="ltr"
+                    aria-invalid={Boolean(errors.slug) || undefined}
+                    aria-describedby={
+                      errors.slug ? "field-error-شناسه-لینک" : undefined
+                    }
                     value={form.slug}
                     onChange={(e) => updateFormField("slug", e.target.value)}
                     onBlur={() => void checkSlug()}
@@ -620,6 +665,8 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               </Field>
               <Field label="معرفی کوتاه" error={errors.bio}>
                 <textarea
+                  aria-invalid={Boolean(errors.bio) || undefined}
+                  aria-describedby={errors.bio ? "field-error-معرفی-کوتاه" : undefined}
                   value={form.bio}
                   onChange={(e) => updateFormField("bio", e.target.value)}
                 />
@@ -631,6 +678,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <h2>ارسال و مرجوعی</h2>
               <Field label="روش ارسال" error={errors.shipping}>
                 <select
+                  aria-invalid={Boolean(errors.shipping) || undefined}
+                  aria-describedby={
+                    errors.shipping ? "field-error-روش-ارسال" : undefined
+                  }
                   value={form.shippingCode}
                   onChange={(e) => {
                     setErrors((current) => ({ ...current, shipping: undefined }));
@@ -665,6 +716,10 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               </Field>
               <Field label="سیاست مرجوعی" error={errors.returnPolicy}>
                 <textarea
+                  aria-invalid={Boolean(errors.returnPolicy) || undefined}
+                  aria-describedby={
+                    errors.returnPolicy ? "field-error-سیاست-مرجوعی" : undefined
+                  }
                   value={form.returnPolicy}
                   onChange={(e) => updateFormField("returnPolicy", e.target.value)}
                 />
@@ -734,6 +789,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <Field label="لوگو" error={errors.logo}>
                 <FilePicker
                   label="لوگو"
+                  error={errors.logo}
                   file={logo}
                   onChange={(file) => {
                     setLogo(file);
@@ -744,6 +800,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <Field label="تصویر روی جلد" error={errors.cover}>
                 <FilePicker
                   label="تصویر روی جلد"
+                  error={errors.cover}
                   file={cover}
                   onChange={(file) => {
                     setCover(file);
@@ -753,7 +810,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               </Field>
             </>
           ) : null}
-          <p className={styles.message} role="alert" aria-live="polite">
+          <p
+            ref={feedbackRef}
+            tabIndex={-1}
+            className={styles.message}
+            role="alert"
+            aria-live="polite"
+          >
             {message}
           </p>
           {editStep < 2 ? (
@@ -1211,10 +1274,12 @@ function buildDraftInput(
 
 function FilePicker({
   label,
+  error,
   file,
   onChange,
 }: {
   label: string;
+  error?: string;
   file?: File;
   onChange: (file?: File) => void;
 }) {
@@ -1224,6 +1289,10 @@ function FilePicker({
         className={styles.filePickerInput}
         type="file"
         aria-label={label}
+        aria-invalid={Boolean(error) || undefined}
+        aria-describedby={
+          error ? `field-error-${label.replace(/\s/g, "-")}` : undefined
+        }
         accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
         onChange={(event) => onChange(event.target.files?.[0])}
       />
@@ -1251,7 +1320,11 @@ function Field({
       <span>{label}</span>
       {children}
       {hint ? <small>{hint}</small> : null}
-      {error ? <small className={styles.error}>{error}</small> : null}
+      {error ? (
+        <small id={`field-error-${label.replace(/\s/g, "-")}`} className={styles.error}>
+          {error}
+        </small>
+      ) : null}
     </label>
   );
 }
@@ -1397,14 +1470,25 @@ class MediaUploadError extends Error {
 class StoreDraftSaveError extends Error {}
 
 function humanError(body: unknown) {
-  return typeof body === "object" &&
-    body !== null &&
-    "message" in body &&
-    typeof body.message === "string"
-    ? body.message
-    : "درخواست انجام نشد. دوباره تلاش کنید.";
+  if (typeof body === "object" && body !== null && "code" in body) {
+    if (body.code === "STORE_REVISION_CONFLICT") {
+      return "فروشگاه تغییر کرده است. پیش از تازه‌کردن صفحه، متن تغییرات خود را جایی کپی کنید؛ سپس صفحه را تازه کنید.";
+    }
+    if (body.code === "SLUG_CONFLICT")
+      return "این شناسه لینک قبلاً استفاده شده است؛ شناسه دیگری انتخاب کنید.";
+  }
+  return "درخواست انجام نشد. دوباره تلاش کنید.";
 }
+
 function apiFieldErrors(body: unknown): FieldErrors {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "code" in body &&
+    body.code === "SLUG_CONFLICT"
+  ) {
+    return { slug: "این شناسه لینک قبلاً استفاده شده است؛ شناسه دیگری انتخاب کنید." };
+  }
   if (typeof body !== "object" || body === null || !("details" in body)) return {};
   const details = body.details as { issues?: Array<{ field?: string }> };
   const result: FieldErrors = {};
