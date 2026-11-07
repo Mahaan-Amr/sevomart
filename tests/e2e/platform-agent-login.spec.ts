@@ -27,7 +27,11 @@ test("platform agent establishes the separate session through the Web journey", 
     name: "platform-login",
     sensitiveRegions: [],
   });
-  await page.getByLabel("نام کاربری، شماره موبایل یا ایمیل").fill(mobile);
+  await page
+    .getByLabel("نام کاربری، شماره موبایل یا ایمیل")
+    .fill(
+      mobile.replace(/\d/g, (digit) => String.fromCharCode(0x06f0 + Number(digit))),
+    );
   await page.getByLabel("رمز عبور").fill("test platform password");
   await page.getByRole("button", { name: "ورود" }).click();
   await expect(page).toHaveURL(/\/platform\/seller-applications$/);

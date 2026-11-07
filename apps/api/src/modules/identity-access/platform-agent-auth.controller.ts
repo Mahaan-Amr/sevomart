@@ -7,6 +7,7 @@ import {
   PlatformPasswordBusyError,
   PlatformPasswordSessionExpiredError,
   PlatformPasswordService,
+  normalizePlatformDigits,
 } from "./application/platform-password.service";
 import {
   Body,
@@ -325,7 +326,14 @@ export class PlatformAgentAuthV2Controller {
   @Post("password/recovery")
   @HttpCode(HttpStatus.NO_CONTENT)
   async redeemPasswordRecovery(@Body() body: unknown, @Req() request: FastifyRequest) {
-    const parsed = platformPasswordRecoveryContract.safeParse(body);
+    const candidate =
+      body &&
+      typeof body === "object" &&
+      "code" in body &&
+      typeof body.code === "string"
+        ? { ...body, code: normalizePlatformDigits(body.code) }
+        : body;
+    const parsed = platformPasswordRecoveryContract.safeParse(candidate);
     if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
     const input = parsed.data;
     try {

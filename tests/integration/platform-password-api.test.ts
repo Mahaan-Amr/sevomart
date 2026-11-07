@@ -31,6 +31,15 @@ describe("platform password login API", () => {
         payload: { identifier: "unknown@example.test", password: "invalid password" },
       });
     expect(response.statusCode).toBe(401);
+    const recovery = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/recovery",
+        payload: { code: "۰".repeat(43), password: "new secure password" },
+      });
+    expect(recovery.statusCode).toBe(401);
   });
   it("lets an authorized colleague sign in by username, mobile, or email", async () => {
     const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
@@ -50,7 +59,12 @@ describe("platform password login API", () => {
       await sql`insert into identity_platform_passwords (identity_id, username, email, password_hash) values (${identity}, 'test.colleague', 'colleague@example.test', ${`scrypt$${salt}$${key}`})`;
       const app = await createApiApp(apiTestEnvironment);
       apps.push(app);
-      for (const identifier of ["test.colleague", mobile, "COLLEAGUE@example.test"]) {
+      for (const identifier of [
+        "test.colleague",
+        mobile,
+        "۰۹۱۱۱۱۱۹۹۹۱",
+        "COLLEAGUE@example.test",
+      ]) {
         const result = await app
           .getHttpAdapter()
           .getInstance()
@@ -120,12 +134,16 @@ describe("platform password login API", () => {
       const app = await createApiApp(apiTestEnvironment);
       apps.push(app);
       const server = app.getHttpAdapter().getInstance();
-      const request = await server.inject({
-        method: "POST",
-        url: "/v2/platform/auth/password/recovery-requests",
-        headers: { cookie: `sevo_platform_session=${token}` },
-        payload: { identityId: colleague, reason: "درخواست بازیابی دسترسی همکار" },
-      });
+      const issue = () =>
+        server.inject({
+          method: "POST",
+          url: "/v2/platform/auth/password/recovery-requests",
+          headers: { cookie: `sevo_platform_session=${token}` },
+          payload: { identityId: colleague, reason: "درخواست بازیابی دسترسی همکار" },
+        });
+      let request = await issue();
+      for (let tries = 0; tries < 10 && !/[0-9]/.test(request.json().code); tries++)
+        request = await issue();
       expect(request.statusCode).toBe(201);
       expect(request.headers["cache-control"]).toBe("no-store");
       const code = request.json().code;
@@ -133,7 +151,11 @@ describe("platform password login API", () => {
       const [stored] =
         await sql`select token_hash from identity_platform_password_recoveries where identity_id = ${colleague}`;
       expect(stored?.token_hash).not.toBe(code);
-      const payload = { code, password: "new valid secure password" };
+      expect(code).toMatch(/[0-9]/);
+      const localizedCode = code.replace(/[0-9]/g, (digit: string) =>
+        String.fromCharCode(0x06f0 + Number(digit)),
+      );
+      const payload = { code: localizedCode, password: "new valid secure password" };
       const redemptions = await Promise.all(
         Array.from({ length: 2 }, () =>
           server.inject({
@@ -503,7 +525,7 @@ describe("platform password login API", () => {
           method: "POST",
           url: "/v2/platform/auth/password/sessions",
           payload: {
-            identifier: [username, email, mobile][i % 3],
+            identifier: [username, email, mobile, "۰۹۱۱۱۱۱۹۹۹۲", "٠٩١١١١١٩٩٩٢"][i % 5],
             password: "wrong secure password",
           },
         });

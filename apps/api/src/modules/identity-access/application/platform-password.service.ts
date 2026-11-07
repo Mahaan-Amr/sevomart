@@ -7,6 +7,10 @@ import {
 } from "node:crypto";
 import postgres from "postgres";
 
+export const normalizePlatformDigits = (value: string) =>
+  value.replace(/[۰-۹٠-٩]/g, (digit) =>
+    String(digit.charCodeAt(0) - (digit >= "۰" ? 0x06f0 : 0x0660)),
+  );
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const dummy = `scrypt$${Buffer.alloc(16).toString("base64url")}$${Buffer.alloc(64).toString("base64url")}`;
 async function encodePassword(password: string) {
@@ -45,7 +49,9 @@ export class PlatformPasswordService {
     this.#sql = postgres(databaseUrl, { max: 5 });
   }
   async login(rawIdentifier: string, password: string) {
-    const identifier = rawIdentifier.trim().toLowerCase();
+    const normalized = rawIdentifier.trim().toLowerCase();
+    const digits = normalizePlatformDigits(normalized);
+    const identifier = /^09\d{9}$/.test(digits) ? digits : normalized;
     const started = Date.now();
     try {
       const result = await this.#sql.begin(async (sql) => {
