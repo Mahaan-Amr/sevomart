@@ -989,6 +989,49 @@ describe("platform seller application review API with PostgreSQL", () => {
       await lockDb.end();
     }
     vi.mocked(Date.now).mockReturnValue(instant + 30000);
+    const rowLockDb = postgres(environment.DATABASE_URL, { max: 3 });
+    let releaseRow!: () => void;
+    let acquiredRow!: () => void;
+    const rowHeld = new Promise<void>((resolve) => {
+      acquiredRow = resolve;
+    });
+    const rowGate = new Promise<void>((resolve) => {
+      releaseRow = resolve;
+    });
+    try {
+      const holder = rowLockDb.begin(async (tx) => {
+        await tx`select id from identity_sessions where identity_id = ${secondIdentityId} and audience = 'PUBLIC' and revoked_at is null for update`;
+        acquiredRow();
+        await rowGate;
+      });
+      await rowHeld;
+      const waiting = server.inject({
+        method: "POST",
+        url: "/v1/platform/security/session-revocations",
+        headers,
+        payload: action,
+      });
+      let blocked = false;
+      for (let i = 0; i < 100; i++) {
+        const rows = await rowLockDb<
+          { blocked: boolean }[]
+        >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()) as blocked`;
+        if (rows[0]?.blocked) {
+          blocked = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(true);
+      vi.mocked(Date.now).mockReturnValue(instant + 301000);
+      releaseRow();
+      await holder;
+      expect((await waiting).statusCode).toBe(403);
+    } finally {
+      releaseRow();
+      await rowLockDb.end();
+    }
+    vi.mocked(Date.now).mockReturnValue(instant + 30000);
     const revoked = await server.inject({
       method: "POST",
       url: "/v1/platform/security/session-revocations",
@@ -1109,7 +1152,7 @@ describe("platform seller application review API with PostgreSQL", () => {
     }
     const firstHeaders = await platformLogin("09123456788");
     const secondHeaders = await platformLogin("09123456787");
-    const requesterHeaders = await platformLogin("09123456786");
+    let requesterHeaders = await platformLogin("09123456786");
     const firstSecret = await enroll(firstHeaders);
     const secondSecret = await enroll(secondHeaders);
     const secondKey = Buffer.alloc(32, 10).toString("base64");
@@ -1198,7 +1241,62 @@ describe("platform seller application review API with PostgreSQL", () => {
       headers: requesterHeaders,
     });
     expect(replacement.statusCode).toBe(201);
-    const newSecret = replacement.json<{ secret: string }>().secret;
+    const firstReplacementSecret = replacement.json<{ secret: string }>().secret;
+    const firstWrong =
+      testTotp(firstReplacementSecret) === "000000" ? "000001" : "000000";
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const denied = await server.inject({
+        method: "POST",
+        url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+        headers: requesterHeaders,
+        payload: { code: firstWrong },
+      });
+      expect(denied.statusCode).toBe(403);
+    }
+    const previousHeaders = requesterHeaders;
+    requesterHeaders = await platformLogin("09123456786");
+    const resumed = await server.inject({
+      method: "POST",
+      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/enrollment`,
+      headers: requesterHeaders,
+    });
+    expect(resumed.statusCode).toBe(201);
+    const newSecret = resumed.json<{ secret: string }>().secret;
+    expect(newSecret).not.toBe(firstReplacementSecret);
+    const newWrong = testTotp(newSecret) === "000000" ? "000001" : "000000";
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+          headers: requesterHeaders,
+          payload: { code: newWrong },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+          headers: requesterHeaders,
+          payload: { code: testTotp(newSecret) },
+        })
+      ).statusCode,
+    ).toBe(403);
+    const unblock = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await unblock`update identity_totp_recovery_enrollment set blocked_until = clock_timestamp() - interval '1 second' where recovery_id = ${recoveryId}`;
+    } finally {
+      await unblock.end();
+    }
+    const outdated = await server.inject({
+      method: "POST",
+      url: `/v1/platform/auth/totp/recoveries/${recoveryId}/confirmation`,
+      headers: previousHeaders,
+      payload: { code: testTotp(firstReplacementSecret) },
+    });
+    expect(outdated.statusCode).toBe(403);
     const pendingOtp = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/otp/requests",

@@ -83,7 +83,11 @@ test("real agents enroll, approve recovery, and revoke sessions across responsiv
       await expect(agent.page.locator("html")).toHaveAttribute("dir", "rtl");
       await agent.page.getByRole("button", { name: "شروع ثبت برنامه" }).click();
       const secret = await agent.page.locator("code").innerText();
-      await agent.page.getByLabel("کد برنامه تأیید").fill(totp(secret));
+      const asciiCode = totp(secret);
+      await agent.page
+        .getByLabel("کد برنامه تأیید")
+        .fill(asciiCode.replace(/[0-9]/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[Number(digit)]!));
+      await expect(agent.page.getByLabel("کد برنامه تأیید")).toHaveValue(asciiCode);
       await agent.page.getByRole("button", { name: "تأیید و فعال‌کردن" }).click();
       await expect(agent.page.getByRole("status")).toContainText(
         "برنامه تأیید فعال شد",

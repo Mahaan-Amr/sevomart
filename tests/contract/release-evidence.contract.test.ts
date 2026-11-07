@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
+const candidateMigration = "20261107131000__identity-access__totp-factor-generation";
+
 const manifest = JSON.parse(
   readFileSync("ops/qa/release-evidence-manifest.v1.json", "utf8"),
 );
@@ -56,7 +58,7 @@ describe("release evidence v1 contract", () => {
         "--sha",
         currentHead(),
         "--migration",
-        "20260927160000__orders__purchase-groups",
+        candidateMigration,
         "--seed-version",
         "2",
         "--health-api",
@@ -79,6 +81,7 @@ describe("release evidence v1 contract", () => {
         contractVersion: 1,
         status: "PENDING",
         candidateRuns: 2,
+        candidate: { migration: candidateMigration },
       });
     } finally {
       rmSync(outputDirectory, { recursive: true, force: true });
