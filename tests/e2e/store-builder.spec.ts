@@ -88,9 +88,19 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     sensitiveRegions: [],
   });
   await storeNameInput.fill("پیش‌نویس خانه ماه");
+  const draftSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/store/seller/store/draft") &&
+      response.request().method() === "PUT",
+  );
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  expect((await (await draftSave).json()).shippingMethods).toEqual([]);
   await expect(page).toHaveURL(/\/seller\/store$/);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
+  await page.goto("/seller/store/shipping");
+  await expect(page.getByRole("checkbox", { name: "پست پیشتاز" })).not.toBeChecked();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
   for (const [path, heading, firstControl] of [
     ["profile", "معرفی فروشگاه", "نام فروشگاه"],
     ["shipping", "روش‌های ارسال", "پست پیشتاز"],
@@ -181,8 +191,17 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.goto("/seller/store/profile");
   await expect(page.getByLabel("معرفی کوتاه")).toHaveValue(storeBio);
 
+  await page.goto("/seller/store/setup");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByLabel("روش ارسال")).toHaveValue("");
+  await page.getByLabel("سیاست مرجوعی").fill(returnPolicy);
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ارسال و مرجوعی" })).toBeVisible();
+
   await page.goto("/seller/store/shipping");
   let nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
+  await nationalPost.getByRole("checkbox").check();
   await nationalPost
     .getByLabel("عنوانی که خریدار می‌بیند")
     .fill("پست پیشتاز با تحویل قابل پیگیری در سراسر ایران");
