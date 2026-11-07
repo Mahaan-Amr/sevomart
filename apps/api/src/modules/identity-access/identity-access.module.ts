@@ -19,6 +19,7 @@ import {
   SELLER_APPROVAL_RECOVERY,
   PLATFORM_AGENT_SESSION_AUTHORIZER,
   PLATFORM_AGENT_OTP_SERVICE,
+  PLATFORM_AGENT_TOTP_SERVICE,
   PLATFORM_ACCESS_CORE,
 } from "./identity-access.tokens";
 import { PostgresIdentityAccessRepository } from "./infrastructure/postgres-identity-access.repository";
@@ -35,6 +36,7 @@ import {
 import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
 import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
+import { PlatformAgentTotpService } from "./application/platform-agent-totp.service";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
 import { SellerApprovalRecoveryController } from "./seller-approval-recovery.controller";
 import { PlatformAccessController } from "./platform-access.controller";
@@ -76,6 +78,14 @@ export class IdentityAccessModule {
       ],
       providers: [
         { provide: RUNTIME_ENVIRONMENT, useValue: environment },
+        {
+          provide: PLATFORM_AGENT_TOTP_SERVICE,
+          useValue: new PlatformAgentTotpService(
+            environment.DATABASE_URL,
+            environment.PLATFORM_TOTP_ACTIVE_KEY_ID,
+            environment.PLATFORM_TOTP_KEYRING,
+          ),
+        },
         { provide: OTP_PROVIDER, useValue: otpProvider },
         {
           provide: PLATFORM_AGENT_OTP_SERVICE,

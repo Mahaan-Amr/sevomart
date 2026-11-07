@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
@@ -718,6 +718,110 @@ describe("platform seller application review API with PostgreSQL", () => {
     expect(verified.headers["set-cookie"]).toMatch(
       /^sevo_platform_session=.*Path=\/; HttpOnly; SameSite=Strict/,
     );
+  });
+
+  it("enrolls a bootstrap-authorized authenticator only after proving its code", async () => {
+    const app = await createApiApp({
+      ...environment,
+      PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v1",
+      PLATFORM_TOTP_KEYRING: { "test-v1": Buffer.alloc(32, 9).toString("base64") },
+    });
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    await signIn(app, "09123456788");
+    const identityId = await identityIdForMobile("09123456788");
+    await grantReviewPermission(identityId);
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/otp/requests",
+      payload: { mobile: "09123456788" },
+    });
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/otp/verifications",
+      payload: {
+        challengeId: requested.json<{ challengeId: string }>().challengeId,
+        code: "111111",
+      },
+    });
+    const cookie = String(verified.headers["set-cookie"]).split(";")[0];
+    const headers = { cookie };
+    const denied = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment",
+      headers,
+    });
+    expect(denied.statusCode).toBe(403);
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`insert into identity_totp_bootstrap_authorizations (identity_id, expires_at) values (${identityId}, now() + interval '5 minutes')`;
+    } finally {
+      await sql.end();
+    }
+    const started = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment",
+      headers,
+    });
+    expect(started.statusCode).toBe(201);
+    expect(started.headers["cache-control"]).toBe("no-store");
+    const secret = started.json<{ secret: string }>().secret;
+    const atRest = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      const rows = await atRest<{ ciphertext: Buffer; keyId: string }[]>`
+        select ciphertext, key_id as "keyId" from identity_totp_factors where identity_id = ${identityId}`;
+      expect(rows[0]?.keyId).toBe("test-v1");
+      expect(rows[0]?.ciphertext.toString("utf8")).not.toContain(secret);
+    } finally {
+      await atRest.end();
+    }
+    const wrong = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment/confirmation",
+      headers,
+      payload: { code: "abcdef" },
+    });
+    expect(wrong.statusCode).toBe(422);
+    const realCode = testTotp(secret);
+    const wrongCode = realCode === "000000" ? "000001" : "000000";
+    const rejected = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment/confirmation",
+      headers,
+      payload: { code: wrongCode },
+    });
+    expect(rejected.statusCode).toBe(403);
+    const confirmed = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment/confirmation",
+      headers,
+      payload: { code: testTotp(secret) },
+    });
+    expect(confirmed.statusCode).toBe(204);
+    const replay = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment/confirmation",
+      headers,
+      payload: { code: testTotp(secret) },
+    });
+    expect(replay.statusCode).toBe(403);
+    const repeated = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment",
+      headers,
+    });
+    expect(repeated.statusCode).toBe(403);
+  });
+
+  it("fails closed when no TOTP encryption key is supplied", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const response = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/enrollment",
+    });
+    expect(response.statusCode).toBe(503);
   });
 
   it("locks a platform OTP challenge after five incorrect attempts", async () => {
@@ -1565,4 +1669,19 @@ async function waitUntil(
     if (Date.now() >= deadline) throw new Error("Timed out waiting for condition");
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+}
+
+function testTotp(secret: string): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const char of secret)
+    bits += alphabet.indexOf(char).toString(2).padStart(5, "0");
+  const bytes = Buffer.from(
+    (bits.match(/.{8}/g) ?? []).map((part) => Number.parseInt(part, 2)),
+  );
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const digest = createHmac("sha1", bytes).update(counter).digest();
+  const offset = digest[19]! & 15;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, "0");
 }

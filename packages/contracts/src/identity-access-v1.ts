@@ -59,6 +59,8 @@ export const platformSellerApplicationV1Paths = {
 export const platformAgentAuthV1Paths = {
   requestOtp: "/v1/platform/auth/otp/requests",
   verifyOtp: "/v1/platform/auth/otp/verifications",
+  beginTotpEnrollment: "/v1/platform/auth/totp/enrollment",
+  confirmTotpEnrollment: "/v1/platform/auth/totp/enrollment/confirmation",
 } as const;
 
 export const platformAgentWorkspaceV1Paths = {
@@ -348,6 +350,13 @@ export const otpVerificationContract = z.object({
   code: otpCodeContract,
 });
 
+export const totpEnrollmentContract = z.object({
+  secret: z.string().regex(/^[A-Z2-7]{32}$/),
+});
+export const totpConfirmationContract = z.object({
+  code: z.string().regex(/^[0-9]{6}$/),
+});
+
 export const actorContextContract = z.object({
   identityId: z.string().uuid(),
   audience: z.literal("PUBLIC"),
@@ -398,6 +407,13 @@ export const identityAccessV1Schemas = {
   OtpRequest: otpRequestContract,
   OtpChallenge: otpChallengeContract,
   OtpVerification: otpVerificationContract,
+  TotpEnrollment: totpEnrollmentContract,
+  TotpConfirmation: totpConfirmationContract,
+  TotpError: z.object({
+    code: z.string(),
+    message: z.string(),
+    correlationId: z.string(),
+  }),
   ActorContext: actorContextContract,
   IdentitySession: identitySessionContract,
   PlatformAgentSession: platformAgentSessionContract,

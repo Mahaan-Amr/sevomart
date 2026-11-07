@@ -68,6 +68,32 @@ const runtimeEnvironmentContract = z.object({
     .default("sevo_local_cart_token_derivation_secret"),
   DISCOVERY_CURSOR_ACTIVE_KEY_ID: z.string().min(1).max(64).default("local-v1"),
   DISCOVERY_CURSOR_KEYRING: discoveryCursorKeyring,
+  PLATFORM_TOTP_ACTIVE_KEY_ID: z.string().min(1).max(64).optional(),
+  PLATFORM_TOTP_KEYRING: z
+    .string()
+    .optional()
+    .transform((value, context) => {
+      if (!value) return {} as Record<string, string>;
+      try {
+        const parsed: unknown = JSON.parse(value);
+        const result = z
+          .record(z.string().min(1).max(64), z.string())
+          .safeParse(parsed);
+        if (
+          !result.success ||
+          Object.values(result.data).some(
+            (key) =>
+              !/^[A-Za-z0-9+/]{43}=$/.test(key) ||
+              Buffer.from(key, "base64").length !== 32,
+          )
+        )
+          throw new Error();
+        return result.data;
+      } catch {
+        context.addIssue({ code: "custom", message: "Invalid TOTP keyring" });
+        return z.NEVER;
+      }
+    }),
   DISCOVERY_RANKING_SECRET: z
     .string()
     .min(32)

@@ -322,6 +322,32 @@ const operations = [
     ],
   },
   {
+    operationId: "beginPlatformTotpEnrollment",
+    method: "post",
+    path: platformAgentAuthV1Paths.beginTotpEnrollment,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 201, schema: "TotpEnrollment" },
+      { status: 403, schema: "TotpError" },
+      { status: 503, schema: "TotpError" },
+    ],
+  },
+  {
+    operationId: "confirmPlatformTotpEnrollment",
+    method: "post",
+    path: platformAgentAuthV1Paths.confirmTotpEnrollment,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    request: { schema: "TotpConfirmation", example: { code: "123456" } },
+    responses: [
+      { status: 204, noContent: true },
+      { status: 403, schema: "TotpError" },
+      { status: 422, schema: "TotpError" },
+      { status: 503, schema: "TotpError" },
+    ],
+  },
+  {
     operationId: "listPlatformSellerApplications",
     method: "get",
     path: platformSellerApplicationV1Paths.list,
@@ -711,6 +737,7 @@ const responseMetadata = {
     429: "Request rate limit exceeded",
     422: "Request validation failed",
     500: "Unexpected server error",
+    503: "The requested security operation is unavailable",
   },
   headersBySchema: {
     IdentitySession: {

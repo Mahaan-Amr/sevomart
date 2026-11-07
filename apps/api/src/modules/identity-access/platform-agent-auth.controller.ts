@@ -15,6 +15,7 @@ import type { RuntimeEnvironment } from "@sevo/config";
 import {
   otpRequestContract,
   otpVerificationContract,
+  totpConfirmationContract,
 } from "@sevo/contracts/identity-access/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
@@ -22,9 +23,15 @@ import {
   OtpRejectedError,
   OtpRequestRateLimitedError,
 } from "./application/identity-otp.service";
+import {
+  PlatformAgentTotpService,
+  TotpDeniedError,
+  TotpUnavailableError,
+} from "./application/platform-agent-totp.service";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
 import {
   PLATFORM_AGENT_OTP_SERVICE,
+  PLATFORM_AGENT_TOTP_SERVICE,
   PLATFORM_AGENT_SESSION_AUTHORIZER,
   RUNTIME_ENVIRONMENT,
 } from "./identity-access.tokens";
@@ -41,6 +48,8 @@ export class PlatformAgentAuthController {
   constructor(
     @Inject(PLATFORM_AGENT_OTP_SERVICE)
     private readonly service: PlatformAgentOtpService,
+    @Inject(PLATFORM_AGENT_TOTP_SERVICE)
+    private readonly totp: PlatformAgentTotpService,
     @Inject(PLATFORM_AGENT_SESSION_AUTHORIZER)
     private readonly sessions: PlatformAgentSessionAuthorizer,
     @Inject(RUNTIME_ENVIRONMENT) private readonly environment: RuntimeEnvironment,
@@ -71,6 +80,36 @@ export class PlatformAgentAuthController {
       "Set-Cookie",
       platformSessionCookie("", 0, this.environment.SEVO_RUNTIME_ENV === "production"),
     );
+  }
+
+  @Post("totp/enrollment")
+  @HttpCode(HttpStatus.CREATED)
+  async beginTotp(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    void reply.header("Cache-Control", "no-store");
+    try {
+      return await this.totp.begin(readPlatformSessionToken(request) ?? "", request.id);
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
+  }
+
+  @Post("totp/enrollment/confirmation")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async confirmTotp(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const parsed = totpConfirmationContract.safeParse(body);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    try {
+      await this.totp.confirm(
+        readPlatformSessionToken(request) ?? "",
+        parsed.data.code,
+        request.id,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
   }
 
   @Post("otp/requests")
@@ -149,4 +188,12 @@ function platformAuthError(code: string, correlationId: string, status: number) 
     },
     status,
   );
+}
+
+function totpError(error: unknown, correlationId: string): Error {
+  if (error instanceof TotpDeniedError)
+    return platformAuthError("PLATFORM_PERMISSION_REQUIRED", correlationId, 403);
+  if (error instanceof TotpUnavailableError)
+    return platformAuthError("UNAVAILABLE", correlationId, 503);
+  return error instanceof Error ? error : new Error("TOTP operation failed");
 }
