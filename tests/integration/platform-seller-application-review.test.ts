@@ -720,6 +720,34 @@ describe("platform seller application review API with PostgreSQL", () => {
     );
   });
 
+  it("locks a platform OTP challenge after five incorrect attempts", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    await signIn(app, "09123456788");
+    await grantReviewPermission(await identityIdForMobile("09123456788"));
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/otp/requests",
+      payload: { mobile: "09123456788" },
+    });
+    const challengeId = requested.json<{ challengeId: string }>().challengeId;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const rejected = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/otp/verifications",
+        payload: { challengeId, code: "222222" },
+      });
+      expect(rejected.statusCode).toBe(401);
+    }
+    const locked = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/otp/verifications",
+      payload: { challengeId, code: "111111" },
+    });
+    expect(locked.statusCode).toBe(401);
+  });
+
   it("lets a session-security-only agent sign in without review permissions", async () => {
     const app = await createApiApp(environment);
     apps.push(app);

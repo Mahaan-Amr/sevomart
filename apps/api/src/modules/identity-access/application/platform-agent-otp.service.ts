@@ -83,7 +83,7 @@ export class PlatformAgentOtpService {
   }
 
   async verifyOtp(challengeId: OtpChallengeId, code: OtpCode) {
-    return this.#sql.begin(async (sql) => {
+    const result = await this.#sql.begin(async (sql) => {
       const challenges = await sql<
         Array<{ mobile: IranianMobile; codeHash: string; attempts: number }>
       >`
@@ -99,12 +99,12 @@ export class PlatformAgentOtpService {
         challenge.attempts >= MAX_ATTEMPTS ||
         challenge.codeHash !== hashChallengeCode(challengeId, code)
       ) {
-        if (challenge) {
+        if (challenge && challenge.attempts < MAX_ATTEMPTS) {
           await sql`update identity_otp_challenges
             set verification_attempts = verification_attempts + 1
             where id = ${challengeId}`;
         }
-        throw new OtpRejectedError();
+        return null;
       }
 
       const identities = await sql<
@@ -151,6 +151,8 @@ export class PlatformAgentOtpService {
         },
       };
     });
+    if (!result) throw new OtpRejectedError();
+    return result;
   }
 
   async onModuleDestroy() {
