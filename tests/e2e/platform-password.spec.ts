@@ -75,12 +75,11 @@ test("superadmin gives a one-time recovery code to a colleague", async ({ page }
     await page.getByRole("button", { name: "ورود" }).click();
     await expect(page).toHaveURL(/\/platform(?:\/seller-applications)?$/);
   } finally {
-    await sql`truncate identity_platform_password_recovery_audit`;
     await sql`delete from identity_platform_password_recoveries where identity_id = ${colleague}`;
     await sql`delete from identity_sessions where identity_id in (${admin}, ${colleague})`;
     await sql`delete from identity_platform_permission_grants where identity_id = ${colleague}`;
-    await sql`truncate identity_platform_superadmins`;
-    await sql`delete from identity_identities where id in (${admin}, ${colleague})`;
+    await sql`delete from identity_platform_superadmins where identity_id = ${admin}`;
+    await sql`delete from identity_platform_passwords where identity_id in (${admin}, ${colleague})`;
     await sql.end();
   }
 });

@@ -443,14 +443,28 @@ describe("platform password login API", () => {
       await held;
       const app = await createApiApp(apiTestEnvironment);
       apps.push(app);
-      const login = await app
-        .getHttpAdapter()
-        .getInstance()
-        .inject({
+      const server = app.getHttpAdapter().getInstance();
+      const compare = async (identifier: string) => {
+        const started = Date.now();
+        const result = await server.inject({
           method: "POST",
           url: "/v2/platform/auth/password/sessions",
-          payload: { identifier: username, password: "known secure password" },
+          payload: { identifier, password: "wrong secure password" },
         });
+        return { status: result.statusCode, elapsed: Date.now() - started };
+      };
+      const [unknown, known] = await Promise.all([
+        compare("unknown-attacker@example.test"),
+        compare(username),
+      ]);
+      expect(unknown.status).toBe(429);
+      expect(known.status).toBe(429);
+      expect(Math.abs(unknown.elapsed - known.elapsed)).toBeLessThan(500);
+      const login = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/sessions",
+        payload: { identifier: username, password: "known secure password" },
+      });
       expect(login.statusCode).toBe(200);
       release();
       await holder;
@@ -560,6 +574,75 @@ describe("platform password login API", () => {
       await sql`delete from identity_platform_permission_grants where identity_id = ${colleague}`;
       await sql`truncate identity_platform_superadmins`;
       await sql`delete from identity_identities where id in (${admin}, ${colleague})`;
+      await sql.end();
+    }
+  });
+  it("admits another account when two unknown slots and one known attacker are busy", async () => {
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 3 });
+    const attacker = randomUUID(),
+      target = randomUUID(),
+      attackerName = `attacker${attacker.replaceAll("-", "")}`,
+      targetName = `target${target.replaceAll("-", "")}`;
+    const salt = Buffer.alloc(16, 9).toString("base64url"),
+      hash = scryptSync("target secure password", salt, 64, {
+        N: 16384,
+        r: 8,
+        p: 5,
+        maxmem: 64 * 1024 * 1024,
+      }).toString("base64url");
+    let release!: () => void;
+    let acquired!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    try {
+      await sql`insert into identity_identities (id, status) values (${attacker}, 'ACTIVE'), (${target}, 'ACTIVE')`;
+      await sql`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${attacker}, 'DISPUTE_REVIEW', now()), (${randomUUID()}, ${target}, 'DISPUTE_REVIEW', now())`;
+      await sql`insert into identity_platform_passwords (identity_id, username, password_hash) values (${attacker}, ${attackerName}, ${`scrypt$${salt}$${hash}`}), (${target}, ${targetName}, ${`scrypt$${salt}$${hash}`})`;
+      const holder = sql.begin(async (tx) => {
+        for (let slot = 0; slot < 2; slot++)
+          await tx`select pg_advisory_xact_lock(hashtextextended('platform-password-work', 276) + ${slot})`;
+        acquired();
+        await gate;
+      });
+      await held;
+      const app = await createApiApp(apiTestEnvironment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      const attacking = server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/sessions",
+        payload: { identifier: attackerName, password: "incorrect password" },
+      });
+      let occupied = false;
+      for (let i = 0; i < 50 && !occupied; i++) {
+        occupied = await sql.begin(async (tx) => {
+          const [row] = await tx<
+            { acquired: boolean }[]
+          >`select pg_try_advisory_xact_lock(hashtextextended('platform-password-work', 276) + 2) as acquired`;
+          return !row?.acquired;
+        });
+        if (!occupied) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(occupied).toBe(true);
+      const valid = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/password/sessions",
+        payload: { identifier: targetName, password: "target secure password" },
+      });
+      expect(valid.statusCode).toBe(200);
+      expect((await attacking).statusCode).toBe(429);
+      release();
+      await holder;
+    } finally {
+      release();
+      await sql`delete from identity_platform_password_attempts`;
+      await sql`delete from identity_sessions where identity_id in (${attacker}, ${target})`;
+      await sql`delete from identity_platform_permission_grants where identity_id in (${attacker}, ${target})`;
+      await sql`delete from identity_identities where id in (${attacker}, ${target})`;
       await sql.end();
     }
   });

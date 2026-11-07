@@ -46,78 +46,91 @@ export class PlatformPasswordService {
   }
   async login(rawIdentifier: string, password: string) {
     const identifier = rawIdentifier.trim().toLowerCase();
-    return this.#sql.begin(async (sql) => {
-      const credentials = await sql<
-        { identityId: string; passwordHash: string | null }[]
-      >`select p.identity_id as "identityId", p.password_hash as "passwordHash" from identity_platform_passwords p left join identity_login_methods m on m.identity_id = p.identity_id and m.kind = 'MOBILE' where p.username = ${identifier} or p.email = ${identifier} or m.mobile = ${identifier} limit 2`;
-      const credential = credentials.length === 1 ? credentials[0] : undefined;
-      const bucket = digest(
-        credential ? `identity:${credential.identityId}` : `unknown:${identifier}`,
-      );
-      const [lock] = await sql<
-        { acquired: boolean }[]
-      >`select pg_try_advisory_xact_lock(hashtextextended(${bucket}, 276)) as acquired`;
-      if (!lock?.acquired) throw new PlatformPasswordBusyError();
-      let admitted = false;
-      for (const slot of credential ? [3, 0, 1, 2] : [0, 1, 2]) {
-        const [capacity] = await sql<
+    const started = Date.now();
+    try {
+      const result = await this.#sql.begin(async (sql) => {
+        const credentials = await sql<
+          { identityId: string; passwordHash: string | null }[]
+        >`select p.identity_id as "identityId", p.password_hash as "passwordHash" from identity_platform_passwords p left join identity_login_methods m on m.identity_id = p.identity_id and m.kind = 'MOBILE' where p.username = ${identifier} or p.email = ${identifier} or m.mobile = ${identifier} limit 2`;
+        const credential = credentials.length === 1 ? credentials[0] : undefined;
+        const bucket = digest(
+          credential ? `identity:${credential.identityId}` : `unknown:${identifier}`,
+        );
+        const [lock] = await sql<
           { acquired: boolean }[]
-        >`select pg_try_advisory_xact_lock(hashtextextended('platform-password-work', 276) + ${slot}) as acquired`;
-        if (capacity?.acquired) {
-          admitted = true;
-          break;
+        >`select pg_try_advisory_xact_lock(hashtextextended(${bucket}, 276)) as acquired`;
+        if (!lock?.acquired) throw new PlatformPasswordBusyError();
+        let admitted = false;
+        let reserved = false;
+        for (const slot of credential ? [0, 1, 2, 3] : [0, 1]) {
+          const [capacity] = await sql<
+            { acquired: boolean }[]
+          >`select pg_try_advisory_xact_lock(hashtextextended('platform-password-work', 276) + ${slot}) as acquired`;
+          if (capacity?.acquired) {
+            admitted = true;
+            reserved = slot >= 2;
+            break;
+          }
         }
-      }
-      if (!admitted) throw new PlatformPasswordBusyError();
-      await sql`delete from identity_platform_password_attempts where identifier_hash in (select identifier_hash from identity_platform_password_attempts where window_started_at < now() - interval '15 minutes' limit 100 for update skip locked)`;
-      const [count] = await sql<
-        { total: number }[]
-      >`select count(*)::int as total from identity_platform_password_attempts`;
-      const [existing] = await sql<
-        { attempts: number }[]
-      >`select attempts from identity_platform_password_attempts where identifier_hash = ${bucket}`;
-      if (!credential && !existing && (count?.total ?? 0) >= 10000) {
-        await verify(password, dummy);
-        return;
-      }
-      const [attempt] = await sql<
-        { attempts: number }[]
-      >`insert into identity_platform_password_attempts (identifier_hash, attempts, window_started_at) values (${bucket}, 1, now()) on conflict (identifier_hash) do update set attempts = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then 1 else least(identity_platform_password_attempts.attempts + 1, 11) end, window_started_at = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then now() else identity_platform_password_attempts.window_started_at end returning attempts`;
-      const valid = await verify(
-        password,
-        attempt && attempt.attempts <= 10 ? (credential?.passwordHash ?? dummy) : dummy,
-      );
-      if (
-        !credential ||
-        !credential.passwordHash ||
-        !valid ||
-        !attempt ||
-        attempt.attempts > 10
-      )
-        return;
-      await sql`select pg_advisory_xact_lock(hashtextextended(${credential.identityId}, 301))`;
-      const [identity] = await sql<
-        { isSuperadmin: boolean; permission: string | null }[]
-      >`select exists(select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null) as "isSuperadmin", (select permission from identity_platform_permission_grants g where g.identity_id = i.id and g.revoked_at is null order by permission limit 1) as permission from identity_identities i join identity_platform_passwords p on p.identity_id = i.id where i.id = ${credential.identityId} and i.status = 'ACTIVE' and p.password_hash = ${credential.passwordHash} and (p.username = ${identifier} or p.email = ${identifier} or exists (select 1 from identity_login_methods m where m.identity_id = i.id and m.kind = 'MOBILE' and m.mobile = ${identifier})) for share of i, p`;
-      if (!identity || (!identity.isSuperadmin && !identity.permission)) return;
-      const token = randomBytes(32).toString("base64url");
-      const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      await sql`insert into identity_sessions (id, token_hash, identity_id, audience, expires_at, platform_auth_method) values (${randomUUID()}, ${digest(token)}, ${credential.identityId}, 'PLATFORM_AGENT', ${expiresAt}, 'PASSWORD')`;
-      await sql`delete from identity_platform_password_attempts where identifier_hash = ${bucket}`;
-      return {
-        token,
-        session: {
-          actor: {
-            identityId: credential.identityId,
-            audience: "PLATFORM_AGENT" as const,
+        if (!admitted) throw new PlatformPasswordBusyError();
+        await sql`delete from identity_platform_password_attempts where identifier_hash in (select identifier_hash from identity_platform_password_attempts where window_started_at < now() - interval '15 minutes' limit 100 for update skip locked)`;
+        const [count] = await sql<
+          { total: number }[]
+        >`select count(*)::int as total from identity_platform_password_attempts`;
+        const [existing] = await sql<
+          { attempts: number }[]
+        >`select attempts from identity_platform_password_attempts where identifier_hash = ${bucket}`;
+        if (!credential && !existing && (count?.total ?? 0) >= 10000) {
+          await verify(password, dummy);
+          return;
+        }
+        const [attempt] = await sql<
+          { attempts: number }[]
+        >`insert into identity_platform_password_attempts (identifier_hash, attempts, window_started_at) values (${bucket}, 1, now()) on conflict (identifier_hash) do update set attempts = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then 1 else least(identity_platform_password_attempts.attempts + 1, 11) end, window_started_at = case when identity_platform_password_attempts.window_started_at < now() - interval '15 minutes' then now() else identity_platform_password_attempts.window_started_at end returning attempts`;
+        const valid = await verify(
+          password,
+          attempt && attempt.attempts <= 10
+            ? (credential?.passwordHash ?? dummy)
+            : dummy,
+        );
+        if (
+          !credential ||
+          !credential.passwordHash ||
+          !valid ||
+          !attempt ||
+          attempt.attempts > 10
+        )
+          return reserved ? { busy: true as const } : undefined;
+        await sql`select pg_advisory_xact_lock(hashtextextended(${credential.identityId}, 301))`;
+        const [identity] = await sql<
+          { isSuperadmin: boolean; permission: string | null }[]
+        >`select exists(select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null) as "isSuperadmin", (select permission from identity_platform_permission_grants g where g.identity_id = i.id and g.revoked_at is null order by permission limit 1) as permission from identity_identities i join identity_platform_passwords p on p.identity_id = i.id where i.id = ${credential.identityId} and i.status = 'ACTIVE' and p.password_hash = ${credential.passwordHash} and (p.username = ${identifier} or p.email = ${identifier} or exists (select 1 from identity_login_methods m where m.identity_id = i.id and m.kind = 'MOBILE' and m.mobile = ${identifier})) for share of i, p`;
+        if (!identity || (!identity.isSuperadmin && !identity.permission)) return;
+        const token = randomBytes(32).toString("base64url");
+        const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+        await sql`insert into identity_sessions (id, token_hash, identity_id, audience, expires_at, platform_auth_method) values (${randomUUID()}, ${digest(token)}, ${credential.identityId}, 'PLATFORM_AGENT', ${expiresAt}, 'PASSWORD')`;
+        await sql`delete from identity_platform_password_attempts where identifier_hash = ${bucket}`;
+        return {
+          token,
+          session: {
+            actor: {
+              identityId: credential.identityId,
+              audience: "PLATFORM_AGENT" as const,
+            },
+            ...(identity.permission
+              ? { permission: identity.permission }
+              : { role: "SUPERADMIN" as const }),
+            expiresAt: expiresAt.toISOString(),
           },
-          ...(identity.permission
-            ? { permission: identity.permission }
-            : { role: "SUPERADMIN" as const }),
-          expiresAt: expiresAt.toISOString(),
-        },
-      };
-    });
+        };
+      });
+      if (result && "busy" in result) throw new PlatformPasswordBusyError();
+      return result;
+    } finally {
+      const remaining = 1000 - (Date.now() - started);
+      if (remaining > 0)
+        await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+    }
   }
   async requestRecovery(
     sessionToken: string,
