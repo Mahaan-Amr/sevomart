@@ -198,11 +198,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     }
     setPending(true);
     setMessage("");
+    let draftSaved = false;
     try {
       const media = await resolveDraftMedia();
       const input = buildDraftInput(form, media, true);
       const { logoMediaId, coverMediaId } = media;
       await persistDraft(input, logoMediaId, coverMediaId);
+      draftSaved = true;
       const previewResponse = await fetch("/api/store/seller/store/preview", {
         cache: "no-store",
       });
@@ -224,9 +226,11 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
         return;
       }
       setMessage(
-        error instanceof StoreDraftSaveError
-          ? error.message
-          : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
+        draftSaved
+          ? "پیش‌نویس ذخیره شد، اما پیش‌نمایش آماده نشد. دوباره تلاش کنید."
+          : error instanceof StoreDraftSaveError
+            ? error.message
+            : "ذخیره فروشگاه انجام نشد. دوباره تلاش کنید.",
       );
     } finally {
       setPending(false);
