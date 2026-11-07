@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "tests/grid-e2e",
   testMatch: "discovery-store-grid.spec.ts",
+  outputDir: "output/playwright-grid-results",
   use: {
     baseURL: "http://127.0.0.1:3339",
     browserName: "chromium",
