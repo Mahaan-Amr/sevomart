@@ -37,6 +37,11 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   const applicationId = randomUUID();
   await sql.begin(async (transaction) => {
     await transaction`
+      delete from store_stores where id in (
+        select store_id from store_memberships where seller_id = ${identityId}::uuid
+      )
+    `;
+    await transaction`
       delete from identity_seller_access where identity_id = ${identityId}
     `;
     await transaction`
