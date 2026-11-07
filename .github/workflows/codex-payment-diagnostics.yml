@@ -1,0 +1,25 @@
+name: Temporary buyer payment verification
+on:
+  push:
+    branches: [fix/287-payment-probe]
+permissions:
+  contents: read
+jobs:
+  payment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e -- tests/e2e/direct-payment-success.spec.ts --project=chromium-360x800 --retries=0 --grep 'buyer dispatches payment'
