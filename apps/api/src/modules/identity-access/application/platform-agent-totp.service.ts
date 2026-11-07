@@ -152,6 +152,73 @@ export class PlatformAgentTotpService {
     });
     if (!result) throw new TotpDeniedError();
   }
+  async createProof(
+    token: string,
+    input: {
+      code: string;
+      action: "REVOKE_PUBLIC_SESSIONS";
+      targetIdentityId: string;
+      incidentId: string;
+      reason: string;
+    },
+    correlationId: string,
+  ) {
+    const result = await this.#sql.begin(async (transaction) => {
+      const sql = transaction as unknown as Sql;
+      const session = await this.session(sql, token);
+      const permission =
+        await sql`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'SESSION_SECURITY' and revoked_at is null for share`;
+      if (!permission.length) return null;
+      const target =
+        await sql`select id from identity_identities where id = ${input.targetIdentityId} and status = 'ACTIVE' for share`;
+      if (!target.length) return null;
+      const factors = await sql<
+        Factor[]
+      >`select expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
+        from identity_totp_factors where identity_id = ${session.identityId} and status = 'ACTIVE' for update`;
+      const factor = factors[0];
+      if (
+        !this.fresh(session) ||
+        !factor ||
+        (factor.blockedUntil && factor.blockedUntil > new Date())
+      )
+        return null;
+      let secret: Buffer;
+      try {
+        const decipher = createDecipheriv(
+          "aes-256-gcm",
+          this.key(factor.keyId),
+          factor.nonce,
+        );
+        decipher.setAAD(Buffer.from(session.identityId));
+        decipher.setAuthTag(factor.tag);
+        secret = Buffer.concat([decipher.update(factor.ciphertext), decipher.final()]);
+      } catch {
+        throw new TotpUnavailableError();
+      }
+      const counter = matchCounter(secret, input.code, Number(factor.lastCounter));
+      if (counter === null) {
+        await sql`update identity_totp_factors set failed_attempts = failed_attempts + 1,
+          blocked_until = case when failed_attempts + 1 >= 5 then clock_timestamp() + interval '10 minutes' else blocked_until end where identity_id = ${session.identityId}`;
+        await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'PROOF_CREATED', 'REJECTED', ${correlationId})`;
+        return null;
+      }
+      const now = Date.now();
+      if (!this.fresh(session)) return null;
+      const expiresAt = new Date(
+        Math.min(now + 300000, session.createdAt.getTime() + 300000),
+      );
+      const proof = randomBytes(32).toString("base64url");
+      await sql`update identity_totp_factors set last_counter = ${counter}, failed_attempts = 0, blocked_until = null where identity_id = ${session.identityId}`;
+      await sql`delete from identity_totp_action_proofs where actor_identity_id = ${session.identityId} and expires_at <= clock_timestamp()`;
+      await sql`insert into identity_totp_action_proofs (id, token_hash, actor_identity_id, session_id, action, target_identity_id, payload_hash, created_at, expires_at)
+        values (${randomUUID()}, ${createHash("sha256").update(proof).digest("hex")}, ${session.identityId}, ${session.id}, ${input.action}, ${input.targetIdentityId}, ${hashTotpAction(input)}, ${new Date(now)}, ${expiresAt})`;
+      await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'PROOF_CREATED', 'SUCCEEDED', ${correlationId})`;
+      return { proof, expiresAt: expiresAt.toISOString() };
+    });
+    if (!result) throw new TotpDeniedError();
+    return result;
+  }
   async onModuleDestroy() {
     await this.#sql.end();
   }
@@ -181,4 +248,22 @@ function matchCounter(
     if (timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return counter;
   }
   return null;
+}
+
+export function hashTotpAction(input: {
+  action: string;
+  targetIdentityId: string;
+  incidentId: string;
+  reason: string;
+}): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        input.action,
+        input.targetIdentityId,
+        input.incidentId,
+        input.reason,
+      ]),
+    )
+    .digest("hex");
 }

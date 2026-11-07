@@ -60,6 +60,7 @@ export const platformAgentAuthV1Paths = {
   requestOtp: "/v1/platform/auth/otp/requests",
   verifyOtp: "/v1/platform/auth/otp/verifications",
   beginTotpEnrollment: "/v1/platform/auth/totp/enrollment",
+  createTotpProof: "/v1/platform/auth/totp/proofs",
   confirmTotpEnrollment: "/v1/platform/auth/totp/enrollment/confirmation",
 } as const;
 
@@ -357,6 +358,20 @@ export const totpConfirmationContract = z.object({
   code: z.string().regex(/^[0-9]{6}$/),
 });
 
+export const totpActionProofRequestContract = z
+  .object({
+    code: z.string().regex(/^[0-9]{6}$/),
+    action: z.literal("REVOKE_PUBLIC_SESSIONS"),
+    targetIdentityId: z.string().uuid(),
+    incidentId: z.string().trim().min(3).max(100),
+    reason: z.string().trim().min(5).max(500),
+  })
+  .strict();
+export const totpActionProofContract = z.object({
+  proof: z.string().min(40),
+  expiresAt: z.string().datetime({ offset: true }),
+});
+
 export const actorContextContract = z.object({
   identityId: z.string().uuid(),
   audience: z.literal("PUBLIC"),
@@ -409,6 +424,8 @@ export const identityAccessV1Schemas = {
   OtpVerification: otpVerificationContract,
   TotpEnrollment: totpEnrollmentContract,
   TotpConfirmation: totpConfirmationContract,
+  TotpActionProofRequest: totpActionProofRequestContract,
+  TotpActionProof: totpActionProofContract,
   TotpError: z.object({
     code: z.string(),
     message: z.string(),

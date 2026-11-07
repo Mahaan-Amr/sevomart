@@ -16,6 +16,7 @@ import {
   otpRequestContract,
   otpVerificationContract,
   totpConfirmationContract,
+  totpActionProofRequestContract,
 } from "@sevo/contracts/identity-access/v1";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
@@ -105,6 +106,27 @@ export class PlatformAgentAuthController {
       await this.totp.confirm(
         readPlatformSessionToken(request) ?? "",
         parsed.data.code,
+        request.id,
+      );
+    } catch (error) {
+      throw totpError(error, request.id);
+    }
+  }
+
+  @Post("totp/proofs")
+  @HttpCode(HttpStatus.CREATED)
+  async createTotpProof(
+    @Req() request: FastifyRequest,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const parsed = totpActionProofRequestContract.safeParse(body);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    void reply.header("Cache-Control", "no-store");
+    try {
+      return await this.totp.createProof(
+        readPlatformSessionToken(request) ?? "",
+        parsed.data,
         request.id,
       );
     } catch (error) {

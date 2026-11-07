@@ -40,7 +40,7 @@ export class PlatformAgentOtpService {
       join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
       join identity_platform_permission_grants g
         on g.identity_id = i.id
-       and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW', 'SESSION_SECURITY')
+       and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW', 'SESSION_SECURITY', 'ACCESS_ADMINISTRATION')
        and g.revoked_at is null
       where lm.kind = 'MOBILE' and lm.mobile = ${mobile}
       limit 1
@@ -111,7 +111,10 @@ export class PlatformAgentOtpService {
         Array<{
           identityId: string;
           permission:
-            "SELLER_APPLICATION_REVIEW" | "PAYMENT_REVIEW" | "SESSION_SECURITY";
+            | "SELLER_APPLICATION_REVIEW"
+            | "PAYMENT_REVIEW"
+            | "SESSION_SECURITY"
+            | "ACCESS_ADMINISTRATION";
         }>
       >`
         select i.id as "identityId", g.permission
@@ -119,7 +122,7 @@ export class PlatformAgentOtpService {
         join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
         join identity_platform_permission_grants g
           on g.identity_id = i.id
-         and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW', 'SESSION_SECURITY')
+         and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW', 'SESSION_SECURITY', 'ACCESS_ADMINISTRATION')
          and g.revoked_at is null
         where lm.kind = 'MOBILE' and lm.mobile = ${challenge.mobile}
         order by g.permission

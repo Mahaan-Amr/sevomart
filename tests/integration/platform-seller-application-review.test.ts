@@ -1,8 +1,9 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
 import postgres from "postgres";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import { startSellerApprovalRecoveryPoller } from "../../apps/worker/src/modules/identity-access/index";
@@ -23,6 +24,7 @@ describe("platform seller application review API with PostgreSQL", () => {
 
   beforeEach(async () => {
     const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    await sql`truncate identity_totp_bootstrap_run`;
     await sql`truncate identity_platform_permission_audit`;
     await sql`delete from identity_platform_permission_grants`;
     await sql`delete from identity_seller_application_idempotency`;
@@ -679,6 +681,7 @@ describe("platform seller application review API with PostgreSQL", () => {
 
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
+    vi.restoreAllMocks();
   });
 
   it("creates a separate platform-agent session only after a live grant", async () => {
@@ -721,6 +724,8 @@ describe("platform seller application review API with PostgreSQL", () => {
   });
 
   it("enrolls a bootstrap-authorized authenticator only after proving its code", async () => {
+    const instant = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(instant);
     const app = await createApiApp({
       ...environment,
       PLATFORM_TOTP_ACTIVE_KEY_ID: "test-v1",
@@ -729,8 +734,28 @@ describe("platform seller application review API with PostgreSQL", () => {
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
     await signIn(app, "09123456788");
+    await signIn(app, "09123456787");
     const identityId = await identityIdForMobile("09123456788");
-    await grantReviewPermission(identityId);
+    const secondIdentityId = await identityIdForMobile("09123456787");
+    const requestedBeforeBootstrap = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/otp/requests",
+      payload: { mobile: "09123456788" },
+    });
+    expect(requestedBeforeBootstrap.statusCode).toBe(403);
+    execFileSync(
+      process.execPath,
+      [
+        "scripts/bootstrap-platform-totp.mjs",
+        "--first",
+        identityId,
+        "--second",
+        secondIdentityId,
+        "--reason",
+        "Independent identity checks completed",
+      ],
+      { env: { ...process.env, DATABASE_URL: environment.DATABASE_URL } },
+    );
     const requested = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/otp/requests",
@@ -746,18 +771,6 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     const cookie = String(verified.headers["set-cookie"]).split(";")[0];
     const headers = { cookie };
-    const denied = await server.inject({
-      method: "POST",
-      url: "/v1/platform/auth/totp/enrollment",
-      headers,
-    });
-    expect(denied.statusCode).toBe(403);
-    const sql = postgres(environment.DATABASE_URL, { max: 1 });
-    try {
-      await sql`insert into identity_totp_bootstrap_authorizations (identity_id, expires_at) values (${identityId}, now() + interval '5 minutes')`;
-    } finally {
-      await sql.end();
-    }
     const started = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/totp/enrollment",
@@ -805,6 +818,42 @@ describe("platform seller application review API with PostgreSQL", () => {
       payload: { code: testTotp(secret) },
     });
     expect(replay.statusCode).toBe(403);
+    const grant = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await grant`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at)
+        values (${randomUUID()}, ${identityId}, 'SESSION_SECURITY', now())`;
+    } finally {
+      await grant.end();
+    }
+    const proofPayload = {
+      code: testTotp(secret),
+      action: "REVOKE_PUBLIC_SESSIONS",
+      targetIdentityId: secondIdentityId,
+      incidentId: "INC-100",
+      reason: "نشست‌های مشکوک",
+    };
+    const replayProof = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/proofs",
+      headers,
+      payload: proofPayload,
+    });
+    expect(replayProof.statusCode).toBe(403);
+    const issueProof = () =>
+      server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/proofs",
+        headers,
+        payload: { ...proofPayload, code: testTotp(secret, 1) },
+      });
+    const attempts = await Promise.all([issueProof(), issueProof()]);
+    expect(attempts.map((item) => item.statusCode).sort()).toEqual([201, 403]);
+    const proof = attempts.find((item) => item.statusCode === 201)!;
+    expect(proof.json()).toMatchObject({
+      proof: expect.any(String),
+      expiresAt: expect.any(String),
+    });
+    expect(proof.headers["cache-control"]).toBe("no-store");
     const repeated = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/totp/enrollment",
@@ -1671,7 +1720,7 @@ async function waitUntil(
   }
 }
 
-function testTotp(secret: string): string {
+function testTotp(secret: string, counterOffset = 0): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = "";
   for (const char of secret)
@@ -1680,7 +1729,7 @@ function testTotp(secret: string): string {
     (bits.match(/.{8}/g) ?? []).map((part) => Number.parseInt(part, 2)),
   );
   const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + counterOffset));
   const digest = createHmac("sha1", bytes).update(counter).digest();
   const offset = digest[19]! & 15;
   return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, "0");

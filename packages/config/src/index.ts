@@ -68,7 +68,13 @@ const runtimeEnvironmentContract = z.object({
     .default("sevo_local_cart_token_derivation_secret"),
   DISCOVERY_CURSOR_ACTIVE_KEY_ID: z.string().min(1).max(64).default("local-v1"),
   DISCOVERY_CURSOR_KEYRING: discoveryCursorKeyring,
-  PLATFORM_TOTP_ACTIVE_KEY_ID: z.string().min(1).max(64).optional(),
+  PLATFORM_TOTP_ACTIVE_KEY_ID: z
+    .string()
+    .min(1)
+    .max(64)
+    .optional()
+    .or(z.literal(""))
+    .transform((value) => value || undefined),
   PLATFORM_TOTP_KEYRING: z
     .string()
     .optional()
