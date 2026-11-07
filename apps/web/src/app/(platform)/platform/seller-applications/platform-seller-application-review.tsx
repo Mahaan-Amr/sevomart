@@ -150,7 +150,7 @@ export function PlatformSellerApplicationReview() {
 
   async function submitDecision(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!application || publicReason.trim().length < 5) {
+    if (!application || (decision !== "approval" && publicReason.trim().length < 5)) {
       setMessage("دلیل روشن و قابل‌نمایش را کامل کنید.");
       return;
     }
@@ -170,7 +170,7 @@ export function PlatformSellerApplicationReview() {
             : decision === "approval"
               ? "ELIGIBILITY_CONFIRMED"
               : rejectionReasonCode,
-        publicReason,
+        ...(decision !== "approval" ? { publicReason } : {}),
         ...(internalNote.trim() ? { internalNote } : {}),
         ...(decision === "information" ? { requestedFields } : {}),
       };
@@ -268,6 +268,9 @@ export function PlatformSellerApplicationReview() {
                 >
                   <strong>{item.proposedStoreName}</strong>
                   <span>{item.applicantName}</span>
+                  {item.maskedMobile ? (
+                    <span dir="ltr">{item.maskedMobile}</span>
+                  ) : null}
                   <small>{statusLabels[item.status]}</small>
                 </button>
               ))}
@@ -297,6 +300,10 @@ export function PlatformSellerApplicationReview() {
                 <strong>{statusLabels[application.status]}</strong>
               </div>
               <dl className={styles.facts}>
+                <div>
+                  <dt>شماره متقاضی</dt>
+                  <dd dir="ltr">{application.applicantMobile ?? "در دسترس نیست"}</dd>
+                </div>
                 {(Object.keys(fieldLabels) as RequestedField[]).map((field) => (
                   <div key={field}>
                     <dt>{fieldLabels[field]}</dt>
@@ -376,58 +383,57 @@ export function PlatformSellerApplicationReview() {
                       ))}
                     </fieldset>
                   ) : null}
-                  <label className={styles.textField}>
-                    <span>کد دلیل</span>
-                    <select
-                      disabled={decision === "approval"}
-                      value={
-                        decision === "information"
-                          ? informationReasonCode
-                          : decision === "approval"
-                            ? "ELIGIBILITY_CONFIRMED"
-                            : rejectionReasonCode
-                      }
-                      onChange={(event) => {
-                        if (decision === "information") {
-                          setInformationReasonCode(
-                            event.target.value as InformationReasonCode,
-                          );
-                        } else {
-                          setRejectionReasonCode(
-                            event.target.value as RejectionReasonCode,
-                          );
-                        }
-                      }}
-                    >
-                      {(decision === "approval"
-                        ? (["ELIGIBILITY_CONFIRMED"] as const)
-                        : decision === "information"
-                          ? ([
-                              "INFORMATION_INCOMPLETE",
-                              "INFORMATION_INCONSISTENT",
-                              "OTHER",
-                            ] as const)
-                          : ([
-                              "INFORMATION_INCONSISTENT",
-                              "ELIGIBILITY_NOT_ESTABLISHED",
-                              "OTHER",
-                            ] as const)
-                      ).map((code) => (
-                        <option key={code} value={code}>
-                          {reasonLabels[code]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className={styles.textField}>
-                    <span>دلیل قابل‌نمایش به متقاضی</span>
-                    <textarea
-                      rows={3}
-                      maxLength={1000}
-                      value={publicReason}
-                      onChange={(event) => setPublicReason(event.target.value)}
-                    />
-                  </label>
+                  {decision !== "approval" ? (
+                    <>
+                      <label className={styles.textField}>
+                        <span>کد دلیل</span>
+                        <select
+                          value={
+                            decision === "information"
+                              ? informationReasonCode
+                              : rejectionReasonCode
+                          }
+                          onChange={(event) => {
+                            if (decision === "information") {
+                              setInformationReasonCode(
+                                event.target.value as InformationReasonCode,
+                              );
+                            } else {
+                              setRejectionReasonCode(
+                                event.target.value as RejectionReasonCode,
+                              );
+                            }
+                          }}
+                        >
+                          {(decision === "information"
+                            ? ([
+                                "INFORMATION_INCOMPLETE",
+                                "INFORMATION_INCONSISTENT",
+                                "OTHER",
+                              ] as const)
+                            : ([
+                                "INFORMATION_INCONSISTENT",
+                                "ELIGIBILITY_NOT_ESTABLISHED",
+                                "OTHER",
+                              ] as const)
+                          ).map((code) => (
+                            <option key={code} value={code}>
+                              {reasonLabels[code]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={styles.textField}>
+                        <span>دلیل قابل‌نمایش به متقاضی</span>
+                        <textarea
+                          rows={3}
+                          maxLength={1000}
+                          value={publicReason}
+                          onChange={(event) => setPublicReason(event.target.value)}
+                        />
+                      </label>
+                    </>
+                  ) : null}
                   <label className={styles.textField}>
                     <span>یادداشت داخلی (اختیاری)</span>
                     <textarea

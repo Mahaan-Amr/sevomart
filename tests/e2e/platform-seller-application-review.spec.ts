@@ -58,6 +58,7 @@ test("platform agent reviews a Persian RTL application on the approved compact w
         items: [
           {
             applicationId: application.applicationId,
+            maskedMobile: "0912***6789",
             applicantName: application.currentPayload.applicantName,
             proposedStoreName: application.currentPayload.proposedStoreName,
             status: application.status,
@@ -76,7 +77,7 @@ test("platform agent reviews a Persian RTL application on the approved compact w
     page.getByRole("heading", { name: "بررسی درخواست‌های فروشندگی" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "خانه ماه" })).toBeVisible();
-  await expect(page.getByText("09123456789")).toHaveCount(0);
+  await expect(page.getByText("09123456789")).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await captureReleaseCheckpoint(page, testInfo, {
     cellId: "platform-seller-application-review:success",
@@ -120,6 +121,7 @@ test("shows a self-owned application read-only and asks for handoff", async ({
             items: [
               {
                 applicationId: application.applicationId,
+                maskedMobile: "0912***6789",
                 applicantName: application.currentPayload.applicantName,
                 proposedStoreName: application.currentPayload.proposedStoreName,
                 status: application.status,
@@ -172,6 +174,7 @@ test("keeps an explicit case selection when the initial detail arrives late", as
       json: {
         items: [first, second].map((application) => ({
           applicationId: application.applicationId,
+          maskedMobile: "0912***6789",
           applicantName: application.currentPayload.applicantName,
           proposedStoreName: application.currentPayload.proposedStoreName,
           status: application.status,
@@ -241,6 +244,7 @@ test("keeps an empty queue when an older case detail arrives late", async ({
           ? []
           : [first, second].map((application) => ({
               applicationId: application.applicationId,
+              maskedMobile: "0912***6789",
               applicantName: application.currentPayload.applicantName,
               proposedStoreName: application.currentPayload.proposedStoreName,
               status: application.status,
@@ -302,6 +306,7 @@ test("retries an unchanged decision with the same idempotency key", async ({
             items: [
               {
                 applicationId: application.applicationId,
+                maskedMobile: "0912***6789",
                 applicantName: application.currentPayload.applicantName,
                 proposedStoreName: application.currentPayload.proposedStoreName,
                 status: application.status,
@@ -352,6 +357,7 @@ test("shows the platform agent the next step after rejection", async ({ page }) 
                 : [
                     {
                       applicationId: application.applicationId,
+                      maskedMobile: "0912***6789",
                       applicantName: application.currentPayload.applicantName,
                       proposedStoreName: application.currentPayload.proposedStoreName,
                       status: application.status,
@@ -413,6 +419,7 @@ test("platform agent confirms approval before the initial store is created", asy
           : [
               {
                 applicationId: application.applicationId,
+                maskedMobile: "0912***6789",
                 applicantName: application.currentPayload.applicantName,
                 proposedStoreName: application.currentPayload.proposedStoreName,
                 status: application.status,
@@ -427,10 +434,8 @@ test("platform agent confirms approval before the initial store is created", asy
 
   await page.goto("/platform/seller-applications");
   await page.getByLabel("تأیید درخواست").check();
-  await expect(page.getByLabel("کد دلیل")).toBeDisabled();
-  await page
-    .getByLabel("دلیل قابل‌نمایش به متقاضی")
-    .fill("شرایط فروشندگی شما تأیید شد.");
+  await expect(page.getByLabel("کد دلیل")).toHaveCount(0);
+  await expect(page.getByLabel("دلیل قابل‌نمایش به متقاضی")).toHaveCount(0);
   await page.getByRole("button", { name: "تأیید و ساخت فروشگاه" }).click();
 
   await expect(
@@ -440,8 +445,8 @@ test("platform agent confirms approval before the initial store is created", asy
   expect(approvalPayload).toMatchObject({
     expectedRevision: 1,
     reasonCode: "ELIGIBILITY_CONFIRMED",
-    publicReason: "شرایط فروشندگی شما تأیید شد.",
   });
+  expect(approvalPayload).not.toHaveProperty("publicReason");
   expect(approvalPayload).not.toHaveProperty("requestedFields");
 });
 
@@ -481,6 +486,7 @@ test("keeps the committed approval clear when the queue refresh fails", async ({
         items: [
           {
             applicationId: application.applicationId,
+            maskedMobile: "0912***6789",
             applicantName: application.currentPayload.applicantName,
             proposedStoreName: application.currentPayload.proposedStoreName,
             status: application.status,
@@ -495,9 +501,8 @@ test("keeps the committed approval clear when the queue refresh fails", async ({
 
   await page.goto("/platform/seller-applications");
   await page.getByLabel("تأیید درخواست").check();
-  await page
-    .getByLabel("دلیل قابل‌نمایش به متقاضی")
-    .fill("شرایط فروشندگی شما تأیید شد.");
+  await expect(page.getByLabel("دلیل قابل‌نمایش به متقاضی")).toHaveCount(0);
+  await expect(page.getByLabel("کد دلیل")).toHaveCount(0);
   await page.getByRole("button", { name: "تأیید و ساخت فروشگاه" }).click();
 
   await expect(
@@ -509,6 +514,7 @@ test("keeps the committed approval clear when the queue refresh fails", async ({
 
 function sellerApplication() {
   return {
+    applicantMobile: "09123456789",
     applicationId: "05100f04-813c-44f9-b681-22cb4f3dbeae",
     isSelfReview: false,
     status: "SUBMITTED" as "SUBMITTED" | "NEEDS_INFORMATION" | "REJECTED",
