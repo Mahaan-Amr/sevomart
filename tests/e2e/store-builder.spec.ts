@@ -87,6 +87,11 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     name: "store-builder",
     sensitiveRegions: [],
   });
+  async function readSavedDraft() {
+    const response = await page.request.get("/api/store/seller/store/draft");
+    expect(response.ok()).toBe(true);
+    return response.json();
+  }
   await storeNameInput.fill("پیش‌نویس خانه ماه");
   const draftSave = page.waitForResponse(
     (response) =>
@@ -97,8 +102,8 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   const draftResponse = await draftSave;
   expect(draftResponse.ok()).toBe(true);
   expect(draftResponse.request().postDataJSON()).not.toHaveProperty("shippingMethods");
-  expect((await draftResponse.json()).shippingMethods).toEqual([]);
   await expect(page).toHaveURL(/\/seller\/store$/);
+  expect((await readSavedDraft()).shippingMethods).toEqual([]);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
   await page.goto("/seller/store/shipping");
   await expect(page.getByRole("checkbox", { name: "پست پیشتاز" })).not.toBeChecked();
@@ -211,15 +216,15 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   const switchedResponse = await switchedSave;
   expect(switchedResponse.ok()).toBe(true);
+  await expect(page).toHaveURL(/\/seller\/store$/);
   expect(
-    (await switchedResponse.json()).shippingMethods.map(
+    (await readSavedDraft()).shippingMethods.map(
       (method: { code: string; enabled: boolean }) => ({
         code: method.code,
         enabled: method.enabled,
       }),
     ),
   ).toEqual([{ code: "COURIER", enabled: true }]);
-  await expect(page).toHaveURL(/\/seller\/store$/);
 
   await page.goto("/seller/store/shipping");
   let nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
@@ -570,7 +575,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   const preservedResponse = await preservedSave;
   expect(preservedResponse.ok()).toBe(true);
-  expect((await preservedResponse.json()).shippingMethods).toEqual(
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  const preservedDraft = await readSavedDraft();
+  expect(preservedDraft.shippingMethods).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ code: "PICKUP", enabled: true }),
       expect.objectContaining({
@@ -581,10 +588,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
       }),
     ]),
   );
-  expect((await preservedResponse.json()).shippingMethods).not.toEqual(
+  expect(preservedDraft.shippingMethods).not.toEqual(
     expect.arrayContaining([expect.objectContaining({ code: "NATIONAL_POST" })]),
   );
-  await expect(page).toHaveURL(/\/seller\/store$/);
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
