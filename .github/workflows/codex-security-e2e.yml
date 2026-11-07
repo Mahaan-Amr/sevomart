@@ -1,0 +1,61 @@
+name: Temporary security browser verification
+on:
+  push:
+    branches: [fix/273-security-probe]
+permissions:
+  contents: read
+jobs:
+  security-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: sevo
+          POSTGRES_USER: sevo
+          POSTGRES_PASSWORD: sevo_local
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U sevo -d sevo"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: true
+      DATABASE_URL: postgresql://sevo:sevo_local@127.0.0.1:5432/sevo
+      SEVO_RUNTIME_ENV: test
+      NODE_ENV: test
+      API_PORT: 3211
+      WEB_ORIGIN: http://127.0.0.1:3210
+      API_BASE_URL: http://127.0.0.1:3211
+      DEV_OTP_TEST_MOBILES: 09123456788,09123456787,09123456786
+      PLATFORM_TOTP_ACTIVE_KEY_ID: test-v1
+      PLATFORM_TOTP_KEYRING: '{"test-v1":"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk="}'
+      SEVO_SECURITY_E2E: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - run: pnpm --filter @sevo/database exec prisma migrate deploy
+      - name: Exercise real two-factor browser journey
+        run: |
+          pnpm --filter @sevo/api dev > "$RUNNER_TEMP/api.log" 2>&1 &
+          api_pid=$!
+          pnpm --filter @sevo/web exec next dev -p 3210 > "$RUNNER_TEMP/web.log" 2>&1 &
+          web_pid=$!
+          trap 'kill "$api_pid" "$web_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:3211/v1/health >/dev/null && curl --fail --silent http://127.0.0.1:3210/login >/dev/null; then
+              pnpm exec playwright test --config playwright.security.config.ts
+              exit $?
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/api.log" "$RUNNER_TEMP/web.log"
+          exit 1

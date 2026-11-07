@@ -1,0 +1,43 @@
+name: Temporary runtime verification
+on:
+  push:
+    branches: [fix/273-security-probe]
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: sevo-runtime-verification
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify complete Compose runtime
+        run: |
+          docker compose up --build --wait
+          curl --fail --silent http://localhost:3101/v1/health
+          curl --fail --silent --output /dev/null http://localhost:3100/seller/start
+      - name: Verify native development runtime
+        run: |
+          pnpm dev > "$RUNNER_TEMP/sevo-dev.log" 2>&1 &
+          dev_pid=$!
+          trap 'kill "$dev_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://localhost:3201/v1/health && curl --fail --silent --output /dev/null http://localhost:3200/seller/start; then
+              exit 0
+            fi
+            sleep 3
+          done
+          cat "$RUNNER_TEMP/sevo-dev.log"
+          exit 1
+      - name: Stop isolated Compose project
+        if: always()
+        run: docker compose down
