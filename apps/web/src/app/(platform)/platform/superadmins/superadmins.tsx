@@ -10,21 +10,34 @@ type Audit = {
   reason: string;
   occurredAt: string;
 };
+type SensitiveAudit = {
+  actorIdentityId: string;
+  resourceType: string;
+  resourceId: string;
+  action: string;
+  reason: string;
+  outcome: string;
+  occurredAt: string;
+};
 export function Superadmins() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [audit, setAudit] = useState<Audit[]>([]);
+  const [sensitiveAudit, setSensitiveAudit] = useState<SensitiveAudit[]>([]);
   const [identityId, setIdentityId] = useState("");
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const load = useCallback(async () => {
-    const [roleResponse, auditResponse] = await Promise.all([
+    const [roleResponse, auditResponse, sensitiveResponse] = await Promise.all([
       fetch("/api/platform/access/superadmins"),
       fetch("/api/platform/access/superadmins/audit"),
+      fetch("/api/platform/access/superadmins/sensitive-audit"),
     ]);
-    if (!roleResponse.ok || !auditResponse.ok) throw new Error("load");
+    if (!roleResponse.ok || !auditResponse.ok || !sensitiveResponse.ok)
+      throw new Error("load");
     setRoles((await roleResponse.json()).items);
     setAudit((await auditResponse.json()).items);
+    setSensitiveAudit((await sensitiveResponse.json()).items);
   }, []);
   useEffect(() => {
     void load().catch(() => setMessage("دریافت دسترسی‌ها ممکن نشد؛ دوباره تلاش کنید."));
@@ -120,10 +133,60 @@ export function Superadmins() {
                   : "بازیابی"}
             </span>
             <span dir="ltr">{entry.subjectIdentityId}</span>
+            <span dir="ltr">{entry.actorIdentityId ?? "بازیابی مالک"}</span>
             <span>{entry.reason}</span>
+            <time>
+              {new Intl.DateTimeFormat("fa-IR", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(entry.occurredAt))}
+            </time>
+          </li>
+        ))}
+      </ul>
+      <h2>سابقه دسترسی حساس</h2>
+      <ul>
+        {sensitiveAudit.map((entry, index) => (
+          <li key={`${entry.occurredAt}-${index}`}>
+            <span>{entry.outcome === "ALLOWED" ? "انجام شد" : "رد شد"}</span>
+            <span dir="ltr">{entry.actorIdentityId}</span>
+            <span>
+              {caseLabel(entry.resourceType)} · {actionLabel(entry.action)}
+            </span>
+            <span dir="ltr">{entry.resourceId}</span>
+            <span>{entry.reason}</span>
+            <time>
+              {new Intl.DateTimeFormat("fa-IR", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(entry.occurredAt))}
+            </time>
           </li>
         ))}
       </ul>
     </main>
   );
+}
+
+function caseLabel(type: string) {
+  const labels: Record<string, string> = {
+    PAYMENT_REVIEW: "پرداخت",
+    DISPUTE_CASE: "اختلاف",
+    VIOLATION_CASE: "تخلف",
+    SELLER_APPLICATION: "درخواست فروشندگی",
+    ORDER: "سفارش",
+    IDENTITY_VERIFICATION: "هویت",
+  };
+  return labels[type] ?? "پرونده";
+}
+function actionLabel(action: string) {
+  const labels: Record<string, string> = {
+    READ_MASKED: "مشاهده محدود",
+    REVEAL_MINIMUM: "مشاهده جزئیات",
+    ADD_CASE_NOTE: "ثبت یادداشت",
+    UPDATE_CASE_STATUS: "تغییر وضعیت",
+    CONTAIN_INCIDENT: "مهار مشکل",
+    REVOKE_ACCESS: "لغو دسترسی",
+  };
+  return labels[action] ?? "اقدام";
 }

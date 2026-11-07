@@ -292,6 +292,24 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     expect(audits).toEqual([
       { outcome: "ALLOWED", reason: "بررسی وضعیت و مدارک این پرداخت" },
     ]);
+    const history = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "GET",
+        url: "/v1/platform/access/superadmins/sensitive-audit",
+        headers: { cookie: `sevo_platform_session=${actor.token}` },
+      });
+    expect(history.statusCode).toBe(200);
+    expect(history.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorIdentityId: actor.identityId,
+          resourceId,
+          outcome: "ALLOWED",
+        }),
+      ]),
+    );
     await sql.end();
   });
 

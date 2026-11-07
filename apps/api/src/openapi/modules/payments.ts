@@ -8,6 +8,11 @@ import {
   paymentsV2Examples,
   paymentsV2Operations,
 } from "@sevo/contracts/payments/v2";
+import {
+  createPaymentsV3JsonSchemas,
+  paymentsV3Examples,
+  paymentsV3Operations,
+} from "@sevo/contracts/payments/v3";
 
 import {
   addModuleOpenApiContract,
@@ -93,6 +98,48 @@ const operations = [
     responses: [
       { status: 200, schema: "ProviderCallbackResult" },
       { status: 422, schema: "DirectPaymentError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...paymentsV3Operations.revealPlatformPaymentReview,
+    tag: "payments",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "reviewId",
+      schema: "PaymentAttemptId",
+      example: paymentsV1Examples.DirectPaymentAttempt.attemptId,
+    },
+    request: {
+      schema: "PaymentReviewRevealInputV3",
+      example: paymentsV3Examples.PaymentReviewRevealInputV3,
+    },
+    responses: [
+      { status: 200, schema: "PaymentReviewDetailV3" },
+      { status: 403, schema: "PaymentReviewErrorV2" },
+      { status: 404, schema: "PaymentReviewErrorV2" },
+      { status: 422, schema: "PaymentReviewErrorV2" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...paymentsV3Operations.requestPlatformPaymentReconciliation,
+    tag: "payments",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "reviewId",
+      schema: "PaymentAttemptId",
+      example: paymentsV1Examples.DirectPaymentAttempt.attemptId,
+    },
+    request: {
+      schema: "PaymentReviewRevealInputV3",
+      example: paymentsV3Examples.PaymentReviewRevealInputV3,
+    },
+    responses: [
+      { status: 202, schema: "PaymentReconciliationRequestV2" },
+      { status: 403, schema: "PaymentReviewErrorV2" },
+      { status: 409, schema: "PaymentReviewErrorV2" },
+      { status: 422, schema: "PaymentReviewErrorV2" },
       { status: 500, schema: "InternalServerError" },
     ],
   },
@@ -235,8 +282,12 @@ const operations = [
 export const contribute_payments_openApi: OpenApiContributor = (document) =>
   addModuleOpenApiContract(
     document,
-    { ...createPaymentsV1JsonSchemas(), ...createPaymentsV2JsonSchemas() },
-    { ...paymentsV1Examples, ...paymentsV2Examples },
+    {
+      ...createPaymentsV1JsonSchemas(),
+      ...createPaymentsV2JsonSchemas(),
+      ...createPaymentsV3JsonSchemas(),
+    },
+    { ...paymentsV1Examples, ...paymentsV2Examples, ...paymentsV3Examples },
     operations,
     {
       descriptions: {

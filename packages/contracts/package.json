@@ -49,6 +49,10 @@
       "types": "./dist/payments/v2/index.d.ts",
       "default": "./dist/payments/v2/index.js"
     },
+    "./payments/v3": {
+      "types": "./dist/payments/v3/index.d.ts",
+      "default": "./dist/payments/v3/index.js"
+    },
     "./fulfillment/v1": {
       "types": "./dist/fulfillment/v1/index.d.ts",
       "default": "./dist/fulfillment/v1/index.js"

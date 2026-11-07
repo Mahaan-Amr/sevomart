@@ -29,7 +29,11 @@ export class SuperadminService {
   constructor(databaseUrl: string) {
     this.#sql = postgres(databaseUrl, { max: 5 });
   }
-  async list(token: string, correlationId: string, audit: boolean) {
+  async list(
+    token: string,
+    correlationId: string,
+    kind: "roles" | "audit" | "sensitive",
+  ) {
     const tokenHash = createHash("sha256").update(token).digest("hex");
     return this.#sql.begin(async (sql) => {
       const actors = await sql`select 1 from identity_sessions s
@@ -39,7 +43,12 @@ export class SuperadminService {
       and s.revoked_at is null and s.expires_at > now() for share of s, i, a`;
       if (!actors.length)
         throw superadminError(correlationId, "RESPONSIBILITY_REQUIRED", 403);
-      if (audit) {
+      if (kind === "sensitive") {
+        const items =
+          await sql`select actor_identity_id as "actorIdentityId", resource_type as "resourceType", resource_id as "resourceId", action, reason, outcome, occurred_at as "occurredAt" from identity_platform_superadmin_sensitive_audit order by occurred_at desc, id desc`;
+        return { items };
+      }
+      if (kind === "audit") {
         const items =
           await sql`select actor_identity_id as "actorIdentityId", actor_kind as "actorKind", subject_identity_id as "subjectIdentityId", action, reason, occurred_at as "occurredAt" from identity_platform_superadmin_audit order by occurred_at desc, id desc`;
         return { items };
@@ -128,12 +137,24 @@ export class SuperadminController {
     return this.service.list(
       readPlatformSessionToken(request) ?? "",
       request.id,
-      false,
+      "roles",
     );
   }
   @Get("audit")
   async audit(@Req() request: FastifyRequest) {
-    return this.service.list(readPlatformSessionToken(request) ?? "", request.id, true);
+    return this.service.list(
+      readPlatformSessionToken(request) ?? "",
+      request.id,
+      "audit",
+    );
+  }
+  @Get("sensitive-audit")
+  async sensitiveAudit(@Req() request: FastifyRequest) {
+    return this.service.list(
+      readPlatformSessionToken(request) ?? "",
+      request.id,
+      "sensitive",
+    );
   }
   @Post()
   @HttpCode(201)
