@@ -208,9 +208,7 @@ test("applicant and platform agent complete the real seller approval journey", a
   await page.goto("/platform/seller-applications");
   await page.getByRole("button", { name: new RegExp(proposedStoreName) }).click();
   await page.getByLabel("تأیید درخواست").check();
-  await page
-    .getByLabel("دلیل قابل‌نمایش به متقاضی")
-    .fill("شرایط فروشندگی شما تأیید شد.");
+  await expect(page.getByLabel("دلیل قابل‌نمایش به متقاضی")).toHaveCount(0);
   await page.getByRole("button", { name: "تأیید و ساخت فروشگاه" }).click();
   await expect(
     page.getByText("درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد."),
