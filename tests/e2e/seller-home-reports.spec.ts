@@ -56,8 +56,18 @@ test("seller acts from the operational home and reads a private basic report", a
       on conflict (identity_id) do update set status = 'ACTIVE'
     `;
     await transaction`
-      insert into store_stores (id, name, slug, status, revision)
-      values (${storeId}, 'خانه گزارش', ${`reports-${projectIndex}`}, 'DRAFT', 1)
+      insert into store_stores
+        (id, name, slug, bio, return_policy, return_policy_revision,
+         settlement_kind, settlement_status, settlement_verified_at, theme_color, status, revision)
+      values (${storeId}, 'خانه گزارش', ${`reports-${projectIndex}`}, 'کالای دست‌ساز',
+        'تا هفت روز امکان درخواست مرجوعی وجود دارد.', 1, 'TEST', 'TEST_VERIFIED', now(), '#A41439', 'DRAFT', 1)
+    `;
+    await transaction`
+      insert into store_shipping_methods
+        (id, store_id, position, code, label, revision, fixed_fee_amount, currency,
+         estimated_delivery_text, enabled, requires_delivery_address, requires_postal_code)
+      values (${randomUUID()}, ${storeId}, 0, 'NATIONAL_POST', 'پست پیشتاز', 1, 0,
+        'IRR', '۲ تا ۴ روز کاری', true, true, true)
     `;
     await transaction`
       insert into store_memberships (id, store_id, seller_id, role)
@@ -107,7 +117,7 @@ test("seller acts from the operational home and reads a private basic report", a
     await expect(
       page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
     ).toBeVisible();
-    await sql`update store_stores set status = 'PUBLISHED' where id = ${storeId}`;
+    await sql`update store_stores set status = 'PUBLISHED', publication_version = 1, published_at = now() where id = ${storeId}`;
     await page.reload();
     await expect(
       page.getByRole("heading", { name: "اولین کالا را اضافه کنید" }),
