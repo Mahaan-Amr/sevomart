@@ -9,7 +9,6 @@ import { readSellerOperationalSummary } from "../../../../lib/seller-reporting-a
 import { formatDisputeTime } from "../disputes/seller-dispute-copy";
 import { nearestSellerResponseDispute } from "../disputes/seller-dispute-model";
 import styles from "./workspace-page.module.css";
-import { SellerHomeGuide } from "./seller-home-guide";
 
 export default async function SellerHomePage() {
   const cookieStore = await cookies();
@@ -48,7 +47,6 @@ export default async function SellerHomePage() {
           سفارش، موجودی، گفت‌وگو یا پرونده اختلافی که نیاز به رسیدگی داشته باشد اینجا
           می‌آید.
         </p>
-        <SellerHomeGuide />
         <div className={styles.nextAction}>
           {summary.kind === "UNAVAILABLE" &&
           !conversationHref &&
