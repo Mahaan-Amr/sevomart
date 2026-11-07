@@ -91,10 +91,18 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   const [slugUnavailable, setSlugUnavailable] = useState(false);
   const slugCheckSequence = useRef(0);
   const feedbackRef = useRef<HTMLParagraphElement>(null);
+  const focusInvalidField = useRef(false);
   const [feedbackFocusRequest, setFeedbackFocusRequest] = useState(0);
 
   useEffect(() => {
-    if (feedbackFocusRequest > 0) feedbackRef.current?.focus();
+    if (feedbackFocusRequest === 0) return;
+    const field = focusInvalidField.current
+      ? feedbackRef.current
+          ?.closest("form")
+          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+      : null;
+    (field ?? feedbackRef.current)?.focus();
+    focusInvalidField.current = false;
   }, [feedbackFocusRequest]);
 
   useEffect(() => {
@@ -413,6 +421,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       setErrors(fieldErrors);
       if (section === "setup" && Object.keys(fieldErrors).length > 0) {
         setEditStep(hasIdentityErrors(fieldErrors) ? 0 : 1);
+        focusInvalidField.current = true;
         setFeedbackFocusRequest((current) => current + 1);
       }
       throw new StoreDraftSaveError(humanError(body));
