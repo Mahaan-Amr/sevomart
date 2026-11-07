@@ -513,6 +513,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(businessPhone).toBeEmpty();
   await businessPhone.fill("۰۹۱۲۳۴۵۶۷۸۹");
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
   await page.goto("/seller/store/profile");
   await expect(page.getByLabel("شماره تماس کاری (اختیاری)")).toHaveValue("09123456789");
   await page.goto("/seller/store/setup");
@@ -536,6 +537,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.goto("/seller/store/profile");
   await page.getByLabel("شماره تماس کاری (اختیاری)").fill("");
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
