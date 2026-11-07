@@ -86,6 +86,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   const [pending, setPending] = useState(false);
   const [publicUrl, setPublicUrl] = useState("");
   const [revision, setRevision] = useState(0);
+  const [savedDraft, setSavedDraft] = useState<StoreDraft>();
   const [slugStatus, setSlugStatus] = useState("");
   const [slugUnavailable, setSlugUnavailable] = useState(false);
   const slugCheckSequence = useRef(0);
@@ -136,6 +137,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   }
 
   function applyDraft(draft: StoreDraft) {
+    setSavedDraft(draft);
     setRevision(draft.revision);
     setForm({
       name: draft.name ?? "",
@@ -231,10 +233,17 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   async function saveAndExit() {
     const validation = validateForm(form);
     const localErrors: FieldErrors = {
-      ...(form.name.trim() && validation.name ? { name: validation.name } : {}),
-      ...(form.slug.trim() && validation.slug ? { slug: validation.slug } : {}),
-      ...(form.bio.trim() && validation.bio ? { bio: validation.bio } : {}),
-      ...(form.returnPolicy.trim() && validation.returnPolicy
+      ...((form.name.trim() || savedDraft?.name) && validation.name
+        ? { name: validation.name }
+        : {}),
+      ...((form.slug.trim() || savedDraft?.slug) && validation.slug
+        ? { slug: validation.slug }
+        : {}),
+      ...((form.bio.trim() || savedDraft?.bio) && validation.bio
+        ? { bio: validation.bio }
+        : {}),
+      ...((form.returnPolicy.trim() || savedDraft?.returnPolicy) &&
+      validation.returnPolicy
         ? { returnPolicy: validation.returnPolicy }
         : {}),
       ...(validation.publicContactPhone
@@ -383,6 +392,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     const parsed = storeDraftContract.safeParse(body);
     if (!parsed.success) throw new Error("invalid draft response");
     setRevision(parsed.data.revision);
+    setSavedDraft(parsed.data);
     setStoredMedia({ logoMediaId, coverMediaId });
     return parsed.data;
   }
