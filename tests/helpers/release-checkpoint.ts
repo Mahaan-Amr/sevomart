@@ -61,6 +61,13 @@ async function captureAtViewport(
   const scan = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
     .analyze();
+  console.log("[DEBUG-feed-contrast]", JSON.stringify({
+    viewport,
+    violations: scan.violations.filter((entry) => entry.id === "color-contrast").flatMap((entry) =>
+      entry.nodes.flatMap((node) => node.any.map((check) => ({ fg: check.data?.fgColor, bg: check.data?.bgColor, ratio: check.data?.contrastRatio, expected: check.data?.expectedContrastRatio })))),
+    incomplete: scan.incomplete.filter((entry) => entry.id === "color-contrast").flatMap((entry) =>
+      entry.nodes.flatMap((node) => node.any.map((check) => ({ fg: check.data?.fgColor, bg: check.data?.bgColor, ratio: check.data?.contrastRatio, expected: check.data?.expectedContrastRatio })))),
+  }));
   // Raw axe nodes contain HTML, text and selectors; keep only non-content diagnostics.
   const violations = scan.violations.map(({ id, impact, nodes }) => ({
     rule: id,
