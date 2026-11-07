@@ -11,6 +11,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { usePathname } from "next/navigation";
 
 import { emptyFeedState, type FeedState } from "./feed-state";
 
@@ -44,6 +45,7 @@ type BrowseResume = {
 let browseResume: BrowseResume | undefined;
 
 export function FeedWorkspace({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [states, setStates] = useState<WorkspaceState>(freshWorkspace);
   const [restored, setRestored] = useState(false);
   const [restoredFocus, setRestoredFocus] = useState<string>();
@@ -82,6 +84,16 @@ export function FeedWorkspace({ children }: { children: ReactNode }) {
     }
     setRestored(true);
   }, []);
+
+  useEffect(() => {
+    if (!restored || !browseResume || (pathname !== "/" && pathname !== "/following"))
+      return;
+    const snapshot = browseResume;
+    browseResume = undefined;
+    scrollPositions.current = snapshot.scrollPositions;
+    setStates(snapshot.states);
+    setRestoredFocus(snapshot.focusTarget);
+  }, [pathname, restored]);
 
   const setFeedState = useCallback(
     (kind: FeedKind, update: SetStateAction<FeedState>) => {
