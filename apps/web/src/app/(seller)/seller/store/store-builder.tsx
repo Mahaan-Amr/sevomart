@@ -461,6 +461,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
           <span className={styles.status}>منتشرشده</span>
           <h1 id="published-title">فروشگاه آماده است</h1>
           <p>{message || "لینک عمومی فروشگاه شما آمادهٔ اشتراک‌گذاری است."}</p>
+          <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
           <code className={styles.publicLink} dir="ltr">
             {publicUrl}
           </code>
@@ -531,6 +532,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
             </dl>
             <footer>ساخته‌شده با سوو · اطلاعات اعتماد همیشه نمایش داده می‌شود</footer>
           </article>
+          <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
           <p className={styles.message} role="status">
             {message}
           </p>
@@ -660,6 +662,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                 <b>مقصد تسویه</b>
                 <span>تأیید آزمایشی</span>
                 <p>اطلاعات بانکی واقعی دریافت نمی‌شود و این وضعیت تضمین مالی نیست.</p>
+                <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
               </div>
             </>
           ) : null}
