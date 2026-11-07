@@ -217,3 +217,44 @@
     grid-column: 1 / -1;
   }
 }
+.guide {
+  display: grid;
+  gap: 16px;
+  padding-block: 16px;
+  border-block: 1px solid var(--color-divider);
+}
+.guideHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.guide h2,
+.guide h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.guideSplit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.guideSplit[hidden] {
+  display: none;
+}
+.guideSplit ol {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding-inline-start: 24px;
+}
+.guideSplit > div {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+@media (max-width: 520px) {
+  .guideSplit {
+    grid-template-columns: 1fr;
+  }
+}

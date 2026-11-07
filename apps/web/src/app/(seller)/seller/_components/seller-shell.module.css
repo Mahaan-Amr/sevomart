@@ -128,3 +128,8 @@
     display: none;
   }
 }
+
+.mobileIcon {
+  width: 18px;
+  height: 18px;
+}

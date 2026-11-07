@@ -86,6 +86,12 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   await expect(
     sellerNavigation.first().getByRole("link", { name: "پرونده‌های اختلاف" }),
   ).toHaveCount(isDesktopNavigation ? 1 : 0);
+  if (!isDesktopNavigation) {
+    await expect(sellerNavigation.first().locator("svg")).toHaveCount(6);
+    await expect(
+      sellerNavigation.first().getByRole("link", { name: "خانه" }),
+    ).toHaveAttribute("aria-current", "page");
+  }
   await assertNoHorizontalOverflow(page);
   await page.keyboard.press("Tab");
   const focused = page.locator(":focus");
