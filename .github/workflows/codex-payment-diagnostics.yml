@@ -22,4 +22,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:packages
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e -- tests/e2e/direct-payment-success.spec.ts --project=chromium-360x800 --retries=0 --grep 'buyer dispatches payment'
+      - run: pnpm test:e2e -- tests/e2e/direct-payment-success.spec.ts --retries=0 --grep 'buyer dispatches payment'
+
