@@ -57,7 +57,9 @@ composition واقعی هر دو callback می‌دهد؛ داده کمینه د
 سناریوی ایزوله زیر runner عمومی دارای `DATABASE_URL` اجرا نمی‌شوند.
 
 در CI، `DATABASE_URL` به سرویس PostgreSQL همان job اشاره می‌کند. CI همین فرمان‌ها را با نصب قفل‌شده و `pnpm audit --prod` اجرا می‌کند. imageهای web، API و
-worker از Dockerfileهای مستقل ولی با context ریشه ساخته می‌شوند.
+worker و migration از Dockerfileهای مستقل ولی با context ریشه ساخته می‌شوند. در مرحلهٔ
+runtime، بسته‌های نصب‌شدهٔ Debian از مخازن رسمی به‌روزرسانی می‌شوند؛ نسخهٔ آن‌ها به زمان
+ساخت و cache وابسته است و CI هر چهار image را از نظر آسیب‌پذیری اسکن می‌کند.
 
 ## افزودن ماژول
 

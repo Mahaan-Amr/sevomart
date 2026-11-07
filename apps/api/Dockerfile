@@ -51,6 +51,7 @@ RUN pnpm --filter @sevo/api... build \
 
 FROM node:22.23.2-bookworm-slim AS runtime
 RUN apt-get update \
+  && apt-get upgrade --yes --no-install-recommends \
   && apt-get install --yes --no-install-recommends openssl tini \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
   && rm -rf /var/lib/apt/lists/*
