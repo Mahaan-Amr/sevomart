@@ -427,7 +427,7 @@ test("a legacy store draft loads in the existing form and saves with its revisio
   await expect(page.getByLabel("شناسه لینک")).toHaveAccessibleDescription(
     /شناسه لینک قبلاً استفاده شده/,
   );
-  await expect(page.locator("form").getByRole("alert")).toBeFocused();
+  await expect(page.getByLabel("شناسه لینک")).toBeFocused();
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.route(
