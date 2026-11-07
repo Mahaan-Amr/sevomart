@@ -577,3 +577,13 @@ async function establishIdentitySession(context: BrowserContext) {
     await sql.end();
   }
 }
+
+test("application submission keeps server diagnostics private", async ({ context, page }) => {
+  await establishIdentitySession(context);
+  await page.route("**/api/seller-applications/mine", (route) => route.fulfill({ json: { items: [informationRequestApplication()], nextCursor: null } }));
+  await page.route("**/api/seller-applications/*/resubmission", (route) => route.fulfill({ status: 500, json: { message: "private diagnostic secret-value" } }));
+  await page.goto("/seller/application");
+  await page.getByRole("button", { name: "ثبت اطلاعات تکمیلی" }).click();
+  await expect(page.getByRole("alert")).toContainText("درخواست انجام نشد. دوباره تلاش کنید.");
+  await expect(page.locator("main")).not.toContainText("secret-value");
+});
