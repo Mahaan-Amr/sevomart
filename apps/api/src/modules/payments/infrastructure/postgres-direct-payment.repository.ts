@@ -14,6 +14,7 @@ import {
   paymentReviewDetailV2Contract,
   paymentReviewItemV2Contract,
 } from "@sevo/contracts/payments/v2";
+import { paymentReviewDetailV3Contract } from "@sevo/contracts/payments/v3";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import { paymentAttemptIdContract } from "@sevo/contracts/platform/v1";
 import postgres, { type Sql } from "postgres";
@@ -898,23 +899,42 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
   }
 
   async revealReview(command: Parameters<DirectPaymentRepository["revealReview"]>[0]) {
+    return paymentReviewDetailV2Contract.parse(await this.#revealReview(command));
+  }
+
+  async revealReviewDirect(
+    command: Parameters<DirectPaymentRepository["revealReviewDirect"]>[0],
+  ) {
+    return paymentReviewDetailV3Contract.parse(await this.#revealReview(command));
+  }
+
+  async #revealReview(
+    command:
+      | Parameters<DirectPaymentRepository["revealReview"]>[0]
+      | Parameters<DirectPaymentRepository["revealReviewDirect"]>[0],
+  ) {
     if (!this.sensitiveAccess || !this.createAccessTransactionContext) {
       throw new Error("Payment review sensitive access is not configured");
     }
     return this.#sql.begin(async (sql) => {
-      const authorization = await this.sensitiveAccess!.authorizeSensitiveAction(
-        this.createAccessTransactionContext!(sql),
-        {
-          grantId: command.grantId,
-          actorIdentityId: command.actorIdentityId,
-          responsibility: "PAYMENT_REVIEW",
-          resourceType: "PAYMENT_REVIEW",
-          resourceId: command.reviewId,
-          action: "REVEAL_MINIMUM",
-          reason: command.reason,
-          correlationId: command.correlationId,
-        },
-      );
+      const common = {
+        actorIdentityId: command.actorIdentityId,
+        resourceType: "PAYMENT_REVIEW" as const,
+        resourceId: command.reviewId,
+        action: "REVEAL_MINIMUM" as const,
+        reason: command.reason,
+        correlationId: command.correlationId,
+      };
+      const authorization =
+        "grantId" in command
+          ? await this.sensitiveAccess!.authorizeSensitiveAction(
+              this.createAccessTransactionContext!(sql),
+              { ...common, grantId: command.grantId, responsibility: "PAYMENT_REVIEW" },
+            )
+          : await this.sensitiveAccess!.authorizeSuperadminSensitiveAction(
+              this.createAccessTransactionContext!(sql),
+              common,
+            );
       const attempts = await sql<
         Array<
           AttemptRow & {
@@ -961,7 +981,7 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
         where attempt_id = ${attempt.attemptId}
         order by observed_at, provider_event_id
       `;
-      return paymentReviewDetailV2Contract.parse({
+      return {
         reviewId: attempt.attemptId,
         orderId: attempt.orderId,
         status: attempt.status,
@@ -987,31 +1007,52 @@ export class PostgresDirectPaymentRepository implements DirectPaymentRepository 
           ? { nextReconciliationAt: attempt.nextReconciliationAt.toISOString() }
           : {}),
         revealedAt: authorization.accessedAt,
-        accessExpiresAt: authorization.expiresAt,
-      });
+        ...("expiresAt" in authorization
+          ? { accessExpiresAt: authorization.expiresAt }
+          : { access: authorization }),
+      };
     });
   }
 
   async requestReconciliation(
     command: Parameters<DirectPaymentRepository["requestReconciliation"]>[0],
   ) {
+    return this.#requestReconciliation(command);
+  }
+
+  async requestReconciliationDirect(
+    command: Parameters<DirectPaymentRepository["requestReconciliationDirect"]>[0],
+  ) {
+    return this.#requestReconciliation(command);
+  }
+
+  async #requestReconciliation(
+    command:
+      | Parameters<DirectPaymentRepository["requestReconciliation"]>[0]
+      | Parameters<DirectPaymentRepository["requestReconciliationDirect"]>[0],
+  ) {
     return this.#sql.begin(async (sql) => {
       if (!this.sensitiveAccess || !this.createAccessTransactionContext) {
         throw new Error("Payment review sensitive access is not configured");
       }
-      await this.sensitiveAccess.authorizeSensitiveAction(
-        this.createAccessTransactionContext(sql),
-        {
-          grantId: command.grantId,
-          actorIdentityId: command.actorIdentityId,
-          responsibility: "PAYMENT_REVIEW",
-          resourceType: "PAYMENT_REVIEW",
-          resourceId: command.reviewId,
-          action: "UPDATE_CASE_STATUS",
-          reason: command.reason,
-          correlationId: command.correlationId,
-        },
-      );
+      const common = {
+        actorIdentityId: command.actorIdentityId,
+        resourceType: "PAYMENT_REVIEW" as const,
+        resourceId: command.reviewId,
+        action: "UPDATE_CASE_STATUS" as const,
+        reason: command.reason,
+        correlationId: command.correlationId,
+      };
+      if ("grantId" in command)
+        await this.sensitiveAccess.authorizeSensitiveAction(
+          this.createAccessTransactionContext(sql),
+          { ...common, grantId: command.grantId, responsibility: "PAYMENT_REVIEW" },
+        );
+      else
+        await this.sensitiveAccess.authorizeSuperadminSensitiveAction(
+          this.createAccessTransactionContext(sql),
+          common,
+        );
       const rows = await sql<Array<{ requestedAt: Date }>>`
         update payment_attempts
         set next_reconciliation_at = least(

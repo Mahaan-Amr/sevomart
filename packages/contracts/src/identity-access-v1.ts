@@ -439,6 +439,7 @@ export const platformAgentSessionContract = z.object({
 });
 
 export const platformAgentWorkspaceSessionContract = z.object({
+  isSuperadmin: z.boolean().optional(),
   actor: z.object({
     identityId: z.string().uuid(),
     audience: z.literal("PLATFORM_AGENT"),

@@ -82,6 +82,7 @@ describe("platform payment review case access", () => {
 
   afterAll(async () => {
     await app?.close();
+    await sql`truncate identity_platform_superadmin_sensitive_audit`;
     await sql`truncate identity_platform_access_audit`;
     await sql`delete from identity_platform_access_grants where id = ${grantId}`;
     await sql`delete from payment_provider_observations where attempt_id = ${reviewId}`;
@@ -91,6 +92,69 @@ describe("platform payment review case access", () => {
     await sql`delete from identity_sessions where id = ${sessionId}`;
     await sql`delete from identity_identities where id = ${identityId}`;
     await sql.end();
+  });
+
+  it("reveals a payment directly for a superadmin with an audited role receipt", async () => {
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${identityId}, now())`;
+    await sql`update identity_platform_permission_grants set revoked_at = now() where id = ${permissionId}`;
+    try {
+      const response = await app!
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: "POST",
+          url: `/v3/platform/payment-reviews/${reviewId}/reveal`,
+          headers: { cookie: `sevo_platform_session=${sessionToken}` },
+          payload: { reason: "بررسی مدرک درگاه برای پرونده پرداخت مشخص" },
+        });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        reviewId,
+        orderId,
+        access: { source: "SUPERADMIN", actorIdentityId: identityId },
+      });
+      expect(response.json()).not.toHaveProperty("accessExpiresAt");
+      const rows = await sql<
+        Array<{ outcome: string }>
+      >`select outcome from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${identityId} and resource_id = ${reviewId}`;
+      expect(rows).toEqual([{ outcome: "ALLOWED" }]);
+      const reconcile = await app!
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: "POST",
+          url: `/v3/platform/payment-reviews/${reviewId}/reconciliation`,
+          headers: { cookie: `sevo_platform_session=${sessionToken}` },
+          payload: { reason: "درخواست تطبیق دوباره نتیجه درگاه" },
+        });
+      expect(reconcile.statusCode).toBe(202);
+    } finally {
+      await sql`update payment_attempts set next_reconciliation_at = now() + interval '10 minutes' where id = ${reviewId}`;
+      await sql`delete from identity_platform_superadmins where identity_id = ${identityId}`;
+      await sql`update identity_platform_permission_grants set revoked_at = null where id = ${permissionId}`;
+    }
+  });
+
+  it("denies direct access to a limited payment reviewer and records the attempt", async () => {
+    await sql`update identity_platform_permission_grants set revoked_at = now() where id = ${permissionId}`;
+    try {
+      const response = await app!
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: "POST",
+          url: `/v3/platform/payment-reviews/${reviewId}/reveal`,
+          headers: { cookie: `sevo_platform_session=${sessionToken}` },
+          payload: { reason: "بررسی مدرک درگاه برای پرونده پرداخت مشخص" },
+        });
+      expect(response.statusCode).toBe(403);
+      const rows = await sql<
+        Array<{ outcome: string }>
+      >`select outcome from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${identityId} and resource_id = ${reviewId} and outcome = 'DENIED'`;
+      expect(rows).toEqual([{ outcome: "DENIED" }]);
+    } finally {
+      await sql`update identity_platform_permission_grants set revoked_at = null where id = ${permissionId}`;
+    }
   });
 
   it("keeps the queue minimal, audits reveal, schedules recheck, and fails closed after revocation", async () => {

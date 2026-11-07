@@ -6,18 +6,19 @@ import {
   platformViolationQueueItemContract,
   platformViolationQueueContract,
 } from "@sevo/contracts/problem-follow-up/v1";
+import { platformViolationDirectViewContract } from "@sevo/contracts/problem-follow-up/v3";
 import { useCallback, useEffect, useState } from "react";
 
 import styles from "./platform-violation-review.module.css";
 
-type PlatformViolationCaseView = ReturnType<
-  typeof platformViolationCaseViewContract.parse
->;
+type PlatformViolationCaseView =
+  | ReturnType<typeof platformViolationCaseViewContract.parse>
+  | ReturnType<typeof platformViolationDirectViewContract.parse>;
 type PlatformViolationQueueItem = ReturnType<
   typeof platformViolationQueueItemContract.parse
 >;
 
-export function PlatformViolationReview() {
+export function PlatformViolationReview({ isSuperadmin }: { isSuperadmin: boolean }) {
   const [items, setItems] = useState<readonly PlatformViolationQueueItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -64,7 +65,7 @@ export function PlatformViolationReview() {
 
   async function reveal() {
     if (!selectedId) return;
-    if (!platformAccessGrantIdContract.safeParse(grantId).success) {
+    if (!isSuperadmin && !platformAccessGrantIdContract.safeParse(grantId).success) {
       setMessage("شناسه اجازه دسترسی معتبر را وارد کنید.");
       return;
     }
@@ -75,15 +76,20 @@ export function PlatformViolationReview() {
     setRevealing(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/platform/violations/${selectedId}`, {
-        cache: "no-store",
-        headers: {
-          "x-platform-access-grant-id": grantId,
-          "x-platform-access-reason": encodeURIComponent(reason.trim()),
+      const response = await fetch(
+        `/api/platform/${isSuperadmin ? "violations-direct" : "violations"}/${selectedId}`,
+        {
+          cache: "no-store",
+          headers: {
+            "x-platform-access-grant-id": grantId,
+            "x-platform-access-reason": encodeURIComponent(reason.trim()),
+          },
         },
-      });
+      );
       const body: unknown = await response.json();
-      const parsed = platformViolationCaseViewContract.safeParse(body);
+      const parsed = isSuperadmin
+        ? platformViolationDirectViewContract.safeParse(body)
+        : platformViolationCaseViewContract.safeParse(body);
       if (!response.ok || !parsed.success) {
         throw new Error(
           response.status === 403
@@ -169,18 +175,23 @@ export function PlatformViolationReview() {
             ) : (
               <div className={styles.revealPanel}>
                 <p>جزئیات حساس هنوز آشکار نشده‌اند.</p>
-                <p>
-                  اجازه فعال باید دقیقاً برای همین پرونده و عمل «آشکارسازی حداقل» باشد.
-                </p>
-                <label>
-                  <span>شناسه اجازه دسترسی فعال</span>
-                  <input
-                    value={grantId}
-                    onChange={(event) => setGrantId(event.target.value)}
-                    dir="ltr"
-                    autoComplete="off"
-                  />
-                </label>
+                {!isSuperadmin && (
+                  <p>
+                    اجازه فعال باید دقیقاً برای همین پرونده و عمل «آشکارسازی حداقل»
+                    باشد.
+                  </p>
+                )}
+                {!isSuperadmin && (
+                  <label>
+                    <span>شناسه اجازه دسترسی فعال</span>
+                    <input
+                      value={grantId}
+                      onChange={(event) => setGrantId(event.target.value)}
+                      dir="ltr"
+                      autoComplete="off"
+                    />
+                  </label>
+                )}
                 <label>
                   <span>دلیل مشاهده</span>
                   <textarea
@@ -221,10 +232,12 @@ function RevealedDetail({ detail }: { detail: PlatformViolationCaseView }) {
           <dt>اقدام بعدی</dt>
           <dd>{nextActionLabel(detail.nextActionCode)}</dd>
         </div>
-        <div>
-          <dt>اعتبار مشاهده تا</dt>
-          <dd>{formatDate(detail.access.expiresAt)}</dd>
-        </div>
+        {"expiresAt" in detail.access && (
+          <div>
+            <dt>اعتبار مشاهده تا</dt>
+            <dd>{formatDate(detail.access.expiresAt)}</dd>
+          </div>
+        )}
       </dl>
       <h3>مدارک مرتبط</h3>
       {detail.evidence.length === 0 ? (

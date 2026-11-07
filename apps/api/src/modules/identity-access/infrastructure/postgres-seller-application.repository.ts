@@ -14,7 +14,6 @@ import {
   type PlatformSellerApplicationListQuery,
   type PlatformSellerApplicationPage,
   type PlatformSellerApplicationView,
-  type PlatformPermission,
   type RequestSellerApplicationInformation,
   type RejectSellerApplication,
   type ReadMySellerApplicationsQuery,
@@ -467,13 +466,7 @@ export class PostgresSellerApplicationRepository
         return;
       }
 
-      const grants = await sql<Array<{ permission: PlatformPermission }>>`
-        select permission from identity_platform_permission_grants
-        where identity_id = ${context.identityId}
-          and permission = ${context.permission} and revoked_at is null
-        for share
-      `;
-      if (!grants[0]) throw new PlatformPermissionRequiredError();
+      await requireReviewPermission(sql, context);
       const applications = await sql<
         Array<{
           identityId: string;
@@ -578,15 +571,7 @@ export class PostgresSellerApplicationRepository
     }
     const payloadHash = hashPayload({ applicationId, ...input });
     return this.#sql.begin(async (sql) => {
-      const grants = await sql<Array<{ permission: PlatformPermission }>>`
-        select permission
-        from identity_platform_permission_grants
-        where identity_id = ${context.identityId}
-          and permission = ${context.permission}
-          and revoked_at is null
-        for share
-      `;
-      if (!grants[0]) throw new PlatformPermissionRequiredError();
+      await requireReviewPermission(sql, context);
 
       const replay = await beginPlatformIdempotentCommand(
         sql,
@@ -748,15 +733,7 @@ export class PostgresSellerApplicationRepository
         : REJECT_OPERATION;
     const payloadHash = hashPayload({ applicationId, ...input });
     return this.#sql.begin(async (sql) => {
-      const grants = await sql<Array<{ permission: PlatformPermission }>>`
-        select permission
-        from identity_platform_permission_grants
-        where identity_id = ${context.identityId}
-          and permission = ${context.permission}
-          and revoked_at is null
-        for share
-      `;
-      if (!grants[0]) throw new PlatformPermissionRequiredError();
+      await requireReviewPermission(sql, context);
 
       const replay = await beginPlatformIdempotentCommand(
         sql,
@@ -1614,4 +1591,16 @@ async function insertPlatformAudit(
        ${input.reasonCode}, ${input.context.correlationId},
        ${hashText(input.idempotencyKey)}, ${input.occurredAt})
   `;
+}
+
+async function requireReviewPermission(
+  sql: Sql,
+  context: SellerApplicationReviewContext,
+): Promise<void> {
+  const roles =
+    await sql`select a.identity_id from identity_platform_superadmins a join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE' where a.identity_id = ${context.identityId} and a.revoked_at is null for share of a, i`;
+  if (roles.length) return;
+  const grants =
+    await sql`select id from identity_platform_permission_grants where identity_id = ${context.identityId} and permission = ${context.permission} and revoked_at is null for share`;
+  if (!grants.length) throw new PlatformPermissionRequiredError();
 }

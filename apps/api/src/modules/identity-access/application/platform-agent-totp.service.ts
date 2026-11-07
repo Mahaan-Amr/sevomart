@@ -18,6 +18,7 @@ type Session = { id: string; identityId: string; expiresAt: Date; createdAt: Dat
 type Factor = {
   expiresAt: Date;
   generationId: string;
+  enrollmentSuperadminGenerationId?: string | null;
   keyId: string;
   ciphertext: Buffer;
   nonce: Buffer;
@@ -62,9 +63,11 @@ export class PlatformAgentTotpService {
     if (!session) throw new TotpDeniedError();
     const grants =
       await sql`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and revoked_at is null for share`;
+    const role =
+      await sql`select identity_id from identity_platform_superadmins where identity_id = ${session.identityId} and revoked_at is null for share`;
     const now = Date.now();
     if (
-      !grants.length ||
+      (!grants.length && !role.length) ||
       session.status !== "ACTIVE" ||
       session.revokedAt ||
       session.expiresAt.getTime() <= now ||
@@ -102,8 +105,8 @@ export class PlatformAgentTotpService {
       const session = await this.lockedSession(sql, token);
       await sql`lock table identity_totp_factors in row exclusive mode`;
       const auth = await sql<
-        { expiresAt: Date; consumedAt: Date | null }[]
-      >`select expires_at as "expiresAt", consumed_at as "consumedAt" from identity_totp_bootstrap_authorizations
+        { expiresAt: Date; consumedAt: Date | null; roleGenerationId: string | null }[]
+      >`select expires_at as "expiresAt", consumed_at as "consumedAt", superadmin_generation_id as "roleGenerationId" from identity_totp_bootstrap_authorizations
         where identity_id = ${session.identityId} for update`;
       if (
         !this.fresh(session) ||
@@ -112,6 +115,15 @@ export class PlatformAgentTotpService {
         auth[0].expiresAt.getTime() <= Date.now()
       )
         throw new TotpDeniedError();
+      if (auth[0].roleGenerationId) {
+        const role =
+          await sql`select identity_id from identity_platform_superadmins where identity_id = ${session.identityId} and generation_id = ${auth[0].roleGenerationId} and revoked_at is null for share`;
+        if (!role.length) throw new TotpDeniedError();
+      } else {
+        const grants =
+          await sql`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and revoked_at is null for share`;
+        if (!grants.length) throw new TotpDeniedError();
+      }
       const existing =
         await sql`select 1 from identity_totp_factors where identity_id = ${session.identityId}`;
       if (existing.length) throw new TotpDeniedError();
@@ -120,8 +132,8 @@ export class PlatformAgentTotpService {
       const cipher = createCipheriv("aes-256-gcm", key, nonce);
       cipher.setAAD(Buffer.from(session.identityId));
       const ciphertext = Buffer.concat([cipher.update(secret), cipher.final()]);
-      await sql`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at)
-        values (${session.identityId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, 'PENDING', clock_timestamp() + interval '10 minutes')`;
+      await sql`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at, enrollment_superadmin_generation_id)
+        values (${session.identityId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, 'PENDING', clock_timestamp() + interval '10 minutes', ${auth[0].roleGenerationId})`;
       await sql`update identity_totp_bootstrap_authorizations set consumed_at = clock_timestamp() where identity_id = ${session.identityId}`;
       await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'ENROLLMENT_STARTED', 'SUCCEEDED', ${correlationId})`;
       if (!this.fresh(session) || auth[0].expiresAt.getTime() <= Date.now())
@@ -136,7 +148,7 @@ export class PlatformAgentTotpService {
       await sql`lock table identity_totp_factors in row exclusive mode`;
       const rows = await sql<
         Factor[]
-      >`select generation_id as "generationId", expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
+      >`select generation_id as "generationId", enrollment_superadmin_generation_id as "enrollmentSuperadminGenerationId", expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
         from identity_totp_factors where identity_id = ${session.identityId} and enrollment_session_id = ${session.id}
           and status = 'PENDING' for update`;
       const factor = rows[0];
@@ -147,6 +159,11 @@ export class PlatformAgentTotpService {
         (factor.blockedUntil && factor.blockedUntil > new Date())
       )
         return false;
+      if (factor.enrollmentSuperadminGenerationId) {
+        const role =
+          await sql`select identity_id from identity_platform_superadmins where identity_id = ${session.identityId} and generation_id = ${factor.enrollmentSuperadminGenerationId} and revoked_at is null for share`;
+        if (!role.length) return false;
+      }
       let secret: Buffer;
       try {
         const decipher = createDecipheriv(
@@ -207,10 +224,12 @@ export class PlatformAgentTotpService {
         input.action === "APPROVE_TOTP_RECOVERY"
           ? "ACCESS_ADMINISTRATION"
           : "SESSION_SECURITY";
-      const permission = await sql<
-        { id: string }[]
-      >`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = ${requiredPermission} and revoked_at is null for share`;
-      if (!permission.length) return null;
+      const authority = await lockTotpAuthority(
+        sql,
+        session.identityId,
+        requiredPermission,
+      );
+      if (!authority) return null;
       const target =
         await sql`select id from identity_identities where id = ${input.targetIdentityId} and status = 'ACTIVE' for share`;
       if (!target.length) return null;
@@ -255,8 +274,8 @@ export class PlatformAgentTotpService {
       const proof = randomBytes(32).toString("base64url");
       await sql`update identity_totp_factors set last_counter = ${counter}, failed_attempts = 0, blocked_until = null where identity_id = ${session.identityId}`;
       await sql`delete from identity_totp_action_proofs where actor_identity_id = ${session.identityId} and expires_at <= clock_timestamp()`;
-      await sql`insert into identity_totp_action_proofs (id, token_hash, actor_identity_id, session_id, action, target_identity_id, payload_hash, created_at, expires_at, permission_grant_id, factor_generation_id)
-        values (${randomUUID()}, ${createHash("sha256").update(proof).digest("hex")}, ${session.identityId}, ${session.id}, ${input.action}, ${input.targetIdentityId}, ${hashTotpAction(input)}, ${new Date(now)}, ${expiresAt}, ${permission[0]!.id}, ${factor.generationId})`;
+      await sql`insert into identity_totp_action_proofs (id, token_hash, actor_identity_id, session_id, action, target_identity_id, payload_hash, created_at, expires_at, permission_grant_id, superadmin_generation_id, factor_generation_id)
+        values (${randomUUID()}, ${createHash("sha256").update(proof).digest("hex")}, ${session.identityId}, ${session.id}, ${input.action}, ${input.targetIdentityId}, ${hashTotpAction(input)}, ${new Date(now)}, ${expiresAt}, ${authority.grantId}, ${authority.roleGenerationId}, ${factor.generationId})`;
       await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'PROOF_CREATED', 'SUCCEEDED', ${correlationId})`;
       if (!this.fresh(session) || expiresAt.getTime() <= Date.now())
         throw new TotpDeniedError();
@@ -279,9 +298,11 @@ export class PlatformAgentTotpService {
       const sql = transaction as unknown as Sql;
       await sql`select pg_advisory_xact_lock(hashtextextended(${input.targetIdentityId}, 273))`;
       const session = await this.lockedSession(sql, token);
-      const permission = await sql<
-        { id: string }[]
-      >`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'SESSION_SECURITY' and revoked_at is null for share`;
+      const authority = await lockTotpAuthority(
+        sql,
+        session.identityId,
+        "SESSION_SECURITY",
+      );
       const activeFactor = await sql<
         { generationId: string }[]
       >`select generation_id as "generationId" from identity_totp_factors where identity_id = ${session.identityId} and status = 'ACTIVE' for share`;
@@ -296,10 +317,11 @@ export class PlatformAgentTotpService {
           expiresAt: Date;
           consumedAt: Date | null;
           grantId: string | null;
+          roleGenerationId: string | null;
           factorGenerationId: string | null;
         }[]
       >`
-        select id, actor_identity_id as "actorId", session_id as "sessionId", target_identity_id as "targetId", action, payload_hash as "payloadHash", expires_at as "expiresAt", consumed_at as "consumedAt", permission_grant_id as "grantId", factor_generation_id as "factorGenerationId"
+        select id, actor_identity_id as "actorId", session_id as "sessionId", target_identity_id as "targetId", action, payload_hash as "payloadHash", expires_at as "expiresAt", consumed_at as "consumedAt", permission_grant_id as "grantId", superadmin_generation_id as "roleGenerationId", factor_generation_id as "factorGenerationId"
         from identity_totp_action_proofs where token_hash = ${createHash("sha256").update(input.proof).digest("hex")} for update`;
       const proof = proofs[0];
       // The identity lock excludes new PUBLIC sessions, but existing session reads
@@ -307,14 +329,15 @@ export class PlatformAgentTotpService {
       await sql`select id from identity_sessions where identity_id = ${input.targetIdentityId} and audience = 'PUBLIC' and revoked_at is null for update`;
       const now = new Date(Date.now());
       const valid =
-        permission.length > 0 &&
+        !!authority &&
         this.fresh(session) &&
         proof &&
         !proof.consumedAt &&
         proof.expiresAt > now &&
         proof.actorId === session.identityId &&
         proof.sessionId === session.id &&
-        proof.grantId === permission[0]?.id &&
+        proof.grantId === authority.grantId &&
+        proof.roleGenerationId === authority.roleGenerationId &&
         proof.factorGenerationId === activeFactor[0]?.generationId &&
         proof.targetId === input.targetIdentityId &&
         proof.action === "REVOKE_PUBLIC_SESSIONS" &&
@@ -375,9 +398,12 @@ export class PlatformAgentTotpService {
       const recovery = rows[0];
       if (!recovery) throw new TotpDeniedError();
       if (session.identityId !== recovery.requesterId) {
-        const admin =
-          await sql`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'ACCESS_ADMINISTRATION' and revoked_at is null for share`;
-        if (!admin.length) throw new TotpDeniedError();
+        const admin = await lockTotpAuthority(
+          sql,
+          session.identityId,
+          "ACCESS_ADMINISTRATION",
+        );
+        if (!admin) throw new TotpDeniedError();
       }
       if (!this.fresh(session)) throw new TotpDeniedError();
       const counts = await sql<
@@ -403,9 +429,11 @@ export class PlatformAgentTotpService {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const session = await this.lockedSession(sql, token);
-      const permissions = await sql<
-        { id: string }[]
-      >`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'ACCESS_ADMINISTRATION' and revoked_at is null for share`;
+      const authority = await lockTotpAuthority(
+        sql,
+        session.identityId,
+        "ACCESS_ADMINISTRATION",
+      );
       const recoveries = await sql<
         { requesterId: string; reason: string; status: string; expiresAt: Date }[]
       >`select requester_identity_id as "requesterId", reason, status, expires_at as "expiresAt" from identity_totp_recoveries where id = ${recoveryId} for update`;
@@ -429,13 +457,14 @@ export class PlatformAgentTotpService {
           expiresAt: Date;
           consumedAt: Date | null;
           grantId: string | null;
+          roleGenerationId: string | null;
           factorGenerationId: string | null;
         }[]
-      >`select id, actor_identity_id as "actorId", session_id as "sessionId", target_identity_id as "targetId", action, payload_hash as "payloadHash", expires_at as "expiresAt", consumed_at as "consumedAt", permission_grant_id as "grantId", factor_generation_id as "factorGenerationId" from identity_totp_action_proofs where token_hash = ${createHash("sha256").update(proofToken).digest("hex")} for update`;
+      >`select id, actor_identity_id as "actorId", session_id as "sessionId", target_identity_id as "targetId", action, payload_hash as "payloadHash", expires_at as "expiresAt", consumed_at as "consumedAt", permission_grant_id as "grantId", superadmin_generation_id as "roleGenerationId", factor_generation_id as "factorGenerationId" from identity_totp_action_proofs where token_hash = ${createHash("sha256").update(proofToken).digest("hex")} for update`;
       const proof = proofs[0];
       const now = Date.now();
       if (
-        !permissions.length ||
+        !authority ||
         !recovery ||
         recovery.requesterId === session.identityId ||
         recovery.status !== "PENDING" ||
@@ -448,7 +477,8 @@ export class PlatformAgentTotpService {
         proof.sessionId !== session.id ||
         proof.targetId !== recovery.requesterId ||
         proof.action !== "APPROVE_TOTP_RECOVERY" ||
-        proof.grantId !== permissions[0]!.id ||
+        proof.grantId !== authority.grantId ||
+        proof.roleGenerationId !== authority.roleGenerationId ||
         !activeFactor.length ||
         proof.factorGenerationId !== activeFactor[0]!.generationId ||
         proof.payloadHash !==
@@ -462,14 +492,18 @@ export class PlatformAgentTotpService {
         return deny();
       await sql`lock table identity_totp_recovery_approvals in row exclusive mode`;
       const prior = await sql<
-        { approverId: string; grantId: string; generationId: string | null }[]
-      >`select approver_identity_id as "approverId", permission_grant_id as "grantId", factor_generation_id as "generationId" from identity_totp_recovery_approvals where recovery_id = ${recoveryId} for update`;
+        {
+          approverId: string;
+          grantId: string | null;
+          roleGenerationId: string | null;
+          generationId: string | null;
+        }[]
+      >`select approver_identity_id as "approverId", permission_grant_id as "grantId", superadmin_generation_id as "roleGenerationId", factor_generation_id as "generationId" from identity_totp_recovery_approvals where recovery_id = ${recoveryId} for update`;
       if (prior.some((item) => item.approverId === session.identityId)) return deny();
       if (prior.length) {
-        const valid =
-          await sql`select g.id from identity_platform_permission_grants g join identity_identities i on i.id = g.identity_id and i.status = 'ACTIVE' join identity_totp_factors f on f.identity_id = i.id and f.status = 'ACTIVE' and f.generation_id = ${prior[0]!.generationId} where g.id = ${prior[0]!.grantId} and g.identity_id = ${prior[0]!.approverId} and g.permission = 'ACCESS_ADMINISTRATION' and g.revoked_at is null for share of g, i, f`;
+        const valid = await validTotpApproval(sql, prior[0]!);
         if (
-          !valid.length ||
+          !valid ||
           !this.fresh(session) ||
           proof.expiresAt.getTime() <= Date.now() ||
           recovery.expiresAt.getTime() <= Date.now()
@@ -482,7 +516,7 @@ export class PlatformAgentTotpService {
         recovery.expiresAt.getTime() <= Date.now()
       )
         return deny();
-      await sql`insert into identity_totp_recovery_approvals (recovery_id, approver_identity_id, permission_grant_id, factor_generation_id, approved_at) values (${recoveryId}, ${session.identityId}, ${permissions[0]!.id}, ${activeFactor[0]!.generationId}, clock_timestamp())`;
+      await sql`insert into identity_totp_recovery_approvals (recovery_id, approver_identity_id, permission_grant_id, superadmin_generation_id, factor_generation_id, approved_at) values (${recoveryId}, ${session.identityId}, ${authority.grantId}, ${authority.roleGenerationId}, ${activeFactor[0]!.generationId}, clock_timestamp())`;
       await sql`update identity_totp_action_proofs set consumed_at = clock_timestamp() where id = ${proof.id}`;
       if (prior.length === 1)
         await sql`update identity_totp_recoveries set status = 'APPROVED' where id = ${recoveryId}`;
@@ -503,9 +537,16 @@ export class PlatformAgentTotpService {
     requesterId: string,
   ): Promise<boolean> {
     const rows = await sql<
-      { identityId: string }[]
-    >`select a.approver_identity_id as "identityId" from identity_totp_recovery_approvals a join identity_platform_permission_grants g on g.id = a.permission_grant_id and g.identity_id = a.approver_identity_id and g.permission = 'ACCESS_ADMINISTRATION' and g.revoked_at is null join identity_identities i on i.id = a.approver_identity_id and i.status = 'ACTIVE' join identity_totp_factors f on f.identity_id = i.id and f.status = 'ACTIVE' and f.generation_id = a.factor_generation_id where a.recovery_id = ${recoveryId} and a.approver_identity_id <> ${requesterId} for share of g, i, f`;
-    return rows.length === 2 && rows[0]!.identityId !== rows[1]!.identityId;
+      Array<{
+        approverId: string;
+        grantId: string | null;
+        roleGenerationId: string | null;
+        generationId: string | null;
+      }>
+    >`select approver_identity_id as "approverId", permission_grant_id as "grantId", superadmin_generation_id as "roleGenerationId", factor_generation_id as "generationId" from identity_totp_recovery_approvals where recovery_id = ${recoveryId} and approver_identity_id <> ${requesterId} for share`;
+    if (rows.length !== 2 || rows[0]!.approverId === rows[1]!.approverId) return false;
+    for (const row of rows) if (!(await validTotpApproval(sql, row))) return false;
+    return true;
   }
   async beginRecovery(token: string, recoveryId: string, correlationId: string) {
     if (!this.activeKeyId) throw new TotpUnavailableError();
@@ -682,4 +723,44 @@ export function hashTotpAction(input: {
       ]),
     )
     .digest("hex");
+}
+
+async function lockTotpAuthority(
+  sql: Sql,
+  identityId: string,
+  permission: string,
+): Promise<{ grantId: string | null; roleGenerationId: string | null } | undefined> {
+  const grants = await sql<
+    Array<{ id: string }>
+  >`select id from identity_platform_permission_grants where identity_id = ${identityId} and permission = ${permission} and revoked_at is null for share`;
+  if (grants[0]) return { grantId: grants[0].id, roleGenerationId: null };
+  const roles = await sql<
+    Array<{ generationId: string }>
+  >`select generation_id as "generationId" from identity_platform_superadmins where identity_id = ${identityId} and revoked_at is null for share`;
+  if (roles[0]) return { grantId: null, roleGenerationId: roles[0].generationId };
+  return undefined;
+}
+
+async function validTotpApproval(
+  sql: Sql,
+  input: {
+    approverId: string;
+    grantId: string | null;
+    roleGenerationId: string | null;
+    generationId: string | null;
+  },
+): Promise<boolean> {
+  const identity =
+    await sql`select i.id from identity_identities i join identity_totp_factors f on f.identity_id = i.id and f.status = 'ACTIVE' and f.generation_id = ${input.generationId} where i.id = ${input.approverId} and i.status = 'ACTIVE' for share of i, f`;
+  if (!identity.length) return false;
+  const authority = await lockTotpAuthority(
+    sql,
+    input.approverId,
+    "ACCESS_ADMINISTRATION",
+  );
+  return (
+    !!authority &&
+    authority.grantId === input.grantId &&
+    authority.roleGenerationId === input.roleGenerationId
+  );
 }

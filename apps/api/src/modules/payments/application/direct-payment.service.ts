@@ -108,9 +108,21 @@ export class DirectPaymentApplicationService implements DirectPaymentService {
     return this.repository.revealReview(command);
   }
 
+  revealReviewDirect(
+    command: Parameters<DirectPaymentService["revealReviewDirect"]>[0],
+  ) {
+    return this.repository.revealReviewDirect(command);
+  }
+
   requestReconciliation(
     command: Parameters<DirectPaymentService["requestReconciliation"]>[0],
   ) {
     return this.repository.requestReconciliation(command);
+  }
+
+  requestReconciliationDirect(
+    command: Parameters<DirectPaymentService["requestReconciliationDirect"]>[0],
+  ) {
+    return this.repository.requestReconciliationDirect(command);
   }
 }

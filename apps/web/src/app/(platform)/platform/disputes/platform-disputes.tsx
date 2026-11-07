@@ -9,13 +9,16 @@ import {
   resolveDisputeInputV2Contract,
   reopenDisputeInputV2Contract,
 } from "@sevo/contracts/problem-follow-up/v2";
+import { platformDisputeDirectViewContract } from "@sevo/contracts/problem-follow-up/v3";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import styles from "./platform-disputes.module.css";
 
 type Queue = ReturnType<typeof platformDisputeQueueContract.parse>;
 type QueueItem = Queue["items"][number];
-type DisputeView = ReturnType<typeof platformDisputeViewContract.parse>;
+type DisputeView =
+  | ReturnType<typeof platformDisputeViewContract.parse>
+  | ReturnType<typeof platformDisputeDirectViewContract.parse>;
 type EvidenceKind = "IMAGE" | "DOCUMENT" | "MESSAGE_REFERENCE";
 type OutcomeCode =
   | "SELLER_ACTION_AGREED"
@@ -51,7 +54,7 @@ const outcomeLabels: Record<OutcomeCode, string> = {
   REFERRED_TO_FORMAL_CHANNEL: "به مسیر رسمی ارجاع شد",
 };
 
-export function PlatformDisputes() {
+export function PlatformDisputes({ isSuperadmin }: { isSuperadmin: boolean }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [detail, setDetail] = useState<DisputeView>();
@@ -170,13 +173,18 @@ export function PlatformDisputes() {
     setPending(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/platform/disputes/${selected.disputeId}`, {
-        cache: "no-store",
-        headers: accessHeaders(grantId, accessReason),
-      });
+      const response = await fetch(
+        `/api/platform/${isSuperadmin ? "disputes-direct" : "disputes"}/${selected.disputeId}`,
+        {
+          cache: "no-store",
+          headers: accessHeaders(grantId, accessReason),
+        },
+      );
       const body: unknown = await response.json();
       if (!response.ok) throw new Error(humanError(body));
-      const parsed = platformDisputeViewContract.parse(body);
+      const parsed = isSuperadmin
+        ? platformDisputeDirectViewContract.parse(body)
+        : platformDisputeViewContract.parse(body);
       setDetail(parsed);
       rememberAccess(selected.disputeId, grantId, accessReason);
       setMessage("کمینه اطلاعات لازم این پرونده آشکار و مشاهده در سابقه ثبت شد.");
@@ -194,7 +202,7 @@ export function PlatformDisputes() {
     setMessage("");
     try {
       const response = await fetch(
-        `/api/platform/disputes/${selected.disputeId}/${path}`,
+        `/api/platform/${isSuperadmin ? "disputes-direct" : "disputes"}/${selected.disputeId}/${path}`,
         {
           method: "POST",
           headers: {
@@ -207,7 +215,11 @@ export function PlatformDisputes() {
       );
       const body: unknown = await response.json();
       if (!response.ok) throw new Error(humanError(body));
-      setDetail(platformDisputeViewContract.parse(body));
+      setDetail(
+        isSuperadmin
+          ? platformDisputeDirectViewContract.parse(body)
+          : platformDisputeViewContract.parse(body),
+      );
       setMessage(
         path === "resolution"
           ? "نتیجه با دلیل ثبت شد؛ این نتیجه تضمین بازپرداخت نیست."
@@ -292,6 +304,7 @@ export function PlatformDisputes() {
 
               {!detail ? (
                 <AccessPanel
+                  isSuperadmin={isSuperadmin}
                   disputeId={selected.disputeId}
                   grantId={grantId}
                   reason={accessReason}
@@ -313,6 +326,7 @@ export function PlatformDisputes() {
 }
 
 function AccessPanel({
+  isSuperadmin,
   disputeId,
   grantId,
   reason,
@@ -322,6 +336,7 @@ function AccessPanel({
   onRequest,
   onReveal,
 }: {
+  isSuperadmin: boolean;
   disputeId: string;
   grantId: string;
   reason: string;
@@ -333,13 +348,15 @@ function AccessPanel({
 }) {
   return (
     <div className={styles.accessPanel}>
-      <p>
-        شرح، مدارک و سابقه دو طرف هنوز پوشانده‌اند. برای همین پرونده دسترسی ۳۰ دقیقه‌ای
-        بخواهید؛ تأیید مدیر دسترسی لازم است.
-      </p>
+      {!isSuperadmin && (
+        <p>
+          شرح، مدارک و سابقه دو طرف هنوز پوشانده‌اند. برای همین پرونده دسترسی ۳۰
+          دقیقه‌ای بخواهید؛ تأیید مدیر دسترسی لازم است.
+        </p>
+      )}
       <form onSubmit={onRequest}>
         <label>
-          دلیل داخلی درخواست دسترسی
+          {isSuperadmin ? "دلیل مشاهده پرونده" : "دلیل داخلی درخواست دسترسی"}
           <textarea
             value={reason}
             onChange={(event) => onReason(event.target.value)}
@@ -348,26 +365,32 @@ function AccessPanel({
             required
           />
         </label>
-        <button className={styles.primary} type="submit" disabled={pending}>
-          درخواست دسترسی ۳۰ دقیقه‌ای
-        </button>
+        {!isSuperadmin && (
+          <button className={styles.primary} type="submit" disabled={pending}>
+            درخواست دسترسی ۳۰ دقیقه‌ای
+          </button>
+        )}
       </form>
-      <details>
-        <summary>دسترسی قبلاً واگذار شده است</summary>
-        <label>
-          شناسه دسترسی همین پرونده
-          <input
-            value={grantId}
-            onChange={(event) => onGrantId(event.target.value)}
-            inputMode="text"
-            autoComplete="off"
-          />
-        </label>
-      </details>
+      {!isSuperadmin && (
+        <details>
+          <summary>دسترسی قبلاً واگذار شده است</summary>
+          <label>
+            شناسه دسترسی همین پرونده
+            <input
+              value={grantId}
+              onChange={(event) => onGrantId(event.target.value)}
+              inputMode="text"
+              autoComplete="off"
+            />
+          </label>
+        </details>
+      )}
       <button
         type="button"
         onClick={onReveal}
-        disabled={pending || grantId.length < 36 || reason.trim().length < 10}
+        disabled={
+          pending || (!isSuperadmin && grantId.length < 36) || reason.trim().length < 10
+        }
       >
         بررسی دسترسی و بازکردن پرونده {shortId(disputeId)}
       </button>
@@ -390,7 +413,11 @@ function DisputeDetails({
       <dl>
         <Fact label="سفارش" value={shortId(dispute.orderId)} />
         <Fact label="فروشگاه" value={shortId(dispute.storeId)} />
-        <Fact label="دسترسی تا" value={formatDate(dispute.access.expiresAt)} />
+        {"expiresAt" in dispute.access ? (
+          <Fact label="دسترسی تا" value={formatDate(dispute.access.expiresAt)} />
+        ) : (
+          <Fact label="دسترسی" value="مشاهده ثبت شد" />
+        )}
         {dispute.deadline ? (
           <Fact label="مهلت پرونده" value={formatDate(dispute.deadline.dueAt)} />
         ) : null}

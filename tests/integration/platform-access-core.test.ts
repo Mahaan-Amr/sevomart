@@ -1,6 +1,13 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import postgres, { type Sql } from "postgres";
+import {
+  superadminListContract,
+  superadminAuditListContract,
+  superadminSensitiveAuditListContract,
+} from "@sevo/contracts/identity-access/v1";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
@@ -22,6 +29,587 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
     await resetPlatformAccessData();
+  });
+
+  it("allows a superadmin to grant another superadmin but refuses revoking the last one", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const owner = await seedAgent([]);
+    const recipient = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at)
+      values (${owner.identityId}, now())`;
+
+    const grant = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/superadmins",
+      headers: accessHeaders(owner.token),
+      payload: {
+        identityId: recipient.identityId,
+        reason: "واگذاری مسئولیت مدیریت پلتفرم",
+      },
+    });
+    expect(grant.statusCode).toBe(201);
+    const revoke = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/superadmins/${recipient.identityId}/revocation`,
+      headers: accessHeaders(owner.token),
+      payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+    });
+    expect(revoke.statusCode).toBe(200);
+    const last = await server.inject({
+      method: "POST",
+      url: `/v1/platform/access/superadmins/${owner.identityId}/revocation`,
+      headers: accessHeaders(owner.token),
+      payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+    });
+    expect(last.statusCode).toBe(409);
+    await expect(
+      sql`update identity_identities set status = 'INACTIVE' where id = ${owner.identityId}`,
+    ).rejects.toThrow();
+    await sql.end();
+  });
+
+  it("serializes concurrent revocations so one active superadmin remains", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const first = await seedAgent([]);
+    const second = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at)
+      values (${first.identityId}, now()), (${second.identityId}, now())`;
+    const results = await Promise.all(
+      [first, second].map((agent) =>
+        server.inject({
+          method: "POST",
+          url: `/v1/platform/access/superadmins/${agent.identityId}/revocation`,
+          headers: accessHeaders(agent.token),
+          payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+        }),
+      ),
+    );
+    expect(results.map((result) => result.statusCode).sort()).toEqual([200, 409]);
+    await sql.end();
+  });
+
+  it("changes role generation when a revoked superadmin is granted again", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const owner = await seedAgent([]);
+    const other = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${owner.identityId}, now()), (${other.identityId}, now())`;
+    const before = await sql<
+      Array<{ generation: string }>
+    >`select generation_id as generation from identity_platform_superadmins where identity_id = ${other.identityId}`;
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: `/v1/platform/access/superadmins/${other.identityId}/revocation`,
+          headers: accessHeaders(owner.token),
+          payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await server.inject({
+          method: "POST",
+          url: "/v1/platform/access/superadmins",
+          headers: accessHeaders(owner.token),
+          payload: {
+            identityId: other.identityId,
+            reason: "واگذاری دوباره مدیریت پلتفرم",
+          },
+        })
+      ).statusCode,
+    ).toBe(201);
+    const after = await sql<
+      Array<{ generation: string }>
+    >`select generation_id as generation from identity_platform_superadmins where identity_id = ${other.identityId}`;
+    expect(after[0]!.generation).not.toBe(before[0]!.generation);
+    await sql.end();
+  });
+
+  it("keeps a superadmin active when two identities are deactivated concurrently", async () => {
+    const first = await seedAgent([]);
+    const second = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${first.identityId}, now()), (${second.identityId}, now())`;
+    const results = await Promise.allSettled(
+      [first, second].map(
+        (agent) =>
+          sql`update identity_identities set status = 'INACTIVE' where id = ${agent.identityId}`,
+      ),
+    );
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    await sql.end();
+  });
+
+  it("replays a grant once and rejects a different payload with the same key", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const actor = await seedAgent([]);
+    const subject = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const headers = accessHeaders(actor.token);
+    const payload = {
+      identityId: subject.identityId,
+      reason: "واگذاری مسئولیت مدیریت پلتفرم",
+    };
+    const submit = (body: typeof payload) =>
+      server.inject({
+        method: "POST",
+        url: "/v1/platform/access/superadmins",
+        headers,
+        payload: body,
+      });
+    expect((await submit(payload)).statusCode).toBe(201);
+    expect((await submit(payload)).statusCode).toBe(201);
+    expect(
+      (await submit({ ...payload, reason: "واگذاری مدیریت برای پشتیبانی عملیاتی" }))
+        .statusCode,
+    ).toBe(409);
+    const audit = await sql<
+      Array<{ count: number }>
+    >`select count(*)::int as count from identity_platform_superadmin_audit where subject_identity_id = ${subject.identityId}`;
+    expect(audit[0]?.count).toBe(1);
+    await sql.end();
+  });
+
+  it("rejects a grant by an agent without a live superadmin role", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const subject = await seedAgent([]);
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/platform/access/superadmins",
+        headers: accessHeaders(actor.token),
+        payload: {
+          identityId: subject.identityId,
+          reason: "واگذاری مسئولیت مدیریت پلتفرم",
+        },
+      });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("allows revoking the role of an inactive identity while protecting the last active superadmin", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const owner = await seedAgent([]);
+    const other = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${owner.identityId}, now()), (${other.identityId}, now())`;
+    await sql`update identity_identities set status = 'INACTIVE' where id = ${other.identityId}`;
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: `/v1/platform/access/superadmins/${other.identityId}/revocation`,
+        headers: accessHeaders(owner.token),
+        payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+      });
+    expect(response.statusCode).toBe(200);
+    await sql.end();
+  });
+
+  it("lists superadmin roles and their audit for a live superadmin only", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const owner = await seedAgent([]);
+    const other = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${owner.identityId}, now())`;
+    const granted = await server.inject({
+      method: "POST",
+      url: "/v1/platform/access/superadmins",
+      headers: accessHeaders(owner.token),
+      payload: {
+        identityId: other.identityId,
+        reason: "واگذاری مسئولیت مدیریت پلتفرم",
+      },
+    });
+    expect(granted.statusCode).toBe(201);
+    const list = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/superadmins",
+      headers: { cookie: `sevo_platform_session=${owner.token}` },
+    });
+    expect(list.statusCode).toBe(200);
+    expect(superadminListContract.safeParse(list.json()).success).toBe(true);
+    expect(list.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ identityId: other.identityId, status: "ACTIVE" }),
+      ]),
+    );
+    const audit = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/superadmins/audit",
+      headers: { cookie: `sevo_platform_session=${owner.token}` },
+    });
+    expect(audit.statusCode).toBe(200);
+    expect(superadminAuditListContract.safeParse(audit.json()).success).toBe(true);
+    expect(audit.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorIdentityId: owner.identityId,
+          subjectIdentityId: other.identityId,
+          action: "GRANTED",
+        }),
+      ]),
+    );
+    const denied = await server.inject({
+      method: "GET",
+      url: "/v1/platform/access/superadmins/audit",
+      headers: { cookie: `sevo_platform_session=${(await seedAgent([])).token}` },
+    });
+    expect(denied.statusCode).toBe(403);
+    await sql.end();
+  });
+
+  it("returns the live superadmin role and workspace permissions in its session", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "GET",
+        url: "/v1/platform/auth/session",
+        headers: { cookie: `sevo_platform_session=${actor.token}` },
+      });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      isSuperadmin: true,
+      permissions: expect.arrayContaining([
+        "ACCESS_ADMINISTRATION",
+        "SELLER_APPLICATION_REVIEW",
+        "PAYMENT_REVIEW",
+        "DISPUTE_REVIEW",
+      ]),
+    });
+    await sql.end();
+  });
+
+  it("allows superadmin to manage responsibility grants without an individual grant", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "GET",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: { cookie: `sevo_platform_session=${actor.token}` },
+      });
+    expect(response.statusCode).toBe(200);
+    await sql.end();
+  });
+
+  it("lets a superadmin directly grant a high-risk responsibility even when multiple managers exist", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const recipient = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: accessHeaders(actor.token),
+        payload: {
+          recipientIdentityId: recipient.identityId,
+          responsibility: "PAYMENT_OUTCOME_CHANGE",
+          reason: "واگذاری مسئولیت پیگیری نتیجه پرداخت",
+        },
+      });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      status: "ACTIVE",
+      singleManagerException: false,
+    });
+    const own = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: accessHeaders(actor.token),
+        payload: {
+          recipientIdentityId: actor.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          reason: "واگذاری مسئولیت بررسی پرداخت",
+        },
+      });
+    expect(own.statusCode).toBe(403);
+    await sql.end();
+  });
+
+  it("records a role-backed sensitive view without fabricating a grant or expiration", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+    const resourceId = randomUUID();
+    const receipt = await sql.begin((transaction) =>
+      access.authorizeSuperadminSensitiveAction(
+        createOpaquePlatformAccessTransactionContext(transaction),
+        {
+          actorIdentityId: actor.identityId,
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          action: "REVEAL_MINIMUM",
+          reason: "بررسی وضعیت و مدارک این پرداخت",
+          correlationId: randomUUID(),
+        },
+      ),
+    );
+    expect(receipt).toMatchObject({
+      source: "SUPERADMIN",
+      actorIdentityId: actor.identityId,
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+    });
+    expect(receipt).not.toHaveProperty("grantId");
+    expect(receipt).not.toHaveProperty("expiresAt");
+    const audits = await sql<
+      Array<{ outcome: string; reason: string }>
+    >`select outcome, reason from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${actor.identityId}`;
+    expect(audits).toEqual([
+      { outcome: "ALLOWED", reason: "بررسی وضعیت و مدارک این پرداخت" },
+    ]);
+    const history = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "GET",
+        url: "/v1/platform/access/superadmins/sensitive-audit",
+        headers: { cookie: `sevo_platform_session=${actor.token}` },
+      });
+    expect(history.statusCode).toBe(200);
+    expect(superadminSensitiveAuditListContract.safeParse(history.json()).success).toBe(
+      true,
+    );
+    expect(history.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorIdentityId: actor.identityId,
+          resourceId,
+          outcome: "ALLOWED",
+        }),
+      ]),
+    );
+    await sql.end();
+  });
+
+  it("retains denied direct access audit after the consumer transaction rolls back", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+    await expect(
+      sql.begin((transaction) =>
+        access.authorizeSuperadminSensitiveAction(
+          createOpaquePlatformAccessTransactionContext(transaction),
+          {
+            actorIdentityId: actor.identityId,
+            resourceType: "PAYMENT_REVIEW",
+            resourceId: randomUUID(),
+            action: "REVEAL_MINIMUM",
+            reason: "بررسی وضعیت و مدارک این پرداخت",
+            correlationId: randomUUID(),
+          },
+        ),
+      ),
+    ).rejects.toThrow();
+    const rows = await sql<
+      Array<{ outcome: string }>
+    >`select outcome from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${actor.identityId}`;
+    expect(rows).toEqual([{ outcome: "DENIED" }]);
+    await sql.end();
+  });
+
+  it("recovers an active identity without a platform session only when no superadmin remains", async () => {
+    await ensureTestRecoveryRole();
+    const target = await seedAgent([]);
+    const input = JSON.stringify({
+      identityId: target.identityId,
+      reason: "بازیابی مدیریت پس از قطع دسترسی",
+      idempotencyKey: randomUUID(),
+    });
+    const run = () =>
+      spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+        input,
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+      });
+    expect(run().status).toBe(0);
+    expect(run().status).toBe(0);
+    const recoverySql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await recoverySql`update identity_platform_superadmins set revoked_at = now() where identity_id = ${target.identityId}`;
+    expect(run().status).not.toBe(0);
+    await recoverySql`update identity_platform_superadmins set revoked_at = null where identity_id = ${target.identityId}`;
+    await recoverySql.end();
+    const other = await seedAgent([]);
+    const rejected = spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+      input: JSON.stringify({
+        identityId: other.identityId,
+        reason: "بازیابی مدیریت پس از قطع دسترسی",
+        idempotencyKey: randomUUID(),
+      }),
+      encoding: "utf8",
+      env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+    });
+    expect(rejected.status).not.toBe(0);
+  });
+
+  it("serializes concurrent owner recoveries and records exactly one", async () => {
+    await ensureTestRecoveryRole();
+    const first = await seedAgent([]);
+    const second = await seedAgent([]);
+    const run = (identityId: string) =>
+      new Promise<number | null>((resolve) => {
+        const processHandle = spawn(
+          process.execPath,
+          ["scripts/recover-superadmin.mjs"],
+          {
+            env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+            stdio: ["pipe", "ignore", "ignore"],
+          },
+        );
+        processHandle.on("close", resolve);
+        processHandle.stdin.end(
+          JSON.stringify({
+            identityId,
+            reason: "بازیابی مدیریت پس از قطع دسترسی",
+            idempotencyKey: randomUUID(),
+          }),
+        );
+      });
+    const results = await Promise.all([run(first.identityId), run(second.identityId)]);
+    expect(results.filter((code) => code === 0)).toHaveLength(1);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const rows = await sql<
+      Array<{ count: number }>
+    >`select count(*)::int as count from identity_platform_superadmin_audit where actor_kind = 'OWNER_RECOVERY' and action = 'RECOVERED'`;
+    expect(rows[0]?.count).toBe(1);
+    await sql.end();
+  });
+
+  it("rolls back recovery when its audit cannot be recorded", async () => {
+    await ensureTestRecoveryRole();
+    const target = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`create function test_reject_superadmin_recovery_audit() returns trigger language plpgsql as $$ begin raise exception 'injected audit failure'; end $$`;
+    await sql`create trigger test_reject_superadmin_recovery_audit before insert on identity_platform_superadmin_audit for each row execute function test_reject_superadmin_recovery_audit()`;
+    try {
+      const result = spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+        input: JSON.stringify({
+          identityId: target.identityId,
+          reason: "بازیابی مدیریت پس از قطع دسترسی",
+          idempotencyKey: randomUUID(),
+        }),
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: apiTestEnvironment.DATABASE_URL },
+      });
+      expect(result.status).not.toBe(0);
+      const rows =
+        await sql`select identity_id from identity_platform_superadmins where identity_id = ${target.identityId} and revoked_at is null`;
+      expect(rows).toHaveLength(0);
+    } finally {
+      await sql`drop trigger test_reject_superadmin_recovery_audit on identity_platform_superadmin_audit`;
+      await sql`drop function test_reject_superadmin_recovery_audit()`;
+      await sql.end();
+    }
+  });
+
+  it("requires the separately provisioned recovery role for the owner credential", async () => {
+    const target = await seedAgent([]);
+    const admin = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const login = `recovery_test_${randomUUID().replaceAll("-", "")}`;
+    const password = "temporary-test-only-credential";
+    await admin.unsafe(
+      readFileSync("ops/security/provision-superadmin-recovery.sql", "utf8"),
+    );
+    await admin.unsafe(`create role "${login}" login password '${password}'`);
+    const connection = new URL(apiTestEnvironment.DATABASE_URL);
+    connection.username = login;
+    connection.password = password;
+    const input = JSON.stringify({
+      identityId: target.identityId,
+      reason: "بازیابی مدیریت پس از قطع دسترسی",
+      idempotencyKey: randomUUID(),
+    });
+    const run = () =>
+      spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
+        input,
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: connection.toString() },
+      });
+    const enrollInput = JSON.stringify({
+      identityId: target.identityId,
+      reason: "آماده‌سازی ورود امن مدیر جدید",
+      idempotencyKey: randomUUID(),
+    });
+    const authorizeEnrollment = () =>
+      spawnSync(process.execPath, ["scripts/authorize-superadmin-totp.mjs"], {
+        input: enrollInput,
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: connection.toString() },
+      });
+    try {
+      expect(run().status).not.toBe(0);
+      expect(authorizeEnrollment().status).not.toBe(0);
+      await admin.unsafe(`grant sevo_superadmin_recovery to "${login}"`);
+      const restricted = postgres(connection.toString(), { max: 1 });
+      try {
+        await expect(
+          restricted`insert into identity_platform_superadmins (identity_id, granted_at) values (${target.identityId}, now())`,
+        ).rejects.toThrow();
+        await expect(
+          restricted`insert into identity_platform_superadmin_audit (id, actor_kind, subject_identity_id, action, reason, correlation_id) values (${randomUUID()}, 'OWNER_RECOVERY', ${target.identityId}, 'RECOVERED', 'بازیابی مدیریت پس از قطع دسترسی', ${randomUUID()})`,
+        ).rejects.toThrow();
+      } finally {
+        await restricted.end();
+      }
+      expect(run().status).toBe(0);
+      expect(authorizeEnrollment().status).toBe(0);
+      expect(authorizeEnrollment().status).toBe(0);
+      const audit =
+        await admin`select action from identity_platform_superadmin_audit where subject_identity_id = ${target.identityId} and action = 'TOTP_ENROLLMENT_AUTHORIZED'`;
+      expect(audit).toEqual([{ action: "TOTP_ENROLLMENT_AUTHORIZED" }]);
+    } finally {
+      await admin.unsafe(`drop role "${login}"`);
+      await admin.end();
+    }
   });
 
   it("lists responsibility and sensitive grants and exposes audit only to its reviewer", async () => {
@@ -2026,6 +2614,14 @@ function accessHeaders(token: string) {
   };
 }
 
+async function ensureTestRecoveryRole() {
+  const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  await sql.unsafe(
+    readFileSync("ops/security/provision-superadmin-recovery.sql", "utf8"),
+  );
+  await sql.end();
+}
+
 async function seedAgent(permissions: readonly string[]) {
   const identityId = randomUUID();
   const token = randomBytes(32).toString("base64url");
@@ -2059,6 +2655,12 @@ function hash(value: string) {
 
 async function resetPlatformAccessData() {
   const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  await sql`truncate identity_platform_superadmin_sensitive_audit`;
+  await sql`truncate identity_platform_permission_audit`;
+  await sql`truncate identity_platform_superadmin_audit`;
+  await sql`truncate identity_platform_superadmin_idempotency`;
+  await sql`truncate identity_platform_superadmin_recovery_idempotency`;
+  await sql`truncate identity_platform_superadmins`;
   await sql`truncate identity_platform_access_audit`;
   await sql`truncate identity_platform_emergency_access_reviews`;
   await sql`delete from identity_platform_access_idempotency`;

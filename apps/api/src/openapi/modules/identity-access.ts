@@ -7,6 +7,11 @@ import {
   platformAgentAuthV1Paths,
   platformAccessV1Paths,
 } from "@sevo/contracts/identity-access/v1";
+import {
+  createIdentityAccessV2JsonSchemas,
+  identityAccessV2Examples,
+  platformAgentAuthV2Paths,
+} from "@sevo/contracts/identity-access/v2";
 
 import {
   addModuleOpenApiContract,
@@ -384,6 +389,39 @@ const operations = [
     ],
   },
   {
+    operationId: "requestPlatformAgentOtpV2",
+    method: "post",
+    path: platformAgentAuthV2Paths.requestOtp,
+    tag: "identity-access",
+    auth: "none",
+    request: { schema: "OtpRequest", example: identityAccessV1Examples.OtpRequest },
+    responses: [
+      { status: 202, schema: "OtpChallenge" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 429, schema: "RateLimitError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "verifyPlatformAgentOtpV2",
+    method: "post",
+    path: platformAgentAuthV2Paths.verifyOtp,
+    tag: "identity-access",
+    auth: "none",
+    request: {
+      schema: "OtpVerification",
+      example: identityAccessV1Examples.OtpVerification,
+    },
+    responses: [
+      { status: 200, schema: "PlatformAgentSessionV2" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "SellerApplicationError" },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "verifyPlatformAgentOtp",
     method: "post",
     path: platformAgentAuthV1Paths.verifyOtp,
@@ -697,6 +735,85 @@ const operations = [
     ],
   },
   {
+    operationId: "listSuperadmins",
+    method: "get",
+    path: platformAccessV1Paths.superadmins,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 200, schema: "SuperadminList" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "listSuperadminAudit",
+    method: "get",
+    path: platformAccessV1Paths.superadminAudit,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 200, schema: "SuperadminAuditList" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "listSuperadminSensitiveAudit",
+    method: "get",
+    path: platformAccessV1Paths.superadminSensitiveAudit,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 200, schema: "SuperadminSensitiveAuditList" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "grantSuperadmin",
+    method: "post",
+    path: platformAccessV1Paths.superadmins,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "SuperadminGrantInput",
+      example: identityAccessV1Examples.SuperadminGrantInput,
+    },
+    responses: [
+      { status: 201, schema: "SuperadminResult" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 404, schema: "PlatformAccessError" },
+      { status: 409, schema: "PlatformAccessError" },
+      { status: 422, schema: "ValidationError" },
+    ],
+  },
+  {
+    operationId: "revokeSuperadmin",
+    method: "post",
+    path: platformAccessV1Paths.superadminRevocation,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "identityId",
+      schema: "PlatformAccessSubjectIdentityId",
+      example: identityAccessV1Examples.PlatformAccessSubjectIdentityId,
+    },
+    headerParameters: idempotencyHeaderParameters,
+    request: {
+      schema: "SuperadminRevocationInput",
+      example: identityAccessV1Examples.SuperadminRevocationInput,
+    },
+    responses: [
+      { status: 200, schema: "SuperadminResult" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 404, schema: "PlatformAccessError" },
+      { status: 409, schema: "PlatformAccessError" },
+      { status: 422, schema: "ValidationError" },
+    ],
+  },
+  {
     operationId: "requestResponsibilityGrant",
     method: "post",
     path: platformAccessV1Paths.responsibilityGrants,
@@ -991,8 +1108,8 @@ export const contribute_identity_access_openApi: OpenApiContributor = (document)
   };
   return addModuleOpenApiContract(
     document,
-    createIdentityAccessV1JsonSchemas(),
-    identityAccessV1Examples,
+    { ...createIdentityAccessV1JsonSchemas(), ...createIdentityAccessV2JsonSchemas() },
+    { ...identityAccessV1Examples, ...identityAccessV2Examples },
     operations,
     responseMetadata,
   );

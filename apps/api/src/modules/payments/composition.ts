@@ -28,6 +28,7 @@ import {
   InternalPaymentRecoveryController,
   PaymentController,
   PlatformPaymentReviewController,
+  PlatformPaymentReviewDirectController,
   ProviderCallbackController,
 } from "./payment.controller";
 import {
@@ -86,6 +87,7 @@ export class PaymentsModule {
         ProviderCallbackController,
         InternalPaymentRecoveryController,
         PlatformPaymentReviewController,
+        PlatformPaymentReviewDirectController,
         ...(devProvider ? [DevPaymentController] : []),
       ],
       providers: [

@@ -21,6 +21,9 @@ export async function seedUnderReviewDisputeFixture(
   const repository = new PostgresProblemFollowUpRepository(
     databaseUrl,
     {
+      async authorizeSuperadminSensitiveAction() {
+        throw new Error("fixture does not use direct sensitive access");
+      },
       async authorizeSensitiveAction() {
         throw new Error("fixture does not use sensitive access");
       },

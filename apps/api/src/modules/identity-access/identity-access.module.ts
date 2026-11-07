@@ -38,12 +38,20 @@ import {
 import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
 import { PlatformSessionSecurityController } from "./platform-session-security.controller";
-import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
+import {
+  PlatformAgentAuthController,
+  PlatformAgentAuthV2Controller,
+} from "./platform-agent-auth.controller";
 import { PlatformAgentTotpService } from "./application/platform-agent-totp.service";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
 import { SellerApprovalRecoveryController } from "./seller-approval-recovery.controller";
 import { PlatformAccessController } from "./platform-access.controller";
 import { PostgresPlatformAccessRepository } from "./infrastructure/postgres-platform-access.repository";
+import {
+  SuperadminController,
+  SuperadminService,
+  SUPERADMIN_SERVICE,
+} from "./superadmin.controller";
 import type {
   ApprovedSellerStoreProvisioner,
   OpaqueStoreTransactionContext,
@@ -76,11 +84,17 @@ export class IdentityAccessModule {
         SellerApplicationController,
         PlatformSellerApplicationController,
         PlatformAgentAuthController,
+        PlatformAgentAuthV2Controller,
         PlatformSessionSecurityController,
         SellerApprovalRecoveryController,
         PlatformAccessController,
+        SuperadminController,
       ],
       providers: [
+        {
+          provide: SUPERADMIN_SERVICE,
+          useValue: new SuperadminService(environment.DATABASE_URL),
+        },
         {
           provide: SELLER_PASSWORD_SERVICE,
           useValue: new SellerPasswordService(

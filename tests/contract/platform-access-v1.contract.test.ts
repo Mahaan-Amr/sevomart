@@ -45,6 +45,10 @@ const paymentReviewScope = {
 describe("platform access v1 contract", () => {
   it("publishes module-owned paths for responsibility, sensitive and emergency access", () => {
     expect(platformAccessV1Paths).toEqual({
+      superadmins: "/v1/platform/access/superadmins",
+      superadminAudit: "/v1/platform/access/superadmins/audit",
+      superadminSensitiveAudit: "/v1/platform/access/superadmins/sensitive-audit",
+      superadminRevocation: "/v1/platform/access/superadmins/{identityId}/revocation",
       responsibilityGrants: "/v1/platform/access/responsibility-grants",
       responsibilityGrantApproval:
         "/v1/platform/access/responsibility-grants/{grantId}/approval",

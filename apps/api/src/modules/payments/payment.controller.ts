@@ -27,6 +27,7 @@ import {
   paymentReviewQueueV2Contract,
   paymentReviewRevealInputV2Contract,
 } from "@sevo/contracts/payments/v2";
+import { paymentReviewRevealInputV3Contract } from "@sevo/contracts/payments/v3";
 import type { RuntimeEnvironment } from "@sevo/config";
 import {
   identityIdContract,
@@ -478,6 +479,114 @@ function paymentReviewHttpError(
   status: HttpStatus,
 ) {
   return new HttpException({ code, message, correlationId }, status);
+}
+
+@ApiExcludeController()
+@Controller("v3/platform/payment-reviews")
+export class PlatformPaymentReviewDirectController {
+  constructor(
+    @Inject(DIRECT_PAYMENT_SERVICE) private readonly payments: DirectPaymentService,
+    @Inject(PAYMENT_REVIEW_AUTHORIZER)
+    private readonly sessions: PlatformAgentSessionAuthorizer,
+  ) {}
+
+  @Post(":reviewId/reveal")
+  @HttpCode(HttpStatus.OK)
+  async reveal(
+    @Param("reviewId") rawReviewId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
+    const input = paymentReviewRevealInputV3Contract.safeParse(body);
+    if (!reviewId.success || !input.success)
+      throw paymentReviewHttpError(
+        "VALIDATION_ERROR",
+        "شناسه پرونده و دلیل بررسی را کامل کنید.",
+        request.id,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    try {
+      const actor = await this.sessions.readWorkspaceSession(
+        readPlatformSessionToken(request) ?? "",
+      );
+      return await this.payments.revealReviewDirect({
+        reviewId: reviewId.data,
+        actorIdentityId: actor.actor.identityId,
+        reason: input.data.reason,
+        correlationId: request.id,
+      });
+    } catch (error) {
+      if (
+        error instanceof PlatformAgentSessionUnauthorizedError ||
+        error instanceof PlatformPermissionRequiredError ||
+        error instanceof PlatformAccessError
+      )
+        throw paymentReviewHttpError(
+          "PLATFORM_PERMISSION_REQUIRED",
+          "دسترسی مستقیم برای این نشست فعال نیست.",
+          request.id,
+          HttpStatus.FORBIDDEN,
+        );
+      if (error instanceof PaymentReviewNotFoundError)
+        throw paymentReviewHttpError(
+          "REVIEW_NOT_FOUND",
+          "این پرونده پیدا نشد.",
+          request.id,
+          HttpStatus.NOT_FOUND,
+        );
+      throw error;
+    }
+  }
+
+  @Post(":reviewId/reconciliation")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async reconcile(
+    @Param("reviewId") rawReviewId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const reviewId = paymentAttemptIdContract.safeParse(rawReviewId);
+    const input = paymentReviewRevealInputV3Contract.safeParse(body);
+    if (!reviewId.success || !input.success)
+      throw paymentReviewHttpError(
+        "VALIDATION_ERROR",
+        "شناسه پرونده و دلیل بررسی را کامل کنید.",
+        request.id,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    try {
+      const actor = await this.sessions.readWorkspaceSession(
+        readPlatformSessionToken(request) ?? "",
+      );
+      return await this.payments.requestReconciliationDirect({
+        reviewId: reviewId.data,
+        actorIdentityId: actor.actor.identityId,
+        reason: input.data.reason,
+        correlationId: request.id,
+      });
+    } catch (error) {
+      if (
+        error instanceof PlatformAgentSessionUnauthorizedError ||
+        error instanceof PlatformPermissionRequiredError ||
+        error instanceof PlatformAccessError
+      )
+        throw paymentReviewHttpError(
+          "PLATFORM_PERMISSION_REQUIRED",
+          "دسترسی مستقیم برای این نشست فعال نیست.",
+          request.id,
+          HttpStatus.FORBIDDEN,
+        );
+      if (error instanceof PaymentReconciliationNotAvailableError)
+        throw paymentReviewHttpError(
+          "RECONCILIATION_NOT_AVAILABLE",
+          "این پرونده برای تطبیق دوباره در دسترس نیست.",
+          request.id,
+          HttpStatus.CONFLICT,
+        );
+      throw error;
+    }
+  }
 }
 
 @ApiExcludeController()

@@ -5,16 +5,28 @@ import {
   paymentReviewDetailV2Contract,
   type PaymentReviewDetailV2 as PaymentReviewDetailView,
 } from "@sevo/contracts/payments/v2";
+import {
+  paymentReviewDetailV3Contract,
+  type PaymentReviewDetailV3,
+} from "@sevo/contracts/payments/v3";
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../../lib/format-money";
 import styles from "./payment-review-detail.module.css";
 
-export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
+export function PaymentReviewDetail({
+  reviewId,
+  isSuperadmin,
+}: {
+  reviewId: string;
+  isSuperadmin: boolean;
+}) {
   const [grantId, setGrantId] = useState("");
   const [reason, setReason] = useState("");
-  const [detail, setDetail] = useState<PaymentReviewDetailView>();
+  const [detail, setDetail] = useState<
+    PaymentReviewDetailView | PaymentReviewDetailV3
+  >();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -23,13 +35,18 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
     setPending(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/platform/payment-reviews/${reviewId}/reveal`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ grantId, reason }),
-      });
+      const response = await fetch(
+        `/api/platform/${isSuperadmin ? "payment-reviews-direct" : "payment-reviews"}/${reviewId}/reveal`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(isSuperadmin ? { reason } : { grantId, reason }),
+        },
+      );
       const body: unknown = await response.json();
-      const parsed = paymentReviewDetailV2Contract.safeParse(body);
+      const parsed = isSuperadmin
+        ? paymentReviewDetailV3Contract.safeParse(body)
+        : paymentReviewDetailV2Contract.safeParse(body);
       if (!response.ok || !parsed.success) throw new Error(readMessage(body));
       setDetail(parsed.data);
       setMessage("مدرک همین پرونده آشکار شد و مشاهده در سابقه دسترسی ثبت شد.");
@@ -45,11 +62,11 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
     setMessage("");
     try {
       const response = await fetch(
-        `/api/platform/payment-reviews/${reviewId}/reconciliation`,
+        `/api/platform/${isSuperadmin ? "payment-reviews-direct" : "payment-reviews"}/${reviewId}/reconciliation`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ grantId, reason }),
+          body: JSON.stringify(isSuperadmin ? { reason } : { grantId, reason }),
         },
       );
       const body: unknown = await response.json();
@@ -85,26 +102,30 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
         {!detail ? (
           <form className={styles.reveal} onSubmit={(event) => void reveal(event)}>
             <h2>آشکارکردن کمینه اطلاعات پرونده</h2>
-            <p>
-              اجازه باید برای همین پرونده، اقدام «آشکارسازی کمینه» و مهلت فعال صادر شده
-              باشد. <Link href="/platform/access">مدیریت دسترسی‌ها</Link>
-            </p>
-            <label>
-              شناسه اجازه دسترسی حساس
-              <input
-                dir="ltr"
-                value={grantId}
-                onChange={(event) => setGrantId(event.target.value)}
-                required
-                autoComplete="off"
-              />
-            </label>
+            {!isSuperadmin && (
+              <p>
+                اجازه باید برای همین پرونده، اقدام «آشکارسازی کمینه» و مهلت فعال صادر
+                شده باشد. <Link href="/platform/access">مدیریت دسترسی‌ها</Link>
+              </p>
+            )}
+            {!isSuperadmin && (
+              <label>
+                شناسه اجازه دسترسی حساس
+                <input
+                  dir="ltr"
+                  value={grantId}
+                  onChange={(event) => setGrantId(event.target.value)}
+                  required
+                  autoComplete="off"
+                />
+              </label>
+            )}
             <label>
               دلیل مشاهده این پرونده
               <textarea
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                minLength={8}
+                minLength={isSuperadmin ? 10 : 8}
                 maxLength={500}
                 required
               />
@@ -116,8 +137,9 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
         ) : (
           <>
             <aside className={styles.expiry} role="status">
-              این مشاهده تا {formatDate(detail.accessExpiresAt)} مجاز است؛ هر مشاهده
-              دوباره ممیزی می‌شود.
+              {"accessExpiresAt" in detail
+                ? `این مشاهده تا ${formatDate(detail.accessExpiresAt)} مجاز است؛ هر مشاهده دوباره ممیزی می‌شود.`
+                : "این مشاهده در سابقه دسترسی ثبت شد."}
             </aside>
             <dl className={styles.facts}>
               <Fact label="وضعیت" value={statusLabel(detail.status)} />
@@ -169,7 +191,7 @@ export function PaymentReviewDetail({ reviewId }: { reviewId: string }) {
               <button
                 className={styles.reconcile}
                 type="button"
-                disabled={pending || reason.trim().length < 8}
+                disabled={pending || reason.trim().length < (isSuperadmin ? 10 : 8)}
                 onClick={() => void reconcile()}
               >
                 {pending ? "در حال ثبت…" : "درخواست تطبیق دوباره از درگاه"}

@@ -27,6 +27,9 @@ const authorized: PlatformSensitiveAction[] = [];
 const repository = new PostgresProblemFollowUpRepository(
   apiTestEnvironment.DATABASE_URL,
   {
+    async authorizeSuperadminSensitiveAction() {
+      throw new Error("fixture does not use direct sensitive access");
+    },
     async authorizeSensitiveAction(_transaction, input) {
       authorized.push(input);
       return {

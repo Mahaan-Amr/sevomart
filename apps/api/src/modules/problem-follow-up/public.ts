@@ -21,6 +21,10 @@ import type {
   RespondToDisputeInputV2,
   ViolationCaseId,
 } from "@sevo/contracts/problem-follow-up/v2";
+import type {
+  platformDisputeDirectViewContract,
+  platformViolationDirectViewContract,
+} from "@sevo/contracts/problem-follow-up/v3";
 import type { IdentityId, OrderId, StoreId } from "@sevo/contracts/platform/v1";
 import type {
   OpaquePlatformAccessTransactionContext,
@@ -54,13 +58,15 @@ export type SellerDisputePage = ReturnType<typeof sellerDisputePageContract.pars
 export type PlatformDisputeQueue = ReturnType<
   typeof platformDisputeQueueContract.parse
 >;
-export type PlatformDisputeView = ReturnType<typeof platformDisputeViewContract.parse>;
+export type PlatformDisputeView =
+  | ReturnType<typeof platformDisputeViewContract.parse>
+  | ReturnType<typeof platformDisputeDirectViewContract.parse>;
 export type PlatformViolationQueue = ReturnType<
   typeof platformViolationQueueContract.parse
 >;
-export type PlatformViolationCaseView = ReturnType<
-  typeof platformViolationCaseViewContract.parse
->;
+export type PlatformViolationCaseView =
+  | ReturnType<typeof platformViolationCaseViewContract.parse>
+  | ReturnType<typeof platformViolationDirectViewContract.parse>;
 export type RespondToDisputeInput = RespondToDisputeInputV2;
 export type ResolveDisputeInput = ResolveDisputeInputV2;
 export type ReopenDisputeInput = ReopenDisputeInputV2;
@@ -115,10 +121,12 @@ export type DisputeMutationCommand<Input> = Readonly<{
   correlationId: string;
 }>;
 
-export type SensitiveAccessInput = Readonly<{
-  grantId: string;
-  reason: string;
-}>;
+export type SensitiveAccessInput =
+  | Readonly<{
+      grantId: string;
+      reason: string;
+    }>
+  | Readonly<{ kind: "SUPERADMIN"; reason: string }>;
 
 export type SensitiveCaseRead = Readonly<{
   caseId: DisputeId | ViolationCaseId;
@@ -138,6 +146,7 @@ export type SensitiveDisputeMutation<Input> = DisputeMutationCommand<Input> &
   }>;
 
 export interface ProblemFollowUpSensitiveAccess {
+  authorizeSuperadminSensitiveAction: PlatformSensitiveAccess["authorizeSuperadminSensitiveAction"];
   authorizeSensitiveAction(
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformSensitiveAction,

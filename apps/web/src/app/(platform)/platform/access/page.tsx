@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import {
   PlatformAccessStatus,
@@ -27,6 +28,11 @@ export default async function PlatformAccessPage() {
   }
   return (
     <PlatformShell permissions={access.session.permissions}>
+      {access.session.isSuperadmin && (
+        <p>
+          <Link href="/platform/superadmins">مدیریت سوپرادمین‌ها</Link>
+        </p>
+      )}
       <PlatformAccessWorkspace
         actorIdentityId={access.session.actor.identityId}
         canAdminister={canAdminister}

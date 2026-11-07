@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/release-playwright";
+import postgres from "postgres";
 import { captureReleaseCheckpoint } from "../helpers/release-checkpoint";
 
 import {
@@ -9,6 +10,34 @@ import {
   establishPlatformAgentRecipient,
   establishPlatformAgentSession,
 } from "../helpers/platform-agent-session";
+
+test("a superadmin grants and revokes an explicit role", async ({ context, page }) => {
+  const owner = await establishPlatformAgentSession(context, []);
+  const recipient = await establishPlatformAgentRecipient();
+  const sql = postgres(
+    process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo",
+    { max: 1 },
+  );
+  await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${owner.identityId}, now())`;
+  try {
+    await page.goto("/platform/superadmins");
+    await expect(
+      page.getByRole("heading", { name: "مدیریت سوپرادمین‌ها" }),
+    ).toBeVisible();
+    await page.getByLabel("شناسه هویت").fill(recipient);
+    await page.getByLabel("دلیل اقدام").fill("واگذاری مسئولیت مدیریت پلتفرم");
+    await page.getByRole("button", { name: "اعطای دسترسی" }).click();
+    await expect(page.getByText("دسترسی ثبت شد.")).toBeVisible();
+    await page.getByRole("button", { name: `لغو دسترسی ${recipient}` }).click();
+    await expect(page.getByText("دسترسی لغو شد.")).toBeVisible();
+    await page.getByRole("button", { name: `لغو دسترسی ${owner.identityId}` }).click();
+    await expect(page.getByText("لغو آخرین سوپرادمین فعال ممکن نیست.")).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+  } finally {
+    await sql`delete from identity_platform_superadmins where identity_id in (${owner.identityId}, ${recipient})`;
+    await sql.end();
+  }
+});
 
 test("an access manager grants and immediately revokes a responsibility", async ({
   context,

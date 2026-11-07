@@ -211,7 +211,22 @@ export type PlatformEmergencyAction = Omit<
   incidentId: string;
 };
 
+export type SuperadminSensitiveAction = Omit<
+  PlatformSensitiveAction,
+  "grantId" | "responsibility"
+>;
+export type SuperadminSensitiveReceipt = {
+  source: "SUPERADMIN";
+  actorIdentityId: string;
+  scope: PlatformAccessScope;
+  accessedAt: string;
+};
+
 export interface PlatformSensitiveAccess {
+  authorizeSuperadminSensitiveAction(
+    transaction: OpaquePlatformAccessTransactionContext,
+    input: SuperadminSensitiveAction,
+  ): Promise<SuperadminSensitiveReceipt>;
   authorizeSensitiveAction(
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformSensitiveAction,

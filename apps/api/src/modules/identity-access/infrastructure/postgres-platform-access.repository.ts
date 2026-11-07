@@ -21,6 +21,7 @@ import {
   responsibilityGrantViewContract,
   requestEmergencyAccessCommandContract,
   requestResponsibilityGrantCommandContract,
+  responsibilityGrantRequestInputContract,
   requestSensitiveAccessCommandContract,
   revokePlatformAccessCommandContract,
   sensitiveAccessGrantedV1Contract,
@@ -37,6 +38,8 @@ import {
   platformAccessAuditEntryContract,
   rejectPlatformAccessCommandContract,
   unresolvedEmergencyAccessAuditEntryContract,
+  superadminSensitiveActionContract,
+  superadminSensitiveReceiptContract,
   type PlatformAccessGrant,
   type PlatformAccessAuditEntry,
   type PlatformAccessRejection,
@@ -56,6 +59,8 @@ import {
   type PlatformAccessCore,
   type PlatformEmergencyAction,
   type PlatformSensitiveAction,
+  type SuperadminSensitiveAction,
+  type SuperadminSensitiveReceipt,
   type OpaquePlatformAccessTransactionContext,
 } from "../public";
 import { readOpaquePlatformAccessTransaction } from "./opaque-platform-access-transaction";
@@ -167,29 +172,37 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         input,
       );
       if (replay) return replay;
+      const isSuperadmin = await lockLiveSuperadmin(sql, session.identityId);
       if (session.identityId === input.recipientIdentityId) {
         throw new PlatformAccessError("SELF_GRANT_FORBIDDEN");
       }
       const activeManagerCount = await countActiveAccessManagers(sql);
       const highRisk = HIGH_RISK.has(input.responsibility);
-      const controlMode = !highRisk
-        ? "DIRECT"
-        : activeManagerCount === 1
-          ? "SINGLE_MANAGER_EXCEPTION"
-          : "DUAL_CONTROL";
-      const status = highRisk && activeManagerCount > 1 ? "PENDING_APPROVAL" : "ACTIVE";
+      const controlMode = isSuperadmin
+        ? "SUPERADMIN_DIRECT"
+        : !highRisk
+          ? "DIRECT"
+          : activeManagerCount === 1
+            ? "SINGLE_MANAGER_EXCEPTION"
+            : "DUAL_CONTROL";
+      const status =
+        !isSuperadmin && highRisk && activeManagerCount > 1
+          ? "PENDING_APPROVAL"
+          : "ACTIVE";
       const now = new Date();
       const grantId = randomUUID();
       const singleManagerException = controlMode === "SINGLE_MANAGER_EXCEPTION";
-      requestResponsibilityGrantCommandContract.parse({
-        requesterIdentityId: session.identityId,
-        recipientIdentityId: input.recipientIdentityId,
-        responsibility: input.responsibility,
-        reason: input.reason,
-        activeAccessManagerCount: activeManagerCount,
-        controlMode,
-        strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
-      });
+      if (isSuperadmin) responsibilityGrantRequestInputContract.parse(input);
+      else
+        requestResponsibilityGrantCommandContract.parse({
+          requesterIdentityId: session.identityId,
+          recipientIdentityId: input.recipientIdentityId,
+          responsibility: input.responsibility,
+          reason: input.reason,
+          activeAccessManagerCount: activeManagerCount,
+          controlMode,
+          strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
+        });
 
       await sql`
         insert into identity_platform_access_grants
@@ -1967,6 +1980,41 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
     });
   }
 
+  async authorizeSuperadminSensitiveAction(
+    transaction: OpaquePlatformAccessTransactionContext,
+    input: SuperadminSensitiveAction,
+  ): Promise<SuperadminSensitiveReceipt> {
+    const validated = superadminSensitiveActionContract.parse(input);
+    const reason = validated.reason;
+    const sql = readOpaquePlatformAccessTransaction(transaction);
+    const roles = await sql<Array<{ identityId: string }>>`
+      select a.identity_id as "identityId" from identity_platform_superadmins a
+      join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE'
+      where a.identity_id = ${input.actorIdentityId} and a.revoked_at is null
+      for share of a, i`;
+    if (!roles[0]) {
+      await this.#sql`insert into identity_platform_superadmin_sensitive_audit
+        (id, actor_identity_id, resource_type, resource_id, action, reason, outcome, correlation_id)
+        values (${randomUUID()}, ${input.actorIdentityId}, ${input.resourceType}, ${input.resourceId}, ${input.action}, ${reason}, 'DENIED', ${input.correlationId})`;
+      throw new PlatformAccessError("RESPONSIBILITY_REQUIRED");
+    }
+    const rows = await sql<Array<{ accessedAt: Date }>>`
+      insert into identity_platform_superadmin_sensitive_audit
+        (id, actor_identity_id, resource_type, resource_id, action, reason, outcome, correlation_id)
+      values (${randomUUID()}, ${input.actorIdentityId}, ${input.resourceType}, ${input.resourceId}, ${input.action}, ${reason}, 'ALLOWED', ${input.correlationId})
+      returning occurred_at as "accessedAt"`;
+    return superadminSensitiveReceiptContract.parse({
+      source: "SUPERADMIN",
+      actorIdentityId: input.actorIdentityId,
+      scope: {
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        allowedActions: [input.action],
+      },
+      accessedAt: rows[0]!.accessedAt.toISOString(),
+    });
+  }
+
   async authorizeSensitiveAction(
     transaction: OpaquePlatformAccessTransactionContext,
     input: PlatformSensitiveAction,
@@ -2550,6 +2598,7 @@ async function authorizePlatformSession(
 }
 
 async function requireAccessAdministrator(sql: Sql, identityId: string): Promise<void> {
+  if (await lockLiveSuperadmin(sql, identityId)) return;
   const rows = await sql<Array<{ id: string }>>`
     select p.id from identity_platform_permission_grants p
     where p.identity_id = ${identityId}
@@ -2564,6 +2613,7 @@ async function requireResponsibility(
   identityId: string,
   responsibility: Responsibility,
 ): Promise<void> {
+  if (await lockLiveSuperadmin(sql, identityId)) return;
   const rows = await sql<Array<{ id: string }>>`
     select p.id from identity_platform_permission_grants p
     join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
@@ -2579,6 +2629,7 @@ async function hasResponsibility(
   identityId: string,
   responsibility: Responsibility,
 ): Promise<boolean> {
+  if (await lockLiveSuperadmin(sql, identityId)) return true;
   const rows = await sql<Array<{ exists: boolean }>>`
     select exists(
       select 1 from identity_platform_permission_grants p
@@ -2590,12 +2641,24 @@ async function hasResponsibility(
   return rows[0]?.exists ?? false;
 }
 
+async function lockLiveSuperadmin(sql: Sql, identityId: string): Promise<boolean> {
+  const rows = await sql`select a.identity_id from identity_platform_superadmins a
+    join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE'
+    where a.identity_id = ${identityId} and a.revoked_at is null for share of a, i`;
+  return rows.length > 0;
+}
+
 async function countActiveAccessManagers(sql: Sql): Promise<number> {
   const rows = await sql<Array<{ count: number }>>`
-    select count(distinct p.identity_id)::int as count
-    from identity_platform_permission_grants p
-    join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
-    where p.permission = 'ACCESS_ADMINISTRATION' and p.revoked_at is null
+    select count(distinct candidates.identity_id)::int as count from (
+      select p.identity_id from identity_platform_permission_grants p
+      join identity_identities i on i.id = p.identity_id and i.status = 'ACTIVE'
+      where p.permission = 'ACCESS_ADMINISTRATION' and p.revoked_at is null
+      union all
+      select a.identity_id from identity_platform_superadmins a
+      join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE'
+      where a.revoked_at is null
+    ) candidates
   `;
   return rows[0]?.count ?? 0;
 }

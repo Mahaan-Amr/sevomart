@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { superadminRevocationInputContract } from "@sevo/contracts/identity-access/v1";
 
 import {
   DISPUTE_SELLER_FIRST_RESPONSE_HOURS,
@@ -169,7 +170,11 @@ export class ProblemFollowUpService {
     disputeId: unknown,
     access: SensitiveAccessInput,
   ) {
-    const actorId = await this.requirePlatform(request.sessionToken, "DISPUTE_REVIEW");
+    const actorId = await this.requirePlatform(
+      request.sessionToken,
+      "DISPUTE_REVIEW",
+      "kind" in access,
+    );
     const caseId = this.parse(disputeIdContract, disputeId);
     return this.repository.readPlatformDispute({
       caseId,
@@ -189,7 +194,11 @@ export class ProblemFollowUpService {
     key: unknown,
     access: SensitiveAccessInput,
   ) {
-    const actorId = await this.requirePlatform(request.sessionToken, "DISPUTE_REVIEW");
+    const actorId = await this.requirePlatform(
+      request.sessionToken,
+      "DISPUTE_REVIEW",
+      "kind" in access,
+    );
     const input = this.parse(resolveDisputeInputV2Contract, body);
     const parsedDisputeId = this.parse(disputeIdContract, disputeId);
     return this.repository.resolve({
@@ -213,7 +222,11 @@ export class ProblemFollowUpService {
     key: unknown,
     access: SensitiveAccessInput,
   ) {
-    const actorId = await this.requirePlatform(request.sessionToken, "DISPUTE_REVIEW");
+    const actorId = await this.requirePlatform(
+      request.sessionToken,
+      "DISPUTE_REVIEW",
+      "kind" in access,
+    );
     const input = this.parse(reopenDisputeInputV2Contract, body);
     const parsedDisputeId = this.parse(disputeIdContract, disputeId);
     return this.repository.reopen({
@@ -247,6 +260,7 @@ export class ProblemFollowUpService {
     const actorId = await this.requirePlatform(
       request.sessionToken,
       "VIOLATION_REVIEW",
+      "kind" in access,
     );
     const caseId = this.parse(violationCaseIdContract, violationCaseId);
     return this.repository.readPlatformViolation({
@@ -314,13 +328,17 @@ export class ProblemFollowUpService {
     return { actorId, storeId };
   }
 
-  private async requirePlatform(token: string | undefined, permission: string) {
+  private async requirePlatform(
+    token: string | undefined,
+    permission: string,
+    direct = false,
+  ) {
     if (!token || !this.platformSessions) {
       throw new ProblemFollowUpFault("UNAUTHENTICATED");
     }
     try {
       const session = await this.platformSessions.readWorkspaceSession(token);
-      if (!session.permissions.includes(permission)) {
+      if (!direct && !session.permissions.includes(permission)) {
         throw new ProblemFollowUpFault("FORBIDDEN");
       }
       return identityIdContract.parse(session.actor.identityId);
@@ -334,7 +352,13 @@ export class ProblemFollowUpService {
   }
 
   private requireAccess(access: SensitiveAccessInput) {
-    if (!access.grantId || access.reason.trim().length < 10) {
+    if (
+      ("grantId" in access && !access.grantId) ||
+      access.reason.trim().length < 10 ||
+      ("kind" in access &&
+        !superadminRevocationInputContract.shape.reason.safeParse(access.reason)
+          .success)
+    ) {
       throw new ProblemFollowUpFault("SENSITIVE_ACCESS_REQUIRED");
     }
     return access;
