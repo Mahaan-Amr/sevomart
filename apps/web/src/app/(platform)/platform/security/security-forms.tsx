@@ -53,7 +53,13 @@ function Code({
         maxLength={6}
         required
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) =>
+          onChange(
+            event.target.value.replace(/[۰-۹٠-٩]/g, (digit) =>
+              String(digit.charCodeAt(0) - (digit >= "۰" ? 0x06f0 : 0x0660)),
+            ),
+          )
+        }
       />
     </label>
   );
