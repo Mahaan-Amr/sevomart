@@ -45,6 +45,51 @@ describe("seller password HTTP API", () => {
     ]);
   });
 
+  it("does not let a held number occupy password slots or block another number", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
+    let release!: () => void;
+    let acquired!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    try {
+      const holder = sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtext('09100000001'))`;
+        acquired();
+        await gate;
+      });
+      await held;
+      const blocked = await Promise.all(
+        Array.from({ length: 6 }, () =>
+          server.inject({
+            method: "POST",
+            url: "/v1/auth/password/sessions",
+            payload: { mobile: "09100000001", password: "wrong secure password" },
+          }),
+        ),
+      );
+      expect(blocked.every((result) => result.statusCode === 429)).toBe(true);
+      const other = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09100000002", password: "wrong secure password" },
+      });
+      expect(other.statusCode).toBe(401);
+      release();
+      await holder;
+    } finally {
+      release();
+      await sql`delete from identity_password_attempts where mobile in ('09100000001', '09100000002')`;
+      await sql.end();
+    }
+  });
+
   it("bounds concurrent password work across different numbers before recording attempts", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -93,7 +138,7 @@ describe("seller password HTTP API", () => {
     }
   });
 
-  it("caps cross-number admissions and incrementally removes expired attempt records", async () => {
+  it("allows cross-number admissions and incrementally removes expired attempt records", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
@@ -103,7 +148,7 @@ describe("seller password HTTP API", () => {
       await sql`delete from identity_password_attempts where mobile like '090%' or mobile in ${sql(mobiles)}`;
       await sql`insert into identity_password_attempts (mobile, attempts, window_started_at) select '090' || lpad(n::text, 8, '0'), 1, '2000-01-01'::timestamptz from generate_series(1, 102) n`;
       await sql`update identity_password_admission set attempts = 59, window_started_at = clock_timestamp() where id = 1`;
-      for (const [index, mobile] of mobiles.entries()) {
+      for (const mobile of mobiles) {
         expect(
           (
             await server.inject({
@@ -112,7 +157,7 @@ describe("seller password HTTP API", () => {
               payload: { mobile, password: "wrong secure password" },
             })
           ).statusCode,
-        ).toBe(index === 0 ? 401 : 429);
+        ).toBe(401);
       }
       const [created] = await sql<
         Array<{ count: number }>
@@ -120,8 +165,8 @@ describe("seller password HTTP API", () => {
       const [expired] = await sql<
         Array<{ count: number }>
       >`select count(*)::int as count from identity_password_attempts where mobile like '090%' and window_started_at < clock_timestamp() - interval '15 minutes'`;
-      expect(created?.count).toBe(1);
-      expect(expired?.count).toBe(2);
+      expect(created?.count).toBe(3);
+      expect(expired?.count).toBe(0);
     } finally {
       await sql`delete from identity_password_attempts where mobile like '090%' or mobile in ${sql(mobiles)}`;
       await sql`update identity_password_admission set attempts = 0, window_started_at = clock_timestamp() where id = 1`;
@@ -171,6 +216,20 @@ describe("seller password HTTP API", () => {
         payload: { password: "correct horse battery staple" },
       });
       expect(enrollment.statusCode).toBe(204);
+      await sql`insert into identity_password_attempts (mobile, attempts, window_started_at) select '093' || lpad(n::text, 8, '0'), 1, clock_timestamp() from generate_series(1, 10000) n on conflict (mobile) do update set window_started_at = excluded.window_started_at`;
+      const anonymousAtCapacity = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09100000009", password: "wrong secure password" },
+      });
+      const sellerAtCapacity = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09123456789", password: "correct horse battery staple" },
+      });
+      expect(anonymousAtCapacity.statusCode).toBe(401);
+      expect(sellerAtCapacity.statusCode).toBe(200);
+      await sql`delete from identity_password_attempts where mobile like '093%'`;
       const bad = await server.inject({
         method: "POST",
         url: "/v1/auth/password/sessions",
@@ -195,19 +254,26 @@ describe("seller password HTTP API", () => {
           ).statusCode,
         ).toBe(401);
       }
-      expect(
-        (
-          await server.inject({
-            method: "POST",
-            url: "/v1/auth/password/sessions",
-            payload: {
-              mobile: "09123456789",
-              password: "correct horse battery staple",
-            },
-          })
-        ).statusCode,
-      ).toBe(401);
+      const locked = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09123456789", password: "correct horse battery staple" },
+      });
+      expect(locked.statusCode).toBe(401);
+      expect(locked.json().message).toBe(unknown.json().message);
       await sql`update identity_password_attempts set window_started_at = clock_timestamp() - interval '16 minutes' where mobile = '09123456789'`;
+      for (let n = 0; n < 60; n++) {
+        const mobile = `092${String(n).padStart(8, "0")}`;
+        expect(
+          (
+            await server.inject({
+              method: "POST",
+              url: "/v1/auth/password/sessions",
+              payload: { mobile, password: "wrong secure password" },
+            })
+          ).statusCode,
+        ).toBe(401);
+      }
       const login = await server.inject({
         method: "POST",
         url: "/v1/auth/password/sessions",
@@ -285,10 +351,12 @@ describe("seller password HTTP API", () => {
       await sql`delete from identity_seller_passwords where identity_id = ${otp.json().actor.identityId}`;
       await sql`delete from identity_password_attempts where mobile = '09123456789'`;
       await sql`delete from identity_password_attempts where mobile = '09100000000'`;
+      await sql`delete from identity_password_attempts where mobile like '09200000%'`;
+      await sql`delete from identity_password_attempts where mobile like '093%'`;
       await sql.end();
       await fixture.cleanup();
     }
-  });
+  }, 90000);
 
   it("does not issue an old OTP session after a concurrent reset wins the identity lock", async () => {
     const app = await createApiApp(apiTestEnvironment);
@@ -379,12 +447,11 @@ describe("seller password HTTP API", () => {
         url: "/v1/auth/password/sessions",
         payload: { mobile: "09123456789", password: "old secure password" },
       });
-      await waitForLocks(3);
+      expect((await passwordLogin).statusCode).toBe(429);
       release();
       await holder;
       expect((await reset).statusCode).toBe(204);
       expect((await oldLogin).statusCode).toBe(401);
-      expect((await passwordLogin).statusCode).toBe(401);
     } finally {
       release();
       await sql`delete from identity_seller_passwords where identity_id = ${identityId}`;
