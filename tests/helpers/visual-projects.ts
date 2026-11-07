@@ -21,6 +21,10 @@ export const acceptanceTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(30 + index),
 );
 
+export const sellerIntroductionTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(218 + index),
+);
+
 export const storeBuilderTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(160 + index),
 );
@@ -130,6 +134,7 @@ export const releaseBuyerTestMobiles = Array.from({ length: 12 }, (_, index) =>
 export const allE2eTestMobiles = [
   ...storefrontTestMobiles,
   ...acceptanceTestMobiles,
+  ...sellerIntroductionTestMobiles,
   ...storeBuilderTestMobiles,
   ...storeFollowingTestMobiles,
   ...sellerApplicationDraftTestMobiles,
