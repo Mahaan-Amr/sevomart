@@ -169,6 +169,7 @@ test("buyer dispatches payment, confirms once, and sees the real receipt", async
       values
         (${ids.order}, ${ids.store}, 'SHIPPED', 1, ${randomUUID()}, now(), now())
       on conflict (order_id) do update set
+        store_id = excluded.store_id,
         status = excluded.status,
         version = excluded.version,
         accepted_event_id = excluded.accepted_event_id,
