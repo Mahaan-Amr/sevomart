@@ -387,6 +387,12 @@ test("motion is useful when allowed and removed when reduced", async ({ page }) 
 
 for (const state of ["default", "custom", "loading", "error"] as const) {
   test(`${state} has a deterministic visual baseline`, async ({ page }, testInfo) => {
+    if (state === "default" || state === "custom") {
+      const sql = postgres(databaseUrl, { max: 1 });
+      await sql`update store_stores set updated_at = ${visualSnapshotTimestamp}
+        where slug = ${state === "default" ? stores.defaultSlug : stores.customSlug}`;
+      await sql.end();
+    }
     const path =
       state === "default"
         ? `/s/${stores.defaultSlug}`
