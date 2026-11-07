@@ -1445,6 +1445,14 @@ function humanError(body: unknown) {
 }
 
 function apiFieldErrors(body: unknown): FieldErrors {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "code" in body &&
+    body.code === "SLUG_CONFLICT"
+  ) {
+    return { slug: "این شناسه لینک قبلاً استفاده شده است؛ شناسه دیگری انتخاب کنید." };
+  }
   if (typeof body !== "object" || body === null || !("details" in body)) return {};
   const details = body.details as { issues?: Array<{ field?: string }> };
   const result: FieldErrors = {};

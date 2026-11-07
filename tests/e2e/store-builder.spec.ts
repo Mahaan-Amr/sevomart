@@ -128,6 +128,15 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.locator("main")).not.toContainText("secret-value");
   await page.route(
     "**/api/store/seller/store/draft",
+    (route) => route.fulfill({ status: 409, json: { code: "SLUG_CONFLICT" } }),
+    { times: 1 },
+  );
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.getByLabel("شناسه لینک")).toHaveAccessibleDescription(
+    /شناسه لینک قبلاً استفاده شده/,
+  );
+  await page.route(
+    "**/api/store/seller/store/draft",
     (route) =>
       route.fulfill({ status: 409, json: { code: "STORE_REVISION_CONFLICT" } }),
     { times: 1 },
