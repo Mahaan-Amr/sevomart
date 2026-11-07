@@ -95,7 +95,13 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
     if (!state.snapshotAt) void load(initialCursor, true);
   }, [initialCursor, load, restored, state.snapshotAt]);
 
-  useEffect(() => () => request.current?.abort(), []);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      started.current = false;
+    },
+    [],
+  );
 
   if (!restored || (!state.snapshotAt && pending)) return <FeedLoading />;
 
