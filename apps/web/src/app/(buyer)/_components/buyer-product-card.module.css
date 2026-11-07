@@ -88,6 +88,7 @@
   margin-block-start: 4px;
   border-block-start: 1px solid var(--color-divider);
   color: var(--color-primary-dark);
+  background: var(--color-surface);
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
