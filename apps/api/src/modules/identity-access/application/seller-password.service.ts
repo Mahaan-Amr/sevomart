@@ -226,7 +226,10 @@ export class SellerPasswordService {
           attempts = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then 1 else least(identity_password_attempts.attempts + 1, 11) end,
           window_started_at = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then clock_timestamp() else identity_password_attempts.window_started_at end
         returning attempts`;
-      if (!attempt || attempt.attempts > 10) return undefined;
+      if (!attempt || attempt.attempts > 10) {
+        await matchesPassword(password, dummyHash);
+        return undefined;
+      }
       const valid = await matchesPassword(
         password,
         credential?.passwordHash ?? dummyHash,

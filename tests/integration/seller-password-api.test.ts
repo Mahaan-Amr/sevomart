@@ -254,18 +254,13 @@ describe("seller password HTTP API", () => {
           ).statusCode,
         ).toBe(401);
       }
-      expect(
-        (
-          await server.inject({
-            method: "POST",
-            url: "/v1/auth/password/sessions",
-            payload: {
-              mobile: "09123456789",
-              password: "correct horse battery staple",
-            },
-          })
-        ).statusCode,
-      ).toBe(401);
+      const locked = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09123456789", password: "correct horse battery staple" },
+      });
+      expect(locked.statusCode).toBe(401);
+      expect(locked.json().message).toBe(unknown.json().message);
       await sql`update identity_password_attempts set window_started_at = clock_timestamp() - interval '16 minutes' where mobile = '09123456789'`;
       for (let n = 0; n < 60; n++) {
         const mobile = `092${String(n).padStart(8, "0")}`;
@@ -361,7 +356,7 @@ describe("seller password HTTP API", () => {
       await sql.end();
       await fixture.cleanup();
     }
-  }, 45000);
+  }, 90000);
 
   it("does not issue an old OTP session after a concurrent reset wins the identity lock", async () => {
     const app = await createApiApp(apiTestEnvironment);
