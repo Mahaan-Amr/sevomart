@@ -37,6 +37,11 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   const applicationId = randomUUID();
   await sql.begin(async (transaction) => {
     await transaction`
+      delete from store_stores where id in (
+        select store_id from store_memberships where seller_id = ${identityId}::uuid
+      )
+    `;
+    await transaction`
       delete from identity_seller_access where identity_id = ${identityId}
     `;
     await transaction`
@@ -67,10 +72,15 @@ test("active seller gets the canonical shell and loses it after a live suspensio
     `;
   });
 
+  await page.route("**/api/store/seller/products?*", (route) => route.abort());
   await page.getByRole("link", { name: "ادامه کار" }).click();
   await expect(page).toHaveURL(/\/seller$/);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: "کارهای نزدیک" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
+  ).toBeVisible();
+  await page.unroute("**/api/store/seller/products?*");
   const sellerNavigation = page.getByRole("navigation", {
     name: "ناوبری فضای کار فروشنده",
   });
@@ -86,6 +96,12 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   await expect(
     sellerNavigation.first().getByRole("link", { name: "پرونده‌های اختلاف" }),
   ).toHaveCount(isDesktopNavigation ? 1 : 0);
+  if (!isDesktopNavigation) {
+    await expect(sellerNavigation.first().locator("svg")).toHaveCount(6);
+    await expect(
+      sellerNavigation.first().getByRole("link", { name: "خانه" }),
+    ).toHaveAttribute("aria-current", "page");
+  }
   await assertNoHorizontalOverflow(page);
   await page.keyboard.press("Tab");
   const focused = page.locator(":focus");

@@ -331,10 +331,14 @@ export function SellerApplicationJourney({
               value={value}
               maxLength={field.maxLength}
               rows={4}
-              aria-describedby="application-field-help application-message"
-              onChange={(event) =>
-                setDraft({ ...draft, [field.key]: event.target.value })
+              aria-invalid={
+                message === "این بخش را با دست‌کم دو نویسه کامل کنید." || undefined
               }
+              aria-describedby="application-field-help application-message"
+              onChange={(event) => {
+                setDraft({ ...draft, [field.key]: event.target.value });
+                setMessage("");
+              }}
             />
           ) : (
             <input
@@ -343,10 +347,14 @@ export function SellerApplicationJourney({
               value={value}
               maxLength={field.maxLength}
               autoComplete={field.key === "applicantName" ? "name" : "off"}
-              aria-describedby="application-field-help application-message"
-              onChange={(event) =>
-                setDraft({ ...draft, [field.key]: event.target.value })
+              aria-invalid={
+                message === "این بخش را با دست‌کم دو نویسه کامل کنید." || undefined
               }
+              aria-describedby="application-field-help application-message"
+              onChange={(event) => {
+                setDraft({ ...draft, [field.key]: event.target.value });
+                setMessage("");
+              }}
             />
           )}
           <p
@@ -543,9 +551,13 @@ function persistentWithdrawalKey(storageKey: string): string {
 }
 
 function humanError(body: unknown): string {
-  if (typeof body === "object" && body !== null && "message" in body) {
-    const message = (body as { message?: unknown }).message;
-    if (typeof message === "string" && message.length > 0) return message;
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "code" in body &&
+    body.code === "APPLICATION_REVISION_CONFLICT"
+  ) {
+    return "درخواست تغییر کرده است. پیش از تازه‌کردن صفحه، متن تغییرات خود را جایی کپی کنید؛ سپس صفحه را تازه کنید.";
   }
   return "درخواست انجام نشد. دوباره تلاش کنید.";
 }

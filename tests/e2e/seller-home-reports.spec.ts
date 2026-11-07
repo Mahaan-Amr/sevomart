@@ -56,38 +56,22 @@ test("seller acts from the operational home and reads a private basic report", a
       on conflict (identity_id) do update set status = 'ACTIVE'
     `;
     await transaction`
-      insert into store_stores (id, name, slug, status, revision)
-      values (${storeId}, 'خانه گزارش', ${`reports-${projectIndex}`}, 'PUBLISHED', 1)
+      insert into store_stores
+        (id, name, slug, bio, return_policy, return_policy_revision,
+         settlement_kind, settlement_status, settlement_verified_at, theme_color, status, revision)
+      values (${storeId}, 'خانه گزارش', ${`reports-${projectIndex}`}, 'کالای دست‌ساز',
+        'تا هفت روز امکان درخواست مرجوعی وجود دارد.', 1, 'TEST', 'TEST_VERIFIED', now(), '#A41439', 'DRAFT', 1)
+    `;
+    await transaction`
+      insert into store_shipping_methods
+        (id, store_id, position, code, label, revision, fixed_fee_amount, currency,
+         estimated_delivery_text, enabled, requires_delivery_address, requires_postal_code)
+      values (${randomUUID()}, ${storeId}, 0, 'NATIONAL_POST', 'پست پیشتاز', 1, 0,
+        'IRR', '۲ تا ۴ روز کاری', true, true, true)
     `;
     await transaction`
       insert into store_memberships (id, store_id, seller_id, role)
       values (${randomUUID()}, ${storeId}, ${identityId}, 'OWNER')
-    `;
-    await transaction`
-      insert into product_products
-        (id, store_id, state, revision, publication_version, published_at)
-      values (${productId}, ${storeId}, 'PUBLISHED', 1, 1, now())
-    `;
-    await transaction`
-      insert into product_variants
-        (id, product_id, store_id, client_key, combination_key, retired,
-         ever_published)
-      values (${variantId}, ${productId}, ${storeId}, 'simple', '', false, true)
-    `;
-    await transaction`
-      insert into product_publications
-        (product_id, publication_version, name, description, media_id, variant_id)
-      values (${productId}, 1,
-        'کالای دست‌ساز',
-        'شرح کالای آزمون', ${mediaId}, ${variantId})
-    `;
-    await transaction`
-      insert into product_offers (product_id, variant_id, amount, currency, revision)
-      values (${productId}, ${variantId}, 1000000, 'IRR', 1)
-    `;
-    await transaction`
-      insert into inventory_levels (variant_id, store_id, on_hand, revision)
-      values (${variantId}, ${storeId}, 0, 1)
     `;
     await transaction`
       insert into reporting_seller_order_facts
@@ -113,6 +97,100 @@ test("seller acts from the operational home and reads a private basic report", a
   });
 
   try {
+    await page.route("**/api/store/seller/products?*", (route) => route.abort());
+    await page.goto("/seller");
+    await expect(
+      page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "ادامه راه‌اندازی" })).toHaveAttribute(
+      "href",
+      "/seller/store/setup",
+    );
+    await page.unroute("**/api/store/seller/products?*");
+    await page.getByRole("button", { name: "بستن راهنما" }).click();
+    await expect(
+      page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
+    ).toBeHidden();
+    await page.getByRole("button", { name: "دیدن راهنمای آغاز" }).click();
+    await expect(
+      page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
+    ).toBeVisible();
+    await sql`update store_stores set status = 'PUBLISHED', publication_version = 1, published_at = now() where id = ${storeId}`;
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "اولین کالا را اضافه کنید" }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "افزودن کالا" })).toHaveAttribute(
+      "href",
+      "/seller/products/new",
+    );
+    await expect(page.getByRole("link", { name: "پیش‌نمایش خریدار" })).toHaveAttribute(
+      "href",
+      `/s/reports-${projectIndex}`,
+    );
+    const preview = page.getByRole("link", { name: "پیش‌نمایش خریدار" });
+    await assertMinimumContrast(preview);
+    await assertMinimumContrast(page.getByRole("button", { name: "بستن راهنما" }));
+    await page.route("**/api/store/seller/products?*", (route) =>
+      route.fulfill({ status: 503 }),
+    );
+    await page.reload();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "وضعیت راهنمای آغاز دریافت نشد" }),
+    ).toBeVisible();
+    await expect(preview).toHaveAttribute("href", `/s/reports-${projectIndex}`);
+    await page.unroute("**/api/store/seller/products?*");
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "اولین کالا را اضافه کنید" }),
+    ).toBeVisible();
+    await sql`
+      insert into product_products
+        (id, store_id, state, revision, publication_version, published_at)
+      values (${productId}, ${storeId}, 'PUBLISHED', 1, 1, now())
+    `;
+    await sql`
+      insert into product_variants
+        (id, product_id, store_id, client_key, combination_key, retired,
+         ever_published)
+      values (${variantId}, ${productId}, ${storeId}, 'simple', '', false, true)
+    `;
+    await sql`
+      insert into product_publications
+        (product_id, publication_version, name, description, media_id, variant_id)
+      values (${productId}, 1,
+        'کالای دست‌ساز',
+        'شرح کالای آزمون', ${mediaId}, ${variantId})
+    `;
+    await sql`
+      insert into product_offers (product_id, variant_id, amount, currency, revision)
+      values (${productId}, ${variantId}, 1000000, 'IRR', 1)
+    `;
+    await sql`
+      insert into inventory_levels (variant_id, store_id, on_hand, revision)
+      values (${variantId}, ${storeId}, 0, 1)
+    `;
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "دیدن راهنمای آغاز" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await page.getByRole("button", { name: "دیدن راهنمای آغاز" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: "راه‌اندازی کامل شد" }),
+    ).toBeVisible();
+    await captureReleaseCheckpoint(page, testInfo, {
+      cellId: "seller-home-reporting:success",
+      name: "seller-guide-open",
+      sensitiveRegions: [],
+    });
+    await assertNoHorizontalOverflow(page);
+    await assertInteractiveTargets(page, "main a, main button");
+    await page.getByRole("button", { name: "بستن راهنما" }).click();
     await page.goto("/seller");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(page.getByRole("heading", { name: "کارهای نزدیک" })).toBeVisible();
@@ -138,7 +216,7 @@ test("seller acts from the operational home and reads a private basic report", a
     );
     await assertMinimumContrast(reportsLink);
 
-    await expectKeyboardFocus(page, reportsLink, 14);
+    await expectKeyboardFocus(page, reportsLink, 24);
 
     const preparingOrderId = randomUUID();
     const freshOrderId = randomUUID();
