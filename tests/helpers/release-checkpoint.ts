@@ -68,6 +68,18 @@ async function captureAtViewport(
     incomplete: scan.incomplete.filter((entry) => entry.id === "color-contrast").flatMap((entry) =>
       entry.nodes.flatMap((node) => node.any.map((check) => ({ fg: check.data?.fgColor, bg: check.data?.bgColor, ratio: check.data?.contrastRatio, expected: check.data?.expectedContrastRatio })))),
   }));
+  for (const finding of [...scan.violations, ...scan.incomplete]) {
+    if (finding.id !== "color-contrast") continue;
+    for (const node of finding.nodes) {
+      const target = node.target[0];
+      if (typeof target !== "string") continue;
+      const style = await page.locator(target).first().evaluate((element) => {
+        const computed = getComputedStyle(element);
+        return { tag: element.tagName, className: element.className, color: computed.color, background: computed.backgroundColor };
+      });
+      console.log("[DEBUG-feed-style]", JSON.stringify(style));
+    }
+  }
   // Raw axe nodes contain HTML, text and selectors; keep only non-content diagnostics.
   const violations = scan.violations.map(({ id, impact, nodes }) => ({
     rule: id,
