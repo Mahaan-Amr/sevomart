@@ -37,6 +37,8 @@ import {
   platformAccessAuditEntryContract,
   rejectPlatformAccessCommandContract,
   unresolvedEmergencyAccessAuditEntryContract,
+  superadminSensitiveActionContract,
+  superadminSensitiveReceiptContract,
   type PlatformAccessGrant,
   type PlatformAccessAuditEntry,
   type PlatformAccessRejection,
@@ -56,6 +58,8 @@ import {
   type PlatformAccessCore,
   type PlatformEmergencyAction,
   type PlatformSensitiveAction,
+  type SuperadminSensitiveAction,
+  type SuperadminSensitiveReceipt,
   type OpaquePlatformAccessTransactionContext,
 } from "../public";
 import { readOpaquePlatformAccessTransaction } from "./opaque-platform-access-transaction";
@@ -1964,6 +1968,41 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         correlationId,
         occurredAt,
       });
+    });
+  }
+
+  async authorizeSuperadminSensitiveAction(
+    transaction: OpaquePlatformAccessTransactionContext,
+    input: SuperadminSensitiveAction,
+  ): Promise<SuperadminSensitiveReceipt> {
+    const validated = superadminSensitiveActionContract.parse(input);
+    const reason = validated.reason;
+    const sql = readOpaquePlatformAccessTransaction(transaction);
+    const roles = await sql<Array<{ identityId: string }>>`
+      select a.identity_id as "identityId" from identity_platform_superadmins a
+      join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE'
+      where a.identity_id = ${input.actorIdentityId} and a.revoked_at is null
+      for share of a, i`;
+    if (!roles[0]) {
+      await this.#sql`insert into identity_platform_superadmin_sensitive_audit
+        (id, actor_identity_id, resource_type, resource_id, action, reason, outcome, correlation_id)
+        values (${randomUUID()}, ${input.actorIdentityId}, ${input.resourceType}, ${input.resourceId}, ${input.action}, ${reason}, 'DENIED', ${input.correlationId})`;
+      throw new PlatformAccessError("RESPONSIBILITY_REQUIRED");
+    }
+    const rows = await sql<Array<{ accessedAt: Date }>>`
+      insert into identity_platform_superadmin_sensitive_audit
+        (id, actor_identity_id, resource_type, resource_id, action, reason, outcome, correlation_id)
+      values (${randomUUID()}, ${input.actorIdentityId}, ${input.resourceType}, ${input.resourceId}, ${input.action}, ${reason}, 'ALLOWED', ${input.correlationId})
+      returning occurred_at as "accessedAt"`;
+    return superadminSensitiveReceiptContract.parse({
+      source: "SUPERADMIN",
+      actorIdentityId: input.actorIdentityId,
+      scope: {
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        allowedActions: [input.action],
+      },
+      accessedAt: rows[0]!.accessedAt.toISOString(),
     });
   }
 

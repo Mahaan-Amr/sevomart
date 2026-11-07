@@ -5,7 +5,8 @@ import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
-const candidateMigration = "20261107135100__identity-access__superadmin-identity-guard";
+const candidateMigration =
+  "20261107135200__identity-access__superadmin-sensitive-audit";
 
 const manifest = JSON.parse(
   readFileSync("ops/qa/release-evidence-manifest.v1.json", "utf8"),

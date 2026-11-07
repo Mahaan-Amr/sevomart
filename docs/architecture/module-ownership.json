@@ -37,6 +37,7 @@
     "identity_platform_access_audit": "identity-access",
     "identity_platform_superadmins": "identity-access",
     "identity_platform_superadmin_audit": "identity-access",
+    "identity_platform_superadmin_sensitive_audit": "identity-access",
     "identity_platform_superadmin_idempotency": "identity-access",
     "identity_platform_emergency_access_reviews": "identity-access",
     "identity_seller_access": "identity-access",

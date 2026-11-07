@@ -13,6 +13,8 @@ export const EMERGENCY_ACCESS_MAX_TTL_MINUTES = 30;
 export const PLATFORM_ACCESS_STRONG_AUTH_MAX_AGE_MINUTES = 5;
 
 export const platformAccessV1Paths = {
+  superadmins: "/v1/platform/access/superadmins",
+  superadminRevocation: "/v1/platform/access/superadmins/{identityId}/revocation",
   responsibilityGrants: "/v1/platform/access/responsibility-grants",
   responsibilityGrantApproval:
     "/v1/platform/access/responsibility-grants/{grantId}/approval",
@@ -146,6 +148,39 @@ const internalReasonContract = z
     }
   });
 const strongAuthenticationAtContract = timestampV1Contract;
+export const superadminGrantInputContract = z
+  .object({ identityId: identityIdContract, reason: internalReasonContract })
+  .strict();
+export const superadminRevocationInputContract = z
+  .object({ reason: internalReasonContract })
+  .strict();
+export const superadminResultContract = z
+  .object({ identityId: identityIdContract, status: z.enum(["ACTIVE", "REVOKED"]) })
+  .strict();
+export const superadminSensitiveActionContract = z
+  .object({
+    actorIdentityId: identityIdContract,
+    resourceType: platformAccessResourceTypeContract,
+    resourceId: z.uuid(),
+    action: platformAccessAllowedActionContract,
+    reason: internalReasonContract,
+    correlationId: z.uuid(),
+  })
+  .strict();
+export const superadminSensitiveReceiptContract = z
+  .object({
+    source: z.literal("SUPERADMIN"),
+    actorIdentityId: identityIdContract,
+    scope: z
+      .object({
+        resourceType: platformAccessResourceTypeContract,
+        resourceId: z.uuid(),
+        allowedActions: z.array(platformAccessAllowedActionContract).length(1),
+      })
+      .strict(),
+    accessedAt: timestampV1Contract,
+  })
+  .strict();
 const activeAccessManagerCountContract = z.int().min(1);
 
 export const requestResponsibilityGrantCommandContract = z
@@ -767,6 +802,7 @@ export const platformAccessErrorContract = z
       "EMERGENCY_REVIEW_OVERDUE",
       "IDEMPOTENCY_CONFLICT",
       "IDEMPOTENCY_IN_PROGRESS",
+      "LAST_SUPERADMIN",
     ]),
     message: z.string().min(1),
     correlationId: z.string().min(1),
@@ -951,6 +987,11 @@ export const sensitiveAccessAuthorizationReceiptContract = z
   });
 
 export const platformAccessV1Schemas = {
+  SuperadminGrantInput: superadminGrantInputContract,
+  SuperadminRevocationInput: superadminRevocationInputContract,
+  SuperadminResult: superadminResultContract,
+  SuperadminSensitiveAction: superadminSensitiveActionContract,
+  SuperadminSensitiveReceipt: superadminSensitiveReceiptContract,
   PlatformAccessGrantId: platformAccessGrantIdContract,
   PlatformAccessCursor: platformAccessCursorContract,
   PlatformAccessPageLimit: platformAccessPageLimitContract,
@@ -978,6 +1019,33 @@ export const platformAccessV1Schemas = {
 } as const;
 
 export const platformAccessV1Examples = {
+  SuperadminGrantInput: {
+    identityId: "11111111-1111-4111-8111-111111111111",
+    reason: "واگذاری مسئولیت مدیریت پلتفرم",
+  },
+  SuperadminRevocationInput: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+  SuperadminResult: {
+    identityId: "11111111-1111-4111-8111-111111111111",
+    status: "ACTIVE",
+  },
+  SuperadminSensitiveAction: {
+    actorIdentityId: "11111111-1111-4111-8111-111111111111",
+    resourceType: "PAYMENT_REVIEW",
+    resourceId: "55555555-5555-4555-8555-555555555555",
+    action: "REVEAL_MINIMUM",
+    reason: "بررسی وضعیت و مدارک این پرداخت",
+    correlationId: "66666666-6666-4666-8666-666666666666",
+  },
+  SuperadminSensitiveReceipt: {
+    source: "SUPERADMIN",
+    actorIdentityId: "11111111-1111-4111-8111-111111111111",
+    scope: {
+      resourceType: "PAYMENT_REVIEW",
+      resourceId: "55555555-5555-4555-8555-555555555555",
+      allowedActions: ["REVEAL_MINIMUM"],
+    },
+    accessedAt: "2026-08-26T10:02:00.000Z",
+  },
   PlatformAccessGrantId: "44444444-4444-4444-8444-444444444444",
   PlatformAccessCursor: "eyJvY2N1cnJlZEF0IjoiMjAyNi0wOC0yNlQxMDowMDowMC4wMDBaIn0",
   PlatformAccessPageLimit: 20,

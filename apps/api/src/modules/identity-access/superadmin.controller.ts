@@ -14,7 +14,8 @@ import { ApiExcludeController } from "@nestjs/swagger";
 import {
   idempotencyKeyContract,
   platformAccessGrantIdContract,
-  platformAccessRevocationInputContract,
+  superadminGrantInputContract,
+  superadminRevocationInputContract,
 } from "@sevo/contracts/identity-access/v1";
 import type { FastifyRequest } from "fastify";
 import postgres from "postgres";
@@ -49,34 +50,37 @@ export class SuperadminService {
           and s.revoked_at is null and s.expires_at > now()
           and s.created_at > now() - interval '5 minutes' for share of s, i, a`;
       const actor = actors[0];
-      if (!actor) throw new HttpException("FORBIDDEN", 403);
+      if (!actor) throw superadminError(correlationId, "RESPONSIBILITY_REQUIRED", 403);
       const prior = await sql<Array<{ payloadHash: string; response: unknown }>>`
         select payload_hash as "payloadHash", response from identity_platform_superadmin_idempotency
         where actor_identity_id = ${actor.identityId} and operation = ${action} and key = ${key}`;
       if (prior[0]) {
         if (prior[0].payloadHash !== payloadHash)
-          throw new HttpException("IDEMPOTENCY_CONFLICT", 409);
+          throw superadminError(correlationId, "IDEMPOTENCY_CONFLICT", 409);
         return prior[0].response;
       }
       const subjects = await sql<
         Array<{ id: string }>
       >`select id from identity_identities where id = ${subject} and status = 'ACTIVE' for share`;
-      if (!subjects[0]) throw new HttpException("IDENTITY_NOT_FOUND", 404);
+      if (!subjects[0])
+        throw superadminError(correlationId, "ACCESS_GRANT_NOT_FOUND", 404);
       if (action === "GRANTED") {
         const changed =
           await sql`insert into identity_platform_superadmins (identity_id, granted_at)
           values (${subject}, now()) on conflict (identity_id) do update set granted_at = now(), revoked_at = null
           where identity_platform_superadmins.revoked_at is not null returning identity_id`;
-        if (!changed.length) throw new HttpException("ALREADY_ACTIVE", 409);
+        if (!changed.length)
+          throw superadminError(correlationId, "INVALID_ACCESS_TRANSITION", 409);
       } else {
         const active = await sql<
           Array<{ count: number }>
         >`select count(*)::int as count from identity_platform_superadmins a join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE' where a.revoked_at is null`;
         if ((active[0]?.count ?? 0) <= 1)
-          throw new HttpException("LAST_SUPERADMIN", 409);
+          throw superadminError(correlationId, "LAST_SUPERADMIN", 409);
         const changed =
           await sql`update identity_platform_superadmins set revoked_at = now() where identity_id = ${subject} and revoked_at is null returning identity_id`;
-        if (!changed.length) throw new HttpException("NOT_ACTIVE", 409);
+        if (!changed.length)
+          throw superadminError(correlationId, "INVALID_ACCESS_TRANSITION", 409);
       }
       await sql`insert into identity_platform_superadmin_audit (id, actor_identity_id, subject_identity_id, action, reason, correlation_id) values (${randomUUID()}, ${actor.identityId}, ${subject}, ${action}, ${reason}, ${correlationId})`;
       const response = {
@@ -105,11 +109,15 @@ export class SuperadminController {
     @Headers("idempotency-key") key: string | undefined,
     @Req() request: FastifyRequest,
   ) {
-    const input =
-      typeof body === "object" && body !== null
-        ? (body as Record<string, unknown>)
-        : {};
-    return this.change(request, input.identityId, input.reason, key, "GRANTED");
+    const input = superadminGrantInputContract.safeParse(body);
+    if (!input.success) throw superadminError(request.id, "VALIDATION_ERROR", 422);
+    return this.change(
+      request,
+      input.data.identityId,
+      input.data.reason,
+      key,
+      "GRANTED",
+    );
   }
   @Post(":identityId/revocation")
   @HttpCode(200)
@@ -119,11 +127,9 @@ export class SuperadminController {
     @Headers("idempotency-key") key: string | undefined,
     @Req() request: FastifyRequest,
   ) {
-    const input =
-      typeof body === "object" && body !== null
-        ? (body as Record<string, unknown>)
-        : {};
-    return this.change(request, identityId, input.reason, key, "REVOKED");
+    const input = superadminRevocationInputContract.safeParse(body);
+    if (!input.success) throw superadminError(request.id, "VALIDATION_ERROR", 422);
+    return this.change(request, identityId, input.data.reason, key, "REVOKED");
   }
   private change(
     request: FastifyRequest,
@@ -133,11 +139,10 @@ export class SuperadminController {
     action: "GRANTED" | "REVOKED",
   ) {
     const id = platformAccessGrantIdContract.safeParse(identityId);
-    const payload =
-      platformAccessRevocationInputContract.shape.reason.safeParse(reason);
+    const payload = superadminRevocationInputContract.shape.reason.safeParse(reason);
     const commandKey = idempotencyKeyContract.safeParse(key);
     if (!id.success || !payload.success || !commandKey.success)
-      throw new HttpException("VALIDATION_ERROR", 422);
+      throw superadminError(request.id, "VALIDATION_ERROR", 422);
     return this.service.change(
       readPlatformSessionToken(request) ?? "",
       id.data,
@@ -147,4 +152,16 @@ export class SuperadminController {
       action,
     );
   }
+}
+
+function superadminError(correlationId: string, code: string, status: number) {
+  return new HttpException(
+    {
+      code,
+      message:
+        "انجام این اقدام ممکن نیست؛ وضعیت دسترسی و اطلاعات واردشده را بررسی کنید.",
+      correlationId,
+    },
+    status,
+  );
 }

@@ -155,6 +155,75 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     expect(response.statusCode).toBe(403);
   });
 
+  it("records a role-backed sensitive view without fabricating a grant or expiration", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+    const resourceId = randomUUID();
+    const receipt = await sql.begin((transaction) =>
+      access.authorizeSuperadminSensitiveAction(
+        createOpaquePlatformAccessTransactionContext(transaction),
+        {
+          actorIdentityId: actor.identityId,
+          resourceType: "PAYMENT_REVIEW",
+          resourceId,
+          action: "REVEAL_MINIMUM",
+          reason: "بررسی وضعیت و مدارک این پرداخت",
+          correlationId: randomUUID(),
+        },
+      ),
+    );
+    expect(receipt).toMatchObject({
+      source: "SUPERADMIN",
+      actorIdentityId: actor.identityId,
+      scope: {
+        resourceType: "PAYMENT_REVIEW",
+        resourceId,
+        allowedActions: ["REVEAL_MINIMUM"],
+      },
+    });
+    expect(receipt).not.toHaveProperty("grantId");
+    expect(receipt).not.toHaveProperty("expiresAt");
+    const audits = await sql<
+      Array<{ outcome: string; reason: string }>
+    >`select outcome, reason from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${actor.identityId}`;
+    expect(audits).toEqual([
+      { outcome: "ALLOWED", reason: "بررسی وضعیت و مدارک این پرداخت" },
+    ]);
+    await sql.end();
+  });
+
+  it("retains denied direct access audit after the consumer transaction rolls back", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const access = app.get<PlatformSensitiveAccess>(PLATFORM_SENSITIVE_ACCESS);
+    await expect(
+      sql.begin((transaction) =>
+        access.authorizeSuperadminSensitiveAction(
+          createOpaquePlatformAccessTransactionContext(transaction),
+          {
+            actorIdentityId: actor.identityId,
+            resourceType: "PAYMENT_REVIEW",
+            resourceId: randomUUID(),
+            action: "REVEAL_MINIMUM",
+            reason: "بررسی وضعیت و مدارک این پرداخت",
+            correlationId: randomUUID(),
+          },
+        ),
+      ),
+    ).rejects.toThrow();
+    const rows = await sql<
+      Array<{ outcome: string }>
+    >`select outcome from identity_platform_superadmin_sensitive_audit where actor_identity_id = ${actor.identityId}`;
+    expect(rows).toEqual([{ outcome: "DENIED" }]);
+    await sql.end();
+  });
+
   it("lists responsibility and sensitive grants and exposes audit only to its reviewer", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -2190,6 +2259,7 @@ function hash(value: string) {
 
 async function resetPlatformAccessData() {
   const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+  await sql`truncate identity_platform_superadmin_sensitive_audit`;
   await sql`truncate identity_platform_superadmin_audit`;
   await sql`truncate identity_platform_superadmin_idempotency`;
   await sql`truncate identity_platform_superadmins`;
