@@ -542,6 +542,18 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     );
   }
 
+  const stepValidation = validateForm(form);
+  const setupSteps = [
+    {
+      label: "معرفی فروشگاه",
+      status: hasIdentityErrors(stepValidation) || slugUnavailable ? "ناقص" : "آماده",
+    },
+    {
+      label: "ارسال و مرجوعی",
+      status: stepValidation.shipping || stepValidation.returnPolicy ? "ناقص" : "آماده",
+    },
+    { label: "ظاهر فروشگاه", status: "اختیاری" },
+  ];
   return (
     <main className={styles.page}>
       <section className={styles.workspace} aria-labelledby="store-title">
@@ -557,6 +569,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
         <span className={styles.status}>پیش‌نویس</span>
         <h1 id="store-title">ساخت فروشگاه</h1>
         <p>اطلاعاتی را وارد کنید که خریدار پیش از تصمیم‌گیری باید بداند.</p>
+        <ol className={styles.steps} aria-label="وضعیت قدم‌های راه‌اندازی">
+          {setupSteps.map((step, index) => (
+            <li key={step.label} aria-current={index === editStep ? "step" : undefined}>
+              <span>{step.label}</span> <span>{step.status}</span>
+            </li>
+          ))}
+        </ol>
         <form
           className={styles.form}
           onSubmit={(event) => event.preventDefault()}
