@@ -109,6 +109,7 @@ export const sellerApplicationReasonCodeContract = z.enum([
 
 export const platformPermissionContract = z.enum([
   "ACCESS_ADMINISTRATION",
+  "SESSION_SECURITY",
   "ACCESS_AUDIT_REVIEW",
   "SELLER_APPLICATION_REVIEW",
   "PAYMENT_REVIEW",

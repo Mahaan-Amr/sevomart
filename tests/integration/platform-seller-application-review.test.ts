@@ -720,6 +720,45 @@ describe("platform seller application review API with PostgreSQL", () => {
     );
   });
 
+  it("lets a session-security-only agent sign in without review permissions", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    await signIn(app, "09123456788");
+    const identityId = await identityIdForMobile("09123456788");
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await sql`insert into identity_platform_permission_grants
+        (id, identity_id, permission, granted_at)
+        values (${randomUUID()}, ${identityId}, 'SESSION_SECURITY', now())`;
+    } finally {
+      await sql.end();
+    }
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/otp/requests",
+      payload: { mobile: "09123456788" },
+    });
+    expect(requested.statusCode).toBe(202);
+    const verified = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/otp/verifications",
+      payload: {
+        challengeId: requested.json<{ challengeId: string }>().challengeId,
+        code: "111111",
+      },
+    });
+    expect(verified.statusCode).toBe(200);
+    expect(verified.json().permission).toBe("SESSION_SECURITY");
+    const cookie = String(verified.headers["set-cookie"]).split(";")[0];
+    const review = await server.inject({
+      method: "GET",
+      url: "/v1/platform/seller-applications",
+      headers: { cookie },
+    });
+    expect(review.statusCode).toBe(403);
+  });
+
   it("reads every live workspace permission and invalidates the session on logout", async () => {
     const app = await createApiApp(environment);
     apps.push(app);
