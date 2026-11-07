@@ -1,6 +1,11 @@
 "use client";
 
-import { storeDraftContract, type StoreDraft } from "@sevo/contracts/store/v1";
+import {
+  storeDraftContract,
+  storePreviewContract,
+  type StoreDraft,
+  type StorePreview,
+} from "@sevo/contracts/store/v1";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -9,7 +14,11 @@ import styles from "../(workspace)/workspace-page.module.css";
 type StoreState =
   | { kind: "LOADING" }
   | { kind: "EMPTY" }
-  | { kind: "READY"; store: StoreDraft }
+  | {
+      kind: "READY";
+      store: StoreDraft;
+      readiness?: StorePreview["publicationReadiness"];
+    }
   | { kind: "UNAVAILABLE" };
 
 export function StoreStatus() {
@@ -22,6 +31,21 @@ export function StoreStatus() {
         if (response.status === 404) return { kind: "EMPTY" } as const;
         const parsed = storeDraftContract.safeParse(await response.json());
         if (!response.ok || !parsed.success) return { kind: "UNAVAILABLE" } as const;
+        try {
+          const previewResponse = await fetch("/api/store/seller/store/preview", {
+            cache: "no-store",
+          });
+          const preview = storePreviewContract.safeParse(await previewResponse.json());
+          if (previewResponse.ok && preview.success) {
+            return {
+              kind: "READY",
+              store: preview.data.store,
+              readiness: preview.data.publicationReadiness,
+            } as const;
+          }
+        } catch {
+          // The saved draft remains usable even if readiness cannot be loaded.
+        }
         return { kind: "READY", store: parsed.data } as const;
       })
       .catch(() => ({ kind: "UNAVAILABLE" }) as const)
@@ -57,6 +81,18 @@ export function StoreStatus() {
   }
 
   const published = state.store.status === "PUBLISHED";
+  const labels: Record<
+    StorePreview["publicationReadiness"]["missingFields"][number],
+    string
+  > = {
+    NAME: "نام فروشگاه",
+    SLUG: "شناسه لینک",
+    BIO: "معرفی کوتاه",
+    SHIPPING_METHOD: "روش ارسال فعال",
+    RETURN_POLICY: "سیاست مرجوعی",
+    SETTLEMENT_DESTINATION: "مقصد تسویه",
+  };
+  const missing = state.readiness?.missingFields.map((field) => labels[field]);
   return (
     <div className={styles.nextAction}>
       <h2>{published ? "فروشگاه منتشرشده است" : "پیش‌نویس فروشگاه ذخیره شده است"}</h2>
@@ -65,6 +101,19 @@ export function StoreStatus() {
           ? "اطلاعات فروشگاه را مرور یا ویرایش کنید."
           : "برای انتشار، اطلاعات باقی‌مانده را کامل کنید."}
       </p>
+      {!published &&
+        (missing ? (
+          <p>
+            {missing.length
+              ? `برای انتشار هنوز لازم است: ${missing.join("، ")}.`
+              : "اطلاعات لازم برای انتشار آزمایشی کامل است."}
+          </p>
+        ) : (
+          <p>وضعیت آمادگی انتشار دریافت نشد. دوباره تلاش کنید.</p>
+        ))}
+      {state.store.settlementDestination?.status === "TEST_VERIFIED" ? (
+        <p>تسویه آزمایشی است؛ فروش و پرداخت واقعی فعال نیست.</p>
+      ) : null}
       <Link className={styles.primary} href="/seller/store/setup">
         {published ? "ویرایش فروشگاه" : "ادامه راه‌اندازی"}
       </Link>

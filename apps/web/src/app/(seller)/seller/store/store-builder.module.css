@@ -39,6 +39,20 @@
   color: var(--color-muted);
   font-size: 12px;
 }
+.steps {
+  display: grid;
+  gap: 4px;
+  margin: 16px 0 0;
+  padding-inline-start: 20px;
+  font-size: 12px;
+}
+.steps li {
+  padding-inline-start: 4px;
+}
+.steps li span + span {
+  margin-inline-start: 8px;
+  color: var(--color-primary-dark);
+}
 .livePreview {
   overflow: hidden;
   border: 1px solid var(--color-divider);
