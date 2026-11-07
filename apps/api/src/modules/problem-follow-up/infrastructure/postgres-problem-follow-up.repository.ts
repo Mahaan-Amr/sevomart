@@ -17,6 +17,10 @@ import {
   violationRecordedV1Contract,
 } from "@sevo/contracts/problem-follow-up/v1";
 import { disputeAuditEntryV2Contract } from "@sevo/contracts/problem-follow-up/v2";
+import {
+  platformDisputeDirectViewContract,
+  platformViolationDirectViewContract,
+} from "@sevo/contracts/problem-follow-up/v3";
 import { identityIdContract } from "@sevo/contracts/platform/v1";
 import { enqueueOutboxEvent } from "@sevo/outbox";
 import postgres, { type JSONValue, type Sql } from "postgres";
@@ -276,7 +280,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       const row = await readDispute(sql, command.caseId);
       if (!row) throw new ProblemFollowUpFault("NOT_FOUND");
       const view = relatedView(row);
-      return platformDisputeViewContract.parse({
+      return parseDisputeView(command, {
         ...view,
         platformAction: platformDisputeAction(view, new Date()),
         access: { ...access, mode: "REVEALED_MINIMUM" },
@@ -294,7 +298,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       );
       const replay = await claim(sql, "RESOLVE", command);
       if (replay) {
-        return platformDisputeViewContract.parse({
+        return parseDisputeView(command, {
           ...(replay as object),
           platformAction: platformDisputeAction(
             replay as ReturnType<typeof relatedView>,
@@ -414,7 +418,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         version: row.version + 1,
       });
       await remember(sql, "RESOLVE", command, baseView);
-      return platformDisputeViewContract.parse({
+      return parseDisputeView(command, {
         ...baseView,
         platformAction: platformDisputeAction(baseView, command.occurredAt),
         access: { ...access, mode: "REVEALED_MINIMUM" },
@@ -432,7 +436,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
       );
       const replay = await claim(sql, "REOPEN", command);
       if (replay) {
-        return platformDisputeViewContract.parse({
+        return parseDisputeView(command, {
           ...(replay as object),
           platformAction: platformDisputeAction(
             replay as ReturnType<typeof relatedView>,
@@ -501,7 +505,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         version: row.version + 1,
       });
       await remember(sql, "REOPEN", command, baseView);
-      return platformDisputeViewContract.parse({
+      return parseDisputeView(command, {
         ...baseView,
         platformAction: platformDisputeAction(baseView, command.occurredAt),
         access: { ...access, mode: "REVEALED_MINIMUM" },
@@ -546,7 +550,7 @@ export class PostgresProblemFollowUpRepository implements ProblemFollowUpReposit
         from problem_violation_cases where id = ${command.caseId}
       `;
       if (!row) throw new ProblemFollowUpFault("NOT_FOUND");
-      return platformViolationCaseViewContract.parse({
+      return parseViolationView(command, {
         ...violationQueueItem(row),
         evidence: row.evidence,
         actionReasonCodes: row.actionReasonCodes,
@@ -732,9 +736,13 @@ async function authorize(
   transaction: OpaquePlatformAccessTransactionContext,
   command: SensitiveCaseRead,
 ) {
-  return access.authorizeSensitiveAction(
+  return authorizeAction(
+    access,
     transaction,
-    sensitiveAction(command, command.resourceType, command.caseId, command.action),
+    command,
+    command.resourceType,
+    command.caseId,
+    command.action,
   );
 }
 
@@ -743,32 +751,61 @@ async function authorizeMutation(
   transaction: OpaquePlatformAccessTransactionContext,
   command: SensitiveDisputeMutation<unknown>,
 ) {
-  await access.authorizeSensitiveAction(
+  await authorizeAction(
+    access,
     transaction,
-    sensitiveAction(command, "DISPUTE_CASE", command.disputeId, command.action),
+    command,
+    "DISPUTE_CASE",
+    command.disputeId,
+    command.action,
   );
-  return access.authorizeSensitiveAction(
+  return authorizeAction(
+    access,
     transaction,
-    sensitiveAction(command, "DISPUTE_CASE", command.disputeId, "REVEAL_MINIMUM"),
+    command,
+    "DISPUTE_CASE",
+    command.disputeId,
+    "REVEAL_MINIMUM",
   );
 }
 
-function sensitiveAction(
+async function authorizeAction(
+  access: ProblemFollowUpSensitiveAccess,
+  transaction: OpaquePlatformAccessTransactionContext,
   command: SensitiveCaseRead | SensitiveDisputeMutation<unknown>,
   resourceType: "DISPUTE_CASE" | "VIOLATION_CASE",
   resourceId: string,
   action: "REVEAL_MINIMUM" | "UPDATE_CASE_STATUS",
 ) {
-  return {
-    grantId: command.access.grantId,
+  const common = {
     actorIdentityId: command.actorId,
-    responsibility: command.responsibility,
     resourceType,
     resourceId,
     action,
     reason: command.access.reason,
     correlationId: command.correlationId,
   } as const;
+  if ("kind" in command.access)
+    return access.authorizeSuperadminSensitiveAction(transaction, common);
+  return access.authorizeSensitiveAction(transaction, {
+    ...common,
+    grantId: command.access.grantId,
+    responsibility: command.responsibility,
+  });
+}
+
+function parseDisputeView(
+  command: SensitiveCaseRead | SensitiveDisputeMutation<unknown>,
+  value: unknown,
+) {
+  return "kind" in command.access
+    ? platformDisputeDirectViewContract.parse(value)
+    : platformDisputeViewContract.parse(value);
+}
+function parseViolationView(command: SensitiveCaseRead, value: unknown) {
+  return "kind" in command.access
+    ? platformViolationDirectViewContract.parse(value)
+    : platformViolationCaseViewContract.parse(value);
 }
 
 async function recordViolation(

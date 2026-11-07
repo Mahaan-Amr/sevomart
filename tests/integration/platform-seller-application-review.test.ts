@@ -92,6 +92,36 @@ describe("platform seller application review API with PostgreSQL", () => {
     }
   });
 
+  it("continues to deny a superadmin's own seller application review", async () => {
+    const app = await createApiApp(environment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const cookie = await signIn(app, "09123456785");
+    const submitted = await server.inject({
+      method: "POST",
+      url: "/v1/seller-applications",
+      headers: { cookie, "idempotency-key": randomUUID() },
+      payload: applicationPayload(),
+    });
+    const applicationId = submitted.json<{ applicationId: string }>().applicationId;
+    const actor = await identityIdForMobile("09123456785");
+    const token = await seedPlatformSession(actor);
+    const sql = postgres(environment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor}, now())`;
+    try {
+      const response = await server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers: { cookie: platformCookie(token), "idempotency-key": randomUUID() },
+        payload: { expectedRevision: 1, reasonCode: "ELIGIBILITY_CONFIRMED" },
+      });
+      expect(response.statusCode).toBe(403);
+    } finally {
+      await sql`delete from identity_platform_superadmins where identity_id = ${actor}`;
+      await sql.end();
+    }
+  });
+
   it("approves once and atomically provisions active seller access with an unpublished store", async () => {
     const app = await createApiApp(environment);
     apps.push(app);

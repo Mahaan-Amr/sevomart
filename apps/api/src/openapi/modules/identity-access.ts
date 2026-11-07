@@ -697,6 +697,42 @@ const operations = [
     ],
   },
   {
+    operationId: "listSuperadmins",
+    method: "get",
+    path: platformAccessV1Paths.superadmins,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 200, schema: "SuperadminList" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "listSuperadminAudit",
+    method: "get",
+    path: platformAccessV1Paths.superadminAudit,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 200, schema: "SuperadminAuditList" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    operationId: "listSuperadminSensitiveAudit",
+    method: "get",
+    path: platformAccessV1Paths.superadminSensitiveAudit,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    responses: [
+      { status: 200, schema: "SuperadminSensitiveAuditList" },
+      { status: 403, schema: "PlatformAccessError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     operationId: "grantSuperadmin",
     method: "post",
     path: platformAccessV1Paths.superadmins,

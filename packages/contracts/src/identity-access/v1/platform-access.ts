@@ -14,6 +14,8 @@ export const PLATFORM_ACCESS_STRONG_AUTH_MAX_AGE_MINUTES = 5;
 
 export const platformAccessV1Paths = {
   superadmins: "/v1/platform/access/superadmins",
+  superadminAudit: "/v1/platform/access/superadmins/audit",
+  superadminSensitiveAudit: "/v1/platform/access/superadmins/sensitive-audit",
   superadminRevocation: "/v1/platform/access/superadmins/{identityId}/revocation",
   responsibilityGrants: "/v1/platform/access/responsibility-grants",
   responsibilityGrantApproval:
@@ -156,6 +158,53 @@ export const superadminRevocationInputContract = z
   .strict();
 export const superadminResultContract = z
   .object({ identityId: identityIdContract, status: z.enum(["ACTIVE", "REVOKED"]) })
+  .strict();
+export const superadminListContract = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          identityId: identityIdContract,
+          status: z.enum(["ACTIVE", "INACTIVE", "REVOKED"]),
+          grantedAt: timestampV1Contract,
+          revokedAt: timestampV1Contract.nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export const superadminAuditListContract = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          actorIdentityId: identityIdContract.nullable(),
+          actorKind: z.enum(["SUPERADMIN", "OWNER_RECOVERY"]),
+          subjectIdentityId: identityIdContract,
+          action: z.enum(["GRANTED", "REVOKED", "RECOVERED"]),
+          reason: internalReasonContract,
+          occurredAt: timestampV1Contract,
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export const superadminSensitiveAuditListContract = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          actorIdentityId: identityIdContract,
+          resourceType: platformAccessResourceTypeContract,
+          resourceId: z.uuid(),
+          action: platformAccessAllowedActionContract,
+          reason: internalReasonContract,
+          outcome: z.enum(["ALLOWED", "DENIED"]),
+          occurredAt: timestampV1Contract,
+        })
+        .strict(),
+    ),
+  })
   .strict();
 export const superadminSensitiveActionContract = z
   .object({
@@ -990,6 +1039,9 @@ export const platformAccessV1Schemas = {
   SuperadminGrantInput: superadminGrantInputContract,
   SuperadminRevocationInput: superadminRevocationInputContract,
   SuperadminResult: superadminResultContract,
+  SuperadminList: superadminListContract,
+  SuperadminAuditList: superadminAuditListContract,
+  SuperadminSensitiveAuditList: superadminSensitiveAuditListContract,
   SuperadminSensitiveAction: superadminSensitiveActionContract,
   SuperadminSensitiveReceipt: superadminSensitiveReceiptContract,
   PlatformAccessGrantId: platformAccessGrantIdContract,
@@ -1028,6 +1080,9 @@ export const platformAccessV1Examples = {
     identityId: "11111111-1111-4111-8111-111111111111",
     status: "ACTIVE",
   },
+  SuperadminList: { items: [] },
+  SuperadminAuditList: { items: [] },
+  SuperadminSensitiveAuditList: { items: [] },
   SuperadminSensitiveAction: {
     actorIdentityId: "11111111-1111-4111-8111-111111111111",
     resourceType: "PAYMENT_REVIEW",

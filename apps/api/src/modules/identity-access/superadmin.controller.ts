@@ -54,7 +54,7 @@ export class SuperadminService {
         return { items };
       }
       const items =
-        await sql`select identity_id as "identityId", case when revoked_at is null then 'ACTIVE' else 'REVOKED' end as status, granted_at as "grantedAt", revoked_at as "revokedAt" from identity_platform_superadmins order by granted_at desc, identity_id`;
+        await sql`select a.identity_id as "identityId", case when a.revoked_at is not null then 'REVOKED' when i.status <> 'ACTIVE' then 'INACTIVE' else 'ACTIVE' end as status, a.granted_at as "grantedAt", a.revoked_at as "revokedAt" from identity_platform_superadmins a join identity_identities i on i.id = a.identity_id order by a.granted_at desc, a.identity_id`;
       return { items };
     });
   }
@@ -90,9 +90,9 @@ export class SuperadminService {
         return prior[0].response;
       }
       const subjects = await sql<
-        Array<{ id: string }>
-      >`select id from identity_identities where id = ${subject} and status = 'ACTIVE' for share`;
-      if (!subjects[0])
+        Array<{ id: string; status: string }>
+      >`select id, status from identity_identities where id = ${subject} for share`;
+      if (!subjects[0] || (action === "GRANTED" && subjects[0].status !== "ACTIVE"))
         throw superadminError(correlationId, "ACCESS_GRANT_NOT_FOUND", 404);
       if (action === "GRANTED") {
         const changed =
@@ -105,7 +105,7 @@ export class SuperadminService {
         const active = await sql<
           Array<{ count: number }>
         >`select count(*)::int as count from identity_platform_superadmins a join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE' where a.revoked_at is null`;
-        if ((active[0]?.count ?? 0) <= 1)
+        if (subjects[0].status === "ACTIVE" && (active[0]?.count ?? 0) <= 1)
           throw superadminError(correlationId, "LAST_SUPERADMIN", 409);
         const changed =
           await sql`update identity_platform_superadmins set revoked_at = now() where identity_id = ${subject} and revoked_at is null returning identity_id`;

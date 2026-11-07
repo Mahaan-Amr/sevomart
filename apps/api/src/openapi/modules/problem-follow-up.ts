@@ -8,6 +8,11 @@ import {
   problemFollowUpV2Examples,
   problemFollowUpV2Operations,
 } from "@sevo/contracts/problem-follow-up/v2";
+import {
+  createProblemFollowUpV3JsonSchemas,
+  problemFollowUpV3Examples,
+  problemFollowUpV3Operations,
+} from "@sevo/contracts/problem-follow-up/v3";
 
 import {
   addModuleOpenApiContract,
@@ -160,6 +165,80 @@ const operations = [
     ],
   },
   {
+    ...problemFollowUpV3Operations.readPlatformDispute,
+    tag: "problem-follow-up",
+    auth: "platform-agent-session",
+    pathParameter: disputePathParameter,
+    headerParameters: [sensitiveAccessHeaders[1]],
+    responses: [
+      { status: 200, schema: "PlatformDisputeDirectViewV3" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "ProblemFollowUpError" },
+      { status: 404, schema: "ProblemFollowUpError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...problemFollowUpV3Operations.resolveDispute,
+    tag: "problem-follow-up",
+    auth: "platform-agent-session",
+    pathParameter: disputePathParameter,
+    headerParameters: [...idempotencyHeader, sensitiveAccessHeaders[1]],
+    request: {
+      schema: "ResolveDisputeInputV2",
+      example: problemFollowUpV2Examples.ResolveDisputeInputV2,
+    },
+    responses: [
+      { status: 200, schema: "PlatformDisputeDirectViewV3" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "ProblemFollowUpErrorV2" },
+      { status: 404, schema: "ProblemFollowUpErrorV2" },
+      { status: 409, schema: "ProblemFollowUpErrorV2" },
+      { status: 428, schema: "ProblemFollowUpErrorV2" },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...problemFollowUpV3Operations.reopenDispute,
+    tag: "problem-follow-up",
+    auth: "platform-agent-session",
+    pathParameter: disputePathParameter,
+    headerParameters: [...idempotencyHeader, sensitiveAccessHeaders[1]],
+    request: {
+      schema: "ReopenDisputeInputV2",
+      example: problemFollowUpV2Examples.ReopenDisputeInputV2,
+    },
+    responses: [
+      { status: 200, schema: "PlatformDisputeDirectViewV3" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "ProblemFollowUpErrorV2" },
+      { status: 404, schema: "ProblemFollowUpErrorV2" },
+      { status: 409, schema: "ProblemFollowUpErrorV2" },
+      { status: 428, schema: "ProblemFollowUpErrorV2" },
+      { status: 422, schema: "ValidationError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
+    ...problemFollowUpV3Operations.readPlatformViolationCase,
+    tag: "problem-follow-up",
+    auth: "platform-agent-session",
+    pathParameter: {
+      name: "violationCaseId",
+      schema: "ViolationCaseId",
+      example: problemFollowUpV1Examples.ViolationCaseId,
+    },
+    headerParameters: [sensitiveAccessHeaders[1]],
+    responses: [
+      { status: 200, schema: "PlatformViolationDirectViewV3" },
+      { status: 401, schema: "UnauthorizedError" },
+      { status: 403, schema: "ProblemFollowUpError" },
+      { status: 404, schema: "ProblemFollowUpError" },
+      { status: 500, schema: "InternalServerError" },
+    ],
+  },
+  {
     ...problemFollowUpV1ReadOperations.readPlatformDispute,
     tag: "problem-follow-up",
     auth: "platform-agent-session",
@@ -253,8 +332,13 @@ export const contribute_problem_follow_up_openApi: OpenApiContributor = (documen
     {
       ...createProblemFollowUpV1JsonSchemas(),
       ...createProblemFollowUpV2JsonSchemas(),
+      ...createProblemFollowUpV3JsonSchemas(),
     },
-    { ...problemFollowUpV1Examples, ...problemFollowUpV2Examples },
+    {
+      ...problemFollowUpV1Examples,
+      ...problemFollowUpV2Examples,
+      ...problemFollowUpV3Examples,
+    },
     operations,
     {
       descriptions: {

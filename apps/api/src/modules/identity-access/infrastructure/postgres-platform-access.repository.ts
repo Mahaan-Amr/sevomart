@@ -21,6 +21,7 @@ import {
   responsibilityGrantViewContract,
   requestEmergencyAccessCommandContract,
   requestResponsibilityGrantCommandContract,
+  responsibilityGrantRequestInputContract,
   requestSensitiveAccessCommandContract,
   revokePlatformAccessCommandContract,
   sensitiveAccessGrantedV1Contract,
@@ -171,29 +172,37 @@ export class PostgresPlatformAccessRepository implements PlatformAccessCore {
         input,
       );
       if (replay) return replay;
+      const isSuperadmin = await lockLiveSuperadmin(sql, session.identityId);
       if (session.identityId === input.recipientIdentityId) {
         throw new PlatformAccessError("SELF_GRANT_FORBIDDEN");
       }
       const activeManagerCount = await countActiveAccessManagers(sql);
       const highRisk = HIGH_RISK.has(input.responsibility);
-      const controlMode = !highRisk
-        ? "DIRECT"
-        : activeManagerCount === 1
-          ? "SINGLE_MANAGER_EXCEPTION"
-          : "DUAL_CONTROL";
-      const status = highRisk && activeManagerCount > 1 ? "PENDING_APPROVAL" : "ACTIVE";
+      const controlMode = isSuperadmin
+        ? "SUPERADMIN_DIRECT"
+        : !highRisk
+          ? "DIRECT"
+          : activeManagerCount === 1
+            ? "SINGLE_MANAGER_EXCEPTION"
+            : "DUAL_CONTROL";
+      const status =
+        !isSuperadmin && highRisk && activeManagerCount > 1
+          ? "PENDING_APPROVAL"
+          : "ACTIVE";
       const now = new Date();
       const grantId = randomUUID();
       const singleManagerException = controlMode === "SINGLE_MANAGER_EXCEPTION";
-      requestResponsibilityGrantCommandContract.parse({
-        requesterIdentityId: session.identityId,
-        recipientIdentityId: input.recipientIdentityId,
-        responsibility: input.responsibility,
-        reason: input.reason,
-        activeAccessManagerCount: activeManagerCount,
-        controlMode,
-        strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
-      });
+      if (isSuperadmin) responsibilityGrantRequestInputContract.parse(input);
+      else
+        requestResponsibilityGrantCommandContract.parse({
+          requesterIdentityId: session.identityId,
+          recipientIdentityId: input.recipientIdentityId,
+          responsibility: input.responsibility,
+          reason: input.reason,
+          activeAccessManagerCount: activeManagerCount,
+          controlMode,
+          strongAuthenticationAt: session.strongAuthenticationAt.toISOString(),
+        });
 
       await sql`
         insert into identity_platform_access_grants

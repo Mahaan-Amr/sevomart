@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { superadminRevocationInputContract } from "@sevo/contracts/identity-access/v1";
 
 import {
   DISPUTE_SELLER_FIRST_RESPONSE_HOURS,
@@ -334,7 +335,13 @@ export class ProblemFollowUpService {
   }
 
   private requireAccess(access: SensitiveAccessInput) {
-    if (!access.grantId || access.reason.trim().length < 10) {
+    if (
+      ("grantId" in access && !access.grantId) ||
+      access.reason.trim().length < 10 ||
+      ("kind" in access &&
+        !superadminRevocationInputContract.shape.reason.safeParse(access.reason)
+          .success)
+    ) {
       throw new ProblemFollowUpFault("SENSITIVE_ACCESS_REQUIRED");
     }
     return access;

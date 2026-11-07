@@ -13,6 +13,37 @@ import { establishPlatformAgentSession } from "../helpers/platform-agent-session
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
 
+test("a superadmin opens a dispute directly after giving a reason", async ({
+  context,
+  page,
+}) => {
+  const actor = await establishPlatformAgentSession(context, []);
+  const dispute = await seedDispute();
+  const sql = postgres(databaseUrl, { max: 1 });
+  await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+  try {
+    await page.goto("/platform/disputes");
+    await page
+      .getByLabel("صف اختلاف‌ها")
+      .getByRole("button", { name: new RegExp(`پرونده ${dispute.id.slice(0, 8)}`) })
+      .click();
+    await page
+      .getByLabel("دلیل مشاهده پرونده")
+      .fill("بررسی مدارک همین پرونده برای ثبت نتیجه قابل پیگیری");
+    await page
+      .getByRole("button", {
+        name: new RegExp(`بازکردن پرونده ${dispute.id.slice(0, 8)}`),
+      })
+      .click();
+    await expect(page.getByText(dispute.buyerText)).toBeVisible();
+    await expect(page.getByText("مشاهده ثبت شد")).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+  } finally {
+    await sql`delete from identity_platform_superadmins where identity_id = ${actor.identityId}`;
+    await sql.end();
+  }
+});
+
 test("a dispute agent requests timed access and records an audited result", async ({
   newCandidateContext,
   context,

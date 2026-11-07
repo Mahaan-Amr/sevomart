@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import styles from "./superadmins.module.css";
 
-type Role = { identityId: string; status: "ACTIVE" | "REVOKED" };
+type Role = { identityId: string; status: "ACTIVE" | "INACTIVE" | "REVOKED" };
 type Audit = {
   actorIdentityId: string | null;
   subjectIdentityId: string;
@@ -107,8 +107,14 @@ export function Superadmins() {
         {roles.map((role) => (
           <li key={role.identityId}>
             <span dir="ltr">{role.identityId}</span>
-            <span>{role.status === "ACTIVE" ? "فعال" : "لغوشده"}</span>
-            {role.status === "ACTIVE" && (
+            <span>
+              {role.status === "ACTIVE"
+                ? "فعال"
+                : role.status === "INACTIVE"
+                  ? "هویت غیرفعال"
+                  : "لغوشده"}
+            </span>
+            {role.status !== "REVOKED" && (
               <button
                 type="button"
                 disabled={pending}

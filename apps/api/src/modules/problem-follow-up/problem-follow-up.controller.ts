@@ -134,6 +134,57 @@ export class ProblemFollowUpController {
     );
   }
 
+  @Get("v3/platform/disputes/:disputeId")
+  readPlatformDisputeDirect(
+    @Param("disputeId") disputeId: string,
+    @Headers("x-platform-access-reason") reason: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    return this.respond(request, response, () =>
+      this.service.readPlatformDispute(this.platformContext(request), disputeId, {
+        kind: "SUPERADMIN",
+        reason: decodeAccessReason(reason),
+      }),
+    );
+  }
+
+  @Post("v3/platform/disputes/:disputeId/resolution")
+  @HttpCode(HttpStatus.OK)
+  resolveDirect(
+    @Param("disputeId") disputeId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") key: string | undefined,
+    @Headers("x-platform-access-reason") reason: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    return this.respond(request, response, () =>
+      this.service.resolve(this.platformContext(request), disputeId, body, key, {
+        kind: "SUPERADMIN",
+        reason: decodeAccessReason(reason),
+      }),
+    );
+  }
+
+  @Post("v3/platform/disputes/:disputeId/reopening")
+  @HttpCode(HttpStatus.OK)
+  reopenDirect(
+    @Param("disputeId") disputeId: string,
+    @Body() body: unknown,
+    @Headers("idempotency-key") key: string | undefined,
+    @Headers("x-platform-access-reason") reason: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    return this.respond(request, response, () =>
+      this.service.reopen(this.platformContext(request), disputeId, body, key, {
+        kind: "SUPERADMIN",
+        reason: decodeAccessReason(reason),
+      }),
+    );
+  }
+
   @Post("v2/platform/disputes/:disputeId/resolution")
   @HttpCode(HttpStatus.OK)
   resolve(
@@ -197,6 +248,22 @@ export class ProblemFollowUpController {
         this.platformContext(request),
         violationCaseId,
         { grantId: grantId ?? "", reason: decodeAccessReason(reason) },
+      ),
+    );
+  }
+
+  @Get("v3/platform/violations/:violationCaseId")
+  readPlatformViolationDirect(
+    @Param("violationCaseId") violationCaseId: string,
+    @Headers("x-platform-access-reason") reason: string | undefined,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    return this.respond(request, response, () =>
+      this.service.readPlatformViolation(
+        this.platformContext(request),
+        violationCaseId,
+        { kind: "SUPERADMIN", reason: decodeAccessReason(reason) },
       ),
     );
   }

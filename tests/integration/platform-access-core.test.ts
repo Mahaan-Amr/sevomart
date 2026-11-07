@@ -156,6 +156,27 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
     expect(response.statusCode).toBe(403);
   });
 
+  it("allows revoking the role of an inactive identity while protecting the last active superadmin", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const owner = await seedAgent([]);
+    const other = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${owner.identityId}, now()), (${other.identityId}, now())`;
+    await sql`update identity_identities set status = 'INACTIVE' where id = ${other.identityId}`;
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: `/v1/platform/access/superadmins/${other.identityId}/revocation`,
+        headers: accessHeaders(owner.token),
+        payload: { reason: "پایان مسئولیت مدیریت پلتفرم" },
+      });
+    expect(response.statusCode).toBe(200);
+    await sql.end();
+  });
+
   it("lists superadmin roles and their audit for a live superadmin only", async () => {
     const app = await createApiApp(apiTestEnvironment);
     apps.push(app);
@@ -251,6 +272,49 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
         headers: { cookie: `sevo_platform_session=${actor.token}` },
       });
     expect(response.statusCode).toBe(200);
+    await sql.end();
+  });
+
+  it("lets a superadmin directly grant a high-risk responsibility even when multiple managers exist", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const actor = await seedAgent([]);
+    await seedAgent(["ACCESS_ADMINISTRATION"]);
+    const recipient = await seedAgent([]);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor.identityId}, now())`;
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: accessHeaders(actor.token),
+        payload: {
+          recipientIdentityId: recipient.identityId,
+          responsibility: "PAYMENT_OUTCOME_CHANGE",
+          reason: "واگذاری مسئولیت پیگیری نتیجه پرداخت",
+        },
+      });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      status: "ACTIVE",
+      singleManagerException: false,
+    });
+    const own = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: "POST",
+        url: "/v1/platform/access/responsibility-grants",
+        headers: accessHeaders(actor.token),
+        payload: {
+          recipientIdentityId: actor.identityId,
+          responsibility: "PAYMENT_REVIEW",
+          reason: "واگذاری مسئولیت بررسی پرداخت",
+        },
+      });
+    expect(own.statusCode).toBe(403);
     await sql.end();
   });
 
@@ -357,6 +421,11 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
       });
     expect(run().status).toBe(0);
     expect(run().status).toBe(0);
+    const recoverySql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    await recoverySql`update identity_platform_superadmins set revoked_at = now() where identity_id = ${target.identityId}`;
+    expect(run().status).not.toBe(0);
+    await recoverySql`update identity_platform_superadmins set revoked_at = null where identity_id = ${target.identityId}`;
+    await recoverySql.end();
     const other = await seedAgent([]);
     const rejected = spawnSync(process.execPath, ["scripts/recover-superadmin.mjs"], {
       input: JSON.stringify({

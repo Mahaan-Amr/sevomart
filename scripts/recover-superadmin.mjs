@@ -42,6 +42,9 @@ try {
       await tx`select payload_hash from identity_platform_superadmin_recovery_idempotency where key = ${command.idempotencyKey}`;
     if (previous[0]) {
       if (previous[0].payload_hash !== payloadHash) throw new Error("conflict");
+      const stillActive =
+        await tx`select 1 from identity_platform_superadmins a join identity_identities i on i.id = a.identity_id and i.status = 'ACTIVE' where a.identity_id = ${command.identityId} and a.revoked_at is null`;
+      if (!stillActive.length) throw new Error("previous recovery is no longer active");
       return;
     }
     const active =
