@@ -20,6 +20,8 @@
     "identity_identities": "identity-access",
     "identity_login_methods": "identity-access",
     "identity_otp_challenges": "identity-access",
+    "identity_seller_passwords": "identity-access",
+    "identity_password_attempts": "identity-access",
     "identity_sessions": "identity-access",
     "identity_seller_applications": "identity-access",
     "identity_seller_application_revisions": "identity-access",
