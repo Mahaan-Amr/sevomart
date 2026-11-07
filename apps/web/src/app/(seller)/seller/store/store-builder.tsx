@@ -90,6 +90,12 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   const [slugStatus, setSlugStatus] = useState("");
   const [slugUnavailable, setSlugUnavailable] = useState(false);
   const slugCheckSequence = useRef(0);
+  const feedbackRef = useRef<HTMLParagraphElement>(null);
+  const [feedbackFocusRequest, setFeedbackFocusRequest] = useState(0);
+
+  useEffect(() => {
+    if (feedbackFocusRequest > 0) feedbackRef.current?.focus();
+  }, [feedbackFocusRequest]);
 
   useEffect(() => {
     void loadDraft();
@@ -220,6 +226,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       if (error instanceof MediaUploadError) {
         setErrors((current) => ({ ...current, [error.field]: error.message }));
         setEditStep(2);
+        setFeedbackFocusRequest((current) => current + 1);
         setMessage(
           `تصویر ${error.field === "logo" ? "لوگو" : "روی جلد"} را بررسی کنید.`,
         );
@@ -276,6 +283,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       if (error instanceof MediaUploadError) {
         setErrors((current) => ({ ...current, [error.field]: error.message }));
         setEditStep(2);
+        setFeedbackFocusRequest((current) => current + 1);
         setMessage(
           `تصویر ${error.field === "logo" ? "لوگو" : "روی جلد"} را بررسی کنید.`,
         );
@@ -405,6 +413,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       setErrors(fieldErrors);
       if (section === "setup" && Object.keys(fieldErrors).length > 0) {
         setEditStep(hasIdentityErrors(fieldErrors) ? 0 : 1);
+        setFeedbackFocusRequest((current) => current + 1);
       }
       throw new StoreDraftSaveError(humanError(body));
     }
@@ -792,7 +801,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               </Field>
             </>
           ) : null}
-          <p className={styles.message} role="alert" aria-live="polite">
+          <p
+            ref={feedbackRef}
+            tabIndex={-1}
+            className={styles.message}
+            role="alert"
+            aria-live="polite"
+          >
             {message}
           </p>
           {editStep < 2 ? (
