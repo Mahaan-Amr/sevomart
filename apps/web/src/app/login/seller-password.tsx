@@ -4,6 +4,12 @@ import { useState, type FormEvent } from "react";
 import styles from "./identity-login.module.css";
 
 type Mode = "enroll" | "login" | "recovery-request" | "recovery";
+type Field = "mobile" | "code" | "password";
+const fieldMessages: Record<Field, string> = {
+  mobile: "شماره موبایل را با قالب ۰۹xxxxxxxxx وارد کنید.",
+  code: "کد شش‌رقمی را کامل وارد کنید.",
+  password: "رمز باید بین ۱۲ تا ۱۲۸ نویسه باشد.",
+};
 
 export function SellerPassword({
   initialMode,
@@ -22,12 +28,22 @@ export function SellerPassword({
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [message, setMessage] = useState("");
+  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
+    const nextErrors: Partial<Record<Field, string>> = {};
+    if ((mode === "login" || mode === "recovery-request") && !/^09\d{9}$/.test(mobile))
+      nextErrors.mobile = fieldMessages.mobile;
+    if (mode === "recovery" && !/^\d{6}$/.test(code))
+      nextErrors.code = fieldMessages.code;
+    if (mode !== "recovery-request" && (password.length < 12 || password.length > 128))
+      nextErrors.password = fieldMessages.password;
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
     setPending(true);
     const path =
       mode === "enroll"
@@ -52,8 +68,21 @@ export function SellerPassword({
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
-        const body: { message?: string } = await response.json();
-        setMessage(body.message ?? "درخواست انجام نشد. دوباره تلاش کنید.");
+        const body: {
+          message?: string;
+          details?: { issues?: Array<{ field?: string }> };
+        } = await response.json();
+        const next: Partial<Record<Field, string>> = {};
+        for (const issue of body.details?.issues ?? []) {
+          if (
+            issue.field === "mobile" ||
+            issue.field === "code" ||
+            issue.field === "password"
+          )
+            next[issue.field] = fieldMessages[issue.field];
+        }
+        if (Object.keys(next).length) setErrors(next);
+        else setMessage(body.message ?? "درخواست انجام نشد. دوباره تلاش کنید.");
       } else if (mode === "recovery-request") {
         const body: { challengeId: string } = await response.json();
         setChallengeId(body.challengeId);
@@ -98,7 +127,7 @@ export function SellerPassword({
             </button>
           </>
         ) : (
-          <form className={styles.form} onSubmit={submit}>
+          <form className={styles.form} onSubmit={submit} noValidate>
             {(mode === "login" || mode === "recovery-request") && (
               <>
                 <label htmlFor="password-mobile">شماره موبایل</label>
@@ -109,9 +138,23 @@ export function SellerPassword({
                   autoComplete="tel"
                   dir="ltr"
                   value={mobile}
-                  onChange={(event) => setMobile(event.target.value)}
+                  onChange={(event) => {
+                    setMobile(event.target.value);
+                    setErrors((current) => ({ ...current, mobile: undefined }));
+                  }}
+                  aria-invalid={Boolean(errors.mobile)}
+                  aria-describedby={errors.mobile ? "password-mobile-error" : undefined}
                   required
                 />
+                {errors.mobile && (
+                  <p
+                    id="password-mobile-error"
+                    className={styles.fieldError}
+                    role="alert"
+                  >
+                    {errors.mobile}
+                  </p>
+                )}
               </>
             )}
             {mode === "recovery" && (
@@ -128,9 +171,23 @@ export function SellerPassword({
                   autoComplete="one-time-code"
                   dir="ltr"
                   value={code}
-                  onChange={(event) => setCode(event.target.value)}
+                  onChange={(event) => {
+                    setCode(event.target.value);
+                    setErrors((current) => ({ ...current, code: undefined }));
+                  }}
+                  aria-invalid={Boolean(errors.code)}
+                  aria-describedby={errors.code ? "recovery-code-error" : undefined}
                   required
                 />
+                {errors.code && (
+                  <p
+                    id="recovery-code-error"
+                    className={styles.fieldError}
+                    role="alert"
+                  >
+                    {errors.code}
+                  </p>
+                )}
               </>
             )}
             {mode !== "recovery-request" && (
@@ -146,9 +203,25 @@ export function SellerPassword({
                   maxLength={128}
                   dir="ltr"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setErrors((current) => ({ ...current, password: undefined }));
+                  }}
+                  aria-invalid={Boolean(errors.password)}
+                  aria-describedby={
+                    errors.password ? "seller-password-error" : undefined
+                  }
                   required
                 />
+                {errors.password && (
+                  <p
+                    id="seller-password-error"
+                    className={styles.fieldError}
+                    role="alert"
+                  >
+                    {errors.password}
+                  </p>
+                )}
               </>
             )}
             <p className={styles.message} role="alert">
@@ -172,6 +245,7 @@ export function SellerPassword({
                 onClick={() => {
                   setMode("recovery-request");
                   setMessage("");
+                  setErrors({});
                 }}
               >
                 رمزم را فراموش کرده‌ام

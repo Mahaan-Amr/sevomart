@@ -5,6 +5,25 @@ import {
   sellerPasswordTestMobiles,
   visualProjectIndex,
 } from "../helpers/visual-projects";
+
+test("password form shows Persian errors beside their fields", async ({ page }) => {
+  await page.goto("/seller/login");
+  await page.getByRole("button", { name: "ورود با رمز" }).click();
+  await page.getByRole("button", { name: "ورود", exact: true }).click();
+  const mobile = page.getByLabel("شماره موبایل");
+  const password = page.getByLabel("رمز", { exact: true });
+  await expect(mobile).toHaveAttribute("aria-invalid", "true");
+  await expect(password).toHaveAttribute("aria-invalid", "true");
+  await expect(
+    page.getByText("شماره موبایل را با قالب ۰۹xxxxxxxxx وارد کنید."),
+  ).toBeVisible();
+  await expect(page.getByText("رمز باید بین ۱۲ تا ۱۲۸ نویسه باشد.")).toBeVisible();
+  await expect(mobile).toHaveAttribute("aria-describedby", "password-mobile-error");
+  await expect(password).toHaveAttribute("aria-describedby", "seller-password-error");
+  await page.getByRole("button", { name: "رمزم را فراموش کرده‌ام" }).click();
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await expect(page.getByLabel("شماره موبایل")).toHaveAttribute("aria-invalid", "true");
+});
 import {
   assertMinimumContrast,
   assertNoHorizontalOverflow,
@@ -47,6 +66,9 @@ test("seller creates, uses, and recovers an optional password", async ({
     await page.getByRole("button", { name: "رمزم را فراموش کرده‌ام" }).click();
     await page.getByLabel("شماره موبایل").fill(mobile);
     await page.getByRole("button", { name: "دریافت کد" }).click();
+    await page.getByRole("button", { name: "تغییر رمز" }).click();
+    await expect(page.getByLabel("کد شش‌رقمی")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText("کد شش‌رقمی را کامل وارد کنید.")).toBeVisible();
     await page.getByLabel("کد شش‌رقمی").fill("111111");
     await page.getByLabel("رمز تازه، حداقل ۱۲ نویسه").fill("another secure password");
     await page.getByRole("button", { name: "تغییر رمز" }).click();
