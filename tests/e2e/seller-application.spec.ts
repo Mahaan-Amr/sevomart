@@ -119,6 +119,76 @@ test("an information-request draft survives a reload without losing applicant ed
   await expect(field).toHaveValue("فروش حضوری و ثبت سفارش در پیام‌رسان");
 });
 
+test("information request names all fields to correct", async ({ context, page }) => {
+  await establishIdentitySession(context);
+  const application = informationRequestApplication();
+  const requested = {
+    ...application,
+    timeline: [
+      application.timeline[0],
+      {
+        ...application.timeline[1],
+        requestedFields: ["currentSalesMethod", "applicantName"],
+      },
+    ],
+  };
+  await page.route("**/api/seller-applications/mine", (route) =>
+    route.fulfill({ json: { items: [requested], nextCursor: null } }),
+  );
+  await page.goto("/seller/application");
+  await expect(
+    page.getByText("بخش‌های نیازمند اصلاح: نام و نام خانوادگی، الان چطور می‌فروشید؟"),
+  ).toBeVisible();
+  await expect(page.getByText("لطفاً روش فعلی فروش را روشن‌تر بنویسید.")).toBeVisible();
+});
+
+test("a failed status lookup offers retry without showing a new application", async ({
+  context,
+  page,
+}) => {
+  await establishIdentitySession(context);
+  let attempts = 0;
+  await page.route("**/api/seller-applications/mine", (route) => {
+    attempts++;
+    return attempts === 1
+      ? route.fulfill({
+          status: 503,
+          json: { message: "private database diagnostic: secret-value" },
+        })
+      : route.fulfill({ json: { items: [rejectedApplication()], nextCursor: null } });
+  });
+  await page.goto("/seller/application");
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.",
+  );
+  await expect(page.locator("main")).not.toContainText("private database diagnostic");
+  await expect(page.locator("main")).not.toContainText("secret-value");
+  await expect(page.getByLabel("نام و نام خانوادگی")).toHaveCount(0);
+  await page.getByRole("button", { name: "تلاش دوباره" }).click();
+  await expect(page.getByText("این درخواست تأیید نشد.")).toBeVisible();
+});
+
+test("unexpected status failures show a safe message and permit retry", async ({
+  context,
+  page,
+}) => {
+  await establishIdentitySession(context);
+  let mode: "malformed" | "network" = "malformed";
+  await page.route("**/api/seller-applications/mine", (route) =>
+    mode === "malformed"
+      ? route.fulfill({ json: { items: [{ internalDetail: "private diagnostic" }] } })
+      : route.abort(),
+  );
+  for (const failure of ["malformed", "network"] as const) {
+    mode = failure;
+    await page.goto("/seller/application");
+    const alert = page.locator("main").getByRole("alert");
+    await expect(alert).toHaveText("پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.");
+    await expect(page.getByLabel("نام و نام خانوادگی")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "تلاش دوباره" })).toBeVisible();
+  }
+});
+
 test("an approved application points to the canonical seller workspace", async ({
   page,
 }, testInfo) => {

@@ -34,6 +34,30 @@ async function matchesPassword(password: string, encoded: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+async function admitPasswordWork(sql: postgres.TransactionSql) {
+  let acquired = false;
+  for (let slot = 0; slot < 4; slot++) {
+    const [lock] = await sql<
+      Array<{ acquired: boolean }>
+    >`select pg_try_advisory_xact_lock(hashtextextended('sevo-password-admission-v1', 274) + ${slot}) as acquired`;
+    if (lock?.acquired) {
+      acquired = true;
+      break;
+    }
+  }
+  if (!acquired) return false;
+  const [window] = await sql<
+    Array<{ attempts: number }>
+  >`update identity_password_admission set
+    attempts = case when window_started_at <= clock_timestamp() - interval '1 minute' then 1 else attempts + 1 end,
+    window_started_at = case when window_started_at <= clock_timestamp() - interval '1 minute' then clock_timestamp() else window_started_at end
+    where id = 1 and (window_started_at <= clock_timestamp() - interval '1 minute' or attempts < 60) returning attempts`;
+  if (!window) return false;
+  await sql`delete from identity_password_attempts where mobile in
+    (select mobile from identity_password_attempts where window_started_at <= clock_timestamp() - interval '15 minutes' order by window_started_at limit 100)`;
+  return true;
+}
+
 export class SellerPasswordService {
   readonly #sql: postgres.Sql;
   constructor(
@@ -75,6 +99,7 @@ export class SellerPasswordService {
       .update(`${challengeId}:${code}`)
       .digest("hex");
     return this.#sql.begin(async (sql) => {
+      if (!(await admitPasswordWork(sql))) return false;
       const [challenge] = await sql<
         Array<{ mobile: string }>
       >`select mobile from identity_otp_challenges where id = ${challengeId} and audience = 'PASSWORD_RESET'`;
@@ -83,7 +108,7 @@ export class SellerPasswordService {
       const [attempt] = await sql<Array<{ attempts: number }>>`
         insert into identity_password_attempts (mobile, attempts, window_started_at) values (${challenge.mobile}, 1, clock_timestamp())
         on conflict (mobile) do update set
-          attempts = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then 1 else identity_password_attempts.attempts + 1 end,
+          attempts = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then 1 else least(identity_password_attempts.attempts + 1, 11) end,
           window_started_at = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then clock_timestamp() else identity_password_attempts.window_started_at end
         returning attempts`;
       const [proof] = await sql<
@@ -120,6 +145,7 @@ export class SellerPasswordService {
 
   async enroll(token: string, password: string) {
     return this.#sql.begin(async (sql) => {
+      if (!(await admitPasswordWork(sql))) return false;
       const [session] = await sql<
         Array<{ identityId: string }>
       >`select identity_id as "identityId" from identity_sessions where token_hash = ${hashToken(token)} and audience = 'PUBLIC'`;
@@ -149,12 +175,13 @@ export class SellerPasswordService {
 
   async login(mobile: string, password: string) {
     return this.#sql.begin(async (sql) => {
+      if (!(await admitPasswordWork(sql))) return undefined;
       await sql`select pg_advisory_xact_lock(hashtext(${mobile}))`;
       const [attempt] = await sql<Array<{ attempts: number }>>`
         insert into identity_password_attempts (mobile, attempts, window_started_at)
         values (${mobile}, 1, clock_timestamp())
         on conflict (mobile) do update set
-          attempts = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then 1 else identity_password_attempts.attempts + 1 end,
+          attempts = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then 1 else least(identity_password_attempts.attempts + 1, 11) end,
           window_started_at = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then clock_timestamp() else identity_password_attempts.window_started_at end
         returning attempts`;
       if (!attempt || attempt.attempts > 10) return undefined;

@@ -69,6 +69,7 @@ export function SellerApplicationJourney({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [application, setApplication] = useState<SellerApplicationView>();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [pending, setPending] = useState(false);
   const [withdrawalPending, setWithdrawalPending] = useState(false);
   const [withdrawalKey, setWithdrawalKey] = useState(() =>
@@ -89,18 +90,23 @@ export function SellerApplicationJourney({
           return;
         }
         const body: unknown = await response.json();
-        if (!response.ok) throw new Error(humanError(body));
+        if (!response.ok) {
+          if (active) setLoadError("پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.");
+          return;
+        }
         const parsed = mySellerApplicationsContract.parse(body);
         const current = parsed.items[0];
         if (!active || !current) return;
         if (current.status === "NEEDS_INFORMATION") {
           setApplication(current);
-          const requested = [...current.timeline]
-            .reverse()
-            .find((entry) => entry.requestedFields.length > 0)?.requestedFields[0];
+          const requested =
+            [...current.timeline]
+              .reverse()
+              .find((entry) => entry.status === "NEEDS_INFORMATION")?.requestedFields ??
+            [];
           const step = Math.max(
             0,
-            fields.findIndex((field) => field.key === requested),
+            fields.findIndex((field) => requested.includes(field.key)),
           );
           setDraft((loadedDraft) =>
             loadedDraft?.applicationRevision === current.currentRevision
@@ -123,13 +129,9 @@ export function SellerApplicationJourney({
           localStorage.removeItem(draftStorageKey);
         }
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (active) {
-          setMessage(
-            error instanceof Error
-              ? error.message
-              : "پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.",
-          );
+          setLoadError("پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.");
         }
       })
       .finally(() => {
@@ -150,6 +152,29 @@ export function SellerApplicationJourney({
 
   if (loading || !draft) {
     return <JourneyShell message="در حال آماده‌کردن درخواست شما…" />;
+  }
+
+  if (loadError) {
+    return (
+      <main className={styles.page}>
+        <section className={styles.panel}>
+          <span className={styles.brand}>سوو</span>
+          <p className={styles.message} role="alert">
+            {loadError}
+          </p>
+          <button
+            className={styles.primaryAction}
+            type="button"
+            onClick={() => window.location.reload()}
+          >
+            تلاش دوباره
+          </button>
+          <a className={styles.leave} href="/">
+            بازگشت به سوو
+          </a>
+        </section>
+      </main>
+    );
   }
 
   async function withdrawApplication() {
@@ -210,6 +235,14 @@ export function SellerApplicationJourney({
   const value = draft[field.key];
   const canContinue = value.trim().length >= 2;
   const isLast = draft.step === fields.length - 1;
+  const requestedFields = application
+    ? ([...application.timeline]
+        .reverse()
+        .find((entry) => entry.status === "NEEDS_INFORMATION")?.requestedFields ?? [])
+    : [];
+  const requestedLabels = fields
+    .filter((item) => requestedFields.includes(item.key))
+    .map((item) => item.label);
   const reason = application
     ? [...application.timeline].reverse().find((entry) => entry.publicReason)
         ?.publicReason
@@ -279,6 +312,12 @@ export function SellerApplicationJourney({
           <span className={styles.progress}>پیش‌نویس · {draft.step + 1} از ۴</span>
         </header>
         <h1 id="application-title">درخواست فروشندگی</h1>
+        {application ? (
+          <p>برای ادامه بررسی، اطلاعات درخواست خود را اصلاح و دوباره ثبت کنید.</p>
+        ) : null}
+        {requestedLabels.length ? (
+          <p>بخش‌های نیازمند اصلاح: {requestedLabels.join("، ")}</p>
+        ) : null}
         {reason ? <p className={styles.reason}>{reason}</p> : null}
         <form className={styles.form} onSubmit={continueJourney} noValidate>
           <label htmlFor={`application-${field.key}`}>{field.label}</label>
@@ -375,13 +414,18 @@ function ApplicationStatus({
   const content = statusContent(application);
   const publicReason = [...application.timeline]
     .reverse()
-    .find((entry) => entry.publicReason)?.publicReason;
+    .find(
+      (entry) => entry.status === application.status && entry.publicReason,
+    )?.publicReason;
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="application-status-title">
         <span className={styles.brand}>سوو</span>
         <p className={styles.statusLabel}>{content.label}</p>
         <h1 id="application-status-title">{content.title}</h1>
+        {application.status === "SUBMITTED" ? (
+          <p>تیم سوو درخواست شما را بررسی می‌کند.</p>
+        ) : null}
         <p>{content.nextStep}</p>
         {publicReason ? <p className={styles.reason}>{publicReason}</p> : null}
         {message ? (

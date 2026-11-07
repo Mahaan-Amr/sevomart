@@ -80,9 +80,11 @@ export class IdentityAccessController {
   ) {
     const parsed = passwordLoginContract.safeParse(body);
     if (!parsed.success)
-      throw validationError(request.id, "شماره و رمز را بررسی کنید.", [
-        { field: "password", code: "INVALID_FORMAT" },
-      ]);
+      throw validationError(
+        request.id,
+        "شماره و رمز را بررسی کنید.",
+        invalidPasswordFields(parsed.error.issues),
+      );
     const result = await this.passwords.login(parsed.data.mobile, parsed.data.password);
     if (!result)
       throw new HttpException(
@@ -127,9 +129,11 @@ export class IdentityAccessController {
   async resetPassword(@Body() body: unknown, @Req() request: FastifyRequest) {
     const parsed = passwordRecoveryContract.safeParse(body);
     if (!parsed.success)
-      throw validationError(request.id, "کد و رمز تازه را بررسی کنید.", [
-        { field: "password", code: "INVALID_FORMAT" },
-      ]);
+      throw validationError(
+        request.id,
+        "کد و رمز تازه را بررسی کنید.",
+        invalidPasswordFields(parsed.error.issues),
+      );
     if (
       !(await this.passwords.reset(
         parsed.data.challengeId,
@@ -278,6 +282,13 @@ export class IdentityAccessController {
       `sevo_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
     );
   }
+}
+
+function invalidPasswordFields(issues: readonly { path: readonly PropertyKey[] }[]) {
+  const fields = new Set(
+    issues.map((issue) => (typeof issue.path[0] === "string" ? issue.path[0] : "form")),
+  );
+  return [...fields].map((field) => ({ field, code: "INVALID_FORMAT" as const }));
 }
 
 function validationError(
