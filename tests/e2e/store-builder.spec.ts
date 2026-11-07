@@ -466,6 +466,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     timeout: 15_000,
   });
   await expect(page.getByText(/تأیید آزمایشی؛ بدون تضمین/)).toBeVisible();
+  await expect(
+    page.getByText("فروش و پرداخت واقعی با این تأیید فعال نیست."),
+  ).toBeVisible();
   await expect(page.getByText(/ساخته‌شده با سوو/)).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
@@ -532,6 +535,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "انتشار فروشگاه" }).click();
 
   await expect(page.getByRole("heading", { name: "فروشگاه آماده است" })).toBeVisible();
+  await expect(
+    page.getByText("فروش و پرداخت واقعی با این تأیید فعال نیست."),
+  ).toBeVisible();
   await expect(page.getByText(`/s/${slug}`, { exact: true })).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
