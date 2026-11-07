@@ -616,7 +616,7 @@ test("application submission keeps server diagnostics private", async ({
   await expect(field).toHaveAttribute("aria-invalid", "true");
   await field.fill("فروش حضوری");
   await page.getByRole("button", { name: "ثبت اطلاعات تکمیلی" }).click();
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.locator("main").getByRole("alert")).toContainText(
     "درخواست انجام نشد. دوباره تلاش کنید.",
   );
   await expect(page.locator("main")).not.toContainText("secret-value");
@@ -625,6 +625,8 @@ test("application submission keeps server diagnostics private", async ({
     route.fulfill({ status: 409, json: { code: "APPLICATION_REVISION_CONFLICT" } }),
   );
   await page.getByRole("button", { name: "ثبت اطلاعات تکمیلی" }).click();
-  await expect(page.getByRole("alert")).toContainText("صفحه را تازه کنید");
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "صفحه را تازه کنید",
+  );
   await expect(field).toHaveValue("فروش حضوری");
 });

@@ -611,7 +611,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <Field label="نام فروشگاه" error={errors.name}>
                 <input
                   aria-invalid={Boolean(errors.name) || undefined}
-                  aria-describedby={errors.name ? "field-error-نام فروشگاه" : undefined}
+                  aria-describedby={errors.name ? "field-error-نام-فروشگاه" : undefined}
                   value={form.name}
                   onChange={(e) => updateFormField("name", e.target.value)}
                 />
@@ -627,7 +627,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                     dir="ltr"
                     aria-invalid={Boolean(errors.slug) || undefined}
                     aria-describedby={
-                      errors.slug ? "field-error-شناسه لینک" : undefined
+                      errors.slug ? "field-error-شناسه-لینک" : undefined
                     }
                     value={form.slug}
                     onChange={(e) => updateFormField("slug", e.target.value)}
@@ -638,7 +638,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
               <Field label="معرفی کوتاه" error={errors.bio}>
                 <textarea
                   aria-invalid={Boolean(errors.bio) || undefined}
-                  aria-describedby={errors.bio ? "field-error-معرفی کوتاه" : undefined}
+                  aria-describedby={errors.bio ? "field-error-معرفی-کوتاه" : undefined}
                   value={form.bio}
                   onChange={(e) => updateFormField("bio", e.target.value)}
                 />
@@ -652,7 +652,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                 <select
                   aria-invalid={Boolean(errors.shipping) || undefined}
                   aria-describedby={
-                    errors.shipping ? "field-error-روش ارسال" : undefined
+                    errors.shipping ? "field-error-روش-ارسال" : undefined
                   }
                   value={form.shippingCode}
                   onChange={(e) => {
@@ -690,7 +690,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                 <textarea
                   aria-invalid={Boolean(errors.returnPolicy) || undefined}
                   aria-describedby={
-                    errors.returnPolicy ? "field-error-سیاست مرجوعی" : undefined
+                    errors.returnPolicy ? "field-error-سیاست-مرجوعی" : undefined
                   }
                   value={form.returnPolicy}
                   onChange={(e) => updateFormField("returnPolicy", e.target.value)}
@@ -1256,7 +1256,9 @@ function FilePicker({
         type="file"
         aria-label={label}
         aria-invalid={Boolean(error) || undefined}
-        aria-describedby={error ? `field-error-${label}` : undefined}
+        aria-describedby={
+          error ? `field-error-${label.replace(/\s/g, "-")}` : undefined
+        }
         accept={MEDIA_UPLOAD_ACCEPTED_TYPES.join(",")}
         onChange={(event) => onChange(event.target.files?.[0])}
       />
@@ -1285,7 +1287,7 @@ function Field({
       {children}
       {hint ? <small>{hint}</small> : null}
       {error ? (
-        <small id={`field-error-${label}`} className={styles.error}>
+        <small id={`field-error-${label.replace(/\s/g, "-")}`} className={styles.error}>
           {error}
         </small>
       ) : null}
