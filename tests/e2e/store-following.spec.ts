@@ -181,11 +181,17 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     if (await retry.isVisible()) await retry.click();
     await expect(discoveryList).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 10_000 });
-  await expect(
-    page.locator(`a[href="/s/${slug}/products/${feedProducts[0]!.productId}"]`, {
-      hasText: "فنجان دنبال‌شده 1",
-    }),
-  ).toBeVisible();
+  const seededProduct = page.locator(
+    `a[href="/s/${slug}/products/${feedProducts[0]!.productId}"]`,
+    { hasText: "فنجان دنبال‌شده 1" },
+  );
+  for (let pageNumber = 0; pageNumber < 20; pageNumber += 1) {
+    if (await seededProduct.isVisible()) break;
+    const more = page.getByRole("button", { name: "دیدن کالاهای بیشتر" });
+    if (!(await more.isVisible())) break;
+    await more.click();
+  }
+  await expect(seededProduct).toBeVisible();
   await page.goto(`/s/${slug}?source=discovery#store-actions`);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await assertNoHorizontalOverflow(page);
