@@ -30,5 +30,6 @@ jobs:
           name: navigation-visual-candidate
           path: |
             tests/e2e/__screenshots__/store-builder.spec.ts/*/seller-login.png
+            tests/e2e/__screenshots__/store-builder.spec.ts/*/guest-storefront-after-refresh.png
             tests/e2e/__screenshots__/storefront-visual.spec.ts/*/storefront-default.png
           if-no-files-found: error
