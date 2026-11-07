@@ -31,12 +31,13 @@ export function SellerHomeGuide() {
             ? null
             : storeDraftContract.parse(await storeResponse.json());
         if (!storeResponse.ok && storeResponse.status !== 404) throw new Error();
-        if (!productsResponse.ok) throw new Error();
-        const products = sellerProductListContract.parse(await productsResponse.json());
-        const step = guideProgress(
-          store?.status === "PUBLISHED",
-          products.items.length > 0,
-        );
+        if (!productsResponse.ok && store !== null) throw new Error();
+        const hasProduct =
+          store === null
+            ? false
+            : sellerProductListContract.parse(await productsResponse.json()).items
+                .length > 0;
+        const step = guideProgress(store?.status === "PUBLISHED", hasProduct);
         setProgress({ step, slug: store?.status === "PUBLISHED" ? store.slug : null });
         setOpen(step !== 3);
       } catch {

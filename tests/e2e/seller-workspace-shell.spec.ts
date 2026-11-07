@@ -71,6 +71,9 @@ test("active seller gets the canonical shell and loses it after a live suspensio
   await expect(page).toHaveURL(/\/seller$/);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: "کارهای نزدیک" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "فروشگاه را منتشر کنید" }),
+  ).toBeVisible();
   const sellerNavigation = page.getByRole("navigation", {
     name: "ناوبری فضای کار فروشنده",
   });
