@@ -21,6 +21,10 @@
       "types": "./dist/identity-access/v1/index.d.ts",
       "default": "./dist/identity-access/v1/index.js"
     },
+    "./identity-access/v2": {
+      "types": "./dist/identity-access/v2/index.d.ts",
+      "default": "./dist/identity-access/v2/index.js"
+    },
     "./store/v1": {
       "types": "./dist/store/v1/index.d.ts",
       "default": "./dist/store/v1/index.js"

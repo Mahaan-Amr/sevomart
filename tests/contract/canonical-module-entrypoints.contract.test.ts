@@ -5,6 +5,7 @@ import * as conversationsV1 from "@sevo/contracts/conversations/v1";
 import * as discoveryV1 from "@sevo/contracts/discovery/v1";
 import * as fulfillmentV1 from "@sevo/contracts/fulfillment/v1";
 import * as identityAccessV1 from "@sevo/contracts/identity-access/v1";
+import * as identityAccessV2 from "@sevo/contracts/identity-access/v2";
 import * as inventoryV1 from "@sevo/contracts/inventory/v1";
 import * as mediaV1 from "@sevo/contracts/media/v1";
 import * as notificationsV1 from "@sevo/contracts/notifications/v1";
@@ -49,6 +50,7 @@ type LifecycleStatus = {
 
 const canonicalDomainEntrypoints: Record<string, Record<string, unknown>> = {
   "@sevo/contracts/identity-access/v1": identityAccessV1,
+  "@sevo/contracts/identity-access/v2": identityAccessV2,
   "@sevo/contracts/store/v1": storeV1,
   "@sevo/contracts/product/v1": productV1,
   "@sevo/contracts/inventory/v1": inventoryV1,

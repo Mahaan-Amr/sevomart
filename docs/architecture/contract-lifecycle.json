@@ -36,6 +36,18 @@
         "events": ["sensitiveAccessGrantedV1Contract"]
       }
     },
+    "@sevo/contracts/identity-access/v2": {
+      "owner": "identity-access",
+      "approved": true,
+      "executable": true,
+      "consumersMigrated": "pending",
+      "removable": false,
+      "evidence": {
+        "schemas": ["platformAgentSessionV2Contract"],
+        "operations": [],
+        "events": []
+      }
+    },
     "@sevo/contracts/store/v1": {
       "owner": "store",
       "approved": true,

@@ -1,9 +1,7 @@
 "use client";
 
-import {
-  otpChallengeContract,
-  platformAgentSessionContract,
-} from "@sevo/contracts/identity-access/v1";
+import { otpChallengeContract } from "@sevo/contracts/identity-access/v1";
+import { platformAgentSessionV2Contract } from "@sevo/contracts/identity-access/v2";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import styles from "../../../login/identity-login.module.css";
@@ -43,7 +41,7 @@ export function PlatformAgentLogin({ returnTo }: { returnTo: string }) {
         return;
       }
       if (verification) {
-        platformAgentSessionContract.parse(body);
+        platformAgentSessionV2Contract.parse(body);
         window.location.replace(returnTo);
       } else {
         const challenge = otpChallengeContract.parse(body);

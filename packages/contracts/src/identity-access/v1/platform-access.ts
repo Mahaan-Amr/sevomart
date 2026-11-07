@@ -181,7 +181,12 @@ export const superadminAuditListContract = z
           actorIdentityId: identityIdContract.nullable(),
           actorKind: z.enum(["SUPERADMIN", "OWNER_RECOVERY"]),
           subjectIdentityId: identityIdContract,
-          action: z.enum(["GRANTED", "REVOKED", "RECOVERED"]),
+          action: z.enum([
+            "GRANTED",
+            "REVOKED",
+            "RECOVERED",
+            "TOTP_ENROLLMENT_AUTHORIZED",
+          ]),
           reason: internalReasonContract,
           occurredAt: timestampV1Contract,
         })

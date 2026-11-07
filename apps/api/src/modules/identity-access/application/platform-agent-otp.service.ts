@@ -33,13 +33,14 @@ export class PlatformAgentOtpService {
   async requestOtp(
     mobile: IranianMobile,
     correlationId: string,
+    allowSuperadmin = false,
   ): Promise<OtpChallenge> {
     const granted = await this.#sql<Array<{ identityId: string }>>`
       select i.id as "identityId"
       from identity_login_methods lm
       join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
       where lm.kind = 'MOBILE' and lm.mobile = ${mobile}
-        and (exists (select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null)
+        and ((${allowSuperadmin} and exists (select 1 from identity_platform_superadmins a where a.identity_id = i.id and a.revoked_at is null))
           or exists (select 1 from identity_platform_permission_grants g where g.identity_id = i.id and g.permission in ('SELLER_APPLICATION_REVIEW', 'PAYMENT_REVIEW', 'SESSION_SECURITY', 'ACCESS_ADMINISTRATION') and g.revoked_at is null))
       limit 1
     `;
@@ -81,7 +82,7 @@ export class PlatformAgentOtpService {
     return { challengeId, expiresAt: expiresAt.toISOString() };
   }
 
-  async verifyOtp(challengeId: OtpChallengeId, code: OtpCode) {
+  async verifyOtp(challengeId: OtpChallengeId, code: OtpCode, allowSuperadmin = false) {
     const observed = await this.#sql<
       { identityId: string }[]
     >`select lm.identity_id as "identityId" from identity_otp_challenges c join identity_login_methods lm on lm.kind = 'MOBILE' and lm.mobile = c.mobile where c.id = ${challengeId} and c.audience = 'PLATFORM_AGENT'`;
@@ -125,7 +126,7 @@ export class PlatformAgentOtpService {
         select i.id as "identityId" from identity_login_methods lm
         join identity_identities i on i.id = lm.identity_id and i.status = 'ACTIVE'
         join identity_platform_superadmins a on a.identity_id = i.id and a.revoked_at is null
-        where lm.kind = 'MOBILE' and lm.mobile = ${challenge.mobile}
+        where ${allowSuperadmin} and lm.kind = 'MOBILE' and lm.mobile = ${challenge.mobile}
         for share of i, a`;
       const identities = await sql<
         Array<{

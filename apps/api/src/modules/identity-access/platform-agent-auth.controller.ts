@@ -303,6 +303,66 @@ export class PlatformAgentAuthController {
   }
 }
 
+@ApiExcludeController()
+@Controller("v2/platform/auth")
+export class PlatformAgentAuthV2Controller {
+  constructor(
+    @Inject(PLATFORM_AGENT_OTP_SERVICE)
+    private readonly service: PlatformAgentOtpService,
+    @Inject(RUNTIME_ENVIRONMENT) private readonly environment: RuntimeEnvironment,
+  ) {}
+  @Post("otp/requests")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async requestOtp(@Body() body: unknown, @Req() request: FastifyRequest) {
+    const parsed = otpRequestContract.safeParse(body);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    try {
+      return await this.service.requestOtp(parsed.data.mobile, request.id, true);
+    } catch (error) {
+      if (error instanceof PlatformPermissionRequiredError)
+        throw platformAuthError("PLATFORM_PERMISSION_REQUIRED", request.id, 403);
+      if (error instanceof OtpRequestRateLimitedError)
+        throw platformAuthError("RATE_LIMITED", request.id, 429);
+      throw error;
+    }
+  }
+  @Post("otp/verifications")
+  @HttpCode(HttpStatus.OK)
+  async verifyOtp(
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const parsed = otpVerificationContract.safeParse(body);
+    if (!parsed.success) throw platformAuthError("VALIDATION_ERROR", request.id, 422);
+    try {
+      const verified = await this.service.verifyOtp(
+        parsed.data.challengeId,
+        parsed.data.code,
+        true,
+      );
+      const maxAge = Math.floor(
+        (Date.parse(verified.session.expiresAt) - Date.now()) / 1000,
+      );
+      void reply.header(
+        "Set-Cookie",
+        platformSessionCookie(
+          verified.token,
+          maxAge,
+          this.environment.SEVO_RUNTIME_ENV === "production",
+        ),
+      );
+      return verified.session;
+    } catch (error) {
+      if (error instanceof OtpRejectedError)
+        throw platformAuthError("UNAUTHORIZED", request.id, 401);
+      if (error instanceof PlatformPermissionRequiredError)
+        throw platformAuthError("PLATFORM_PERMISSION_REQUIRED", request.id, 403);
+      throw error;
+    }
+  }
+}
+
 function platformSessionCookie(value: string, maxAge: number, secure: boolean) {
   return `sevo_platform_session=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
 }

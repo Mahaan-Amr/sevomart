@@ -38,7 +38,10 @@ import {
 import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
 import { PlatformSessionSecurityController } from "./platform-session-security.controller";
-import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
+import {
+  PlatformAgentAuthController,
+  PlatformAgentAuthV2Controller,
+} from "./platform-agent-auth.controller";
 import { PlatformAgentTotpService } from "./application/platform-agent-totp.service";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
 import { SellerApprovalRecoveryController } from "./seller-approval-recovery.controller";
@@ -81,6 +84,7 @@ export class IdentityAccessModule {
         SellerApplicationController,
         PlatformSellerApplicationController,
         PlatformAgentAuthController,
+        PlatformAgentAuthV2Controller,
         PlatformSessionSecurityController,
         SellerApprovalRecoveryController,
         PlatformAccessController,

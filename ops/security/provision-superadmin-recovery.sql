@@ -57,3 +57,46 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.identity_recover_superadmin(uuid, text, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.identity_recover_superadmin(uuid, text, uuid) TO sevo_superadmin_recovery;
+
+CREATE OR REPLACE FUNCTION public.identity_authorize_superadmin_totp(target_id uuid, authorization_reason text, authorization_key uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+DECLARE
+  normalized text;
+  payload_hash text;
+  previous_hash text;
+  role_generation uuid;
+BEGIN
+  IF NOT coalesce(pg_has_role(session_user, to_regrole('sevo_superadmin_recovery'), 'member'), false) THEN
+    RAISE EXCEPTION 'recovery authority required';
+  END IF;
+  authorization_reason := btrim(authorization_reason);
+  normalized := regexp_replace(translate(authorization_reason, '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789'), '[[:space:]‌-]+', '', 'g');
+  IF target_id IS NULL OR authorization_key IS NULL OR length(authorization_reason) NOT BETWEEN 10 AND 1000
+     OR length(regexp_replace(normalized, '[^0-9]', '', 'g')) >= 10 OR authorization_reason ~* '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}' THEN
+    RAISE EXCEPTION 'invalid authorization input';
+  END IF;
+  payload_hash := encode(sha256(convert_to(jsonb_build_object('action', 'TOTP_ENROLLMENT', 'identityId', target_id, 'reason', authorization_reason)::text, 'UTF8')), 'hex');
+  PERFORM pg_advisory_xact_lock(hashtext('identity_platform_superadmins'));
+  SELECT a.generation_id INTO role_generation FROM public.identity_platform_superadmins a JOIN public.identity_identities i ON i.id = a.identity_id AND i.status = 'ACTIVE' WHERE a.identity_id = target_id AND a.revoked_at IS NULL FOR SHARE OF a, i;
+  IF NOT FOUND THEN RAISE EXCEPTION 'active superadmin required'; END IF;
+  SELECT r.payload_hash INTO previous_hash FROM public.identity_platform_superadmin_recovery_idempotency r WHERE r.key = authorization_key::text;
+  IF FOUND THEN
+    IF previous_hash <> payload_hash OR NOT EXISTS (SELECT 1 FROM public.identity_totp_bootstrap_authorizations b WHERE b.identity_id = target_id AND b.superadmin_generation_id = role_generation AND b.consumed_at IS NULL AND b.expires_at > clock_timestamp()) THEN
+      RAISE EXCEPTION 'authorization replay conflict';
+    END IF;
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.identity_totp_factors WHERE identity_id = target_id) THEN RAISE EXCEPTION 'factor already exists'; END IF;
+  INSERT INTO public.identity_totp_bootstrap_authorizations (identity_id, expires_at, consumed_at, superadmin_generation_id)
+    VALUES (target_id, clock_timestamp() + interval '10 minutes', null, role_generation)
+    ON CONFLICT (identity_id) DO UPDATE SET expires_at = EXCLUDED.expires_at, consumed_at = null, superadmin_generation_id = EXCLUDED.superadmin_generation_id
+    WHERE public.identity_totp_bootstrap_authorizations.consumed_at IS NOT NULL OR public.identity_totp_bootstrap_authorizations.expires_at <= clock_timestamp() OR public.identity_totp_bootstrap_authorizations.superadmin_generation_id IS DISTINCT FROM role_generation;
+  IF NOT FOUND THEN RAISE EXCEPTION 'authorization already exists'; END IF;
+  INSERT INTO public.identity_platform_superadmin_audit (id, actor_identity_id, actor_kind, subject_identity_id, action, reason, correlation_id)
+    VALUES (gen_random_uuid(), null, 'OWNER_RECOVERY', target_id, 'TOTP_ENROLLMENT_AUTHORIZED', authorization_reason, gen_random_uuid());
+  INSERT INTO public.identity_platform_superadmin_recovery_idempotency (key, payload_hash, response)
+    VALUES (authorization_key::text, payload_hash, jsonb_build_object('status', 'AUTHORIZED'));
+END;
+$$;
+REVOKE ALL ON FUNCTION public.identity_authorize_superadmin_totp(uuid, text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.identity_authorize_superadmin_totp(uuid, text, uuid) TO sevo_superadmin_recovery;

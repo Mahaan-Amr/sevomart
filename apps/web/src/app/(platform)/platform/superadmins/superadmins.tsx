@@ -136,7 +136,9 @@ export function Superadmins() {
                 ? "اعطا"
                 : entry.action === "REVOKED"
                   ? "لغو"
-                  : "بازیابی"}
+                  : entry.action === "TOTP_ENROLLMENT_AUTHORIZED"
+                    ? "اجازه ثبت تأیید دوم"
+                    : "بازیابی"}
             </span>
             <span dir="ltr">{entry.subjectIdentityId}</span>
             <span dir="ltr">{entry.actorIdentityId ?? "بازیابی مالک"}</span>

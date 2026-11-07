@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  platformAgentSessionContract,
+  identityAccessV1Examples,
+} from "@sevo/contracts/identity-access/v1";
+import {
+  platformAgentSessionV2Contract,
+  identityAccessV2Examples,
+} from "@sevo/contracts/identity-access/v2";
+import {
   paymentReviewDetailV3Contract,
   paymentReviewRevealInputV3Contract,
   paymentsV3Examples,
@@ -11,6 +19,23 @@ import {
 } from "@sevo/contracts/problem-follow-up/v3";
 
 describe("superadmin direct access contracts", () => {
+  it("keeps v1 login grant-shaped while v2 additionally accepts the real role", () => {
+    expect(
+      platformAgentSessionContract.safeParse(
+        identityAccessV2Examples.PlatformAgentSessionV2,
+      ).success,
+    ).toBe(false);
+    expect(
+      platformAgentSessionV2Contract.safeParse(
+        identityAccessV2Examples.PlatformAgentSessionV2,
+      ).success,
+    ).toBe(true);
+    expect(
+      platformAgentSessionV2Contract.safeParse(
+        identityAccessV1Examples.PlatformAgentSession,
+      ).success,
+    ).toBe(true);
+  });
   it("accepts reason-only requests and role receipts without fabricated grants or expirations", () => {
     expect(
       paymentReviewRevealInputV3Contract.safeParse(

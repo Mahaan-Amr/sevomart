@@ -18,6 +18,7 @@ type Session = { id: string; identityId: string; expiresAt: Date; createdAt: Dat
 type Factor = {
   expiresAt: Date;
   generationId: string;
+  enrollmentSuperadminGenerationId?: string | null;
   keyId: string;
   ciphertext: Buffer;
   nonce: Buffer;
@@ -104,8 +105,8 @@ export class PlatformAgentTotpService {
       const session = await this.lockedSession(sql, token);
       await sql`lock table identity_totp_factors in row exclusive mode`;
       const auth = await sql<
-        { expiresAt: Date; consumedAt: Date | null }[]
-      >`select expires_at as "expiresAt", consumed_at as "consumedAt" from identity_totp_bootstrap_authorizations
+        { expiresAt: Date; consumedAt: Date | null; roleGenerationId: string | null }[]
+      >`select expires_at as "expiresAt", consumed_at as "consumedAt", superadmin_generation_id as "roleGenerationId" from identity_totp_bootstrap_authorizations
         where identity_id = ${session.identityId} for update`;
       if (
         !this.fresh(session) ||
@@ -114,6 +115,15 @@ export class PlatformAgentTotpService {
         auth[0].expiresAt.getTime() <= Date.now()
       )
         throw new TotpDeniedError();
+      if (auth[0].roleGenerationId) {
+        const role =
+          await sql`select identity_id from identity_platform_superadmins where identity_id = ${session.identityId} and generation_id = ${auth[0].roleGenerationId} and revoked_at is null for share`;
+        if (!role.length) throw new TotpDeniedError();
+      } else {
+        const grants =
+          await sql`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and revoked_at is null for share`;
+        if (!grants.length) throw new TotpDeniedError();
+      }
       const existing =
         await sql`select 1 from identity_totp_factors where identity_id = ${session.identityId}`;
       if (existing.length) throw new TotpDeniedError();
@@ -122,8 +132,8 @@ export class PlatformAgentTotpService {
       const cipher = createCipheriv("aes-256-gcm", key, nonce);
       cipher.setAAD(Buffer.from(session.identityId));
       const ciphertext = Buffer.concat([cipher.update(secret), cipher.final()]);
-      await sql`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at)
-        values (${session.identityId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, 'PENDING', clock_timestamp() + interval '10 minutes')`;
+      await sql`insert into identity_totp_factors (identity_id, enrollment_session_id, key_id, ciphertext, nonce, tag, status, expires_at, enrollment_superadmin_generation_id)
+        values (${session.identityId}, ${session.id}, ${keyId}, ${ciphertext}, ${nonce}, ${cipher.getAuthTag()}, 'PENDING', clock_timestamp() + interval '10 minutes', ${auth[0].roleGenerationId})`;
       await sql`update identity_totp_bootstrap_authorizations set consumed_at = clock_timestamp() where identity_id = ${session.identityId}`;
       await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'ENROLLMENT_STARTED', 'SUCCEEDED', ${correlationId})`;
       if (!this.fresh(session) || auth[0].expiresAt.getTime() <= Date.now())
@@ -138,7 +148,7 @@ export class PlatformAgentTotpService {
       await sql`lock table identity_totp_factors in row exclusive mode`;
       const rows = await sql<
         Factor[]
-      >`select generation_id as "generationId", expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
+      >`select generation_id as "generationId", enrollment_superadmin_generation_id as "enrollmentSuperadminGenerationId", expires_at as "expiresAt", key_id as "keyId", ciphertext, nonce, tag, last_counter as "lastCounter", failed_attempts as "failedAttempts", blocked_until as "blockedUntil"
         from identity_totp_factors where identity_id = ${session.identityId} and enrollment_session_id = ${session.id}
           and status = 'PENDING' for update`;
       const factor = rows[0];
@@ -149,6 +159,11 @@ export class PlatformAgentTotpService {
         (factor.blockedUntil && factor.blockedUntil > new Date())
       )
         return false;
+      if (factor.enrollmentSuperadminGenerationId) {
+        const role =
+          await sql`select identity_id from identity_platform_superadmins where identity_id = ${session.identityId} and generation_id = ${factor.enrollmentSuperadminGenerationId} and revoked_at is null for share`;
+        if (!role.length) return false;
+      }
       let secret: Buffer;
       try {
         const decipher = createDecipheriv(

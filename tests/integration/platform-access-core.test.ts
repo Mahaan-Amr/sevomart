@@ -574,8 +574,20 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
         encoding: "utf8",
         env: { ...process.env, DATABASE_URL: connection.toString() },
       });
+    const enrollInput = JSON.stringify({
+      identityId: target.identityId,
+      reason: "آماده‌سازی ورود امن مدیر جدید",
+      idempotencyKey: randomUUID(),
+    });
+    const authorizeEnrollment = () =>
+      spawnSync(process.execPath, ["scripts/authorize-superadmin-totp.mjs"], {
+        input: enrollInput,
+        encoding: "utf8",
+        env: { ...process.env, DATABASE_URL: connection.toString() },
+      });
     try {
       expect(run().status).not.toBe(0);
+      expect(authorizeEnrollment().status).not.toBe(0);
       await admin.unsafe(`grant sevo_superadmin_recovery to "${login}"`);
       const restricted = postgres(connection.toString(), { max: 1 });
       try {
@@ -589,6 +601,11 @@ describe("platform responsibility and sensitive access API with PostgreSQL", () 
         await restricted.end();
       }
       expect(run().status).toBe(0);
+      expect(authorizeEnrollment().status).toBe(0);
+      expect(authorizeEnrollment().status).toBe(0);
+      const audit =
+        await admin`select action from identity_platform_superadmin_audit where subject_identity_id = ${target.identityId} and action = 'TOTP_ENROLLMENT_AUTHORIZED'`;
+      expect(audit).toEqual([{ action: "TOTP_ENROLLMENT_AUTHORIZED" }]);
     } finally {
       await admin.unsafe(`drop role "${login}"`);
       await admin.end();

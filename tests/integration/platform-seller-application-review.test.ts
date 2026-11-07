@@ -112,15 +112,21 @@ describe("platform seller application review API with PostgreSQL", () => {
       env: { ...process.env, DATABASE_URL: environment.DATABASE_URL },
     });
     try {
-      const requested = await server.inject({
+      const legacy = await server.inject({
         method: "POST",
         url: "/v1/platform/auth/otp/requests",
+        payload: { mobile: "09123456785" },
+      });
+      expect(legacy.statusCode).toBe(403);
+      const requested = await server.inject({
+        method: "POST",
+        url: "/v2/platform/auth/otp/requests",
         payload: { mobile: "09123456785" },
       });
       expect(requested.statusCode).toBe(202);
       const verified = await server.inject({
         method: "POST",
-        url: "/v1/platform/auth/otp/verifications",
+        url: "/v2/platform/auth/otp/verifications",
         payload: { challengeId: requested.json().challengeId, code: "111111" },
       });
       expect(verified.statusCode).toBe(200);
@@ -152,9 +158,44 @@ describe("platform seller application review API with PostgreSQL", () => {
     const token = await seedPlatformSession(actor);
     const sql = postgres(environment.DATABASE_URL, { max: 1 });
     await sql`insert into identity_platform_superadmins (identity_id, granted_at) values (${actor}, now())`;
-    await sql`insert into identity_totp_bootstrap_authorizations (identity_id, expires_at) values (${actor}, now() + interval '10 minutes')`;
+    await sql.unsafe(
+      readFileSync("ops/security/provision-superadmin-recovery.sql", "utf8"),
+    );
     try {
       const headers = { cookie: platformCookie(token) };
+      expect(
+        (
+          await server.inject({
+            method: "POST",
+            url: "/v1/platform/auth/totp/enrollment",
+            headers,
+          })
+        ).statusCode,
+      ).toBe(403);
+      execFileSync(process.execPath, ["scripts/authorize-superadmin-totp.mjs"], {
+        input: JSON.stringify({
+          identityId: actor,
+          reason: "آماده‌سازی ورود امن مدیر جدید",
+          idempotencyKey: randomUUID(),
+        }),
+        env: { ...process.env, DATABASE_URL: environment.DATABASE_URL },
+      });
+      await sql`update identity_platform_superadmins set revoked_at = now() where identity_id = ${actor}`;
+      await sql`update identity_platform_superadmins set revoked_at = null, generation_id = gen_random_uuid() where identity_id = ${actor}`;
+      const staleAuthorization = await server.inject({
+        method: "POST",
+        url: "/v1/platform/auth/totp/enrollment",
+        headers,
+      });
+      expect(staleAuthorization.statusCode).toBe(403);
+      execFileSync(process.execPath, ["scripts/authorize-superadmin-totp.mjs"], {
+        input: JSON.stringify({
+          identityId: actor,
+          reason: "آماده‌سازی ورود امن مدیر جدید",
+          idempotencyKey: randomUUID(),
+        }),
+        env: { ...process.env, DATABASE_URL: environment.DATABASE_URL },
+      });
       const started = await server.inject({
         method: "POST",
         url: "/v1/platform/auth/totp/enrollment",
