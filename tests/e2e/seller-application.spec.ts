@@ -153,14 +153,16 @@ test("a failed status lookup offers retry without showing a new application", as
     return attempts === 1
       ? route.fulfill({
           status: 503,
-          json: { message: "پیگیری درخواست در دسترس نیست." },
+          json: { message: "private database diagnostic: secret-value" },
         })
       : route.fulfill({ json: { items: [rejectedApplication()], nextCursor: null } });
   });
   await page.goto("/seller/application");
   await expect(page.locator("main").getByRole("alert")).toContainText(
-    "پیگیری درخواست در دسترس نیست.",
+    "پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.",
   );
+  await expect(page.locator("main")).not.toContainText("private database diagnostic");
+  await expect(page.locator("main")).not.toContainText("secret-value");
   await expect(page.getByLabel("نام و نام خانوادگی")).toHaveCount(0);
   await page.getByRole("button", { name: "تلاش دوباره" }).click();
   await expect(page.getByText("این درخواست تأیید نشد.")).toBeVisible();

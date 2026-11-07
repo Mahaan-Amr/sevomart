@@ -96,7 +96,10 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByLabel("شناسه لینک").fill("x");
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(
-    page.getByText("شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد."),
+    page
+      .locator("label")
+      .filter({ hasText: "شناسه لینک" })
+      .getByText("شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد."),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/seller\/store\/setup/);
   await page.getByLabel("شناسه لینک").clear();
