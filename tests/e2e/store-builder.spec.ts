@@ -372,6 +372,9 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByLabel("معرفی کوتاه").fill(storeBio);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("قدم ۲ از ۳")).toBeVisible();
+  await expect(
+    page.getByText("فروش و پرداخت واقعی با این تأیید فعال نیست."),
+  ).toBeVisible();
   await page.getByLabel("سیاست مرجوعی").fill(publishedReturnPolicy);
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("قدم ۳ از ۳")).toBeVisible();
