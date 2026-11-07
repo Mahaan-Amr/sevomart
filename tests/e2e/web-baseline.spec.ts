@@ -47,24 +47,10 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
 
   await expect(page.locator("html")).toHaveAttribute("lang", "fa");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.getByRole("heading", { name: "کشف تازه‌ها" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "فروشگاه‌های تازه را در سوو کشف کنید" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(
-      "کالاها را ببینید، از خود فروشگاه بخرید و سفارش‌تان را در یک مسیر روشن پیگیری کنید.",
-    ),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: "خرید کنید" })).toHaveAttribute(
-    "href",
-    "#discovery-feed",
-  );
-  await expect(
-    page
-      .getByRole("main")
-      .locator("header")
-      .getByRole("link", { name: "فروشنده شوید" }),
-  ).toHaveAttribute("href", "/seller/start");
+  ).toHaveCount(0);
   const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
   await expect(
     navigation.getByRole("link", { name: "کشف", exact: true }),
@@ -105,6 +91,12 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
     true,
   );
 
+  const identity = page.getByText("هویت سوو", { exact: true });
+  await identity.click();
+  await expect(
+    page.getByRole("banner").getByRole("link", { name: "فروشنده شوید" }),
+  ).toHaveAttribute("href", "/seller/start");
+  await identity.click();
   await assertMinimumContrast(page.locator("h1, main p, nav a"));
 });
 
@@ -439,12 +431,7 @@ test("discovery keeps a readable grid with long Persian text and follows its cur
   const tops = await cards.evaluateAll((elements) =>
     elements.map((element) => element.getBoundingClientRect().top),
   );
-  if ((page.viewportSize()?.width ?? 0) <= 480) {
-    expect(tops[0]).toBe(tops[1]);
-    expect(tops[2]).toBeGreaterThan(tops[1]!);
-  } else {
-    expect(new Set(tops).size).toBe(1);
-  }
+  expect(new Set(tops).size).toBe(1);
   await assertNoHorizontalOverflow(page);
   await assertMinimumContrast(page.locator("main h2, main strong, main span"));
   await page.screenshot({
