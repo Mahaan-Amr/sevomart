@@ -158,10 +158,33 @@ test("a failed status lookup offers retry without showing a new application", as
       : route.fulfill({ json: { items: [rejectedApplication()], nextCursor: null } });
   });
   await page.goto("/seller/application");
-  await expect(page.getByRole("alert")).toContainText("پیگیری درخواست در دسترس نیست.");
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "پیگیری درخواست در دسترس نیست.",
+  );
   await expect(page.getByLabel("نام و نام خانوادگی")).toHaveCount(0);
   await page.getByRole("button", { name: "تلاش دوباره" }).click();
   await expect(page.getByText("این درخواست تأیید نشد.")).toBeVisible();
+});
+
+test("unexpected status failures show a safe message and permit retry", async ({
+  context,
+  page,
+}) => {
+  await establishIdentitySession(context);
+  let mode: "malformed" | "network" = "malformed";
+  await page.route("**/api/seller-applications/mine", (route) =>
+    mode === "malformed"
+      ? route.fulfill({ json: { items: [{ internalDetail: "private diagnostic" }] } })
+      : route.abort(),
+  );
+  for (const failure of ["malformed", "network"] as const) {
+    mode = failure;
+    await page.goto("/seller/application");
+    const alert = page.locator("main").getByRole("alert");
+    await expect(alert).toHaveText("پیگیری درخواست در دسترس نیست. دوباره تلاش کنید.");
+    await expect(page.getByLabel("نام و نام خانوادگی")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "تلاش دوباره" })).toBeVisible();
+  }
 });
 
 test("an approved application points to the canonical seller workspace", async ({
