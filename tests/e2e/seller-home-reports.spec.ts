@@ -189,18 +189,7 @@ test("seller acts from the operational home and reads a private basic report", a
     const viewport = page.viewportSize()!;
     for (const width of [180, 384]) {
       await page.setViewportSize({ width, height: viewport.height });
-      const overflowing = await page.evaluate(() =>
-        [...document.querySelectorAll("body *")]
-          .map((element) => ({
-            tag: element.tagName,
-            className: element.className,
-            text: element.textContent?.slice(0, 50),
-            left: element.getBoundingClientRect().left,
-            right: element.getBoundingClientRect().right,
-          }))
-          .filter(({ left, right }) => left < -1 || right > window.innerWidth + 1),
-      );
-      expect(overflowing, `overflow at ${width}`).toEqual([]);
+      await page.evaluate(() => window.scrollTo(0, 0));
       await assertNoHorizontalOverflow(page);
     }
     await page.setViewportSize(viewport);
