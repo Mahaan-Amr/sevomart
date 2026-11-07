@@ -48,6 +48,10 @@ export const identityAccessV1Paths = {
   readSession: "/v1/auth/session",
   endSession: "/v1/auth/session",
   endAllSessions: "/v1/auth/sessions",
+  enrollPassword: "/v1/auth/password",
+  passwordSession: "/v1/auth/password/sessions",
+  requestPasswordRecovery: "/v1/auth/password/recovery/requests",
+  resetPassword: "/v1/auth/password/recovery",
 } as const;
 
 export const sellerApplicationV1Paths = {
@@ -461,6 +465,9 @@ export const rateLimitErrorContract = z.object({
 });
 
 export const identityAccessV1Schemas = {
+  PasswordEnrollment: passwordEnrollmentContract,
+  PasswordLogin: passwordLoginContract,
+  PasswordRecovery: passwordRecoveryContract,
   OtpRequest: otpRequestContract,
   OtpChallenge: otpChallengeContract,
   OtpVerification: otpVerificationContract,
@@ -514,6 +521,13 @@ export function createIdentityAccessV1JsonSchemas() {
 }
 
 export const identityAccessV1Examples = {
+  PasswordEnrollment: { password: "example-password-only" },
+  PasswordLogin: { mobile: "09123456789", password: "example-password-only" },
+  PasswordRecovery: {
+    challengeId: "7dc56d3b-244d-48f5-85e5-68c25fbb363b",
+    code: "111111",
+    password: "example-password-only",
+  },
   OtpRequest: { mobile: "09123456789" },
   OtpChallenge: {
     challengeId: "5efea92d-e15f-454e-bc29-0368f667a21d",

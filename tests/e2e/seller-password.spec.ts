@@ -5,6 +5,10 @@ import {
   sellerPasswordTestMobiles,
   visualProjectIndex,
 } from "../helpers/visual-projects";
+import {
+  assertMinimumContrast,
+  assertNoHorizontalOverflow,
+} from "../helpers/visual-assertions";
 
 test("seller creates, uses, and recovers an optional password", async ({
   page,
@@ -48,9 +52,25 @@ test("seller creates, uses, and recovers an optional password", async ({
     await page.getByRole("button", { name: "تغییر رمز" }).click();
     await expect(page.getByRole("status")).toContainText("نشست‌های عمومی");
     expect(await page.locator("html").getAttribute("dir")).toBe("rtl");
+    await assertNoHorizontalOverflow(page);
+    await page.getByRole("button", { name: "بازگشت به ورود" }).click();
+    await page.getByRole("button", { name: "ورود با رمز" }).click();
+    await page.getByLabel("شماره موبایل").fill(mobile);
+    const passwordInput = page.getByLabel("رمز", { exact: true });
+    await passwordInput.focus();
+    await expect(passwordInput).toHaveCSS("outline-style", "solid");
     expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-    ).toBe(true);
+      Number.parseFloat(
+        await passwordInput.evaluate(
+          (element) => getComputedStyle(element).transitionDuration,
+        ),
+      ),
+    ).toBeLessThan(0.001);
+    await passwordInput.fill("another secure password");
+    const submit = page.getByRole("button", { name: "ورود", exact: true });
+    await assertMinimumContrast(submit);
+    await submit.click();
+    await expect(page.getByRole("heading", { name: "وارد شدید" })).toBeVisible();
   } finally {
     await sql`delete from identity_seller_passwords where identity_id = ${identityId}`;
     await sql`delete from identity_password_attempts where mobile = ${mobile}`;

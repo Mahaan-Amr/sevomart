@@ -5,19 +5,24 @@ import {
   scrypt as scryptCallback,
   timingSafeEqual,
 } from "node:crypto";
-import { promisify } from "node:util";
-
 import postgres from "postgres";
 import type { IranianMobile, OtpCode } from "@sevo/contracts/identity-access/v1";
 import type { OtpProvider } from "../public";
 
-const scrypt = promisify(scryptCallback);
+const scryptOptions = { N: 16384, r: 8, p: 5, maxmem: 64 * 1024 * 1024 };
+function scrypt(password: string, salt: string): Promise<Buffer> {
+  return new Promise((resolve, reject) =>
+    scryptCallback(password, salt, 64, scryptOptions, (error, key) =>
+      error ? reject(error) : resolve(key),
+    ),
+  );
+}
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const dummyHash = `scrypt$${Buffer.alloc(16).toString("base64url")}$${Buffer.alloc(64).toString("base64url")}`;
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("base64url");
-  const key = (await scrypt(password, salt, 64)) as Buffer;
+  const key = await scrypt(password, salt);
   return `scrypt$${salt}$${key.toString("base64url")}`;
 }
 
@@ -25,7 +30,7 @@ async function matchesPassword(password: string, encoded: string) {
   const [, salt, key] = encoded.split("$");
   if (!salt || !key) return false;
   const expected = Buffer.from(key, "base64url");
-  const actual = (await scrypt(password, salt, 64)) as Buffer;
+  const actual = await scrypt(password, salt);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
@@ -66,7 +71,6 @@ export class SellerPasswordService {
   }
 
   async reset(challengeId: string, code: string, password: string) {
-    const encoded = await hashPassword(password);
     const codeHash = createHash("sha256")
       .update(`${challengeId}:${code}`)
       .digest("hex");
@@ -99,6 +103,10 @@ export class SellerPasswordService {
       const stillValid =
         await sql`select id from identity_otp_challenges where id = ${challengeId} and audience = 'PASSWORD_RESET' and code_hash = ${codeHash} and consumed_at is not null and expires_at > clock_timestamp()`;
       if (!stillValid.length) return false;
+      const encoded = await hashPassword(password);
+      const validAfterHash =
+        await sql`select id from identity_otp_challenges where id = ${challengeId} and audience = 'PASSWORD_RESET' and code_hash = ${codeHash} and consumed_at is not null and expires_at > clock_timestamp()`;
+      if (!validAfterHash.length) return false;
       const changed =
         await sql`update identity_seller_passwords p set password_hash = ${encoded}, changed_at = clock_timestamp()
         where p.identity_id = ${identity.id} and exists (select 1 from identity_identities i join identity_seller_access a on a.identity_id = i.id where i.id = p.identity_id and i.status = 'ACTIVE' and a.status = 'ACTIVE') returning identity_id`;
@@ -111,13 +119,21 @@ export class SellerPasswordService {
   }
 
   async enroll(token: string, password: string) {
-    const encoded = await hashPassword(password);
     return this.#sql.begin(async (sql) => {
       const [session] = await sql<
         Array<{ identityId: string }>
       >`select identity_id as "identityId" from identity_sessions where token_hash = ${hashToken(token)} and audience = 'PUBLIC'`;
       if (!session) return false;
       await sql`select pg_advisory_xact_lock(hashtextextended(${session.identityId}, 273))`;
+      const eligible =
+        await sql`select i.id from identity_identities i join identity_sessions s on s.identity_id = i.id
+        join identity_seller_access a on a.identity_id = i.id
+        where i.id = ${session.identityId} and i.status = 'ACTIVE' and a.status = 'ACTIVE'
+          and s.token_hash = ${hashToken(token)} and s.audience = 'PUBLIC' and s.revoked_at is null
+          and s.expires_at > clock_timestamp() and s.created_at + interval '90 days' > clock_timestamp()
+          and not exists (select 1 from identity_seller_passwords p where p.identity_id = i.id)`;
+      if (!eligible.length) return false;
+      const encoded = await hashPassword(password);
       const rows =
         await sql`insert into identity_seller_passwords (identity_id, password_hash)
         select i.id, ${encoded} from identity_identities i
@@ -141,6 +157,7 @@ export class SellerPasswordService {
           attempts = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then 1 else identity_password_attempts.attempts + 1 end,
           window_started_at = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then clock_timestamp() else identity_password_attempts.window_started_at end
         returning attempts`;
+      if (!attempt || attempt.attempts > 10) return undefined;
       const [credential] = await sql<
         Array<{ identityId: string; passwordHash: string }>
       >`
@@ -152,7 +169,7 @@ export class SellerPasswordService {
         password,
         credential?.passwordHash ?? dummyHash,
       );
-      if (!credential || !valid || !attempt || attempt.attempts > 10) return undefined;
+      if (!credential || !valid) return undefined;
       await sql`select pg_advisory_xact_lock(hashtextextended(${credential.identityId}, 273))`;
       const [current] = await sql<Array<{ passwordHash: string }>>`
         select p.password_hash as "passwordHash" from identity_seller_passwords p
