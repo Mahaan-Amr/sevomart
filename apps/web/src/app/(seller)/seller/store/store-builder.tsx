@@ -86,6 +86,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   const [pending, setPending] = useState(false);
   const [publicUrl, setPublicUrl] = useState("");
   const [revision, setRevision] = useState(0);
+  const [savedDraft, setSavedDraft] = useState<StoreDraft>();
   const [slugStatus, setSlugStatus] = useState("");
   const [slugUnavailable, setSlugUnavailable] = useState(false);
   const slugCheckSequence = useRef(0);
@@ -136,6 +137,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   }
 
   function applyDraft(draft: StoreDraft) {
+    setSavedDraft(draft);
     setRevision(draft.revision);
     setForm({
       name: draft.name ?? "",
@@ -229,6 +231,32 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   }
 
   async function saveAndExit() {
+    const validation = validateForm(form);
+    const localErrors: FieldErrors = {
+      ...((form.name.trim() || savedDraft?.name) && validation.name
+        ? { name: validation.name }
+        : {}),
+      ...((form.slug.trim() || savedDraft?.slug) && validation.slug
+        ? { slug: validation.slug }
+        : {}),
+      ...((form.bio.trim() || savedDraft?.bio) && validation.bio
+        ? { bio: validation.bio }
+        : {}),
+      ...((form.returnPolicy.trim() || savedDraft?.returnPolicy) &&
+      validation.returnPolicy
+        ? { returnPolicy: validation.returnPolicy }
+        : {}),
+      ...(validation.publicContactPhone
+        ? { publicContactPhone: validation.publicContactPhone }
+        : {}),
+      ...(slugUnavailable ? { slug: "این شناسه لینک قبلاً استفاده شده است." } : {}),
+    };
+    setErrors(localErrors);
+    if (Object.keys(localErrors).length > 0) {
+      setEditStep(hasIdentityErrors(localErrors) ? 0 : 1);
+      setMessage(Object.values(localErrors).join(" "));
+      return;
+    }
     setPending(true);
     setMessage("");
     try {
@@ -365,6 +393,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     const parsed = storeDraftContract.safeParse(body);
     if (!parsed.success) throw new Error("invalid draft response");
     setRevision(parsed.data.revision);
+    setSavedDraft(parsed.data);
     setStoredMedia({ logoMediaId, coverMediaId });
     return parsed.data;
   }
@@ -443,6 +472,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
           <span className={styles.status}>منتشرشده</span>
           <h1 id="published-title">فروشگاه آماده است</h1>
           <p>{message || "لینک عمومی فروشگاه شما آمادهٔ اشتراک‌گذاری است."}</p>
+          <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
           <code className={styles.publicLink} dir="ltr">
             {publicUrl}
           </code>
@@ -513,6 +543,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
             </dl>
             <footer>ساخته‌شده با سوو · اطلاعات اعتماد همیشه نمایش داده می‌شود</footer>
           </article>
+          <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
           <p className={styles.message} role="status">
             {message}
           </p>
@@ -524,6 +555,18 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     );
   }
 
+  const stepValidation = validateForm(form);
+  const setupSteps = [
+    {
+      label: "معرفی فروشگاه",
+      status: hasIdentityErrors(stepValidation) || slugUnavailable ? "ناقص" : "آماده",
+    },
+    {
+      label: "ارسال و مرجوعی",
+      status: stepValidation.shipping || stepValidation.returnPolicy ? "ناقص" : "آماده",
+    },
+    { label: "ظاهر فروشگاه", status: "اختیاری" },
+  ];
   return (
     <main className={styles.page}>
       <section className={styles.workspace} aria-labelledby="store-title">
@@ -539,6 +582,13 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
         <span className={styles.status}>پیش‌نویس</span>
         <h1 id="store-title">ساخت فروشگاه</h1>
         <p>اطلاعاتی را وارد کنید که خریدار پیش از تصمیم‌گیری باید بداند.</p>
+        <ol className={styles.steps} aria-label="وضعیت قدم‌های راه‌اندازی">
+          {setupSteps.map((step, index) => (
+            <li key={step.label} aria-current={index === editStep ? "step" : undefined}>
+              <span>{step.label}</span> <span>{step.status}</span>
+            </li>
+          ))}
+        </ol>
         <form
           className={styles.form}
           onSubmit={(event) => event.preventDefault()}
@@ -623,6 +673,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                 <b>مقصد تسویه</b>
                 <span>تأیید آزمایشی</span>
                 <p>اطلاعات بانکی واقعی دریافت نمی‌شود و این وضعیت تضمین مالی نیست.</p>
+                <p>فروش و پرداخت واقعی با این تأیید فعال نیست.</p>
               </div>
             </>
           ) : null}
