@@ -32,6 +32,12 @@ export const otpCodeContract = z
   .regex(/^\d{6}$/)
   .brand<"OtpCode">();
 export const otpChallengeIdContract = z.string().uuid().brand<"OtpChallengeId">();
+export const passwordEnrollmentContract = z
+  .object({ password: z.string().min(12).max(128) })
+  .strict();
+export const passwordLoginContract = passwordEnrollmentContract
+  .extend({ mobile: iranianMobileContract })
+  .strict();
 
 export const identityAccessV1Paths = {
   requestOtp: "/v1/auth/otp/requests",

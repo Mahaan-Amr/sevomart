@@ -8,11 +8,13 @@ import {
   IdentityOtpService,
 } from "./application/identity-otp.service";
 import { IdentityAccessController } from "./identity-access.controller";
+import { SellerPasswordService } from "./application/seller-password.service";
 import {
   IDENTITY_ACCESS_REPOSITORY,
   OTP_PROVIDER,
   RUNTIME_ENVIRONMENT,
   IDENTITY_OTP_SERVICE,
+  SELLER_PASSWORD_SERVICE,
   SELLER_APPLICATION_APPLICANT,
   SELLER_APPLICATION_REPOSITORY,
   SELLER_APPLICATION_REVIEWER,
@@ -79,6 +81,10 @@ export class IdentityAccessModule {
         PlatformAccessController,
       ],
       providers: [
+        {
+          provide: SELLER_PASSWORD_SERVICE,
+          useValue: new SellerPasswordService(environment.DATABASE_URL),
+        },
         { provide: RUNTIME_ENVIRONMENT, useValue: environment },
         {
           provide: PLATFORM_AGENT_TOTP_SERVICE,
