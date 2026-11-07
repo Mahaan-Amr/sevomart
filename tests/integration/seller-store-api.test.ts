@@ -46,6 +46,56 @@ describe("seller store HTTP API with PostgreSQL", () => {
     return verified.headers["set-cookie"]!;
   }
 
+  it("keeps shipping unconfigured when an incomplete draft is saved without it", async () => {
+    const app = await startApp();
+    const cookie = await signIn(app);
+    const server = app.getHttpAdapter().getInstance();
+    const payload = {
+      name: "خانه سفال ماه",
+      slug: "unconfigured-shipping",
+      bio: "سفال دست‌ساز برای خانه",
+      returnPolicy: "تا هفت روز پس از تحویل امکان درخواست مرجوعی وجود دارد.",
+      settlementDestination: { kind: "TEST" },
+    };
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: storeWriteHeaders(cookie, 0),
+      payload,
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().shippingMethods).toEqual([]);
+    const savedAgain = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: storeWriteHeaders(cookie, 1),
+      payload,
+    });
+    expect(savedAgain.statusCode).toBe(200);
+    expect(savedAgain.json().shippingMethods).toEqual([]);
+    const draft = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/draft",
+      headers: { cookie },
+    });
+    expect(draft.json().shippingMethods).toEqual([]);
+    const preview = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/preview",
+      headers: { cookie },
+    });
+    expect(preview.json().publicationReadiness).toMatchObject({
+      ready: false,
+      missingFields: expect.arrayContaining(["SHIPPING_METHOD"]),
+    });
+    const publication = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: storeWriteHeaders(cookie, 2),
+    });
+    expect(publication.statusCode).toBe(422);
+  });
+
   it("persists, previews and publishes a complete product-free store", async () => {
     const firstApp = await startApp();
     const cookie = await signIn(firstApp);

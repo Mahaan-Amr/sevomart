@@ -1144,7 +1144,9 @@ function buildDraftInput(
       : {}),
     ...(complete || form.bio.trim().length >= 2 ? { bio: form.bio.trim() } : {}),
     publicContactPhone: normalizedContactPhone(form.publicContactPhone),
-    shippingMethods: form.shippingMethods.map(toShippingInput),
+    ...(form.shippingMethods.length > 0
+      ? { shippingMethods: form.shippingMethods.map(toShippingInput) }
+      : {}),
     ...(complete || form.returnPolicy.trim().length >= 10
       ? { returnPolicy: form.returnPolicy.trim() }
       : {}),
