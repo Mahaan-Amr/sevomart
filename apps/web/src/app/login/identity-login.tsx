@@ -7,6 +7,7 @@ import {
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import styles from "./identity-login.module.css";
+import { SellerPassword } from "./seller-password";
 
 type Step = "mobile" | "code" | "signed-in";
 type ApiError = { message?: string };
@@ -18,6 +19,7 @@ export function IdentityLogin({
   autoContinue = false,
   attachCartOnContinue = autoContinue,
   cancelTo,
+  sellerPasswordEnabled = false,
 }: {
   initiallySignedIn: boolean;
   showDevelopmentCode: boolean;
@@ -25,6 +27,7 @@ export function IdentityLogin({
   autoContinue?: boolean;
   attachCartOnContinue?: boolean;
   cancelTo?: string;
+  sellerPasswordEnabled?: boolean;
 }) {
   const [step, setStep] = useState<Step>(initiallySignedIn ? "signed-in" : "mobile");
   const [mobile, setMobile] = useState("");
@@ -33,6 +36,7 @@ export function IdentityLogin({
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [ready, setReady] = useState(false);
+  const [passwordMode, setPasswordMode] = useState<"login" | "enroll" | null>(null);
   const codeInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -133,6 +137,24 @@ export function IdentityLogin({
     }
   }
 
+  if (passwordMode) {
+    return (
+      <SellerPassword
+        initialMode={passwordMode}
+        showDevelopmentCode={showDevelopmentCode}
+        onBack={(reset) => {
+          setPasswordMode(null);
+          if (reset) setStep("mobile");
+        }}
+        onLogin={() => {
+          setPasswordMode(null);
+          if (autoContinue) window.location.assign(returnTo);
+          else setStep("signed-in");
+        }}
+      />
+    );
+  }
+
   if (step === "signed-in") {
     return (
       <main className={styles.page}>
@@ -144,6 +166,15 @@ export function IdentityLogin({
           <a href={returnTo} className={styles.continueLink}>
             ادامه کار
           </a>
+          {sellerPasswordEnabled && (
+            <button
+              type="button"
+              className={styles.signOut}
+              onClick={() => setPasswordMode("enroll")}
+            >
+              ساخت رمز اختیاری
+            </button>
+          )}
           <button
             type="button"
             className={styles.signOut}
@@ -196,6 +227,15 @@ export function IdentityLogin({
             <button type="submit" disabled={!ready || pending}>
               {pending ? "در حال دریافت…" : "دریافت کد"}
             </button>
+            {sellerPasswordEnabled && (
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => setPasswordMode("login")}
+              >
+                ورود با رمز
+              </button>
+            )}
           </form>
         ) : (
           <form onSubmit={verifyOtp} className={styles.form} noValidate>

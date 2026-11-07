@@ -106,4 +106,101 @@ describe("seller password HTTP API", () => {
       await fixture.cleanup();
     }
   });
+
+  it("does not issue an old OTP session after a concurrent reset wins the identity lock", async () => {
+    const app = await createApiApp(apiTestEnvironment);
+    apps.push(app);
+    const server = app.getHttpAdapter().getInstance();
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 4 });
+    await sql`delete from identity_otp_challenges where mobile = '09123456789'`;
+    const initial = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "09123456789" },
+    });
+    const otp = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId: initial.json().challengeId, code: "111111" },
+    });
+    const identityId = otp.json().actor.identityId;
+    const fixture = await createActiveSellerFixture(
+      apiTestEnvironment.DATABASE_URL,
+      identityId,
+    );
+    let release!: () => void;
+    let acquired!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    try {
+      await sql`delete from identity_seller_passwords where identity_id = ${identityId}`;
+      await sql`delete from identity_password_attempts where mobile = '09123456789'`;
+      expect(
+        (
+          await server.inject({
+            method: "POST",
+            url: "/v1/auth/password",
+            headers: { cookie: otp.headers["set-cookie"] },
+            payload: { password: "old secure password" },
+          })
+        ).statusCode,
+      ).toBe(204);
+      const old = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+      const recovery = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/recovery/requests",
+        payload: { mobile: "09123456789" },
+      });
+      const holder = sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${identityId}, 273))`;
+        acquired();
+        await gate;
+      });
+      await held;
+      const reset = server.inject({
+        method: "POST",
+        url: "/v1/auth/password/recovery",
+        payload: {
+          challengeId: recovery.json().challengeId,
+          code: "111111",
+          password: "new secure password",
+        },
+      });
+      const waitForLocks = async (count: number) => {
+        for (let i = 0; i < 150; i++) {
+          const [row] = await sql<
+            Array<{ count: number }>
+          >`select count(*)::int as count from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()`;
+          if ((row?.count ?? 0) >= count) return;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error(`Expected ${count} blocked requests`);
+      };
+      await waitForLocks(1);
+      const oldLogin = server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: old.json().challengeId, code: "111111" },
+      });
+      await waitForLocks(2);
+      release();
+      await holder;
+      expect((await reset).statusCode).toBe(204);
+      expect((await oldLogin).statusCode).toBe(401);
+    } finally {
+      release();
+      await sql`delete from identity_seller_passwords where identity_id = ${identityId}`;
+      await sql`delete from identity_password_attempts where mobile = '09123456789'`;
+      await sql.end();
+      await fixture.cleanup();
+    }
+  });
 });
