@@ -216,6 +216,20 @@ describe("seller password HTTP API", () => {
         payload: { password: "correct horse battery staple" },
       });
       expect(enrollment.statusCode).toBe(204);
+      await sql`insert into identity_password_attempts (mobile, attempts, window_started_at) select '093' || lpad(n::text, 8, '0'), 1, clock_timestamp() from generate_series(1, 10000) n on conflict (mobile) do update set window_started_at = excluded.window_started_at`;
+      const anonymousAtCapacity = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09100000009", password: "wrong secure password" },
+      });
+      const sellerAtCapacity = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09123456789", password: "correct horse battery staple" },
+      });
+      expect(anonymousAtCapacity.statusCode).toBe(401);
+      expect(sellerAtCapacity.statusCode).toBe(200);
+      await sql`delete from identity_password_attempts where mobile like '093%'`;
       const bad = await server.inject({
         method: "POST",
         url: "/v1/auth/password/sessions",
@@ -343,6 +357,7 @@ describe("seller password HTTP API", () => {
       await sql`delete from identity_password_attempts where mobile = '09123456789'`;
       await sql`delete from identity_password_attempts where mobile = '09100000000'`;
       await sql`delete from identity_password_attempts where mobile like '09200000%'`;
+      await sql`delete from identity_password_attempts where mobile like '093%'`;
       await sql.end();
       await fixture.cleanup();
     }

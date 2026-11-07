@@ -194,10 +194,31 @@ export class SellerPasswordService {
       >`select pg_try_advisory_xact_lock(hashtextextended('sevo-password-cleanup-v1', 274)) as acquired`;
       if (cleanup?.acquired)
         await sql`delete from identity_password_attempts where mobile in (select mobile from identity_password_attempts where window_started_at <= clock_timestamp() - interval '15 minutes' order by window_started_at limit 100 for update skip locked)`;
+      const [credential] = await sql<
+        Array<{ identityId: string; passwordHash: string }>
+      >`
+        select i.id as "identityId", p.password_hash as "passwordHash" from identity_login_methods m
+        join identity_identities i on i.id = m.identity_id and i.status = 'ACTIVE'
+        join identity_seller_access a on a.identity_id = i.id and a.status = 'ACTIVE'
+        join identity_seller_passwords p on p.identity_id = i.id where m.mobile = ${mobile} and m.kind = 'MOBILE'`;
       const [capacity] = await sql<
         Array<{ allowed: boolean }>
       >`select exists(select 1 from identity_password_attempts where mobile = ${mobile}) or (select count(*) from identity_password_attempts) < 10000 as allowed`;
-      if (!capacity?.allowed) throw new PasswordBusyError();
+      if (!capacity?.allowed && !credential) {
+        const evicted = cleanup?.acquired
+          ? await sql`delete from identity_password_attempts where mobile in (
+          select a.mobile from identity_password_attempts a where not exists (
+            select 1 from identity_login_methods m join identity_identities i on i.id = m.identity_id and i.status = 'ACTIVE'
+            join identity_seller_access s on s.identity_id = i.id and s.status = 'ACTIVE'
+            join identity_seller_passwords p on p.identity_id = i.id where m.mobile = a.mobile and m.kind = 'MOBILE'
+          ) order by a.window_started_at limit 1 for update skip locked
+        ) returning mobile`
+          : [];
+        if (!evicted.length) {
+          await matchesPassword(password, dummyHash);
+          return undefined;
+        }
+      }
       const [attempt] = await sql<Array<{ attempts: number }>>`
         insert into identity_password_attempts (mobile, attempts, window_started_at)
         values (${mobile}, 1, clock_timestamp())
@@ -206,13 +227,6 @@ export class SellerPasswordService {
           window_started_at = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then clock_timestamp() else identity_password_attempts.window_started_at end
         returning attempts`;
       if (!attempt || attempt.attempts > 10) return undefined;
-      const [credential] = await sql<
-        Array<{ identityId: string; passwordHash: string }>
-      >`
-        select i.id as "identityId", p.password_hash as "passwordHash" from identity_login_methods m
-        join identity_identities i on i.id = m.identity_id and i.status = 'ACTIVE'
-        join identity_seller_access a on a.identity_id = i.id and a.status = 'ACTIVE'
-        join identity_seller_passwords p on p.identity_id = i.id where m.mobile = ${mobile} and m.kind = 'MOBILE'`;
       const valid = await matchesPassword(
         password,
         credential?.passwordHash ?? dummyHash,
