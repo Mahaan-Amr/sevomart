@@ -145,13 +145,15 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       shippingCode: draft.shippingMethods?.[0]?.code ?? "NATIONAL_POST",
       returnPolicy: draft.returnPolicy ?? "",
       themeColor: draft.themeColor ?? "#A41439",
-      shippingMethods: draft.shippingMethods?.map((method) => ({
-        code: method.code,
-        label: method.label,
-        feeToman: String(method.fixedFee.amount / 10),
-        estimatedDeliveryText: method.estimatedDeliveryText,
-        enabled: method.enabled,
-      })) ?? [defaultShippingMethod("NATIONAL_POST")],
+      shippingMethods: draft.shippingMethods?.length
+        ? draft.shippingMethods.map((method) => ({
+            code: method.code,
+            label: method.label,
+            feeToman: String(method.fixedFee.amount / 10),
+            estimatedDeliveryText: method.estimatedDeliveryText,
+            enabled: method.enabled,
+          }))
+        : [defaultShippingMethod("NATIONAL_POST")],
     });
     setStoredMedia({
       logoMediaId: draft.logoMediaId ?? null,

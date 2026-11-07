@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { iranianMobileContract } from "@sevo/contracts/identity-access/v1";
+import { storeDraftContract, storePreviewContract } from "@sevo/contracts/store/v1";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -183,8 +184,56 @@ describe("platform seller application review API with PostgreSQL", () => {
       name: "خانه ماه",
       status: "DRAFT",
       revision: 1,
+      shippingMethods: [],
     });
+    expect(storeDraftContract.safeParse(sellerWorkspace.json()).success).toBe(true);
     expect(sellerWorkspace.json()).not.toHaveProperty("publishedAt");
+
+    const saved = await server.inject({
+      method: "PUT",
+      url: "/v1/seller/store/draft",
+      headers: {
+        cookie: applicantCookie,
+        "idempotency-key": randomUUID(),
+        "if-match": '"1"',
+      },
+      payload: { bio: "محصولات دست‌ساز برای خانه" },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(storeDraftContract.parse(saved.json())).toMatchObject({
+      shippingMethods: [],
+    });
+
+    const preview = await server.inject({
+      method: "GET",
+      url: "/v1/seller/store/preview",
+      headers: { cookie: applicantCookie },
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(
+      storePreviewContract.parse(preview.json()).publicationReadiness,
+    ).toMatchObject({
+      ready: false,
+      missingFields: expect.arrayContaining(["SHIPPING_METHOD"]),
+    });
+    const publication = await server.inject({
+      method: "POST",
+      url: "/v1/seller/store/publication",
+      headers: {
+        cookie: applicantCookie,
+        "idempotency-key": randomUUID(),
+        "if-match": '"2"',
+      },
+    });
+    expect(publication.statusCode).toBe(422);
+    expect(publication.json()).toMatchObject({
+      code: "VALIDATION_ERROR",
+      details: {
+        issues: expect.arrayContaining([
+          { field: "shipping_method", code: "REQUIRED" },
+        ]),
+      },
+    });
   });
 
   it("lets only one concurrent approval create seller access and a store", async () => {

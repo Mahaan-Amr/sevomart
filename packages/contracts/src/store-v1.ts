@@ -212,11 +212,7 @@ const draftStoreContract = z.object({
   slug: readableStoreFields.slug.optional(),
   bio: readableStoreFields.bio.optional(),
   publicContactPhone: writableStoreFields.publicContactPhone.optional(),
-  shippingMethods: z
-    .array(storeShippingMethodSnapshotV1Contract)
-    .min(1)
-    .max(5)
-    .optional(),
+  shippingMethods: z.array(storeShippingMethodSnapshotV1Contract).max(5).optional(),
   returnPolicy: readableStoreFields.returnPolicy.optional(),
   settlementDestination: verifiedSettlementDestinationContract.optional(),
   logoMediaId: optionalStoreFields.logoMediaId.optional(),
