@@ -57,7 +57,9 @@ test("seller creates, uses, and recovers an optional password", async ({
     await page.getByRole("button", { name: "بازگشت به ورود" }).click();
     await page.getByRole("button", { name: "خروج", exact: true }).click();
     await page.getByRole("button", { name: "ورود با رمز" }).click();
-    await page.getByLabel("شماره موبایل").fill(mobile);
+    await page
+      .getByLabel("شماره موبایل")
+      .fill(mobile.replace(/\d/g, (d) => String.fromCharCode(0x06f0 + Number(d))));
     await page.getByLabel("رمز", { exact: true }).fill("a secure seller password");
     await page.getByRole("button", { name: "ورود", exact: true }).click();
     await expect(page.getByRole("heading", { name: "وارد شدید" })).toBeVisible();
@@ -69,7 +71,7 @@ test("seller creates, uses, and recovers an optional password", async ({
     await page.getByRole("button", { name: "تغییر رمز" }).click();
     await expect(page.getByLabel("کد شش‌رقمی")).toHaveAttribute("aria-invalid", "true");
     await expect(page.getByText("کد شش‌رقمی را کامل وارد کنید.")).toBeVisible();
-    await page.getByLabel("کد شش‌رقمی").fill("111111");
+    await page.getByLabel("کد شش‌رقمی").fill("١١١١١١");
     await page.getByLabel("رمز تازه، حداقل ۱۲ نویسه").fill("another secure password");
     await page.getByRole("button", { name: "تغییر رمز" }).click();
     await expect(page.getByRole("status")).toContainText("نشست‌های عمومی");

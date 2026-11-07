@@ -5,6 +5,11 @@ import styles from "./identity-login.module.css";
 
 type Mode = "enroll" | "login" | "recovery-request" | "recovery";
 type Field = "mobile" | "code" | "password";
+function asciiDigits(value: string) {
+  return value.replace(/[۰-۹٠-٩]/g, (digit) =>
+    String(digit.charCodeAt(0) - (digit >= "۰" ? 0x06f0 : 0x0660)),
+  );
+}
 const fieldMessages: Record<Field, string> = {
   mobile: "شماره موبایل را با قالب ۰۹xxxxxxxxx وارد کنید.",
   code: "کد شش‌رقمی را کامل وارد کنید.",
@@ -139,7 +144,7 @@ export function SellerPassword({
                   dir="ltr"
                   value={mobile}
                   onChange={(event) => {
-                    setMobile(event.target.value);
+                    setMobile(asciiDigits(event.target.value));
                     setErrors((current) => ({ ...current, mobile: undefined }));
                   }}
                   aria-invalid={Boolean(errors.mobile)}
@@ -172,7 +177,7 @@ export function SellerPassword({
                   dir="ltr"
                   value={code}
                   onChange={(event) => {
-                    setCode(event.target.value);
+                    setCode(asciiDigits(event.target.value));
                     setErrors((current) => ({ ...current, code: undefined }));
                   }}
                   aria-invalid={Boolean(errors.code)}

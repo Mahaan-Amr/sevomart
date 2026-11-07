@@ -35,7 +35,10 @@ import {
   RUNTIME_ENVIRONMENT,
   SELLER_PASSWORD_SERVICE,
 } from "./identity-access.tokens";
-import { SellerPasswordService } from "./application/seller-password.service";
+import {
+  PasswordBusyError,
+  SellerPasswordService,
+} from "./application/seller-password.service";
 
 @ApiExcludeController()
 @Controller("v1/auth")
@@ -55,9 +58,11 @@ export class IdentityAccessController {
         { field: "password", code: "INVALID_FORMAT" },
       ]);
     if (
-      !(await this.passwords.enroll(
-        readIdentitySessionToken(request) ?? "",
-        parsed.data.password,
+      !(await passwordAdmission(request.id, () =>
+        this.passwords.enroll(
+          readIdentitySessionToken(request) ?? "",
+          parsed.data.password,
+        ),
       ))
     ) {
       throw new HttpException(
@@ -85,7 +90,9 @@ export class IdentityAccessController {
         "شماره و رمز را بررسی کنید.",
         invalidPasswordFields(parsed.error.issues),
       );
-    const result = await this.passwords.login(parsed.data.mobile, parsed.data.password);
+    const result = await passwordAdmission(request.id, () =>
+      this.passwords.login(parsed.data.mobile, parsed.data.password),
+    );
     if (!result)
       throw new HttpException(
         {
@@ -135,10 +142,12 @@ export class IdentityAccessController {
         invalidPasswordFields(parsed.error.issues),
       );
     if (
-      !(await this.passwords.reset(
-        parsed.data.challengeId,
-        parsed.data.code,
-        parsed.data.password,
+      !(await passwordAdmission(request.id, () =>
+        this.passwords.reset(
+          parsed.data.challengeId,
+          parsed.data.code,
+          parsed.data.password,
+        ),
       ))
     ) {
       throw new HttpException(
@@ -281,6 +290,26 @@ export class IdentityAccessController {
       "Set-Cookie",
       `sevo_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
     );
+  }
+}
+
+async function passwordAdmission<T>(
+  correlationId: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof PasswordBusyError)
+      throw new HttpException(
+        {
+          code: "RATE_LIMITED",
+          message: "درخواست‌ها زیاد شده است؛ کمی بعد دوباره تلاش کنید.",
+          correlationId,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    throw error;
   }
 }
 

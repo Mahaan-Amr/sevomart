@@ -19,6 +19,7 @@ function scrypt(password: string, salt: string): Promise<Buffer> {
 }
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const dummyHash = `scrypt$${Buffer.alloc(16).toString("base64url")}$${Buffer.alloc(64).toString("base64url")}`;
+export class PasswordBusyError extends Error {}
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("base64url");
@@ -56,6 +57,19 @@ async function admitPasswordWork(sql: postgres.TransactionSql) {
   await sql`delete from identity_password_attempts where mobile in
     (select mobile from identity_password_attempts where window_started_at <= clock_timestamp() - interval '15 minutes' order by window_started_at limit 100)`;
   return true;
+}
+
+async function admitVerifiedWork(
+  sql: postgres.TransactionSql,
+  scope: "enroll" | "reset",
+) {
+  for (let slot = 0; slot < 4; slot++) {
+    const [lock] = await sql<
+      Array<{ acquired: boolean }>
+    >`select pg_try_advisory_xact_lock(hashtextextended(${`sevo-password-${scope}-v1`}, 274) + ${slot}) as acquired`;
+    if (lock?.acquired) return true;
+  }
+  return false;
 }
 
 export class SellerPasswordService {
@@ -99,18 +113,14 @@ export class SellerPasswordService {
       .update(`${challengeId}:${code}`)
       .digest("hex");
     return this.#sql.begin(async (sql) => {
-      if (!(await admitPasswordWork(sql))) return false;
       const [challenge] = await sql<
         Array<{ mobile: string }>
       >`select mobile from identity_otp_challenges where id = ${challengeId} and audience = 'PASSWORD_RESET'`;
       if (!challenge) return false;
       await sql`select pg_advisory_xact_lock(hashtext(${challenge.mobile}))`;
       const [attempt] = await sql<Array<{ attempts: number }>>`
-        insert into identity_password_attempts (mobile, attempts, window_started_at) values (${challenge.mobile}, 1, clock_timestamp())
-        on conflict (mobile) do update set
-          attempts = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then 1 else least(identity_password_attempts.attempts + 1, 11) end,
-          window_started_at = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then clock_timestamp() else identity_password_attempts.window_started_at end
-        returning attempts`;
+        select (coalesce((select sum(verification_attempts) from identity_otp_challenges where mobile = ${challenge.mobile} and audience = 'PASSWORD_RESET' and created_at > clock_timestamp() - interval '15 minutes'), 0)
+          + coalesce((select attempts from identity_password_attempts where mobile = ${challenge.mobile} and window_started_at > clock_timestamp() - interval '15 minutes'), 0) + 1)::int as attempts`;
       const [proof] = await sql<
         Array<{ matches: boolean }>
       >`update identity_otp_challenges set verification_attempts = verification_attempts + 1,
@@ -128,6 +138,7 @@ export class SellerPasswordService {
       const stillValid =
         await sql`select id from identity_otp_challenges where id = ${challengeId} and audience = 'PASSWORD_RESET' and code_hash = ${codeHash} and consumed_at is not null and expires_at > clock_timestamp()`;
       if (!stillValid.length) return false;
+      if (!(await admitVerifiedWork(sql, "reset"))) throw new PasswordBusyError();
       const encoded = await hashPassword(password);
       const validAfterHash =
         await sql`select id from identity_otp_challenges where id = ${challengeId} and audience = 'PASSWORD_RESET' and code_hash = ${codeHash} and consumed_at is not null and expires_at > clock_timestamp()`;
@@ -145,7 +156,6 @@ export class SellerPasswordService {
 
   async enroll(token: string, password: string) {
     return this.#sql.begin(async (sql) => {
-      if (!(await admitPasswordWork(sql))) return false;
       const [session] = await sql<
         Array<{ identityId: string }>
       >`select identity_id as "identityId" from identity_sessions where token_hash = ${hashToken(token)} and audience = 'PUBLIC'`;
@@ -159,6 +169,7 @@ export class SellerPasswordService {
           and s.expires_at > clock_timestamp() and s.created_at + interval '90 days' > clock_timestamp()
           and not exists (select 1 from identity_seller_passwords p where p.identity_id = i.id)`;
       if (!eligible.length) return false;
+      if (!(await admitVerifiedWork(sql, "enroll"))) throw new PasswordBusyError();
       const encoded = await hashPassword(password);
       const rows =
         await sql`insert into identity_seller_passwords (identity_id, password_hash)
@@ -175,7 +186,7 @@ export class SellerPasswordService {
 
   async login(mobile: string, password: string) {
     return this.#sql.begin(async (sql) => {
-      if (!(await admitPasswordWork(sql))) return undefined;
+      if (!(await admitPasswordWork(sql))) throw new PasswordBusyError();
       await sql`select pg_advisory_xact_lock(hashtext(${mobile}))`;
       const [attempt] = await sql<Array<{ attempts: number }>>`
         insert into identity_password_attempts (mobile, attempts, window_started_at)
@@ -185,6 +196,10 @@ export class SellerPasswordService {
           window_started_at = case when identity_password_attempts.window_started_at < clock_timestamp() - interval '15 minutes' then clock_timestamp() else identity_password_attempts.window_started_at end
         returning attempts`;
       if (!attempt || attempt.attempts > 10) return undefined;
+      const [recoveryAttempts] = await sql<
+        Array<{ attempts: number }>
+      >`select coalesce(sum(verification_attempts), 0)::int as attempts from identity_otp_challenges where mobile = ${mobile} and audience = 'PASSWORD_RESET' and created_at > clock_timestamp() - interval '15 minutes'`;
+      if (attempt.attempts + (recoveryAttempts?.attempts ?? 0) > 10) return undefined;
       const [credential] = await sql<
         Array<{ identityId: string; passwordHash: string }>
       >`
