@@ -397,9 +397,11 @@ test("a legacy store draft loads in the existing form and saves with its revisio
     buffer: Buffer.from("invalid"),
   });
   await page.getByRole("button", { name: "بازگشت" }).click();
-  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByLabel("لوگو")).toHaveAccessibleDescription(/فقط تصویر/);
   await expect(page.locator("form").getByRole("alert")).toContainText("لوگو");
+  await expect(page.locator("form").getByRole("alert")).toBeFocused();
   await page.getByLabel("لوگو").setInputFiles([]);
   await page.route(
     "**/api/store/seller/store/draft",
@@ -415,6 +417,19 @@ test("a legacy store draft loads in the existing form and saves with its revisio
     "درخواست انجام نشد. دوباره تلاش کنید.",
   );
   await expect(page.locator("main")).not.toContainText("secret-value");
+  await page.route(
+    "**/api/store/seller/store/draft",
+    (route) => route.fulfill({ status: 409, json: { code: "SLUG_CONFLICT" } }),
+    { times: 1 },
+  );
+  await page.getByRole("button", { name: "ذخیره و دیدن پیش‌نمایش" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("شناسه لینک")).toHaveAccessibleDescription(
+    /شناسه لینک قبلاً استفاده شده/,
+  );
+  await expect(page.locator("form").getByRole("alert")).toBeFocused();
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await page.getByRole("button", { name: "ادامه" }).click();
   await page.route(
     "**/api/store/seller/store/preview",
     (route) => route.fulfill({ status: 503, json: {} }),
