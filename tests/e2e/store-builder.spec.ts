@@ -466,7 +466,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
 
   const snapshotSql = postgres(databaseUrl, { max: 1 });
   await snapshotSql`
-    update store_stores set updated_at = ${visualSnapshotTimestamp}
+    update store_stores set updated_at = ${visualSnapshotTimestamp}, published_at = ${visualSnapshotTimestamp}
     where slug = ${slug}
   `;
   await snapshotSql.end();
