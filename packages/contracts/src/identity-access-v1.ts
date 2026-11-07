@@ -38,6 +38,9 @@ export const passwordEnrollmentContract = z
 export const passwordLoginContract = passwordEnrollmentContract
   .extend({ mobile: iranianMobileContract })
   .strict();
+export const passwordRecoveryContract = passwordEnrollmentContract
+  .extend({ challengeId: otpChallengeIdContract, code: otpCodeContract })
+  .strict();
 
 export const identityAccessV1Paths = {
   requestOtp: "/v1/auth/otp/requests",

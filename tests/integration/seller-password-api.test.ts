@@ -43,6 +43,61 @@ describe("seller password HTTP API", () => {
       expect(login.statusCode).toBe(200);
       expect(login.json().actor).toEqual(otp.json().actor);
       expect(login.headers["set-cookie"]).toContain("HttpOnly");
+      const pendingLogin = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: "09123456789" },
+      });
+      const recovery = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/recovery/requests",
+        payload: { mobile: "09123456789" },
+      });
+      expect(recovery.statusCode).toBe(202);
+      const wrongPurpose = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: recovery.json().challengeId, code: "111111" },
+      });
+      expect(wrongPurpose.statusCode).toBe(401);
+      const reset = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/recovery",
+        payload: {
+          challengeId: recovery.json().challengeId,
+          code: "111111",
+          password: "a new secure password",
+        },
+      });
+      expect(reset.statusCode).toBe(204);
+      const replay = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/recovery",
+        payload: {
+          challengeId: recovery.json().challengeId,
+          code: "111111",
+          password: "another secure password",
+        },
+      });
+      expect(replay.statusCode).toBe(401);
+      const oldOtp = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: pendingLogin.json().challengeId, code: "111111" },
+      });
+      expect(oldOtp.statusCode).toBe(401);
+      const oldSession = await server.inject({
+        method: "GET",
+        url: "/v1/auth/session",
+        headers: { cookie: login.headers["set-cookie"] },
+      });
+      expect(oldSession.statusCode).toBe(401);
+      const newLogin = await server.inject({
+        method: "POST",
+        url: "/v1/auth/password/sessions",
+        payload: { mobile: "09123456789", password: "a new secure password" },
+      });
+      expect(newLogin.statusCode).toBe(200);
     } finally {
       const sql = postgres(apiTestEnvironment.DATABASE_URL);
       await sql`delete from identity_seller_passwords where identity_id = ${otp.json().actor.identityId}`;

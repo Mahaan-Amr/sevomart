@@ -83,7 +83,16 @@ export class IdentityAccessModule {
       providers: [
         {
           provide: SELLER_PASSWORD_SERVICE,
-          useValue: new SellerPasswordService(environment.DATABASE_URL),
+          useValue: new SellerPasswordService(
+            environment.DATABASE_URL,
+            otpProvider,
+            environment.SEVO_RUNTIME_ENV === "production"
+              ? undefined
+              : environment.DEV_OTP_TEST_MOBILES,
+            environment.SEVO_RUNTIME_ENV === "production"
+              ? createProductionOtpCode
+              : () => "111111" as OtpCode,
+          ),
         },
         { provide: RUNTIME_ENVIRONMENT, useValue: environment },
         {
