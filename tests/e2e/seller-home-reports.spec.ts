@@ -128,6 +128,20 @@ test("seller acts from the operational home and reads a private basic report", a
       "href",
       "/seller/products/new",
     );
+    // Opening the editor creates an empty draft; leaving it must not finish setup.
+    const draftCreated = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/store/seller/products") &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
+    await page.getByRole("link", { name: "افزودن کالا" }).click();
+    await draftCreated;
+    await expect(page.getByLabel("نام کالا")).toBeVisible();
+    await page.goto("/seller");
+    await expect(
+      page.getByRole("heading", { name: "اولین کالا را اضافه کنید" }),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: "پیش‌نمایش خریدار" })).toHaveAttribute(
       "href",
       `/s/reports-${projectIndex}`,
@@ -152,6 +166,12 @@ test("seller acts from the operational home and reads a private basic report", a
       insert into product_products
         (id, store_id, state, revision, publication_version, published_at)
       values (${productId}, ${storeId}, 'PUBLISHED', 1, 1, now())
+    `;
+    // The empty draft is newer than this completed product and must not hide it.
+    await sql`update product_products set created_at = now() - interval '1 day' where id = ${productId}`;
+    await sql`
+      insert into product_products (id, store_id, state, revision)
+      select gen_random_uuid(), ${storeId}, 'DRAFT', 0 from generate_series(1, 50)
     `;
     await sql`
       insert into product_variants

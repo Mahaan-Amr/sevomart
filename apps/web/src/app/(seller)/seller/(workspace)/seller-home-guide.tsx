@@ -29,14 +29,26 @@ export function SellerHomeGuide() {
         let hasProduct = false;
         if (store?.status === "PUBLISHED") {
           setSlug(store.slug);
-          const productsResponse = await fetch("/api/store/seller/products?limit=1", {
-            cache: "no-store",
-            signal: controller.signal,
-          });
-          if (!productsResponse.ok) throw new Error();
-          hasProduct =
-            sellerProductListContract.parse(await productsResponse.json()).items
-              .length > 0;
+          let cursor: string | null = null;
+          do {
+            const query = new URLSearchParams({ limit: "50" });
+            if (cursor) query.set("cursor", cursor);
+            const productsResponse = await fetch(
+              `/api/store/seller/products?${query}`,
+              {
+                cache: "no-store",
+                signal: controller.signal,
+              },
+            );
+            if (!productsResponse.ok) throw new Error();
+            const page = sellerProductListContract.parse(await productsResponse.json());
+            // Creating the editor's empty draft does not add a product. A named
+            // saved draft or a product that has been published does.
+            hasProduct = page.items.some(
+              (product) => product.name !== null || product.publicationVersion > 0,
+            );
+            cursor = page.nextCursor;
+          } while (!hasProduct && cursor);
         }
         const step = guideProgress(store?.status === "PUBLISHED", hasProduct);
         setProgress({ step });
