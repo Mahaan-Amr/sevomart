@@ -94,7 +94,10 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
       response.request().method() === "PUT",
   );
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
-  expect((await (await draftSave).json()).shippingMethods).toEqual([]);
+  const draftResponse = await draftSave;
+  expect(draftResponse.ok()).toBe(true);
+  expect(draftResponse.request().postDataJSON()).not.toHaveProperty("shippingMethods");
+  expect((await draftResponse.json()).shippingMethods).toEqual([]);
   await expect(page).toHaveURL(/\/seller\/store$/);
   await expect(page.getByText("پیش‌نویس فروشگاه ذخیره شده است")).toBeVisible();
   await page.goto("/seller/store/shipping");
