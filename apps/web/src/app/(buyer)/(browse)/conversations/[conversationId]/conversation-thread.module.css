@@ -122,7 +122,7 @@
 
 .composer {
   position: sticky;
-  inset-block-end: 76px;
+  inset-block-end: calc(104px + env(safe-area-inset-bottom));
   display: grid;
   flex: none;
   grid-template-columns: minmax(0, 1fr) 44px;
@@ -133,6 +133,12 @@
   border-radius: 16px;
   background: var(--color-surface);
   box-shadow: var(--elevation-raised);
+}
+
+@media (max-width: 280px) {
+  .composer {
+    inset-block-end: calc(232px + env(safe-area-inset-bottom));
+  }
 }
 
 .composer label {
