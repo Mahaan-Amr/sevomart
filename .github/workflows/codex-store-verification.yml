@@ -1,7 +1,7 @@
 name: Temporary navigation visual verification
 on:
   push:
-    branches: [fix/266-browser-probe]
+    branches: [fix/266-red-probe]
 permissions:
   contents: read
 jobs:
