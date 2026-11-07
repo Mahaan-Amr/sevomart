@@ -83,3 +83,30 @@ test("superadmin gives a one-time recovery code to a colleague", async ({ page }
     await sql.end();
   }
 });
+
+test("platform login distinguishes service failure from invalid credentials", async ({
+  page,
+}) => {
+  let status = 503;
+  await page.route("**/api/platform/auth/password/sessions", (route) =>
+    route.fulfill({ status, json: {} }),
+  );
+  await page.goto("/platform/login");
+  await page.getByLabel("نام کاربری، شماره موبایل یا ایمیل").fill("test-agent");
+  await page.getByLabel("رمز عبور").fill("test password");
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.locator("form").getByRole("alert")).toHaveText(
+    "ورود موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید.",
+  );
+  status = 401;
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.locator("form").getByRole("alert")).toHaveText(
+    "نام کاربری یا رمز عبور درست نیست.",
+  );
+  status = 422;
+  await page.getByLabel("نام کاربری، شماره موبایل یا ایمیل").fill("   ");
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page.locator("form").getByRole("alert")).toHaveText(
+    "اطلاعات ورود را بررسی کنید و دوباره تلاش کنید.",
+  );
+});

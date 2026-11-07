@@ -23,7 +23,11 @@ export function PlatformAgentLogin({ returnTo }: { returnTo: string }) {
         setMessage(
           response.status === 429
             ? "تلاش‌ها زیاد شده است؛ کمی بعد دوباره تلاش کنید."
-            : "نام کاربری یا رمز عبور درست نیست.",
+            : response.status === 401
+              ? "نام کاربری یا رمز عبور درست نیست."
+              : response.status === 422
+                ? "اطلاعات ورود را بررسی کنید و دوباره تلاش کنید."
+                : "ورود موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید.",
         );
         return;
       }
