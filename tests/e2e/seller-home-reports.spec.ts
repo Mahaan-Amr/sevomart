@@ -23,7 +23,7 @@ test("seller acts from the operational home and reads a private basic report", a
     process.env.DATABASE_URL ?? "postgresql://sevo:sevo_local@localhost:6432/sevo";
   const sql = postgres(databaseUrl, { max: 1 });
   const storeId = randomUUID();
-  const productId = randomUUID();
+  const productId = `00000000${randomUUID().slice(8)}`;
   const variantId = randomUUID();
   const mediaId = randomUUID();
   const orderIds = [randomUUID(), randomUUID(), randomUUID()] as const;
@@ -128,6 +128,33 @@ test("seller acts from the operational home and reads a private basic report", a
       "href",
       "/seller/products/new",
     );
+    // Opening the editor creates an empty draft; leaving it must not finish setup.
+    const draftCreated = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/store/seller/products") &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
+    await page.getByRole("link", { name: "افزودن کالا" }).click();
+    await draftCreated;
+    await expect(page.getByLabel("نام کالا")).toBeVisible();
+    await page.goto("/seller");
+    await expect(
+      page.getByRole("heading", { name: "اولین کالا را اضافه کنید" }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "افزودن کالا" }).click();
+    await page.getByLabel("نام کالا").fill("کالای ذخیره‌شده");
+    await page.getByRole("button", { name: "ادامه", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "تصویرهای کالا" })).toBeVisible();
+    await page.goto("/seller");
+    await expect(
+      page.getByRole("button", { name: "دیدن راهنمای آغاز" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await sql`delete from product_products where store_id = ${storeId}::uuid`;
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "اولین کالا را اضافه کنید" }),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: "پیش‌نمایش خریدار" })).toHaveAttribute(
       "href",
       `/s/reports-${projectIndex}`,
@@ -153,6 +180,14 @@ test("seller acts from the operational home and reads a private basic report", a
         (id, store_id, state, revision, publication_version, published_at)
       values (${productId}, ${storeId}, 'PUBLISHED', 1, 1, now())
     `;
+    // More than one page shares the same stored millisecond; UUID ordering puts
+    // the published product after all the empty drafts.
+    await sql`
+      insert into product_products (id, store_id, state, revision)
+      select ('10000000' || substring(gen_random_uuid()::text from 9))::uuid,
+        ${storeId}, 'DRAFT', 0 from generate_series(1, 50)
+    `;
+    await sql`update product_products set created_at = '2026-01-01T10:00:00.123456Z' where store_id = ${storeId}::uuid`;
     await sql`
       insert into product_variants
         (id, product_id, store_id, client_key, combination_key, retired,
@@ -279,7 +314,7 @@ test("seller acts from the operational home and reads a private basic report", a
     await sql`delete from reporting_fulfillment_states where order_id in ${sql(orderIds)}`;
     await sql`delete from reporting_seller_order_facts where store_id = ${storeId}`;
     await sql`delete from inventory_levels where variant_id = ${variantId}`;
-    await sql`delete from product_products where id = ${productId}`;
+    await sql`delete from product_products where store_id = ${storeId}`;
     await sql`delete from store_memberships where store_id = ${storeId}`;
     await sql`delete from store_stores where id = ${storeId}`;
     await sql`delete from identity_seller_access where identity_id = ${identityId}`;

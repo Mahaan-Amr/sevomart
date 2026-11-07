@@ -82,6 +82,21 @@ describe("simple product tracer HTTP API", () => {
         set state = 'PUBLISHED', published_at = now(), updated_at = now()
         where id = ${productIds[0]}::uuid
       `;
+      // created_at is timestamptz(3): these microsecond inputs all round to
+      // the same stored millisecond, so the UUID must break the page tie.
+      await sql`
+        update product_products set created_at = '2026-01-01T10:00:00.123456Z'
+        where id = any(${sql.array(productIds.slice(0, 2))}::uuid[])
+      `;
+      await sql`
+        update product_products set created_at = '2026-01-01T10:00:00.123455Z'
+        where id = ${productIds[2]}::uuid
+      `;
+      const precision = await sql<Array<{ timestamps: number; distinct: number }>>`
+        select count(*)::int as timestamps, count(distinct created_at)::int as distinct
+        from product_products where id = any(${sql.array(productIds)}::uuid[])
+      `;
+      expect(precision[0]).toEqual({ timestamps: 3, distinct: 1 });
     } finally {
       await sql.end();
     }
@@ -134,6 +149,9 @@ describe("simple product tracer HTTP API", () => {
       nextCursor: null;
     }>();
     expect(second.items).toHaveLength(1);
+    expect(
+      [...first.items, ...second.items].map((item) => item.productId).sort(),
+    ).toEqual([...productIds].sort());
     expect(first.items.map((item) => item.productId)).not.toContain(
       second.items[0]!.productId,
     );
