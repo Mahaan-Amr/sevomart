@@ -229,6 +229,24 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
   }
 
   async function saveAndExit() {
+    const validation = validateForm(form);
+    const localErrors: FieldErrors = {
+      ...(form.name.trim() && validation.name ? { name: validation.name } : {}),
+      ...(form.slug.trim() && validation.slug ? { slug: validation.slug } : {}),
+      ...(form.bio.trim() && validation.bio ? { bio: validation.bio } : {}),
+      ...(form.returnPolicy.trim() && validation.returnPolicy
+        ? { returnPolicy: validation.returnPolicy }
+        : {}),
+      ...(validation.publicContactPhone
+        ? { publicContactPhone: validation.publicContactPhone }
+        : {}),
+      ...(slugUnavailable ? { slug: "این شناسه لینک قبلاً استفاده شده است." } : {}),
+    };
+    setErrors(localErrors);
+    if (Object.keys(localErrors).length > 0) {
+      setEditStep(hasIdentityErrors(localErrors) ? 0 : 1);
+      return;
+    }
     setPending(true);
     setMessage("");
     try {
