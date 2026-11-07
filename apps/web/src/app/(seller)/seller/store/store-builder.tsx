@@ -254,6 +254,7 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
     setErrors(localErrors);
     if (Object.keys(localErrors).length > 0) {
       setEditStep(hasIdentityErrors(localErrors) ? 0 : 1);
+      setMessage(Object.values(localErrors).join(" "));
       return;
     }
     setPending(true);

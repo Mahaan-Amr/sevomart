@@ -123,8 +123,13 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
   await page.getByLabel("نام فروشگاه").clear();
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
-  await expect(page.getByText("نام فروشگاه را کامل‌تر بنویسید.")).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(
+    page
+      .locator("label")
+      .filter({ hasText: "نام فروشگاه" })
+      .getByText("نام فروشگاه را کامل‌تر بنویسید."),
+  ).toBeVisible();
+  await expect(page.locator("form").getByRole("alert")).toContainText(
     "نام فروشگاه را کامل‌تر بنویسید.",
   );
   await expect(page).toHaveURL(/\/seller\/store\/setup/);
