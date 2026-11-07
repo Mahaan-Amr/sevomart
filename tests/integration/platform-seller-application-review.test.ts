@@ -2216,6 +2216,34 @@ describe("platform seller application review API with PostgreSQL", () => {
     });
     expect(JSON.stringify(mine.json())).not.toContain(payload.internalNote);
 
+    const corrected = await server.inject({
+      method: "POST",
+      url: `/v1/seller-applications/${applicationId}/resubmission`,
+      headers: { cookie: applicantCookie, "idempotency-key": randomUUID() },
+      payload: {
+        ...applicationPayload(),
+        currentSalesMethod: "فروش حضوری و از راه پیام‌رسان",
+        expectedRevision: 1,
+      },
+    });
+    expect(corrected.statusCode).toBe(200);
+    expect(corrected.json()).toMatchObject({
+      applicationId,
+      status: "SUBMITTED",
+      currentRevision: 2,
+      currentPayload: { currentSalesMethod: "فروش حضوری و از راه پیام‌رسان" },
+    });
+    expect(JSON.stringify(corrected.json())).not.toContain(payload.internalNote);
+    const afterCorrection = await server.inject({
+      method: "GET",
+      url: "/v1/seller-applications/mine",
+      headers: { cookie: applicantCookie },
+    });
+    expect(afterCorrection.json()).toMatchObject({
+      items: [{ applicationId, status: "SUBMITTED", currentRevision: 2 }],
+    });
+    expect(JSON.stringify(afterCorrection.json())).not.toContain(payload.internalNote);
+
     const sql = postgres(environment.DATABASE_URL, { max: 1 });
     try {
       const audits = await sql<Array<{ count: number; correlationId: string }>>`
