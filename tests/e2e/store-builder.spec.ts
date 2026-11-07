@@ -201,10 +201,30 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.getByRole("button", { name: "ادامه" }).click();
   await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "ارسال و مرجوعی" })).toBeVisible();
+  await page.getByLabel("روش ارسال").selectOption("NATIONAL_POST");
+  await page.getByLabel("روش ارسال").selectOption("COURIER");
+  const switchedSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/store/seller/store/draft") &&
+      response.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  const switchedResponse = await switchedSave;
+  expect(switchedResponse.ok()).toBe(true);
+  expect(
+    (await switchedResponse.json()).shippingMethods.map(
+      (method: { code: string; enabled: boolean }) => ({
+        code: method.code,
+        enabled: method.enabled,
+      }),
+    ),
+  ).toEqual([{ code: "COURIER", enabled: true }]);
+  await expect(page).toHaveURL(/\/seller\/store$/);
 
   await page.goto("/seller/store/shipping");
   let nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
   await nationalPost.getByRole("checkbox").check();
+  await page.getByRole("group", { name: "پیک" }).getByRole("checkbox").uncheck();
   await nationalPost
     .getByLabel("عنوانی که خریدار می‌بیند")
     .fill("پست پیشتاز با تحویل قابل پیگیری در سراسر ایران");
@@ -538,6 +558,33 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page).toHaveURL(/\/seller\/store$/);
   await page.goto("/seller/store/profile");
   await expect(page.getByLabel("شماره تماس کاری (اختیاری)")).toHaveValue("09123456789");
+  await page.goto("/seller/store/setup");
+  await page.getByRole("button", { name: "ادامه" }).click();
+  await expect(page.getByLabel("روش ارسال")).toHaveValue("NATIONAL_POST");
+  await page.getByLabel("روش ارسال").selectOption("PICKUP");
+  const preservedSave = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/store/seller/store/draft") &&
+      response.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  const preservedResponse = await preservedSave;
+  expect(preservedResponse.ok()).toBe(true);
+  expect((await preservedResponse.json()).shippingMethods).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "PICKUP", enabled: true }),
+      expect.objectContaining({
+        code: "COURIER",
+        enabled: true,
+        label: "پیک درون‌شهری",
+        fixedFee: { amount: 1200000, currency: "IRR" },
+      }),
+    ]),
+  );
+  expect((await preservedResponse.json()).shippingMethods).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ code: "NATIONAL_POST" })]),
+  );
+  await expect(page).toHaveURL(/\/seller\/store$/);
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();

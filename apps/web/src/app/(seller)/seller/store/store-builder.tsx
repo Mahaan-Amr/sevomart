@@ -596,7 +596,9 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                         shippingMethods: [
                           { ...selected, enabled: true },
                           ...current.shippingMethods.filter(
-                            (method) => method.code !== code,
+                            (method) =>
+                              method.code !== code &&
+                              method.code !== current.shippingCode,
                           ),
                         ],
                       };
