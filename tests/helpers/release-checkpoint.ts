@@ -64,9 +64,9 @@ async function captureAtViewport(
   console.log("[DEBUG-feed-contrast]", JSON.stringify({
     viewport,
     violations: scan.violations.filter((entry) => entry.id === "color-contrast").flatMap((entry) =>
-      entry.nodes.flatMap((node) => node.any.map((check) => ({ fg: check.data?.fgColor, bg: check.data?.bgColor, ratio: check.data?.contrastRatio, expected: check.data?.expectedContrastRatio })))),
+      entry.nodes.flatMap((node) => [...node.any, ...node.all, ...node.none].map((check) => ({ id: check.id, fg: check.data?.fgColor, bg: check.data?.bgColor, ratio: check.data?.contrastRatio, expected: check.data?.expectedContrastRatio })))),
     incomplete: scan.incomplete.filter((entry) => entry.id === "color-contrast").flatMap((entry) =>
-      entry.nodes.flatMap((node) => node.any.map((check) => ({ fg: check.data?.fgColor, bg: check.data?.bgColor, ratio: check.data?.contrastRatio, expected: check.data?.expectedContrastRatio })))),
+      entry.nodes.flatMap((node) => [...node.any, ...node.all, ...node.none].map((check) => ({ id: check.id, fg: check.data?.fgColor, bg: check.data?.bgColor, ratio: check.data?.contrastRatio, expected: check.data?.expectedContrastRatio })))),
   }));
   for (const finding of [...scan.violations, ...scan.incomplete]) {
     if (finding.id !== "color-contrast") continue;
@@ -75,7 +75,12 @@ async function captureAtViewport(
       if (typeof target !== "string") continue;
       const style = await page.locator(target).first().evaluate((element) => {
         const computed = getComputedStyle(element);
-        return { tag: element.tagName, className: element.className, color: computed.color, background: computed.backgroundColor };
+        const ancestors = [];
+        for (let current = element.parentElement; current && ancestors.length < 4; current = current.parentElement) {
+          const css = getComputedStyle(current);
+          ancestors.push({ tag: current.tagName, className: current.className, color: css.color, background: css.backgroundColor, image: css.backgroundImage === "none" ? "none" : "present" });
+        }
+        return { tag: element.tagName, className: element.className, color: computed.color, background: computed.backgroundColor, ancestors };
       });
       console.log("[DEBUG-feed-style]", JSON.stringify(style));
     }
