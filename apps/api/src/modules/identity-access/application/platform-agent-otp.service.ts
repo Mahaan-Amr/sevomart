@@ -161,6 +161,8 @@ export class PlatformAgentOtpService {
         values (${randomUUID()}, ${hashToken(token)}, ${identity.identityId},
           'PLATFORM_AGENT', ${expiresAt})
       `;
+      if (challenge.expiresAt.getTime() <= this.now().getTime())
+        throw new OtpRejectedError();
       return {
         token,
         session: {
