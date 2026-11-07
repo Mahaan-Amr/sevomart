@@ -284,7 +284,15 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "ارسال و مرجوعی" })).toBeVisible();
   await page.getByLabel("روش ارسال").selectOption("NATIONAL_POST");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
+  await page.getByLabel("هزینه ارسال (تومان)").fill("۸۵۰۰۰");
   await page.getByLabel("روش ارسال").selectOption("COURIER");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(
+    page.getByText("هزینه هر روش ارسال فعال را وارد کنید.").first(),
+  ).toBeVisible();
+  await page.getByLabel("هزینه ارسال (تومان)").fill("۱۲۰۰۰۰");
   const switchedSave = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/store/seller/store/draft") &&
@@ -301,7 +309,12 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
         enabled: method.enabled,
       }),
     ),
-  ).toEqual([{ code: "COURIER", enabled: true }]);
+  ).toEqual(
+    expect.arrayContaining([
+      { code: "COURIER", enabled: true },
+      { code: "NATIONAL_POST", enabled: true },
+    ]),
+  );
 
   await page.goto("/seller/store/shipping");
   let nationalPost = page.getByRole("group", { name: "پست پیشتاز" });
@@ -647,7 +660,10 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     "همان روز کاری",
   );
   await page.getByRole("group", { name: "پست پیشتاز" }).getByRole("checkbox").uncheck();
-  await savedCourier.getByRole("checkbox").uncheck();
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page).toHaveURL(/\/seller\/store$/);
+  await page.goto("/seller/store/shipping");
+  await page.getByRole("group", { name: "پیک" }).getByRole("checkbox").uncheck();
   await page.getByRole("button", { name: "ذخیره و خروج" }).click();
   await expect(page.getByText("دست‌کم یک روش ارسال را فعال کنید.")).toBeVisible();
   await expect(page).toHaveURL(/\/seller\/store\/shipping$/);
@@ -662,7 +678,12 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(page.getByLabel("شماره تماس کاری (اختیاری)")).toHaveValue("09123456789");
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
-  await expect(page.getByLabel("روش ارسال")).toHaveValue("NATIONAL_POST");
+  await expect(page.getByLabel("روش ارسال")).toHaveValue("COURIER");
+  await page.getByLabel("روش ارسال").selectOption("PICKUP");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).toBeEmpty();
+  await page.getByLabel("هزینه ارسال (تومان)").fill("۳۰۰۰۰");
+  await page.getByLabel("روش ارسال").selectOption("COURIER");
+  await expect(page.getByLabel("هزینه ارسال (تومان)")).toHaveValue("120000");
   await page.getByLabel("روش ارسال").selectOption("PICKUP");
   const preservedSave = page.waitForResponse(
     (response) =>
@@ -676,18 +697,32 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   const preservedDraft = await readSavedDraft();
   expect(preservedDraft.shippingMethods).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ code: "PICKUP", enabled: true }),
+      expect.objectContaining({
+        code: "PICKUP",
+        enabled: true,
+        fixedFee: { amount: 300000, currency: "IRR" },
+      }),
       expect.objectContaining({
         code: "COURIER",
         enabled: true,
         label: "پیک درون‌شهری",
         fixedFee: { amount: 1200000, currency: "IRR" },
+        estimatedDeliveryText: "همان روز کاری",
       }),
     ]),
   );
-  expect(preservedDraft.shippingMethods).not.toEqual(
-    expect.arrayContaining([expect.objectContaining({ code: "NATIONAL_POST" })]),
+  expect(preservedDraft.shippingMethods).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "NATIONAL_POST", enabled: false }),
+    ]),
   );
+  await page.goto("/seller/store/shipping");
+  await expect(
+    page.getByRole("group", { name: "پیک" }).getByLabel("هزینه ارسال (تومان)"),
+  ).toHaveValue("120000");
+  await expect(
+    page.getByRole("group", { name: "پیک" }).getByLabel("زمان تقریبی تحویل"),
+  ).toHaveValue("همان روز کاری");
   await page.goto("/seller/store/setup");
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();

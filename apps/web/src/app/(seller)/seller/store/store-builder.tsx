@@ -268,6 +268,11 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
       validation.returnPolicy
         ? { returnPolicy: validation.returnPolicy }
         : {}),
+      ...(form.shippingMethods.some(
+        (method) => method.enabled && !validShippingFee(method.feeToman),
+      )
+        ? { shipping: "هزینه هر روش ارسال فعال را وارد کنید." }
+        : {}),
       ...(validation.publicContactPhone
         ? { publicContactPhone: validation.publicContactPhone }
         : {}),
@@ -676,30 +681,34 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
           {editStep === 1 ? (
             <>
               <h2>ارسال و مرجوعی</h2>
-              <Field label="روش ارسال" error={errors.shipping}>
+              <Field
+                label="روش ارسال"
+                error={!form.shippingCode ? errors.shipping : undefined}
+              >
                 <select
-                  aria-invalid={Boolean(errors.shipping) || undefined}
+                  aria-invalid={
+                    Boolean(errors.shipping && !form.shippingCode) || undefined
+                  }
                   aria-describedby={
-                    errors.shipping ? "field-error-روش-ارسال" : undefined
+                    errors.shipping && !form.shippingCode
+                      ? "field-error-روش-ارسال"
+                      : undefined
                   }
                   value={form.shippingCode}
                   onChange={(e) => {
                     setErrors((current) => ({ ...current, shipping: undefined }));
                     setForm((current) => {
                       const code = e.target.value as ShippingCode;
-                      const selected =
-                        current.shippingMethods.find(
-                          (method) => method.code === code,
-                        ) ?? defaultShippingMethod(code);
+                      const selected = current.shippingMethods.find(
+                        (method) => method.code === code,
+                      ) ?? { ...defaultShippingMethod(code), feeToman: "" };
                       return {
                         ...current,
                         shippingCode: code,
                         shippingMethods: [
                           { ...selected, enabled: true },
                           ...current.shippingMethods.filter(
-                            (method) =>
-                              method.code !== code &&
-                              method.code !== current.shippingCode,
+                            (method) => method.code !== code,
                           ),
                         ],
                       };
@@ -714,6 +723,38 @@ export function StoreBuilder({ section = "setup" }: { section?: StoreSection }) 
                   <option value="PICKUP">دریافت حضوری</option>
                 </select>
               </Field>
+              {form.shippingCode ? (
+                <Field
+                  label="هزینه ارسال (تومان)"
+                  hint="برای ارسال رایگان صفر بنویسید."
+                  error={errors.shipping}
+                >
+                  <input
+                    aria-invalid={Boolean(errors.shipping) || undefined}
+                    aria-describedby={
+                      errors.shipping ? "field-error-هزینه-ارسال-(تومان)" : undefined
+                    }
+                    inputMode="numeric"
+                    dir="ltr"
+                    value={
+                      form.shippingMethods.find(
+                        (method) => method.code === form.shippingCode,
+                      )?.feeToman ?? ""
+                    }
+                    onChange={(event) => {
+                      const feeToman = event.target.value;
+                      setForm((current) => ({
+                        ...current,
+                        shippingMethods: current.shippingMethods.map((method) =>
+                          method.code === current.shippingCode
+                            ? { ...method, feeToman }
+                            : method,
+                        ),
+                      }));
+                    }}
+                  />
+                </Field>
+              ) : null}
               <Field label="سیاست مرجوعی" error={errors.returnPolicy}>
                 <textarea
                   aria-invalid={Boolean(errors.returnPolicy) || undefined}
@@ -1348,6 +1389,12 @@ function validateForm(form: typeof emptyForm): FieldErrors {
   }
   if (!form.shippingMethods.some((method) => method.enabled)) {
     errors.shipping = "دست‌کم یک روش ارسال را فعال کنید.";
+  } else if (
+    form.shippingMethods.some(
+      (method) => method.enabled && !validShippingFee(method.feeToman),
+    )
+  ) {
+    errors.shipping = "هزینه هر روش ارسال فعال را وارد کنید.";
   }
   const returnPolicyLength = form.returnPolicy.trim().length;
   if (returnPolicyLength < 10)
