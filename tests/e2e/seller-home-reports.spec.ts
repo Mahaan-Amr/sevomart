@@ -186,6 +186,12 @@ test("seller acts from the operational home and reads a private basic report", a
     await assertNoHorizontalOverflow(page);
     await assertInteractiveTargets(page, "main a, main button");
     await page.getByRole("button", { name: "بستن راهنما" }).click();
+    const viewport = page.viewportSize()!;
+    for (const width of [180, 384]) {
+      await page.setViewportSize({ width, height: viewport.height });
+      await assertNoHorizontalOverflow(page);
+    }
+    await page.setViewportSize(viewport);
     await page.goto("/seller");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(page.getByRole("heading", { name: "کارهای نزدیک" })).toBeVisible();
@@ -211,7 +217,7 @@ test("seller acts from the operational home and reads a private basic report", a
     );
     await assertMinimumContrast(reportsLink);
 
-    await expectKeyboardFocus(page, reportsLink, 14);
+    await expectKeyboardFocus(page, reportsLink, 24);
 
     const preparingOrderId = randomUUID();
     const freshOrderId = randomUUID();
