@@ -316,6 +316,14 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await expect(
     page.getByRole("list", { name: "وضعیت قدم‌های راه‌اندازی" }),
   ).toBeVisible();
+  const setupSteps = page.getByRole("list", { name: "وضعیت قدم‌های راه‌اندازی" });
+  await expect(setupSteps.getByText("معرفی فروشگاه").locator("..")).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  await expect(setupSteps.getByText("ظاهر فروشگاه").locator("..")).toContainText(
+    "اختیاری",
+  );
   await expect(
     page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" }),
   ).toBeVisible();
