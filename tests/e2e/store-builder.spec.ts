@@ -93,6 +93,11 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
     return response.json();
   }
   await storeNameInput.fill("پیش‌نویس خانه ماه");
+  await page.getByLabel("شناسه لینک").fill("x");
+  await page.getByRole("button", { name: "ذخیره و خروج" }).click();
+  await expect(page.getByText("شناسه لینک باید دست‌کم سه نویسه و با قالب نمونه باشد.")).toBeVisible();
+  await expect(page).toHaveURL(/\/seller\/store\/setup/);
+  await page.getByLabel("شناسه لینک").clear();
   const draftSave = page.waitForResponse(
     (response) =>
       response.url().endsWith("/api/store/seller/store/draft") &&
@@ -306,6 +311,7 @@ test("seller builds, refreshes, previews and publishes a minimal store", async (
   await page.goto("/seller/store");
   await page.getByRole("link", { name: "ادامه راه‌اندازی" }).click();
   await expect(page.getByText("قدم ۱ از ۳")).toBeVisible();
+  await expect(page.getByRole("list", { name: "وضعیت قدم‌های راه‌اندازی" })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "بازگشت به وضعیت فروشگاه" }),
   ).toBeVisible();
