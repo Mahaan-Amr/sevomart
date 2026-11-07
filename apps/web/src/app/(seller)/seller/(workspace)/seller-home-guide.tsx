@@ -26,20 +26,18 @@ export function SellerHomeGuide() {
             ? null
             : storeDraftContract.parse(await storeResponse.json());
         if (!storeResponse.ok && storeResponse.status !== 404) throw new Error();
-        if (store?.status === "PUBLISHED") setSlug(store.slug);
-        const productsResponse =
-          store === null
-            ? null
-            : await fetch("/api/store/seller/products?limit=1", {
-                cache: "no-store",
-                signal: controller.signal,
-              });
-        if (productsResponse && !productsResponse.ok) throw new Error();
-        const hasProduct =
-          store === null
-            ? false
-            : sellerProductListContract.parse(await productsResponse!.json()).items
-                .length > 0;
+        let hasProduct = false;
+        if (store?.status === "PUBLISHED") {
+          setSlug(store.slug);
+          const productsResponse = await fetch("/api/store/seller/products?limit=1", {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          if (!productsResponse.ok) throw new Error();
+          hasProduct =
+            sellerProductListContract.parse(await productsResponse.json()).items
+              .length > 0;
+        }
         const step = guideProgress(store?.status === "PUBLISHED", hasProduct);
         setProgress({ step });
         setOpen(step !== 3);
@@ -61,7 +59,17 @@ export function SellerHomeGuide() {
         <p role="alert">وضعیت راهنمای آغاز دریافت نشد. صفحه را دوباره بررسی کنید.</p>
       </div>
     );
-  if (!progress) return <p role="status">در حال بررسی مسیر آغاز…</p>;
+  if (!progress)
+    return (
+      <div className={styles.guide}>
+        {slug && (
+          <Link className={styles.secondary} href={`/s/${slug}`}>
+            پیش‌نمایش خریدار
+          </Link>
+        )}
+        <p role="status">در حال بررسی مسیر آغاز…</p>
+      </div>
+    );
   const { step } = progress;
   return (
     <section className={styles.guide} aria-labelledby="guide-title">
