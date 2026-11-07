@@ -131,7 +131,12 @@ export const releaseBuyerTestMobiles = Array.from({ length: 12 }, (_, index) =>
   testMobile(124 + index),
 );
 
+export const sellerPasswordTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(230 + index),
+);
+
 export const allE2eTestMobiles = [
+  ...sellerPasswordTestMobiles,
   ...storefrontTestMobiles,
   ...acceptanceTestMobiles,
   ...sellerIntroductionTestMobiles,
