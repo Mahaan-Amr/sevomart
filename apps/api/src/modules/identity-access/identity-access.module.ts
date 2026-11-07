@@ -35,6 +35,7 @@ import {
 } from "./public";
 import { SellerApplicationController } from "./seller-application.controller";
 import { PlatformSellerApplicationController } from "./platform-seller-application.controller";
+import { PlatformSessionSecurityController } from "./platform-session-security.controller";
 import { PlatformAgentAuthController } from "./platform-agent-auth.controller";
 import { PlatformAgentTotpService } from "./application/platform-agent-totp.service";
 import { PlatformAgentOtpService } from "./application/platform-agent-otp.service";
@@ -73,6 +74,7 @@ export class IdentityAccessModule {
         SellerApplicationController,
         PlatformSellerApplicationController,
         PlatformAgentAuthController,
+        PlatformSessionSecurityController,
         SellerApprovalRecoveryController,
         PlatformAccessController,
       ],

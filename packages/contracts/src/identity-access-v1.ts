@@ -62,6 +62,7 @@ export const platformAgentAuthV1Paths = {
   verifyOtp: "/v1/platform/auth/otp/verifications",
   beginTotpEnrollment: "/v1/platform/auth/totp/enrollment",
   createTotpProof: "/v1/platform/auth/totp/proofs",
+  revokePublicSessions: "/v1/platform/security/session-revocations",
   confirmTotpEnrollment: "/v1/platform/auth/totp/enrollment/confirmation",
 } as const;
 
@@ -373,6 +374,11 @@ export const totpActionProofContract = z.object({
   expiresAt: z.string().datetime({ offset: true }),
 });
 
+export const sessionSecurityRevocationRequestContract = totpActionProofRequestContract
+  .omit({ code: true, action: true })
+  .extend({ proof: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
+  .strict();
+
 export const actorContextContract = z.object({
   identityId: z.string().uuid(),
   audience: z.literal("PUBLIC"),
@@ -427,6 +433,7 @@ export const identityAccessV1Schemas = {
   TotpConfirmation: totpConfirmationContract,
   TotpActionProofRequest: totpActionProofRequestContract,
   TotpActionProof: totpActionProofContract,
+  SessionSecurityRevocationRequest: sessionSecurityRevocationRequestContract,
   TotpError: z.object({
     code: z.string(),
     message: z.string(),

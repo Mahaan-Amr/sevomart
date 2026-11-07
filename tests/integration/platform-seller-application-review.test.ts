@@ -734,7 +734,7 @@ describe("platform seller application review API with PostgreSQL", () => {
     apps.push(app);
     const server = app.getHttpAdapter().getInstance();
     await signIn(app, "09123456788");
-    await signIn(app, "09123456787");
+    const targetCookie = await signIn(app, "09123456787");
     const identityId = await identityIdForMobile("09123456788");
     const secondIdentityId = await identityIdForMobile("09123456787");
     const requestedBeforeBootstrap = await server.inject({
@@ -854,6 +854,139 @@ describe("platform seller application review API with PostgreSQL", () => {
       expiresAt: expect.any(String),
     });
     expect(proof.headers["cache-control"]).toBe("no-store");
+    const action = {
+      proof: proof.json<{ proof: string }>().proof,
+      targetIdentityId: secondIdentityId,
+      incidentId: "INC-100",
+      reason: "نشست‌های مشکوک",
+    };
+    const mismatch = await server.inject({
+      method: "POST",
+      url: "/v1/platform/security/session-revocations",
+      headers,
+      payload: { ...action, reason: "دلیل تغییر کرده" },
+    });
+    expect(mismatch.statusCode).toBe(403);
+    const permissions = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      await permissions`update identity_platform_permission_grants set revoked_at = now() where identity_id = ${identityId} and permission = 'SESSION_SECURITY' and revoked_at is null`;
+      const deniedAfterRevocation = await server.inject({
+        method: "POST",
+        url: "/v1/platform/security/session-revocations",
+        headers,
+        payload: action,
+      });
+      expect(deniedAfterRevocation.statusCode).toBe(403);
+      await permissions`insert into identity_platform_permission_grants (id, identity_id, permission, granted_at) values (${randomUUID()}, ${identityId}, 'SESSION_SECURITY', now())`;
+    } finally {
+      await permissions.end();
+    }
+    const staleGrantProof = await server.inject({
+      method: "POST",
+      url: "/v1/platform/security/session-revocations",
+      headers,
+      payload: action,
+    });
+    expect(staleGrantProof.statusCode).toBe(403);
+    vi.mocked(Date.now).mockReturnValue(instant + 30000);
+    const freshProof = await server.inject({
+      method: "POST",
+      url: "/v1/platform/auth/totp/proofs",
+      headers,
+      payload: { ...proofPayload, code: testTotp(secret, 1) },
+    });
+    expect(freshProof.statusCode).toBe(201);
+    action.proof = freshProof.json<{ proof: string }>().proof;
+    const lockDb = postgres(environment.DATABASE_URL, { max: 3 });
+    let unlock!: () => void;
+    let acquired!: () => void;
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      unlock = resolve;
+    });
+    try {
+      const holder = lockDb.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${secondIdentityId}, 273))`;
+        acquired();
+        await gate;
+      });
+      await held;
+      const waiting = server.inject({
+        method: "POST",
+        url: "/v1/platform/security/session-revocations",
+        headers,
+        payload: action,
+      });
+      let blocked = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const rows = await lockDb<
+          { blocked: boolean }[]
+        >`select exists(select 1 from pg_stat_activity where datname = current_database() and wait_event = 'advisory' and pid <> pg_backend_pid()) as blocked`;
+        if (rows[0]?.blocked) {
+          blocked = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(true);
+      vi.mocked(Date.now).mockReturnValue(instant + 301000);
+      unlock();
+      await holder;
+      expect((await waiting).statusCode).toBe(403);
+    } finally {
+      unlock();
+      await lockDb.end();
+    }
+    vi.mocked(Date.now).mockReturnValue(instant + 30000);
+    const revoked = await server.inject({
+      method: "POST",
+      url: "/v1/platform/security/session-revocations",
+      headers,
+      payload: action,
+    });
+    expect(revoked.statusCode).toBe(204);
+    const auditDb = postgres(environment.DATABASE_URL, { max: 1 });
+    try {
+      const audits = await auditDb<
+        { outcome: string; incidentId: string; revokedCount: number }[]
+      >`select outcome, incident_id as "incidentId", revoked_count as "revokedCount" from identity_session_security_audit where actor_identity_id = ${identityId} and target_identity_id = ${secondIdentityId} order by occurred_at`;
+      expect(audits).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            outcome: "SUCCEEDED",
+            incidentId: "INC-100",
+            revokedCount: 1,
+          }),
+        ]),
+      );
+      await expect(
+        auditDb`delete from identity_session_security_audit where actor_identity_id = ${identityId}`,
+      ).rejects.toThrow("append-only");
+    } finally {
+      await auditDb.end();
+    }
+    const replayAction = await server.inject({
+      method: "POST",
+      url: "/v1/platform/security/session-revocations",
+      headers,
+      payload: action,
+    });
+    expect(replayAction.statusCode).toBe(403);
+    const oldSession = await server.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers: { cookie: targetCookie },
+    });
+    expect(oldSession.statusCode).toBe(401);
+    const newCookie = await signIn(app, "09123456787");
+    const newSession = await server.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers: { cookie: newCookie },
+    });
+    expect(newSession.statusCode).toBe(200);
     const repeated = await server.inject({
       method: "POST",
       url: "/v1/platform/auth/totp/enrollment",

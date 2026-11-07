@@ -383,6 +383,28 @@ const operations = [
     ],
   },
   {
+    operationId: "revokePublicSessionsForSecurityIncident",
+    method: "post",
+    path: platformAgentAuthV1Paths.revokePublicSessions,
+    tag: "identity-access",
+    auth: "platform-agent-session",
+    request: {
+      schema: "SessionSecurityRevocationRequest",
+      example: {
+        proof: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        targetIdentityId: "00000000-0000-4000-8000-000000000001",
+        incidentId: "INC-100",
+        reason: "بررسی نشست مشکوک",
+      },
+    },
+    responses: [
+      { status: 204, noContent: true },
+      { status: 403, schema: "TotpError" },
+      { status: 422, schema: "TotpError" },
+      { status: 503, schema: "TotpError" },
+    ],
+  },
+  {
     operationId: "listPlatformSellerApplications",
     method: "get",
     path: platformSellerApplicationV1Paths.list,

@@ -65,6 +65,7 @@ export class PlatformAgentTotpService {
       session.status !== "ACTIVE" ||
       session.revokedAt ||
       session.expiresAt.getTime() <= now ||
+      session.createdAt.getTime() > now + 5000 ||
       session.createdAt.getTime() <= now - 300000
     )
       throw new TotpDeniedError();
@@ -73,7 +74,9 @@ export class PlatformAgentTotpService {
   private fresh(session: Session): boolean {
     const now = Date.now();
     return (
-      session.expiresAt.getTime() > now && session.createdAt.getTime() > now - 300000
+      session.expiresAt.getTime() > now &&
+      session.createdAt.getTime() <= now + 5000 &&
+      session.createdAt.getTime() > now - 300000
     );
   }
   async begin(token: string, correlationId: string) {
@@ -166,8 +169,9 @@ export class PlatformAgentTotpService {
     const result = await this.#sql.begin(async (transaction) => {
       const sql = transaction as unknown as Sql;
       const session = await this.session(sql, token);
-      const permission =
-        await sql`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'SESSION_SECURITY' and revoked_at is null for share`;
+      const permission = await sql<
+        { id: string }[]
+      >`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'SESSION_SECURITY' and revoked_at is null for share`;
       if (!permission.length) return null;
       const target =
         await sql`select id from identity_identities where id = ${input.targetIdentityId} and status = 'ACTIVE' for share`;
@@ -211,13 +215,75 @@ export class PlatformAgentTotpService {
       const proof = randomBytes(32).toString("base64url");
       await sql`update identity_totp_factors set last_counter = ${counter}, failed_attempts = 0, blocked_until = null where identity_id = ${session.identityId}`;
       await sql`delete from identity_totp_action_proofs where actor_identity_id = ${session.identityId} and expires_at <= clock_timestamp()`;
-      await sql`insert into identity_totp_action_proofs (id, token_hash, actor_identity_id, session_id, action, target_identity_id, payload_hash, created_at, expires_at)
-        values (${randomUUID()}, ${createHash("sha256").update(proof).digest("hex")}, ${session.identityId}, ${session.id}, ${input.action}, ${input.targetIdentityId}, ${hashTotpAction(input)}, ${new Date(now)}, ${expiresAt})`;
+      await sql`insert into identity_totp_action_proofs (id, token_hash, actor_identity_id, session_id, action, target_identity_id, payload_hash, created_at, expires_at, permission_grant_id)
+        values (${randomUUID()}, ${createHash("sha256").update(proof).digest("hex")}, ${session.identityId}, ${session.id}, ${input.action}, ${input.targetIdentityId}, ${hashTotpAction(input)}, ${new Date(now)}, ${expiresAt}, ${permission[0]!.id})`;
       await sql`insert into identity_totp_audit (id, identity_id, action, outcome, correlation_id) values (${randomUUID()}, ${session.identityId}, 'PROOF_CREATED', 'SUCCEEDED', ${correlationId})`;
       return { proof, expiresAt: expiresAt.toISOString() };
     });
     if (!result) throw new TotpDeniedError();
     return result;
+  }
+  async revokePublicSessions(
+    token: string,
+    input: {
+      proof: string;
+      targetIdentityId: string;
+      incidentId: string;
+      reason: string;
+    },
+    correlationId: string,
+  ): Promise<void> {
+    const result = await this.#sql.begin(async (transaction) => {
+      const sql = transaction as unknown as Sql;
+      await sql`select pg_advisory_xact_lock(hashtextextended(${input.targetIdentityId}, 273))`;
+      const session = await this.session(sql, token);
+      const permission = await sql<
+        { id: string }[]
+      >`select id from identity_platform_permission_grants where identity_id = ${session.identityId} and permission = 'SESSION_SECURITY' and revoked_at is null for share`;
+      const proofs = await sql<
+        {
+          id: string;
+          actorId: string;
+          sessionId: string;
+          targetId: string;
+          action: string;
+          payloadHash: string;
+          expiresAt: Date;
+          consumedAt: Date | null;
+          grantId: string | null;
+        }[]
+      >`
+        select id, actor_identity_id as "actorId", session_id as "sessionId", target_identity_id as "targetId", action, payload_hash as "payloadHash", expires_at as "expiresAt", consumed_at as "consumedAt", permission_grant_id as "grantId"
+        from identity_totp_action_proofs where token_hash = ${createHash("sha256").update(input.proof).digest("hex")} for update`;
+      const proof = proofs[0];
+      const now = new Date();
+      const valid =
+        permission.length > 0 &&
+        this.fresh(session) &&
+        proof &&
+        !proof.consumedAt &&
+        proof.expiresAt > now &&
+        proof.actorId === session.identityId &&
+        proof.sessionId === session.id &&
+        proof.grantId === permission[0]?.id &&
+        proof.targetId === input.targetIdentityId &&
+        proof.action === "REVOKE_PUBLIC_SESSIONS" &&
+        proof.payloadHash ===
+          hashTotpAction({ ...input, action: "REVOKE_PUBLIC_SESSIONS" });
+      if (!valid) {
+        await sql`insert into identity_session_security_audit (id, actor_identity_id, target_identity_id, action, incident_id, reason, revoked_count, outcome, correlation_id, occurred_at)
+          values (${randomUUID()}, ${session.identityId}, ${input.targetIdentityId}, 'REVOKE_PUBLIC_SESSIONS', ${input.incidentId}, ${input.reason}, 0, 'REJECTED', ${correlationId}, ${now})`;
+        return false;
+      }
+      const revoked = await sql<
+        { id: string }[]
+      >`update identity_sessions set revoked_at = ${now} where identity_id = ${input.targetIdentityId} and audience = 'PUBLIC' and revoked_at is null returning id`;
+      await sql`update identity_totp_action_proofs set consumed_at = ${now} where id = ${proof.id}`;
+      await sql`insert into identity_session_security_audit (id, actor_identity_id, target_identity_id, action, incident_id, reason, revoked_count, outcome, correlation_id, occurred_at)
+        values (${randomUUID()}, ${session.identityId}, ${input.targetIdentityId}, 'REVOKE_PUBLIC_SESSIONS', ${input.incidentId}, ${input.reason}, ${revoked.length}, 'SUCCEEDED', ${correlationId}, ${now})`;
+      return true;
+    });
+    if (!result) throw new TotpDeniedError();
   }
   async onModuleDestroy() {
     await this.#sql.end();
