@@ -80,7 +80,9 @@ async function captureAtViewport(
           const css = getComputedStyle(current);
           ancestors.push({ tag: current.tagName, className: current.className, color: css.color, background: css.backgroundColor, image: css.backgroundImage === "none" ? "none" : "present" });
         }
-        return { tag: element.tagName, className: element.className, color: computed.color, background: computed.backgroundColor, ancestors };
+        const rect = element.getBoundingClientRect();
+        const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return { tag: element.tagName, className: element.className, color: computed.color, background: computed.backgroundColor, ancestors, centerTopTag: top?.tagName, centerTopClass: top?.className };
       });
       console.log("[DEBUG-feed-style]", JSON.stringify(style));
     }
