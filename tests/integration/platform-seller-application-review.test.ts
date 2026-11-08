@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
 import * as notificationRuntime from "../../apps/worker/src/modules/notifications/index";
+import { canonicalWorkerRegistry } from "../../apps/worker/src/modules/registry";
 import { enqueueSellerApprovalNotification } from "../../apps/worker/src/modules/notifications/index";
 import { dispatchSellerApprovalNotification } from "../helpers/seller-approval-fake-dispatch";
 import { resolveSellerApprovalRecipient } from "../../apps/worker/src/modules/identity-access/index";
@@ -564,13 +565,20 @@ describe("platform seller application review API with PostgreSQL", () => {
     );
   });
 
-  it.each(["SIMULATED_ACCEPTED", "SIMULATED_FAILED"] as const)(
-    "records %s without claiming real delivery",
-    async (simulatedResult) => {
+  it.each([
+    { expected: "SIMULATED_ACCEPTED", recipient: "active" },
+    { expected: "SIMULATED_FAILED", recipient: "active" },
+    { expected: "UNKNOWN", recipient: "active" },
+    { expected: "NO_RECIPIENT", recipient: "inactive" },
+    { expected: "NO_RECIPIENT", recipient: "missing" },
+  ] as const)(
+    "records $expected for $recipient recipient without claiming real delivery",
+    async ({ expected, recipient }) => {
       const app = await createApiApp(environment);
       apps.push(app);
       const server = app.getHttpAdapter().getInstance();
       const applicantCookie = await signIn(app, "09123456786");
+      const applicantIdentityId = await identityIdForMobile("09123456786");
       const submitted = await server.inject({
         method: "POST",
         url: "/v1/seller-applications",
@@ -589,14 +597,17 @@ describe("platform seller application review API with PostgreSQL", () => {
         payload: { expectedRevision: 1, reasonCode: "ELIGIBILITY_CONFIRMED" },
       });
       expect(approved.statusCode).toBe(200);
-      const worker = new DurableOutboxWorker(environment.DATABASE_URL, {
-        consumerName: "notifications-seller-approval-v1",
-        log: () => {},
-        handlers: { "SellerApplicationApproved.v1": enqueueSellerApprovalNotification },
-      });
+      const handler = canonicalWorkerRegistry.find(
+        ({ owner }) => owner === "notifications",
+      )?.handlers[0];
+      expect(handler).toBeDefined();
+      const stop = await handler!.start(environment);
       const sql = postgres(environment.DATABASE_URL, { max: 1 });
       try {
-        expect(await worker.runOnce()).toBe("processed");
+        if (recipient === "inactive")
+          await sql`update identity_identities set status = 'SUSPENDED' where id = ${applicantIdentityId}`;
+        if (recipient === "missing")
+          await sql`delete from identity_login_methods where identity_id = ${applicantIdentityId}`;
         const [row] = await sql<
           { event_id: string; state: string }[]
         >`select event_id, state from notifications_seller_approval where application_id = ${applicationId}`;
@@ -610,18 +621,18 @@ describe("platform seller application review API with PostgreSQL", () => {
             {
               send: async () => {
                 sends += 1;
-                return simulatedResult;
+                return expected === "NO_RECIPIENT" ? "UNKNOWN" : expected;
               },
             },
           );
         await Promise.all([dispatch(), dispatch()]);
-        expect(sends).toBe(1);
+        expect(sends).toBe(recipient === "active" ? 1 : 0);
         const [result] = await sql<
           { state: string }[]
         >`select state from notifications_seller_approval where event_id = ${row!.event_id}`;
-        expect(result?.state).toBe(simulatedResult);
+        expect(result?.state).toBe(expected);
       } finally {
-        await worker.close();
+        await stop();
         await sql.end();
       }
     },
