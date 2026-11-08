@@ -1,1 +1,10 @@
 // Tables in this file are owned by the notifications module.
+
+model NotificationsSellerApproval {
+  eventId       String   @id @map("event_id") @db.Uuid
+  applicationId String   @map("application_id") @db.Uuid
+  state         String   @default("READY") @db.VarChar(24)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("notifications_seller_approval")
+}

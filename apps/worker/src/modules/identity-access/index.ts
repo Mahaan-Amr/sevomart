@@ -85,3 +85,18 @@ const sellerApprovalRecoveryWorker: WorkerHandler = {
 export const identity_access_workerHandlers: readonly WorkerHandler[] = [
   sellerApprovalRecoveryWorker,
 ];
+
+// Identity owns the lookup; consumers receive only the current verified destination.
+export async function resolveSellerApprovalRecipient(
+  sql: import("postgres").Sql,
+  applicationId: string,
+): Promise<string | null> {
+  const rows = await sql<{ mobile: string }[]>`
+    select m.mobile from identity_seller_applications a
+    join identity_identities i on i.id = a.identity_id
+    join identity_login_methods m on m.identity_id = i.id
+    where a.id = ${applicationId} and a.status = 'APPROVED'
+      and i.status = 'ACTIVE' and m.kind = 'MOBILE' and m.verified_at is not null
+  `;
+  return rows.length === 1 ? rows[0]!.mobile : null;
+}
