@@ -9,6 +9,11 @@ import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
+import * as notificationRuntime from "../../apps/worker/src/modules/notifications/index";
+import { canonicalWorkerRegistry } from "../../apps/worker/src/modules/registry";
+import { enqueueSellerApprovalNotification } from "../../apps/worker/src/modules/notifications/index";
+import { dispatchSellerApprovalNotification } from "../helpers/seller-approval-fake-dispatch";
+import { resolveSellerApprovalRecipient } from "../../apps/worker/src/modules/identity-access/index";
 import { startSellerApprovalRecoveryPoller } from "../../apps/worker/src/modules/identity-access/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
@@ -35,6 +40,7 @@ describe("platform seller application review API with PostgreSQL", () => {
     await sql`truncate identity_totp_bootstrap_run`;
     await sql`truncate identity_platform_permission_audit`;
     await sql`delete from identity_platform_permission_grants`;
+    await sql`delete from notifications_seller_approval`;
     await sql`delete from identity_seller_application_idempotency`;
     await sql`delete from identity_seller_approval_recoveries`;
     await sql`truncate identity_seller_application_audit`;
@@ -399,63 +405,75 @@ describe("platform seller application review API with PostgreSQL", () => {
       await sql.end();
     }
 
-    // This test-only consumer exercises the existing durable queue. It is not an
-    // SMS provider or a production worker, and sends no message to a phone.
-    const delivered = new Set<string>();
-    let attempts = 0;
+    // Production outbox consumer enqueues once; sending is a separate operation.
+    const logs: unknown[] = [];
     const worker = new DurableOutboxWorker(environment.DATABASE_URL, {
-      consumerName: "test-seller-approval-notification",
-      retryDelaysMs: [0],
-      log: () => {},
+      consumerName: "notifications-seller-approval-v1",
+      log: (record) => {
+        logs.push(record);
+      },
       handlers: {
-        "SellerApplicationApproved.v1": async (event) => {
-          attempts += 1;
-          expect(event.aggregateId).toBe(applicationId);
-          if (attempts === 1) throw new Error("test sender unavailable");
-          delivered.add(event.eventId);
+        "SellerApplicationApproved.v1": async (event, transaction) => {
+          await enqueueSellerApprovalNotification(event, transaction);
+          await enqueueSellerApprovalNotification(event, transaction);
         },
       },
     });
+    const notificationSql = postgres(environment.DATABASE_URL, { max: 1 });
     try {
-      expect(await worker.runOnce()).toBe("retry");
-      const notificationSql = postgres(environment.DATABASE_URL, { max: 1 });
-      try {
-        const pending = await notificationSql`
-          select status, attempt_count, last_error from platform_outbox_consumptions
-          where consumer_name = 'test-seller-approval-notification'
-        `;
-        expect(pending).toMatchObject([
-          { status: "READY", attempt_count: 1, last_error: "Error" },
-        ]);
-        // A failed sender has no bearing on the committed approval or access.
-        const status = await server.inject({
-          method: "GET",
-          url: "/v1/seller-applications/mine",
-          headers: { cookie: applicantCookie },
-        });
-        expect(status.json()).toMatchObject({ items: [{ status: "APPROVED" }] });
-        const access = await server.inject({
-          method: "GET",
-          url: "/v1/seller/store/draft",
-          headers: { cookie: applicantCookie },
-        });
-        expect(access.statusCode).toBe(200);
-        expect(await worker.runOnce()).toBe("processed");
-        expect(await worker.runOnce()).toBe("idle");
-        const result = await notificationSql`
-          select status, attempt_count, last_error from platform_outbox_consumptions
-          where consumer_name = 'test-seller-approval-notification'
-        `;
-        expect(result).toMatchObject([
-          { status: "PROCESSED", attempt_count: 2, last_error: null },
-        ]);
-        expect(attempts).toBe(2);
-        expect(delivered.size).toBe(1);
-      } finally {
-        await notificationSql.end();
-      }
+      expect(await worker.runOnce()).toBe("processed");
+      expect(await worker.runOnce()).toBe("idle");
+      const queued = await notificationSql`
+        select event_id, application_id, state from notifications_seller_approval
+        where application_id = ${applicationId}
+      `;
+      expect(queued).toHaveLength(1);
+      expect(queued[0]?.state).toBe("READY");
+      expect(JSON.stringify(queued)).not.toContain("09123456786");
+      const calls: string[] = [];
+      await expect(
+        notificationSql.begin(async () => {
+          await dispatchSellerApprovalNotification(
+            environment.DATABASE_URL,
+            queued[0]!.event_id,
+            resolveSellerApprovalRecipient,
+            {
+              send: async (mobile) => {
+                calls.push(mobile);
+                throw new Error("sensitive provider response secret-test-value");
+              },
+            },
+          );
+          throw new Error("rollback caller");
+        }),
+      ).rejects.toThrow("rollback caller");
+      await dispatchSellerApprovalNotification(
+        environment.DATABASE_URL,
+        queued[0]!.event_id,
+        resolveSellerApprovalRecipient,
+        {
+          send: async (mobile) => {
+            calls.push(mobile);
+            return "SIMULATED_ACCEPTED";
+          },
+        },
+      );
+      expect(calls).toEqual(["09123456786"]);
+      const result = await notificationSql`
+        select state from notifications_seller_approval where application_id = ${applicationId}
+      `;
+      expect(result).toMatchObject([{ state: "UNKNOWN" }]);
+      const persisted =
+        await notificationSql`select * from notifications_seller_approval where event_id = ${queued[0]!.event_id}`;
+      const receipts =
+        await notificationSql`select * from platform_outbox_consumptions where consumer_name = 'notifications-seller-approval-v1' and event_id = ${queued[0]!.event_id}`;
+      const observable = JSON.stringify({ persisted, receipts, logs });
+      expect(observable).not.toContain("09123456786");
+      expect(observable).not.toContain("sensitive provider response");
+      expect(observable).not.toContain("secret-test-value");
     } finally {
       await worker.close();
+      await notificationSql.end();
     }
 
     const mine = await server.inject({
@@ -539,6 +557,86 @@ describe("platform seller application review API with PostgreSQL", () => {
       },
     });
   });
+
+  it("exposes no runtime dispatch path while cutover remains undecided", () => {
+    expect(notificationRuntime.notifications_workerHandlers).toHaveLength(1);
+    expect(notificationRuntime).not.toHaveProperty(
+      "dispatchSellerApprovalNotification",
+    );
+  });
+
+  it.each([
+    { expected: "SIMULATED_ACCEPTED", recipient: "active" },
+    { expected: "SIMULATED_FAILED", recipient: "active" },
+    { expected: "UNKNOWN", recipient: "active" },
+    { expected: "NO_RECIPIENT", recipient: "inactive" },
+    { expected: "NO_RECIPIENT", recipient: "missing" },
+  ] as const)(
+    "records $expected for $recipient recipient without claiming real delivery",
+    async ({ expected, recipient }) => {
+      const app = await createApiApp(environment);
+      apps.push(app);
+      const server = app.getHttpAdapter().getInstance();
+      const applicantCookie = await signIn(app, "09123456786");
+      const applicantIdentityId = await identityIdForMobile("09123456786");
+      const submitted = await server.inject({
+        method: "POST",
+        url: "/v1/seller-applications",
+        headers: { cookie: applicantCookie, "idempotency-key": randomUUID() },
+        payload: applicationPayload(),
+      });
+      const applicationId = submitted.json<{ applicationId: string }>().applicationId;
+      await signIn(app, "09123456785");
+      const agent = await identityIdForMobile("09123456785");
+      const token = await seedPlatformSession(agent);
+      await grantReviewPermission(agent);
+      const approved = await server.inject({
+        method: "POST",
+        url: `/v1/platform/seller-applications/${applicationId}/approval`,
+        headers: { cookie: platformCookie(token), "idempotency-key": randomUUID() },
+        payload: { expectedRevision: 1, reasonCode: "ELIGIBILITY_CONFIRMED" },
+      });
+      expect(approved.statusCode).toBe(200);
+      const handler = canonicalWorkerRegistry.find(
+        ({ owner }) => owner === "notifications",
+      )?.handlers[0];
+      expect(handler).toBeDefined();
+      const stop = await handler!.start(environment);
+      const sql = postgres(environment.DATABASE_URL, { max: 1 });
+      try {
+        if (recipient === "inactive")
+          await sql`update identity_identities set status = 'SUSPENDED' where id = ${applicantIdentityId}`;
+        if (recipient === "missing")
+          await sql`delete from identity_login_methods where identity_id = ${applicantIdentityId}`;
+        const [row] = await sql<
+          { event_id: string; state: string }[]
+        >`select event_id, state from notifications_seller_approval where application_id = ${applicationId}`;
+        expect(row?.state).toBe("READY");
+        let sends = 0;
+        const dispatch = () =>
+          dispatchSellerApprovalNotification(
+            environment.DATABASE_URL,
+            row!.event_id,
+            resolveSellerApprovalRecipient,
+            {
+              send: async () => {
+                sends += 1;
+                return expected === "NO_RECIPIENT" ? "UNKNOWN" : expected;
+              },
+            },
+          );
+        await Promise.all([dispatch(), dispatch()]);
+        expect(sends).toBe(recipient === "active" ? 1 : 0);
+        const [result] = await sql<
+          { state: string }[]
+        >`select state from notifications_seller_approval where event_id = ${row!.event_id}`;
+        expect(result?.state).toBe(expected);
+      } finally {
+        await stop();
+        await sql.end();
+      }
+    },
+  );
 
   it("lets only one concurrent approval create seller access and a store", async () => {
     const app = await createApiApp(environment);

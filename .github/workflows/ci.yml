@@ -88,6 +88,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Start disposable PostgreSQL and apply migrations
         run: |
           docker compose -p sevo-recovery-ci up -d --build --wait postgres
@@ -119,6 +127,27 @@ jobs:
             exit 1
           fi
           docker compose -p sevo-recovery-ci exec -T postgres psql -U sevo -d sevo -v ON_ERROR_STOP=1 -c "SELECT 1 / CASE WHEN count(*) = 2 THEN 1 ELSE 0 END FROM identity_platform_superadmin_audit WHERE actor_kind = 'OWNER_RECOVERY' AND action IN ('RECOVERED', 'TOTP_ENROLLMENT_AUTHORIZED')"
+      - name: Start complete Compose stack with the notification worker
+        run: |
+          docker compose -p sevo-recovery-ci up -d --build --wait
+          docker compose -p sevo-recovery-ci exec -T worker node -e "fetch('http://127.0.0.1:3002/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+          docker compose -p sevo-recovery-ci exec -T postgres psql -v ON_ERROR_STOP=1 -U sevo -d sevo -c "SELECT event_id, application_id, state, updated_at FROM notifications_seller_approval LIMIT 0"
+      - name: Start native development path against disposable infrastructure
+        run: |
+          cp .env.example .env
+          export COMPOSE_PROJECT_NAME=sevo-recovery-ci
+          setsid pnpm dev > "$RUNNER_TEMP/sevo-native.log" 2>&1 &
+          native_pid=$!
+          trap 'kill -- -"$native_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 120); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3201/health/ready && curl -fsS -o /dev/null http://127.0.0.1:3202/health/ready && curl -fsS -o /dev/null http://127.0.0.1:3200/health; then
+              exit 0
+            fi
+            if ! kill -0 "$native_pid" 2>/dev/null; then break; fi
+            sleep 2
+          done
+          echo "Native development services did not become ready" >&2
+          exit 1
       - name: Remove disposable stack
         if: always()
         run: docker compose -p sevo-recovery-ci down --volumes --remove-orphans
