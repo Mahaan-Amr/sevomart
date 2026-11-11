@@ -209,6 +209,7 @@ function FeedGrid({
         const imageFocus = `${item.productId}:image`;
         const titleFocus = `${item.productId}:title`;
         const storeFocus = `${item.productId}:store`;
+        const detailFocus = `${item.productId}:detail`;
         const rememberOrigin = (focusTarget: string) =>
           onLeave(kind, window.scrollY, focusTarget);
         return (
@@ -266,7 +267,8 @@ function FeedGrid({
                   <Link
                     className={styles.homeProductLink}
                     href={`/s/${item.storeSlug}/products/${item.productId}`}
-                    onNavigate={() => rememberOrigin(titleFocus)}
+                    data-feed-focus={detailFocus}
+                    onNavigate={() => rememberOrigin(detailFocus)}
                   >
                     دیدن کالا
                   </Link>
