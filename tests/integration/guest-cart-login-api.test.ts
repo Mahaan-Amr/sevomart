@@ -468,19 +468,29 @@ describe("guest cart and login attachment HTTP API", () => {
     await priceCheck`
       update inventory_levels set on_hand = 4 where variant_id = ${other.variantId}
     `;
-    // Fail only after another reservation in the same group has already been inserted.
-    await priceCheck.unsafe(`create function test_reject_second_group_reservation() returns trigger language plpgsql as $$
-      begin
-        if exists (select 1 from inventory_reservations r join order_orders first_order on first_order.id = r.order_id
-          join order_orders new_order on new_order.id = NEW.order_id
-          where first_order.purchase_group_id = new_order.purchase_group_id) then
-          raise exception 'injected second reservation failure';
-        end if;
-        return NEW;
-      end $$`);
-    await priceCheck.unsafe(`create trigger test_reject_second_group_reservation before insert on inventory_reservations
-      for each row execute function test_reject_second_group_reservation()`);
+    // PostgreSQL sequences are nontransactional, so the marker survives rollback.
+    const marker = `test_reservation_${crypto.randomUUID().replaceAll("-", "")}`;
+    const trigger = `${marker}_trigger`;
+    const procedure = `${marker}_function`;
     try {
+      await priceCheck.unsafe(`create sequence ${marker}`);
+      await priceCheck.unsafe(`create function ${procedure}() returns trigger language plpgsql as $$
+        begin
+          if exists (
+            select 1 from inventory_reservations r
+            join order_orders first_order on first_order.id = r.order_id
+            join order_orders new_order on new_order.id = NEW.order_id
+            join order_purchase_groups purchase on purchase.id = new_order.purchase_group_id
+            where first_order.purchase_group_id = new_order.purchase_group_id
+              and purchase.checkout_revision = '${review.checkoutRevision}'::uuid
+          ) then
+            perform nextval('${marker}');
+            raise exception 'injected second reservation failure';
+          end if;
+          return NEW;
+        end $$`);
+      await priceCheck.unsafe(`create trigger ${trigger} before insert on inventory_reservations
+        for each row execute function ${procedure}()`);
       const partialFailure = await server.inject({
         method: "POST",
         url: "/v2/purchase-groups",
@@ -490,7 +500,11 @@ describe("guest cart and login attachment HTTP API", () => {
           cartRevision: review.cart.revision,
         },
       });
-      expect(partialFailure.statusCode).toBeGreaterThanOrEqual(400);
+      expect(partialFailure.statusCode).toBeGreaterThanOrEqual(500);
+      const fired = await priceCheck.unsafe<
+        Array<{ is_called: boolean; last_value: string }>
+      >(`select is_called, last_value from ${marker}`);
+      expect(fired[0]).toMatchObject({ is_called: true, last_value: "1" });
       const partialRows = await priceCheck<
         Array<{ groups: number; orders: number; reservations: number }>
       >`
@@ -501,9 +515,10 @@ describe("guest cart and login attachment HTTP API", () => {
       expect(partialRows[0]).toEqual({ groups: 0, orders: 0, reservations: 0 });
     } finally {
       await priceCheck.unsafe(
-        "drop trigger test_reject_second_group_reservation on inventory_reservations",
+        `drop trigger if exists ${trigger} on inventory_reservations`,
       );
-      await priceCheck.unsafe("drop function test_reject_second_group_reservation()");
+      await priceCheck.unsafe(`drop function if exists ${procedure}()`);
+      await priceCheck.unsafe(`drop sequence if exists ${marker}`);
     }
     await priceCheck.end();
     const createdResponse = await server.inject({
