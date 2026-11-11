@@ -95,6 +95,46 @@ it("opens one stable private thread for the same buyer, seller and store", async
   });
   expect(sellerView.statusCode).toBe(200);
   expect(sellerView.json().viewerRole).toBe("SELLER");
+  expect(sellerView.json().storeIdentity).toEqual({
+    name: "فروشگاه آزمون",
+    logoMediaId: null,
+  });
+  const list = await f.server.inject({
+    method: "GET",
+    url: "/v1/conversations",
+    headers: { cookie: f.buyer.cookie },
+  });
+  expect(list.statusCode).toBe(200);
+  expect(list.json().items[0].storeIdentity).toEqual({
+    name: "فروشگاه آزمون",
+    logoMediaId: null,
+  });
+  const stranger = await f.server.inject({
+    method: "GET",
+    url: `/v1/conversations/${thread.conversationId}`,
+    headers: { cookie: f.other.cookie },
+  });
+  expect(stranger.statusCode).toBe(403);
+  await f.sql`update store_stores set status = 'DRAFT' where id = ${f.storeId}`;
+  const unpublished = await f.server.inject({
+    method: "GET",
+    url: `/v1/conversations/${thread.conversationId}`,
+    headers: { cookie: f.buyer.cookie },
+  });
+  expect(unpublished.statusCode).toBe(200);
+  expect(unpublished.json()).not.toHaveProperty("storeIdentity");
+  const signedOut = await f.server.inject({
+    method: "DELETE",
+    url: "/v1/auth/session",
+    headers: { cookie: f.buyer.cookie },
+  });
+  expect(signedOut.statusCode).toBe(204);
+  const afterLogout = await f.server.inject({
+    method: "GET",
+    url: `/v1/conversations/${thread.conversationId}`,
+    headers: { cookie: f.buyer.cookie },
+  });
+  expect(afterLogout.statusCode).toBe(401);
 });
 
 it("sends one private message for repeated requests with the same key", async () => {

@@ -97,6 +97,13 @@ export const conversationThreadV1Contract = z
     conversationId: conversationIdContract,
     context: conversationContextV1Contract,
     viewerRole: conversationParticipantRoleV1Contract,
+    storeIdentity: z
+      .object({
+        name: z.string().min(2).max(80),
+        logoMediaId: mediaIdContract.nullable(),
+      })
+      .strict()
+      .optional(),
     createdAt: timestampV1Contract,
     updatedAt: timestampV1Contract,
   })

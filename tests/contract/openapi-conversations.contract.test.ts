@@ -83,5 +83,11 @@ describe("conversations v1 OpenAPI contract", () => {
       ConversationErrorV1: expect.any(Object),
       MessageSentV1: expect.any(Object),
     });
+    const threadSchema = document.components.schemas.ConversationThreadV1;
+    expect(threadSchema.properties.storeIdentity.properties).toHaveProperty("name");
+    expect(threadSchema.properties.storeIdentity.properties).toHaveProperty(
+      "logoMediaId",
+    );
+    expect(threadSchema.required).not.toContain("storeIdentity");
   });
 });

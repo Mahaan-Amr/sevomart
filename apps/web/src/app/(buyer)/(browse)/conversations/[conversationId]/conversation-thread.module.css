@@ -14,6 +14,17 @@
   border-block-end: 1px solid var(--color-divider);
 }
 
+.storeHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.storeHeader > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .heading a,
 .state a {
   width: fit-content;
@@ -138,6 +149,12 @@
 @media (max-width: 280px) {
   .composer {
     inset-block-end: calc(232px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 280px) and (max-height: 500px) {
+  .composer {
+    position: static;
   }
 }
 
