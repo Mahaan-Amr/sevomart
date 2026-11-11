@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { salesContentPublishedV2Contract } from "@sevo/contracts/content/v2";
+import { storePublishedV1Contract } from "@sevo/contracts/store/v1";
 
 import {
   publishPurchaseExperienceInputContract,
@@ -33,7 +35,10 @@ import {
 import { createPaidOrderItemFixture } from "../../apps/api/src/modules/orders/testing/paid-order-item.fixture";
 import { createPublishedProductFixture } from "../../apps/api/src/modules/product/testing/published-product.fixture";
 import { createOwnedSellableStoreFixture } from "../../apps/api/src/modules/store/testing/owned-sellable-store.fixture";
-import { projectContentProductState } from "../../apps/worker/src/modules/content/index";
+import {
+  projectContentProductState,
+  projectPublicSalesContent,
+} from "../../apps/worker/src/modules/content/index";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 2 });
@@ -372,6 +377,56 @@ describe("content producer persistence", () => {
       });
       expect(captionCreated.statusCode).toBe(201);
       captionContentId = captionCreated.json().contentId;
+      const now = new Date().toISOString();
+      await sql.begin((transaction) =>
+        projectPublicSalesContent(
+          storePublishedV1Contract.parse({
+            version: 1,
+            eventId: randomUUID(),
+            eventType: "StorePublished.v1",
+            aggregateId: fixtureStoreId,
+            aggregateVersion: 1,
+            occurredAt: now,
+            correlationId: randomUUID(),
+            causationId: randomUUID(),
+            actor: { type: "SYSTEM" },
+            payload: {
+              storeId: fixtureStoreId,
+              publicationStatus: "PUBLISHED",
+              publicationVersion: 1,
+            },
+          }),
+          transaction,
+        ),
+      );
+      const expectPublicCaption = async (revision: number, caption: string | null) => {
+        const [row] =
+          await sql`select event_id, aggregate_version, occurred_at, correlation_id, causation_id, payload from platform_outbox_events where aggregate_id = ${captionContentId} and event_type = 'SalesContentPublished.v2' and aggregate_version = ${revision}`;
+        expect(row).toBeDefined();
+        const event = salesContentPublishedV2Contract.parse({
+          version: 1,
+          eventId: row!.event_id,
+          eventType: "SalesContentPublished.v2",
+          aggregateId: captionContentId,
+          aggregateVersion: Number(row!.aggregate_version),
+          occurredAt: row!.occurred_at.toISOString(),
+          correlationId: row!.correlation_id,
+          causationId: row!.causation_id,
+          actor: { type: "SYSTEM" },
+          payload: row!.payload,
+        });
+        await sql.begin((transaction) => projectPublicSalesContent(event, transaction));
+        const publicFeed = await server.inject({
+          method: "GET",
+          url: `/v2/sales-content?storeIds=${fixtureStoreId}`,
+        });
+        expect(publicFeed.statusCode).toBe(200);
+        expect(publicFeed.json().items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ contentId: captionContentId, caption }),
+          ]),
+        );
+      };
       const readCaption = async () =>
         server.inject({
           method: "GET",
@@ -382,6 +437,7 @@ describe("content producer persistence", () => {
         caption: "متن آغازین کالا",
         revision: 1,
       });
+      await expectPublicCaption(1, "متن آغازین کالا");
       const editedCaption = await server.inject({
         method: "PUT",
         url: `/v2/seller/sales-content/${captionContentId}`,
@@ -398,6 +454,7 @@ describe("content producer persistence", () => {
         caption: "توضیح ویرایش‌شده",
         revision: 2,
       });
+      await expectPublicCaption(2, "توضیح ویرایش‌شده");
       const removedCaption = await server.inject({
         method: "PUT",
         url: `/v2/seller/sales-content/${captionContentId}`,
@@ -410,6 +467,7 @@ describe("content producer persistence", () => {
         },
       });
       expect(removedCaption.statusCode).toBe(200);
+      await expectPublicCaption(3, null);
       expect((await readCaption()).json()).toMatchObject({
         caption: null,
         revision: 3,
@@ -518,9 +576,11 @@ describe("content producer persistence", () => {
         await sql`delete from content_audits where aggregate_id = ${contentId}`;
       }
       if (captionContentId) {
+        await sql`delete from content_public_sales_contents where content_id = ${captionContentId}`;
         await sql`delete from platform_outbox_events where aggregate_id = ${captionContentId}`;
         await sql`delete from content_audits where aggregate_id = ${captionContentId}`;
       }
+      await sql`delete from content_public_store_states where store_id = ${fixtureStoreId}`;
       if (sellerId) {
         await sql`delete from content_idempotency_records where actor_id = ${sellerId}`;
         await sql`delete from content_sales_content_products where content_id in (select id from content_sales_contents where actor_identity_id = ${sellerId})`;
