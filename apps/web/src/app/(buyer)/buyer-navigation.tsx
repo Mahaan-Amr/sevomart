@@ -11,7 +11,13 @@ import {
 } from "./buyer-navigation-routes";
 import styles from "./buyer-navigation.module.css";
 
-export function BuyerNavigation({ seller = false }: { seller?: boolean }) {
+export function BuyerNavigation({
+  seller = false,
+  signedIn = false,
+}: {
+  seller?: boolean;
+  signedIn?: boolean;
+}) {
   const pathname = usePathname();
   const { rememberScroll } = useFeedWorkspace();
   if (!showBuyerNavigation(pathname)) return null;
@@ -20,8 +26,8 @@ export function BuyerNavigation({ seller = false }: { seller?: boolean }) {
     label: string;
     icon?: BuyerDestination;
   }> = [
-    { href: seller ? "/profile" : "/", label: seller ? "پروفایل" : "کشف" },
-    { href: "/", label: "فید", icon: "/following" },
+    { href: seller ? "/profile" : "/", label: seller ? "پروفایل" : "خانه" },
+    { href: "/discover", label: "کشف", icon: "/following" },
     { href: "/cart", label: "سبد" },
     { href: "/orders", label: "سفارش‌ها" },
     { href: "/conversations", label: "گفت‌وگوها" },
@@ -55,11 +61,17 @@ export function BuyerNavigation({ seller = false }: { seller?: boolean }) {
             aria-label={label}
             title={label}
             aria-current={activeIndex === index ? "page" : undefined}
-            scroll={href !== "/" && href !== "/following"}
+            scroll={href !== "/" && href !== "/discover" && href !== "/following"}
             onClick={() => {
-              if (pathname === "/" || pathname === "/following") {
+              if (
+                pathname === "/" ||
+                pathname === "/discover" ||
+                pathname === "/following"
+              ) {
                 rememberScroll(
-                  pathname === "/" ? "discovery" : "following",
+                  pathname === "/following" || (pathname === "/" && signedIn)
+                    ? "following"
+                    : "discovery",
                   window.scrollY,
                 );
               }

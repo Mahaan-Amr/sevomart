@@ -11,7 +11,7 @@ export function FeedTabs() {
   return (
     <nav className={styles.feedTabs} aria-label="فید فروشگاه‌ها">
       {[
-        { href: "/", label: "کشف" },
+        { href: "/discover", label: "کشف" },
         { href: "/following", label: "دنبال‌شده‌ها" },
       ].map(({ href, label }) => (
         <Link

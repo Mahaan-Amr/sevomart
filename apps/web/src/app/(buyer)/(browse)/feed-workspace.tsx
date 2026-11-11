@@ -86,7 +86,11 @@ export function FeedWorkspace({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!restored || !browseResume || (pathname !== "/" && pathname !== "/following"))
+    if (
+      !restored ||
+      !browseResume ||
+      (pathname !== "/" && pathname !== "/discover" && pathname !== "/following")
+    )
       return;
     const snapshot = browseResume;
     browseResume = undefined;

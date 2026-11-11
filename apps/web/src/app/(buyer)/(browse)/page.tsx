@@ -1,38 +1,16 @@
-import { firstParameter } from "../../../lib/navigation";
 import { cookies } from "next/headers";
-import {
-  canInviteSeller,
-  readSellerWorkspaceAccess,
-} from "../../../lib/seller-workspace-access";
+import { readIdentitySession } from "../../../lib/identity-api-proxy";
 import { FeedView } from "./feed-view";
-import { FeedTabs } from "./feed-tabs";
-import styles from "./discovery.module.css";
 
-export default async function DiscoveryPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ cursor?: string | string[] }>;
-}) {
-  const cursor = firstParameter((await searchParams).cursor);
-  const cookieHeader = (await cookies()).toString();
-  const access = cookieHeader
-    ? await readSellerWorkspaceAccess(cookieHeader)
-    : { kind: "SIGNED_OUT" as const };
+export default async function HomePage() {
+  const session = await readIdentitySession((await cookies()).toString());
   return (
-    <>
-      <section
-        id="discovery-feed"
-        className={styles.feedSection}
-        aria-labelledby="discovery-title"
-      >
-        <h1 id="discovery-title">کشف تازه‌ها</h1>
-        <FeedTabs />
-        <FeedView
-          kind="discovery"
-          initialCursor={cursor}
-          showSellerInvitation={canInviteSeller(access)}
-        />
-      </section>
-    </>
+    <section>
+      <h1>خانه</h1>
+      <FeedView
+        key={session ? "following" : "discovery"}
+        kind={session ? "following" : "discovery"}
+      />
+    </section>
   );
 }

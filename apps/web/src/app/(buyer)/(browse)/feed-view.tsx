@@ -54,7 +54,7 @@ export function FeedView({
         const body: unknown = await response.json();
         if (response.status === 401 && kind === "following") {
           saveDiscoveryForLogin();
-          window.location.assign(loginHref("/following", "/"));
+          window.location.assign(loginHref("/following", "/discover"));
           return;
         }
         if (!response.ok) {
@@ -149,7 +149,7 @@ export function FeedView({
           </span>
           <p>{state.emptyState.message}</p>
           {kind === "following" ? (
-            <Link href="/">{state.emptyState.nextAction}</Link>
+            <Link href="/discover">{state.emptyState.nextAction}</Link>
           ) : (
             <>
               <p>{state.emptyState.nextAction}</p>
@@ -260,7 +260,7 @@ function FeedError({
           تلاش دوباره
         </button>
       ) : null}
-      {error.goToDiscovery ? <Link href="/">بازگشت به کشف</Link> : null}
+      {error.goToDiscovery ? <Link href="/discover">بازگشت به کشف</Link> : null}
     </div>
   );
 }

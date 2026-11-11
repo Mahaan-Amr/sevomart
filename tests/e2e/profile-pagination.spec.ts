@@ -13,7 +13,8 @@ test("seller profile shows the next page when there are more than 30 products", 
   await page.goto("/");
   const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
   const tabs = page.getByRole("navigation", { name: "فید فروشگاه‌ها" });
-  await expect(navigation.getByRole("link", { name: "کشف" })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "خانه" })).toBeVisible();
+  await navigation.getByRole("link", { name: "کشف" }).click();
   await expect(tabs.getByRole("link", { name: "کشف" })).toBeVisible();
   await expect(tabs.getByRole("link", { name: "دنبال‌شده‌ها" })).toBeVisible();
   await page.goto("/profile");
