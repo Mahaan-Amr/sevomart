@@ -513,6 +513,8 @@ test("keeps the committed approval clear when the queue refresh fails", async ({
     page.getByText(/درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد/),
   ).toBeVisible();
   await expect(page.getByText(/تازه‌سازی صف انجام نشد/)).toBeVisible();
+  await page.waitForTimeout(3_200);
+  await expect(page.getByText(/تازه‌سازی صف انجام نشد/)).toBeVisible();
   await expect(page.getByText("صف در دسترس نیست.", { exact: true })).toHaveCount(0);
 });
 
