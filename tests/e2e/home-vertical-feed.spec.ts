@@ -40,15 +40,20 @@ test("guest home shows a vertical image-led feed with real store and availabilit
   expect(second!.y).toBeGreaterThan(first!.y + first!.height - 1);
   const imageLink = posts.first().getByRole("link", { name: /دیدن.*گزینه/ });
   await expect(imageLink).toHaveAttribute("href", new RegExp(item.productId));
+  await imageLink.scrollIntoViewIfNeeded();
+  const scrollBefore = await page.evaluate(() => window.scrollY);
   await imageLink.focus();
   await expect(imageLink).toBeFocused();
   expect(
     await imageLink.evaluate((element) => getComputedStyle(element).outlineStyle),
   ).not.toBe("none");
   await imageLink.click();
+  await expect(page).toHaveURL(new RegExp(item.productId));
   await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("listitem")).toHaveCount(2);
   await expect(imageLink).toBeFocused();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBefore);
 });
 
 test("signed-in buyer home displays followed products as vertical posts", async ({
