@@ -19,9 +19,14 @@ import styles from "./discovery.module.css";
 type FeedViewProps = {
   kind: FeedKind;
   initialCursor?: string;
+  showSellerInvitation?: boolean;
 };
 
-export function FeedView({ kind, initialCursor }: FeedViewProps) {
+export function FeedView({
+  kind,
+  initialCursor,
+  showSellerInvitation = false,
+}: FeedViewProps) {
   const { restored, states, setFeedState, saveForBrowse, saveDiscoveryForLogin } =
     useFeedWorkspace();
   const state = states[kind];
@@ -148,7 +153,9 @@ export function FeedView({ kind, initialCursor }: FeedViewProps) {
           ) : (
             <>
               <p>{state.emptyState.nextAction}</p>
-              <Link href="/seller/start">فروشنده شوید</Link>
+              {showSellerInvitation ? (
+                <Link href="/seller/start">فروشنده شوید</Link>
+              ) : null}
             </>
           )}
         </div>
