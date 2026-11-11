@@ -29,6 +29,34 @@ describe("identity session HTTP API with PostgreSQL", () => {
     return app;
   }
 
+  it("normalizes Persian mobile and Arabic OTP before validation and storage", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const challenge = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "۰۹۱۲۳۴۵۶۷۸۹" },
+    });
+    expect(challenge.statusCode).toBe(202);
+    const sql = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    try {
+      const rows =
+        await sql`select mobile from identity_otp_challenges where id = ${challenge.json().challengeId}::uuid`;
+      expect(rows[0]?.mobile).toBe("09123456789");
+      const verified = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId: challenge.json().challengeId, code: "١١١١١١" },
+      });
+      expect(verified.statusCode).toBe(200);
+      const methods =
+        await sql`select mobile from identity_login_methods where identity_id = ${verified.json().actor.identityId}::uuid`;
+      expect(methods[0]?.mobile).toBe("09123456789");
+    } finally {
+      await sql.end();
+    }
+  });
+
   it.each([
     ["GET", "/v1/auth/session", "row", "idle"],
     ["GET", "/v1/me/feeds/following", "row", "idle"],

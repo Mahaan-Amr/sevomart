@@ -371,6 +371,16 @@ export const otpVerificationContract = z.object({
   code: otpCodeContract,
 });
 
+// Public HTTP input permits local digit shapes; the controller normalizes them
+// before applying the canonical ASCII contracts and writing identity data.
+export const otpRequestUserInputContract = z.object({
+  mobile: z.string().regex(/^[0۰٠][9۹٩][0-9۰-۹٠-٩]{9}$/),
+});
+export const otpVerificationUserInputContract = z.object({
+  challengeId: otpChallengeIdContract,
+  code: z.string().regex(/^[0-9۰-۹٠-٩]{6}$/),
+});
+
 export const totpEnrollmentContract = z.object({
   secret: z.string().regex(/^[A-Z2-7]{32}$/),
 });
@@ -470,8 +480,10 @@ export const identityAccessV1Schemas = {
   PasswordLogin: passwordLoginContract,
   PasswordRecovery: passwordRecoveryContract,
   OtpRequest: otpRequestContract,
+  OtpRequestUserInput: otpRequestUserInputContract,
   OtpChallenge: otpChallengeContract,
   OtpVerification: otpVerificationContract,
+  OtpVerificationUserInput: otpVerificationUserInputContract,
   TotpEnrollment: totpEnrollmentContract,
   TotpConfirmation: totpConfirmationContract,
   TotpActionProofRequest: totpActionProofRequestContract,

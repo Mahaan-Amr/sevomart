@@ -141,9 +141,9 @@ test("signed-in buyer shell shows the masked identity and supports sign out", as
   page,
 }) => {
   await page.goto("/login?returnTo=%2F");
-  await page.getByLabel("شماره موبایل").fill("09123456789");
+  await page.getByLabel("شماره موبایل").fill("۰۹۱۲۳۴۵۶۷۸۹");
   await page.getByRole("button", { name: "دریافت کد" }).click();
-  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByLabel("کد شش‌رقمی").fill("١١١١١١");
   await page.getByRole("button", { name: "ورود" }).click();
 
   await expect(page).toHaveURL(/\/$/);

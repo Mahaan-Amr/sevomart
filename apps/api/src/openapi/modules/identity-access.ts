@@ -132,7 +132,7 @@ const operations = [
     tag: "identity-access",
     auth: "none",
     request: {
-      schema: "OtpRequest",
+      schema: "OtpRequestUserInput",
       example: identityAccessV1Examples.OtpRequest,
     },
     responses: [
@@ -149,7 +149,7 @@ const operations = [
     tag: "identity-access",
     auth: "none",
     request: {
-      schema: "OtpVerification",
+      schema: "OtpVerificationUserInput",
       example: identityAccessV1Examples.OtpVerification,
     },
     responses: [
@@ -201,7 +201,10 @@ const operations = [
     path: identityAccessV1Paths.requestPasswordRecovery,
     tag: "identity-access",
     auth: "none",
-    request: { schema: "OtpRequest", example: identityAccessV1Examples.OtpRequest },
+    request: {
+      schema: "OtpRequestUserInput",
+      example: identityAccessV1Examples.OtpRequest,
+    },
     responses: [
       { status: 202, schema: "OtpChallenge" },
       { status: 422, schema: "ValidationError" },
