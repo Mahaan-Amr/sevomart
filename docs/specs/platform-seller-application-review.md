@@ -53,6 +53,9 @@ DATABASE_URL=... pnpm platform:permission -- --action revoke \
 واگذاری به عامل دیگر فقط‌خواندنی است. موبایل، focus صفحه‌کلید، کنتراست، overflow و
 `prefers-reduced-motion` در E2E بررسی می‌شوند.
 
+در صف خالی راهنمای انتخاب پرونده نمایش داده نمی‌شود. پیام موفقیت تأیید پس از سه
+ثانیه حذف می‌شود؛ هشدار خطای تازه‌سازی صف باقی می‌ماند.
+
 ## راه‌اندازی و راستی‌آزمایی migration
 
 پنج migration این قابلیت به ترتیب grant و audit تصمیم، ستون permission audit،
