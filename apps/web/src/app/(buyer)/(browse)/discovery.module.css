@@ -170,10 +170,14 @@
 }
 .feedTabs {
   display: flex;
-  gap: 24px;
+  width: 100%;
+  min-width: 0;
   border-block-end: 1px solid var(--color-divider);
 }
 .feedTabs a {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
