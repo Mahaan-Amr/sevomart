@@ -778,11 +778,13 @@ export class PostgresCheckoutRepository
         createdAt: Date;
         itemCount: number;
         status: "PAID" | "CANCELLATION_PENDING_REFUND";
+        itemNames: string[];
       }>
     >`
       select orders.id as "orderId", orders.total_amount::float8 as "totalAmount",
         orders.paid_at as "paidAt", orders.created_at as "createdAt",
-        count(items.variant_id)::int as "itemCount", orders.status
+        count(items.variant_id)::int as "itemCount", orders.status,
+        array_agg(items.name order by items.name, items.variant_id) as "itemNames"
       from order_orders orders
       join order_items items on items.order_id = orders.id
       where orders.store_id = ${storeId}
@@ -798,6 +800,7 @@ export class PostgresCheckoutRepository
         paidAt: row.paidAt.toISOString(),
         createdAt: row.createdAt.toISOString(),
         itemCount: row.itemCount,
+        itemNames: row.itemNames,
       }),
     );
   }

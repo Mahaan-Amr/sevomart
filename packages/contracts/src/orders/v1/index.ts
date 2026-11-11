@@ -695,6 +695,7 @@ export const sellerActionableOrderContract = z
     paidAt: z.iso.datetime({ offset: true }),
     createdAt: z.iso.datetime({ offset: true }),
     itemCount: z.int().positive(),
+    itemNames: z.array(z.string().min(1).max(120)).optional(),
   })
   .strict();
 

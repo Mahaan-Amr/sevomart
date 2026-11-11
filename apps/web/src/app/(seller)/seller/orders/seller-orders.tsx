@@ -103,49 +103,66 @@ export function SellerOrders({
               : "فعلاً سفارشی برای اقدام ندارید."}
           </p>
         ) : null}
-        <ul className={styles.orders}>
-          {orders?.map(({ order, fulfillmentStatus }) => (
-            <li key={order.orderId}>
-              <div className={styles.orderHeader}>
-                <div>
-                  <span className={styles.state}>
-                    {order.status === "CANCELLATION_PENDING_REFUND"
-                      ? "در انتظار بازپرداخت"
-                      : statusLabel(fulfillmentStatus)}
-                  </span>
-                  <p className={styles.date}>
-                    ثبت سفارش:{" "}
-                    <time dateTime={order.createdAt}>
-                      {new Intl.DateTimeFormat("fa-IR", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                        timeZone: "Asia/Tehran",
-                      }).format(new Date(order.createdAt))}
-                    </time>
-                  </p>
-                </div>
-                <strong>{formatIrrAsToman(order.total.amount)}</strong>
-              </div>
-              <p className={styles.count}>
-                {order.itemCount.toLocaleString("fa-IR")} کالا
-              </p>
-              <details className={styles.identifier}>
-                <summary>شناسه سفارش</summary>
-                <span dir="ltr">{order.orderId}</span>
-              </details>
-              <Link
-                className={styles.action}
-                href={
-                  order.status === "PAID"
-                    ? `/seller/orders/${order.orderId}`
-                    : `/seller/orders/${order.orderId}/refund`
-                }
-              >
-                {order.status === "PAID" ? "انجام سفارش" : "دیدن وضعیت بازپرداخت"}
-              </Link>
-            </li>
-          ))}
-        </ul>
+        {orderGroups.map(({ title, matches }) => {
+          const group = orders?.filter(matches) ?? [];
+          if (!group.length) return null;
+          return (
+            <section className={styles.group} key={title} aria-label={title}>
+              <h2>
+                {title} <span>{group.length.toLocaleString("fa-IR")}</span>
+              </h2>
+              <ul className={styles.orders}>
+                {group.map(({ order, fulfillmentStatus }) => (
+                  <li key={order.orderId}>
+                    <Link
+                      className={styles.orderLink}
+                      aria-label={`${order.status === "PAID" ? "انجام سفارش" : "دیدن وضعیت بازپرداخت"}، ${itemSummary(order)}، ${order.orderId}`}
+                      href={
+                        order.status === "PAID"
+                          ? `/seller/orders/${order.orderId}`
+                          : `/seller/orders/${order.orderId}/refund`
+                      }
+                    >
+                      <p className={styles.productName}>{itemSummary(order)}</p>
+                      <div className={styles.orderHeader}>
+                        <div>
+                          <span className={styles.state}>
+                            {order.status === "CANCELLATION_PENDING_REFUND"
+                              ? "در انتظار بازپرداخت"
+                              : statusLabel(fulfillmentStatus)}
+                          </span>
+                          <p className={styles.date}>
+                            ثبت سفارش:{" "}
+                            <time dateTime={order.createdAt}>
+                              {new Intl.DateTimeFormat("fa-IR", {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                                timeZone: "Asia/Tehran",
+                              }).format(new Date(order.createdAt))}
+                            </time>
+                          </p>
+                        </div>
+                        <strong>{formatIrrAsToman(order.total.amount)}</strong>
+                      </div>
+                      <p className={styles.count}>
+                        {order.itemCount.toLocaleString("fa-IR")} کالا
+                      </p>
+                      <span className={styles.action}>
+                        {order.status === "PAID"
+                          ? "انجام سفارش"
+                          : "دیدن وضعیت بازپرداخت"}
+                      </span>
+                    </Link>
+                    <details className={styles.identifier}>
+                      <summary>شناسه سفارش</summary>
+                      <span dir="ltr">{order.orderId}</span>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })}
         <Link className={styles.buyerSearchLink} href="/seller/orders/buyers">
           پیدا کردن خریدار یک سفارش
         </Link>
@@ -153,6 +170,46 @@ export function SellerOrders({
     </main>
   );
 }
+
+function itemSummary(order: SellerActionableOrder) {
+  const names = order.itemNames ?? [];
+  if (!names.length) return "جزئیات کالا در سفارش";
+  return (
+    names.slice(0, 2).join("، ") +
+    (names.length > 2
+      ? ` و ${(names.length - 2).toLocaleString("fa-IR")} کالای دیگر`
+      : "")
+  );
+}
+
+const orderGroups: Array<{ title: string; matches: (entry: ListedOrder) => boolean }> =
+  [
+    {
+      title: "نیازمند اقدام",
+      matches: ({ order, fulfillmentStatus }) =>
+        order.status === "PAID" && fulfillmentStatus === "ACTION_REQUIRED",
+    },
+    {
+      title: "در حال آماده‌سازی",
+      matches: ({ order, fulfillmentStatus }) =>
+        order.status === "PAID" && fulfillmentStatus === "PREPARING",
+    },
+    {
+      title: "ارسال‌شده",
+      matches: ({ order, fulfillmentStatus }) =>
+        order.status === "PAID" && fulfillmentStatus === "SHIPPED",
+    },
+    {
+      title: "در انتظار بازپرداخت",
+      matches: ({ order }) => order.status === "CANCELLATION_PENDING_REFUND",
+    },
+    {
+      title: "در حال بررسی وضعیت",
+      matches: ({ order, fulfillmentStatus }) =>
+        order.status === "PAID" &&
+        !["ACTION_REQUIRED", "PREPARING", "SHIPPED"].includes(fulfillmentStatus ?? ""),
+    },
+  ];
 
 function statusLabel(status?: FulfillmentStatus) {
   switch (status) {

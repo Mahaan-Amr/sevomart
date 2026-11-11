@@ -89,6 +89,21 @@ describe("related store buyers and contextual delivery reveal", () => {
         recipientMobile: "09901234567",
         createdAt: "2026-08-31T09:00:00.000Z",
       });
+      for (const orderId of [first.orderId, unrelated.orderId]) {
+        await sql`insert into order_items (order_id, variant_id, product_id, name, quantity, unit_price_amount, publication_version)
+          values (${orderId}, ${randomUUID()}, ${randomUUID()}, ${orderId === first.orderId ? "ماگ نمونه" : "کالای فروشگاه دیگر"}, 1, 1000, 1)`;
+      }
+      const actionable = await server.inject({
+        method: "GET",
+        url: "/v1/seller/orders",
+        headers: { cookie },
+      });
+      expect(actionable.statusCode).toBe(200);
+      expect(actionable.json().orders).toMatchObject([
+        { orderId: first.orderId, itemNames: ["ماگ نمونه"] },
+      ]);
+      expect(JSON.stringify(actionable.json())).not.toContain("کالای فروشگاه دیگر");
+      expect(JSON.stringify(actionable.json())).not.toContain("09123456789");
       const deliveredEvent = await projectFulfillmentStatus(
         first.orderId,
         4,
@@ -464,6 +479,7 @@ async function cleanupOrder(fixture: ReturnType<typeof orderFixture>) {
   await sql`delete from order_fulfillment_status_projections where order_id = ${fixture.orderId}`;
   await sql`delete from order_delivery_snapshots where order_id = ${fixture.orderId}`;
   await sql`update order_checkout_preparations set consumed_order_id = null where checkout_revision = ${fixture.checkoutId}`;
+  await sql`delete from order_items where order_id = ${fixture.orderId}`;
   await sql`delete from order_orders where id = ${fixture.orderId}`;
   await sql`delete from order_checkout_preparations where checkout_revision = ${fixture.checkoutId}`;
   await sql`delete from order_carts where id = ${fixture.cartId}`;

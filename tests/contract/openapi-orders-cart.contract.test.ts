@@ -126,5 +126,8 @@ describe("OpenAPI guest cart and login attachment", () => {
         DirectPaymentAttemptConfirmedV1: expect.any(Object),
       }),
     );
+    const sellerOrder = document.components.schemas.SellerActionableOrder;
+    expect(sellerOrder.properties.itemNames.type).toBe("array");
+    expect(sellerOrder.required).not.toContain("itemNames");
   });
 });

@@ -22,6 +22,8 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
   const mobile = sellerFulfillmentTestMobiles[index]!;
   const orderId = randomUUID();
   const deniedOrderId = randomUUID();
+  const preparingOrderId = randomUUID();
+  const shippedOrderId = randomUUID();
   const awaitingProjectionId = randomUUID();
   const refundOrderId = randomUUID();
   let status: "ACTION_REQUIRED" | "PREPARING" | "SHIPPED" | "DELIVERED" =
@@ -45,6 +47,29 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
   const { identityId } = fixture;
 
   await page.route("**/api/seller/orders/*/fulfillment**", async (route) => {
+    for (const [id, current, next] of [
+      [preparingOrderId, "PREPARING", "SHIPPED"],
+      [shippedOrderId, "SHIPPED", "DELIVERED"],
+    ] as const) {
+      if (route.request().url().includes(id)) {
+        await route.fulfill({
+          json: {
+            orderId: id,
+            status: current,
+            nextStatus: next,
+            timeline: [
+              {
+                status: current,
+                actor: { type: "SYSTEM" },
+                occurredAt: "2026-08-31T08:00:00.000Z",
+                correlationId: randomUUID(),
+              },
+            ],
+          },
+        });
+        return;
+      }
+    }
     if (route.request().url().includes(awaitingProjectionId)) {
       await route.fulfill({ status: 404, json: {} });
       return;
@@ -153,14 +178,17 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
     await route.fulfill({
       status: 200,
       json: {
-        orders: [orderId, deniedOrderId].map((listedOrderId) => ({
-          orderId: listedOrderId,
-          status: "PAID",
-          total: { amount: 12_500_000, currency: "IRR" },
-          paidAt: "2026-08-31T07:00:00.000Z",
-          createdAt: "2026-08-31T06:00:00.000Z",
-          itemCount: 2,
-        })),
+        orders: [orderId, deniedOrderId, preparingOrderId, shippedOrderId].map(
+          (listedOrderId) => ({
+            orderId: listedOrderId,
+            status: "PAID",
+            total: { amount: 12_500_000, currency: "IRR" },
+            paidAt: "2026-08-31T07:00:00.000Z",
+            createdAt: "2026-08-31T06:00:00.000Z",
+            itemCount: 2,
+            itemNames: ["ماگ سرامیکی", "بشقاب"],
+          }),
+        ),
       },
     });
   });
@@ -177,26 +205,48 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
     ).toBeVisible();
     listMode = "special";
     await page.reload();
+    await expect(
+      page.getByRole("region", { name: "در حال بررسی وضعیت" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "در انتظار بازپرداخت" }),
+    ).toBeVisible();
     await expect(page.getByText("وضعیت در حال بررسی")).toBeVisible();
-    await expect(page.getByText("در انتظار بازپرداخت")).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "در انتظار بازپرداخت" })
+        .getByText("در انتظار بازپرداخت", { exact: true })
+        .last(),
+    ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "دیدن وضعیت بازپرداخت" }),
     ).toHaveAttribute("href", `/seller/orders/${refundOrderId}/refund`);
     listMode = "ready";
     await page.reload();
+    await expect(page.getByRole("region", { name: "نیازمند اقدام" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "در حال آماده‌سازی" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "ارسال‌شده" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "نیازمند اقدام" })
+        .getByText("ماگ سرامیکی، بشقاب"),
+    ).toBeVisible();
     await expect(page.getByText(deniedOrderId)).toHaveCount(0);
     await expect(page.getByText("نیازمند شروع آماده‌سازی")).toBeVisible();
-    await expect(page.getByText("۲ کالا")).toBeVisible();
-    await expect(page.getByText("ثبت سفارش:", { exact: false })).toBeVisible();
-    await page.getByText("شناسه سفارش", { exact: true }).click();
+    const firstOrder = page.getByRole("region", { name: "نیازمند اقدام" });
+    await expect(firstOrder.getByText("۲ کالا")).toBeVisible();
+    await expect(firstOrder.getByText("ثبت سفارش:", { exact: false })).toBeVisible();
+    await firstOrder.getByText("شناسه سفارش", { exact: true }).click();
     await expect(page.getByText(orderId, { exact: true })).toBeVisible();
     await assertNoHorizontalOverflow(page);
-    await assertInteractiveTargets(page.getByRole("link", { name: "انجام سفارش" }));
-    await assertMinimumContrast(page.getByRole("link", { name: "انجام سفارش" }));
-    await page.getByRole("link", { name: "انجام سفارش" }).focus();
-    await expect(page.getByRole("link", { name: "انجام سفارش" })).toBeFocused();
-    await expect(page.getByRole("link", { name: "انجام سفارش" })).toHaveCount(1);
-    await page.getByRole("link", { name: "انجام سفارش" }).click();
+    await assertInteractiveTargets(
+      firstOrder.getByRole("link", { name: "انجام سفارش" }),
+    );
+    await assertMinimumContrast(firstOrder.getByRole("link", { name: "انجام سفارش" }));
+    await firstOrder.getByRole("link", { name: "انجام سفارش" }).focus();
+    await expect(firstOrder.getByRole("link", { name: "انجام سفارش" })).toBeFocused();
+    await expect(page.getByRole("link", { name: "انجام سفارش" })).toHaveCount(3);
+    await firstOrder.getByRole("link", { name: "انجام سفارش" }).click();
     await expect(page).toHaveURL(new RegExp(`/seller/orders/${orderId}$`));
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
     await expect(page.getByRole("heading", { name: "انجام سفارش" })).toBeVisible();
