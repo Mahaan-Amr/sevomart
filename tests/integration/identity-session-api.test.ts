@@ -496,6 +496,68 @@ describe("identity session HTTP API with PostgreSQL", () => {
     expect(JSON.stringify(limited.json())).not.toContain("09120000001");
   });
 
+  it("shares OTP request limits across digit scripts and rejects malformed numbers", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const invalid = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "۰۹۱۲۳۴۵۶۷۸x" },
+    });
+    expect(invalid.statusCode).toBe(422);
+    const spellings = ["09120000001", "۰۹۱۲۰۰۰۰۰۰۱", "٠٩١٢٠٠٠٠٠٠١"];
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/requests",
+        payload: { mobile: spellings[attempt % spellings.length] },
+      });
+      expect(result.statusCode).toBe(202);
+    }
+    const limited = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: spellings[2] },
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(JSON.stringify(limited.json())).not.toMatch(
+      /09120000001|۰۹۱۲۰۰۰۰۰۰۱|٠٩١٢٠٠٠٠٠٠١/,
+    );
+  });
+
+  it("locks a challenge after wrong codes in mixed scripts and rejects malformed codes", async () => {
+    const app = await startApp();
+    const server = app.getHttpAdapter().getInstance();
+    const requested = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/requests",
+      payload: { mobile: "۰۹۱۲۳۴۵۶۷۸۹" },
+    });
+    expect(requested.statusCode).toBe(202);
+    const challengeId = requested.json<{ challengeId: string }>().challengeId;
+    const malformed = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId, code: "۲۲۲۲۲x" },
+    });
+    expect(malformed.statusCode).toBe(422);
+    for (const code of ["222222", "۲۲۲۲۲۲", "٢٢٢٢٢٢", "۲۲۲۲۲۲", "222222"]) {
+      const rejected = await server.inject({
+        method: "POST",
+        url: "/v1/auth/otp/verifications",
+        payload: { challengeId, code },
+      });
+      expect(rejected.statusCode).toBe(401);
+    }
+    const locked = await server.inject({
+      method: "POST",
+      url: "/v1/auth/otp/verifications",
+      payload: { challengeId, code: "۱۱۱۱۱۱" },
+    });
+    expect(locked.statusCode).toBe(401);
+    expect(locked.headers["set-cookie"]).toBeUndefined();
+  });
+
   it("locks an OTP challenge after five incorrect verification attempts", async () => {
     const app = await startApp();
     const server = app.getHttpAdapter().getInstance();
