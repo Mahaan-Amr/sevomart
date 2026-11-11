@@ -172,40 +172,6 @@ export function ReadyStorefront({
             <p>{store.bio}</p>
           </div>
         </div>
-        {store.followerCount ? (
-          <div className={styles.publicSummary}>
-            <p className={styles.productCount}>
-              {new Intl.NumberFormat("fa-IR").format(store.activeProductCount)} کالای
-              فعال
-            </p>
-            {store.verifiedPurchases ? (
-              <p className={styles.productCount}>
-                {new Intl.NumberFormat("fa-IR").format(store.verifiedPurchases.count)}{" "}
-                خرید تأییدشده
-                {store.rating ? (
-                  <>
-                    {" · "}امتیاز{" "}
-                    {new Intl.NumberFormat("fa-IR", {
-                      minimumFractionDigits: 1,
-                      maximumFractionDigits: 1,
-                    }).format(store.rating.average)}{" "}
-                    از ۵
-                  </>
-                ) : null}
-              </p>
-            ) : null}
-            {store.verifiedPurchases?.updatedAt ? (
-              <small className={styles.statsUpdatedAt}>
-                آخرین ثبت وضعیت تحویل:{" "}
-                {new Intl.DateTimeFormat("fa-IR", {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                  timeZone: "Asia/Tehran",
-                }).format(new Date(store.verifiedPurchases.updatedAt))}
-              </small>
-            ) : null}
-          </div>
-        ) : null}
         <div
           className={
             store.publicContactPhone ? styles.storeActions : styles.storeActionsTwo
@@ -218,6 +184,9 @@ export function ReadyStorefront({
               initialCount={store.followerCount}
               initialViewer={store.viewer}
               autoFollow={autoFollow}
+              activeProductCount={store.activeProductCount}
+              verifiedPurchases={store.verifiedPurchases}
+              rating={store.rating}
             />
           ) : null}
           <Link
