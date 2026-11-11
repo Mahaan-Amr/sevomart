@@ -236,6 +236,7 @@ describe("content producer persistence", () => {
     const replacementMediaId = randomUUID();
     let sellerId = "";
     let contentId = "";
+    let captionContentId = "";
     let activeSeller: Awaited<ReturnType<typeof createActiveSellerFixture>> | undefined;
     let ownedStore:
       Awaited<ReturnType<typeof createOwnedSellableStoreFixture>> | undefined;
@@ -355,6 +356,74 @@ describe("content producer persistence", () => {
       expect(read.statusCode).toBe(200);
       expect(read.json()).toMatchObject({ contentId, revision: 1 });
 
+      // Older entries without a caption remain valid while newly published entries
+      // can create, edit and remove theirs through the real seller API.
+      expect(read.json().caption ?? null).toBeNull();
+      const captionCreated = await server.inject({
+        method: "POST",
+        url: "/v2/seller/sales-content",
+        headers: { cookie, "idempotency-key": "caption-create-139" },
+        payload: {
+          storeId: fixtureStoreId,
+          media: { mediaId: fixtureMediaId, kind: "IMAGE" },
+          productIds: [fixtureProductId],
+          caption: "متن آغازین کالا",
+        },
+      });
+      expect(captionCreated.statusCode).toBe(201);
+      captionContentId = captionCreated.json().contentId;
+      const readCaption = async () =>
+        server.inject({
+          method: "GET",
+          url: `/v2/seller/sales-content/${captionContentId}`,
+          headers: { cookie },
+        });
+      expect((await readCaption()).json()).toMatchObject({
+        caption: "متن آغازین کالا",
+        revision: 1,
+      });
+      const editedCaption = await server.inject({
+        method: "PUT",
+        url: `/v2/seller/sales-content/${captionContentId}`,
+        headers: { cookie, "idempotency-key": "caption-edit-139" },
+        payload: {
+          expectedRevision: 1,
+          media: { mediaId: fixtureMediaId, kind: "IMAGE" },
+          productIds: [fixtureProductId],
+          caption: "توضیح ویرایش‌شده",
+        },
+      });
+      expect(editedCaption.statusCode).toBe(200);
+      expect((await readCaption()).json()).toMatchObject({
+        caption: "توضیح ویرایش‌شده",
+        revision: 2,
+      });
+      const removedCaption = await server.inject({
+        method: "PUT",
+        url: `/v2/seller/sales-content/${captionContentId}`,
+        headers: { cookie, "idempotency-key": "caption-remove-139" },
+        payload: {
+          expectedRevision: 2,
+          media: { mediaId: fixtureMediaId, kind: "IMAGE" },
+          productIds: [fixtureProductId],
+          caption: null,
+        },
+      });
+      expect(removedCaption.statusCode).toBe(200);
+      expect((await readCaption()).json()).toMatchObject({
+        caption: null,
+        revision: 3,
+      });
+      expect(
+        (
+          await server.inject({
+            method: "GET",
+            url: `/v2/seller/sales-content/${contentId}`,
+            headers: { cookie },
+          })
+        ).json().caption ?? null,
+      ).toBeNull();
+
       const replacementPayload = {
         expectedRevision: 1,
         media: { mediaId: replacementMediaId, kind: "IMAGE" },
@@ -447,6 +516,10 @@ describe("content producer persistence", () => {
       if (contentId) {
         await sql`delete from platform_outbox_events where aggregate_id = ${contentId}`;
         await sql`delete from content_audits where aggregate_id = ${contentId}`;
+      }
+      if (captionContentId) {
+        await sql`delete from platform_outbox_events where aggregate_id = ${captionContentId}`;
+        await sql`delete from content_audits where aggregate_id = ${captionContentId}`;
       }
       if (sellerId) {
         await sql`delete from content_idempotency_records where actor_id = ${sellerId}`;
