@@ -1379,7 +1379,9 @@ function SaleStep(props: {
                       ? `sale-price-error-${domIdPart(variant.clientKey)}`
                       : undefined
                   }
-                  onChange={(event) => update({ priceToman: event.target.value })}
+                  onChange={(event) =>
+                    update({ priceToman: normalizeNumericDigits(event.target.value) })
+                  }
                 />
                 {priceError || producerPriceError ? (
                   <small
@@ -1424,7 +1426,9 @@ function SaleStep(props: {
                       ? `sale-stock-error-${domIdPart(variant.clientKey)}`
                       : undefined
                   }
-                  onChange={(event) => update({ onHand: event.target.value })}
+                  onChange={(event) =>
+                    update({ onHand: normalizeNumericDigits(event.target.value) })
+                  }
                 />
                 {stockError || producerStockError ? (
                   <small
@@ -1729,6 +1733,12 @@ function isRevisionConflict(body: unknown) {
 }
 
 class RevisionConflictHandledError extends Error {}
+
+function normalizeNumericDigits(value: string) {
+  return value
+    .replace(/[۰-۹]/gu, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٠-٩]/gu, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+}
 
 function tomanToMoney(value: string) {
   if (!/^\d+$/u.test(value)) return null;
