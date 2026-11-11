@@ -5,6 +5,7 @@ import {
   readSellerWorkspaceAccess,
 } from "../../../lib/seller-workspace-access";
 import { FeedView } from "./feed-view";
+import { FeedTabs } from "./feed-tabs";
 import styles from "./discovery.module.css";
 
 export default async function DiscoveryPage({
@@ -25,6 +26,7 @@ export default async function DiscoveryPage({
         aria-labelledby="discovery-title"
       >
         <h1 id="discovery-title">کشف تازه‌ها</h1>
+        <FeedTabs />
         <FeedView
           kind="discovery"
           initialCursor={cursor}

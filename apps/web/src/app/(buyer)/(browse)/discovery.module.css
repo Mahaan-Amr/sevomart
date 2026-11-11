@@ -168,3 +168,26 @@
     transition: none;
   }
 }
+.feedTabs {
+  display: flex;
+  gap: 24px;
+  border-block-end: 1px solid var(--color-divider);
+}
+.feedTabs a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px;
+  color: var(--color-muted);
+  text-decoration: none;
+}
+.feedTabs a[aria-current="page"] {
+  color: var(--color-primary-dark);
+  border-block-end: 3px solid var(--color-primary);
+  font-weight: 600;
+}
+.feedTabs a:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}

@@ -1,11 +1,15 @@
 import { Suspense, type ReactNode } from "react";
 import { cookies } from "next/headers";
 
+import { readSellerWorkspaceAccess } from "../../../lib/seller-workspace-access";
 import { readIdentitySession } from "../../../lib/identity-api-proxy";
 import { BuyerShell } from "../buyer-shell";
 
 export default async function BrowseLayout({ children }: { children: ReactNode }) {
-  const session = await readIdentitySession((await cookies()).toString());
+  const cookieHeader = (await cookies()).toString();
+  const session = await readIdentitySession(cookieHeader);
+  const seller =
+    !!session && (await readSellerWorkspaceAccess(cookieHeader)).kind === "ACTIVE";
   return (
     <Suspense
       fallback={
@@ -14,7 +18,9 @@ export default async function BrowseLayout({ children }: { children: ReactNode }
         </main>
       }
     >
-      <BuyerShell session={session}>{children}</BuyerShell>
+      <BuyerShell session={session} seller={seller}>
+        {children}
+      </BuyerShell>
     </Suspense>
   );
 }

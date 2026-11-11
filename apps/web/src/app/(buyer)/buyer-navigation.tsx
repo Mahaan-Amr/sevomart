@@ -11,20 +11,28 @@ import {
 } from "./buyer-navigation-routes";
 import styles from "./buyer-navigation.module.css";
 
-const destinations: Array<{ href: BuyerDestination; label: string }> = [
-  { href: "/", label: "کشف" },
-  { href: "/following", label: "دنبال‌شده‌ها" },
-  { href: "/cart", label: "سبد" },
-  { href: "/orders", label: "سفارش‌ها" },
-  { href: "/conversations", label: "گفت‌وگوها" },
-];
-
-export function BuyerNavigation() {
+export function BuyerNavigation({ seller = false }: { seller?: boolean }) {
   const pathname = usePathname();
   const { rememberScroll } = useFeedWorkspace();
   if (!showBuyerNavigation(pathname)) return null;
+  const destinations: Array<{
+    href: BuyerDestination;
+    label: string;
+    icon?: BuyerDestination;
+  }> = [
+    { href: seller ? "/profile" : "/", label: seller ? "پروفایل" : "کشف" },
+    { href: "/", label: "فید", icon: "/following" },
+    { href: "/cart", label: "سبد" },
+    { href: "/orders", label: "سفارش‌ها" },
+    { href: "/conversations", label: "گفت‌وگوها" },
+  ];
   const active = activeBuyerDestination(pathname);
-  const activeIndex = destinations.findIndex(({ href }) => href === active);
+  const activeIndex =
+    active === "/following"
+      ? 1
+      : active === "/" && seller
+        ? 1
+        : destinations.findIndex(({ href }) => href === active);
   const activeIndicatorStyle = {
     opacity: activeIndex < 0 ? 0 : 1,
     transform: `translateX(calc(-${Math.max(activeIndex, 0) * 100}% - ${Math.max(activeIndex, 0) * 4}px))`,
@@ -40,13 +48,13 @@ export function BuyerNavigation() {
         >
           <span key={active ?? "none"} className={styles.refraction} />
         </span>
-        {destinations.map(({ href, label }) => (
+        {destinations.map(({ href, label, icon }, index) => (
           <Link
-            key={href}
+            key={label}
             href={href}
             aria-label={label}
             title={label}
-            aria-current={active === href ? "page" : undefined}
+            aria-current={activeIndex === index ? "page" : undefined}
             scroll={href !== "/" && href !== "/following"}
             onClick={() => {
               if (pathname === "/" || pathname === "/following") {
@@ -57,7 +65,7 @@ export function BuyerNavigation() {
               }
             }}
           >
-            <NavigationIcon destination={href} />
+            <NavigationIcon destination={icon ?? href} />
             <span className={styles.label}>{label}</span>
           </Link>
         ))}
@@ -88,6 +96,13 @@ function NavigationIcon({ destination }: { destination: BuyerDestination }) {
       return (
         <svg {...shared}>
           <path d="M20.7 4.8a5.5 5.5 0 0 0-7.8 0L12 5.7l-.9-.9a5.5 5.5 0 0 0-7.8 7.8L12 21l8.7-8.4a5.5 5.5 0 0 0 0-7.8Z" />
+        </svg>
+      );
+    case "/profile":
+      return (
+        <svg {...shared}>
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21a8 8 0 0 1 16 0" />
         </svg>
       );
     case "/cart":

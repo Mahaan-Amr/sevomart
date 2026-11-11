@@ -1,5 +1,5 @@
 export type BuyerDestination =
-  "/" | "/following" | "/cart" | "/orders" | "/conversations";
+  "/" | "/profile" | "/following" | "/cart" | "/orders" | "/conversations";
 
 const sellerEntryPaths = new Set(["/seller/login", "/seller/application"]);
 
@@ -12,6 +12,7 @@ export function showBuyerNavigation(pathname: string) {
 }
 
 export function activeBuyerDestination(pathname: string): BuyerDestination | null {
+  if (pathname === "/profile") return "/profile";
   if (pathname === "/" || pathname.startsWith("/s/")) return "/";
   if (pathname === "/following") return "/following";
   if (pathname === "/cart" || pathname.startsWith("/checkout")) return "/cart";
