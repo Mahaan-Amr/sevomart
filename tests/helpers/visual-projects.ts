@@ -139,7 +139,17 @@ export const sellerPasswordTestMobiles = Array.from({ length: 4 }, (_, index) =>
   testMobile(230 + index),
 );
 
+export const invitationSellerTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(246 + index),
+);
+
+export const invitationApplicantTestMobiles = Array.from({ length: 4 }, (_, index) =>
+  testMobile(250 + index),
+);
+
 export const allE2eTestMobiles = [
+  ...invitationSellerTestMobiles,
+  ...invitationApplicantTestMobiles,
   ...completeSellerJourneyTestMobiles,
   ...sellerPasswordTestMobiles,
   ...storefrontTestMobiles,
