@@ -241,7 +241,8 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
-  await expect(page.getByRole("link", { name: "ادامه به تحویل سفارش" })).toBeVisible();
+  await expect(page).toHaveURL(/\/checkout\/delivery$/);
+  await page.goto("/cart");
   const reviewSql = postgres(databaseUrl, { max: 1 });
   try {
     await reviewSql`
@@ -270,7 +271,6 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: "تغییرها را دیدم" }).click();
   await expect(page.getByText("تغییرهای سبد تأیید شد.")).toBeVisible();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
-  await page.getByRole("link", { name: "ادامه به تحویل سفارش" }).click();
   await expect(page).toHaveURL(/\/checkout\/delivery$/);
   await page.getByRole("link", { name: "افزودن نشانی تحویل" }).click();
   await expect(page.getByRole("heading", { name: "نشانی تحویل" })).toBeVisible();
