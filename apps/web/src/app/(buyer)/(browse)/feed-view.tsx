@@ -20,12 +20,14 @@ type FeedViewProps = {
   kind: FeedKind;
   initialCursor?: string;
   showSellerInvitation?: boolean;
+  layout?: "grid" | "home";
 };
 
 export function FeedView({
   kind,
   initialCursor,
   showSellerInvitation = false,
+  layout = "grid",
 }: FeedViewProps) {
   const { restored, states, setFeedState, saveForBrowse, saveDiscoveryForLogin } =
     useFeedWorkspace();
@@ -108,7 +110,8 @@ export function FeedView({
     [],
   );
 
-  if (!restored || (!state.snapshotAt && pending)) return <FeedLoading />;
+  if (!restored || (!state.snapshotAt && pending))
+    return <FeedLoading layout={layout} />;
 
   if (!state.snapshotAt && error) {
     return <FeedError error={error} onRetry={() => void load(failedCursor, true)} />;
@@ -140,7 +143,12 @@ export function FeedView({
           : "کالایی در این فید نمایش داده نشد."}
       </p>
       {state.items.length > 0 ? (
-        <FeedGrid items={state.items} kind={kind} onLeave={saveForBrowse} />
+        <FeedGrid
+          items={state.items}
+          kind={kind}
+          onLeave={saveForBrowse}
+          layout={layout}
+        />
       ) : null}
       {state.emptyState ? (
         <div className={styles.state}>
@@ -185,13 +193,18 @@ function FeedGrid({
   items,
   kind,
   onLeave,
+  layout,
 }: {
   items: DiscoveryFeedItemV1[];
   kind: FeedKind;
   onLeave: (kind: FeedKind, scrollY: number, focusTarget: string) => void;
+  layout: "grid" | "home";
 }) {
   return (
-    <ul className={styles.grid} aria-label="کالاهای تازه">
+    <ul
+      className={layout === "home" ? styles.homeFeed : styles.grid}
+      aria-label="کالاهای تازه"
+    >
       {items.map((item) => {
         const imageFocus = `${item.productId}:image`;
         const titleFocus = `${item.productId}:title`;
@@ -200,24 +213,85 @@ function FeedGrid({
           onLeave(kind, window.scrollY, focusTarget);
         return (
           <li key={item.productId}>
-            <BuyerProductCard
-              href={`/s/${item.storeSlug}/products/${item.productId}`}
-              imageId={item.product.image.id}
-              name={item.product.name}
-              price={`${item.priceRange.minimum.amount !== item.priceRange.maximum.amount ? "از " : ""}${formatIrrAsToman(item.priceRange.minimum.amount)}`}
-              unavailable={item.availability === "OUT_OF_STOCK"}
-              store={{ name: item.store.name, href: `/s/${item.storeSlug}` }}
-              focusPrefix={item.productId}
-              onNavigate={(target) =>
-                rememberOrigin(
-                  target === "image"
-                    ? imageFocus
-                    : target === "title"
-                      ? titleFocus
-                      : storeFocus,
-                )
-              }
-            />
+            {layout === "home" ? (
+              <article className={styles.homePost}>
+                <Link
+                  className={styles.homeStore}
+                  href={`/s/${item.storeSlug}`}
+                  data-feed-focus={storeFocus}
+                  onNavigate={() => rememberOrigin(storeFocus)}
+                >
+                  <span className={styles.homeAvatar} aria-hidden="true">
+                    {item.store.logo ? (
+                      <img src={`/api/store/media/${item.store.logo.id}`} alt="" />
+                    ) : (
+                      Array.from(item.store.name)[0]
+                    )}
+                  </span>
+                  <strong>{item.store.name}</strong>
+                </Link>
+                <Link
+                  className={styles.homeImage}
+                  href={`/s/${item.storeSlug}/products/${item.productId}`}
+                  aria-label={`دیدن ${item.product.name} و گزینه‌های آن`}
+                  data-feed-focus={imageFocus}
+                  onNavigate={() => rememberOrigin(imageFocus)}
+                >
+                  <img
+                    src={`/api/store/media/${item.product.image.id}`}
+                    alt=""
+                    width={640}
+                    height={640}
+                  />
+                </Link>
+                <div className={styles.homePostDetails}>
+                  <h2>
+                    <Link
+                      href={`/s/${item.storeSlug}/products/${item.productId}`}
+                      data-feed-focus={titleFocus}
+                      onNavigate={() => rememberOrigin(titleFocus)}
+                    >
+                      {item.product.name}
+                    </Link>
+                  </h2>
+                  <p>
+                    <strong>
+                      {item.priceRange.minimum.amount !== item.priceRange.maximum.amount
+                        ? "از "
+                        : ""}
+                      {formatIrrAsToman(item.priceRange.minimum.amount)}
+                    </strong>
+                    {item.availability === "OUT_OF_STOCK" ? <span>ناموجود</span> : null}
+                  </p>
+                  <Link
+                    className={styles.homeProductLink}
+                    href={`/s/${item.storeSlug}/products/${item.productId}`}
+                    onNavigate={() => rememberOrigin(titleFocus)}
+                  >
+                    دیدن کالا
+                  </Link>
+                </div>
+              </article>
+            ) : (
+              <BuyerProductCard
+                href={`/s/${item.storeSlug}/products/${item.productId}`}
+                imageId={item.product.image.id}
+                name={item.product.name}
+                price={`${item.priceRange.minimum.amount !== item.priceRange.maximum.amount ? "از " : ""}${formatIrrAsToman(item.priceRange.minimum.amount)}`}
+                unavailable={item.availability === "OUT_OF_STOCK"}
+                store={{ name: item.store.name, href: `/s/${item.storeSlug}` }}
+                focusPrefix={item.productId}
+                onNavigate={(target) =>
+                  rememberOrigin(
+                    target === "image"
+                      ? imageFocus
+                      : target === "title"
+                        ? titleFocus
+                        : storeFocus,
+                  )
+                }
+              />
+            )}
           </li>
         );
       })}
@@ -225,12 +299,15 @@ function FeedGrid({
   );
 }
 
-function FeedLoading() {
+function FeedLoading({ layout }: { layout: "grid" | "home" }) {
   return (
     <section className={styles.loading} aria-label="در حال دریافت کالاها">
       <p role="status">در حال دریافت کالاها…</p>
-      <div className={styles.loadingGrid} aria-hidden="true">
-        {Array.from({ length: 18 }, (_, index) => (
+      <div
+        className={layout === "home" ? styles.homeLoading : styles.loadingGrid}
+        aria-hidden="true"
+      >
+        {Array.from({ length: layout === "home" ? 2 : 18 }, (_, index) => (
           <span className={styles.loadingCard} key={index}>
             <i />
             <b />
