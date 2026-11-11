@@ -278,8 +278,13 @@ test("seller acts from the operational home and reads a private basic report", a
     await expect(
       page.getByRole("heading", { name: "آماده‌سازی‌های بیشتر از ۲۴ ساعت" }),
     ).toBeVisible();
-    await expect(page.getByText(`سفارش ${preparingOrderId}`)).toBeVisible();
-    await expect(page.getByText(`سفارش ${freshOrderId}`)).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "انجام سفارش" })).toHaveAttribute(
+      "href",
+      `/seller/orders/${preparingOrderId}`,
+    );
+    await expect(page.locator(`a[href="/seller/orders/${freshOrderId}"]`)).toHaveCount(
+      0,
+    );
 
     await page.goto("/seller");
 
