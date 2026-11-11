@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 type ComposePort = { host_ip: string; published: string; target: number };
-type ComposeService = { ports?: ComposePort[] };
+type ComposeService = { ports?: ComposePort[]; environment?: Record<string, string> };
 
 describe("complete Compose runtime contract", () => {
   it("applies every documented host-port override on loopback", () => {
@@ -26,6 +26,9 @@ describe("complete Compose runtime contract", () => {
         services: Record<string, ComposeService>;
       }
     ).services;
+
+    expect(services.web?.environment?.SEVO_RUNTIME_ENV).toBe("development");
+    expect(services.api?.environment?.SEVO_RUNTIME_ENV).toBe("development");
 
     expect(services.web?.ports).toContainEqual({
       host_ip: "127.0.0.1",
