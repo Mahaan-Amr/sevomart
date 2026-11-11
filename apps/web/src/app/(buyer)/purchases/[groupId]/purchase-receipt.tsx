@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import styles from "../../checkout/checkout.module.css";
+import receipt from "./purchase-receipt.module.css";
 
 export function PurchaseReceipt({
   groupId,
@@ -79,9 +80,9 @@ export function PurchaseReceipt({
   }
 
   return (
-    <main className={styles.page}>
-      <section className={styles.panel} aria-labelledby="purchase-title">
-        <a className={styles.back} href="/orders">
+    <main className={receipt.page}>
+      <section className={receipt.panel} aria-labelledby="purchase-title">
+        <a className={receipt.back} href="/orders">
           خریدهای من
         </a>
         <h1 id="purchase-title">خرید شما</h1>
@@ -89,18 +90,36 @@ export function PurchaseReceipt({
           <p role="status">در حال آماده‌کردن رسید…</p>
         ) : (
           <>
-            <p className={styles.note}>
-              {purchase.status === "PAID"
-                ? "پرداخت این خرید ثبت شد. هر فروشگاه سفارش خود را جدا پیگیری می‌کند."
-                : purchase.status === "PAYMENT_REVIEW"
-                  ? "پرداخت در حال بررسی است. برای جلوگیری از پرداخت دوباره، اکنون اقدامی لازم نیست."
-                  : purchase.status === "EXPIRED"
-                    ? "مهلت پرداخت این خرید گذشته است."
-                    : "سفارش‌ها ثبت شدند و منتظر پرداخت یک‌جا هستند. هیچ سفارش پرداخت‌نشده‌ای به فروشگاه تحویل نمی‌شود."}
-            </p>
+            <div className={receipt.status} role="status">
+              <span className={receipt.statusLabel}>
+                {purchase.status === "PAID"
+                  ? "پرداخت ثبت شد"
+                  : purchase.status === "PAYMENT_REVIEW"
+                    ? "پرداخت در حال بررسی"
+                    : purchase.status === "EXPIRED"
+                      ? "مهلت پرداخت گذشته است"
+                      : "در انتظار پرداخت"}
+              </span>
+              <p>
+                {purchase.status === "PAID"
+                  ? "پرداخت این خرید ثبت شد. هر فروشگاه سفارش خود را جدا پیگیری می‌کند."
+                  : purchase.status === "PAYMENT_REVIEW"
+                    ? "پرداخت در حال بررسی است. برای جلوگیری از پرداخت دوباره، اکنون اقدامی لازم نیست."
+                    : purchase.status === "EXPIRED"
+                      ? "مهلت پرداخت این خرید گذشته است."
+                      : "سفارش‌ها ثبت شدند و منتظر پرداخت یک‌جا هستند. هیچ سفارش پرداخت‌نشده‌ای به فروشگاه تحویل نمی‌شود."}
+              </p>
+              {developmentPayment && purchase.status === "PAID" ? (
+                <p>این پرداخت آزمایشی بود و پول واقعی جابه‌جا نشد.</p>
+              ) : null}
+            </div>
+            <div className={receipt.total}>
+              <span>مبلغ یک پرداخت</span>
+              <strong>{formatIrrAsToman(purchase.total.amount)}</strong>
+            </div>
             {purchase.stores.map((store) => (
               <section
-                className={styles.storeGroup}
+                className={receipt.store}
                 key={store.orderId}
                 aria-label={`سفارش ${store.name}`}
               >
@@ -110,15 +129,14 @@ export function PurchaseReceipt({
                 </p>
                 <p>ارسال: {store.shippingLabel}</p>
                 <p>مرجوعی: {store.returnPolicyText}</p>
-                <a href={`/orders/${encodeURIComponent(store.orderId)}`}>
+                <a
+                  className={receipt.track}
+                  href={`/orders/${encodeURIComponent(store.orderId)}`}
+                >
                   پیگیری سفارش این فروشگاه
                 </a>
               </section>
             ))}
-            <div className={styles.total}>
-              <span>مبلغ یک پرداخت</span>
-              <strong>{formatIrrAsToman(purchase.total.amount)}</strong>
-            </div>
             {purchase.status === "PENDING_PAYMENT" && developmentPayment ? (
               <>
                 <p className={styles.devNotice}>

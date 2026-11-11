@@ -1,0 +1,102 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.panel {
+  width: min(100%, 560px);
+  margin-inline: auto;
+  padding: 24px;
+  border: 1px solid var(--color-divider);
+  border-radius: 22px;
+  background: var(--color-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.panel h1 {
+  margin: 12px 0 24px;
+  font-size: 24px;
+}
+
+.back {
+  color: var(--color-primary-dark);
+}
+
+.status {
+  padding: 16px;
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: 12px;
+  background: var(--color-background);
+}
+
+.statusLabel {
+  color: var(--color-primary-dark);
+  font-weight: 700;
+}
+
+.status p {
+  margin: 8px 0 0;
+  line-height: 1.8;
+}
+
+.total {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.total strong {
+  color: var(--color-primary-dark);
+}
+
+.store {
+  padding-block: 20px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.store h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.store p {
+  margin: 4px 0;
+  line-height: 1.8;
+}
+
+.track {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 12px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.back:focus-visible,
+.track:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 16px 8px;
+  }
+  .panel {
+    padding: 20px 16px;
+  }
+  .track {
+    width: 100%;
+  }
+}
