@@ -468,6 +468,43 @@ describe("guest cart and login attachment HTTP API", () => {
     await priceCheck`
       update inventory_levels set on_hand = 4 where variant_id = ${other.variantId}
     `;
+    // Fail only after another reservation in the same group has already been inserted.
+    await priceCheck.unsafe(`create function test_reject_second_group_reservation() returns trigger language plpgsql as $$
+      begin
+        if exists (select 1 from inventory_reservations r join order_orders first_order on first_order.id = r.order_id
+          join order_orders new_order on new_order.id = NEW.order_id
+          where first_order.purchase_group_id = new_order.purchase_group_id) then
+          raise exception 'injected second reservation failure';
+        end if;
+        return NEW;
+      end $$`);
+    await priceCheck.unsafe(`create trigger test_reject_second_group_reservation before insert on inventory_reservations
+      for each row execute function test_reject_second_group_reservation()`);
+    try {
+      const partialFailure = await server.inject({
+        method: "POST",
+        url: "/v2/purchase-groups",
+        headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+        payload: {
+          checkoutRevision: review.checkoutRevision,
+          cartRevision: review.cart.revision,
+        },
+      });
+      expect(partialFailure.statusCode).toBeGreaterThanOrEqual(400);
+      const partialRows = await priceCheck<
+        Array<{ groups: number; orders: number; reservations: number }>
+      >`
+        select (select count(*)::int from order_purchase_groups where checkout_revision = ${review.checkoutRevision}) as groups,
+          (select count(*)::int from order_orders o join order_checkout_preparations p on p.checkout_revision = o.checkout_revision where p.cart_id = ${review.cart.cartId}) as orders,
+          (select count(*)::int from inventory_reservations where store_id in (${storeId}, ${other.storeId})) as reservations
+      `;
+      expect(partialRows[0]).toEqual({ groups: 0, orders: 0, reservations: 0 });
+    } finally {
+      await priceCheck.unsafe(
+        "drop trigger test_reject_second_group_reservation on inventory_reservations",
+      );
+      await priceCheck.unsafe("drop function test_reject_second_group_reservation()");
+    }
     await priceCheck.end();
     const createdResponse = await server.inject({
       method: "POST",
