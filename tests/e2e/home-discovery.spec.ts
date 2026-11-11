@@ -88,4 +88,23 @@ test("signed-in buyer sees followed stores at home and public discovery separate
   await expect(page.getByRole("region", { name: "فید دنبال‌شده‌ها" })).toContainText(
     "کالای فروشگاه دنبال‌شده",
   );
+  await page.goto("/?cursor=legacy-token");
+  await expect(page).toHaveURL(/\/discover\?cursor=legacy-token$/);
+  await expect(page.getByRole("region", { name: "فید کشف" })).toContainText(
+    "کالای عمومی",
+  );
+});
+
+test("legacy discovery cursor link resumes the public discovery feed", async ({
+  page,
+}) => {
+  const { discoveryV1Examples } = await import("@sevo/contracts/discovery/v1");
+  let cursor: string | null = null;
+  await page.route("**/api/discovery*", (route) => {
+    cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({ json: discoveryV1Examples.DiscoveryFeedPageV1 });
+  });
+  await page.goto("/?cursor=legacy-token");
+  await expect(page).toHaveURL(/\/discover\?cursor=legacy-token$/);
+  await expect.poll(() => cursor).toBe("legacy-token");
 });
