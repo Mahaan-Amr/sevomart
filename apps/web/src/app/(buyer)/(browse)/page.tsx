@@ -16,6 +16,7 @@ export default async function HomePage({
     <section>
       <h1>خانه</h1>
       <FeedView
+        layout="home"
         key={session ? "following" : "discovery"}
         kind={session ? "following" : "discovery"}
       />

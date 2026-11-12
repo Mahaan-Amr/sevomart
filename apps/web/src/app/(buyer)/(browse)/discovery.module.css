@@ -191,3 +191,94 @@
   outline: 3px solid var(--color-primary-light);
   outline-offset: 3px;
 }
+
+.homeFeed,
+.homeLoading {
+  display: grid;
+  gap: 24px;
+  width: min(100%, 520px);
+  margin: 16px auto 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.homePost {
+  overflow: hidden;
+  border-block: 1px solid var(--color-divider);
+  background: var(--color-surface);
+}
+
+.homeStore {
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 12px;
+  color: var(--color-text);
+}
+
+.homeAvatar {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--color-primary-dark);
+  background: var(--color-cover-start);
+}
+
+.homeAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.homeImage {
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0;
+  background: var(--color-background);
+}
+
+.homeImage img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.homePostDetails {
+  padding: 12px;
+}
+
+.homePostDetails h2,
+.homePostDetails p {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.homePostDetails h2 a {
+  display: inline;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  color: var(--color-text);
+}
+
+.homePostDetails p span {
+  margin-inline-start: 12px;
+  color: var(--color-muted);
+}
+
+.homeProductLink {
+  justify-content: center;
+  width: 100%;
+  background: var(--color-cover-start);
+  font-weight: 600;
+}
