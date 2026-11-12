@@ -25,6 +25,29 @@
   padding: 0;
   margin: 0;
 }
+.group h2 {
+  margin: 24px 0 8px;
+  font-size: 16px;
+}
+.group h2 span {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+.orderLink {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.orderLink:focus-visible {
+  outline: 3px solid var(--color-primary-light);
+  outline-offset: 3px;
+}
+.productName {
+  margin: 0 0 8px;
+  color: var(--color-text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
 .orders > li {
   padding: 20px 0;
   border-block-start: 1px solid var(--color-divider);
