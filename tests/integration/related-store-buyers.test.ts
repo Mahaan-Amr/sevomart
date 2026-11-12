@@ -27,6 +27,21 @@ describe("related store buyers and contextual delivery reveal", () => {
     const firstBuyerId = randomUUID();
     const secondBuyerId = randomUUID();
     const followerOnlyBuyerId = randomUUID();
+    const productId = randomUUID();
+    const variantId = randomUUID();
+    const mediaId = randomUUID();
+    const price = { amount: 1000, currency: "IRR" };
+    const productSnapshot = {
+      productId,
+      name: "ماگ نمونه",
+      description: "",
+      images: [{ id: mediaId, url: `/v1/media/${mediaId}` }],
+      axes: [],
+      variants: [{ variantId, combination: [], price, availability: "AVAILABLE" }],
+      priceRange: { minimum: price, maximum: price },
+      availability: "AVAILABLE",
+      publicationVersion: 1,
+    };
     const mobile = `0913${String(Math.floor(Math.random() * 10_000_000)).padStart(7, "0")}`;
     let sellerId = "";
     let storeId = "";
@@ -61,6 +76,11 @@ describe("related store buyers and contextual delivery reveal", () => {
       expect(savedStore.statusCode).toBe(200);
       storeId = savedStore.json().id as string;
 
+      await sql`insert into product_products (id, store_id, state, revision, publication_version, published_at)
+        values (${productId}, ${storeId}, 'PUBLISHED', 1, 1, now())`;
+      await sql`insert into product_publications (product_id, publication_version, name, description, media_id, variant_id, snapshot)
+        values (${productId}, 1, 'ماگ نمونه', '', ${mediaId}, ${variantId}, ${sql.json(productSnapshot)})`;
+
       await insertPaidOrder(first, {
         storeId,
         buyerId: firstBuyerId,
@@ -91,8 +111,15 @@ describe("related store buyers and contextual delivery reveal", () => {
       });
       for (const orderId of [first.orderId, unrelated.orderId]) {
         await sql`insert into order_items (order_id, variant_id, product_id, name, quantity, unit_price_amount, publication_version)
-          values (${orderId}, ${randomUUID()}, ${randomUUID()}, ${orderId === first.orderId ? "ماگ نمونه" : "کالای فروشگاه دیگر"}, 1, 1000, 1)`;
+          values (${orderId}, ${orderId === first.orderId ? variantId : randomUUID()}, ${orderId === first.orderId ? productId : randomUUID()}, ${orderId === first.orderId ? "ماگ نمونه" : "کالای فروشگاه دیگر"}, 1, 1000, 1)`;
       }
+      // A later published product version must not rewrite the ordered item snapshot.
+      await sql`insert into product_publications (product_id, publication_version, name, description, media_id, variant_id, snapshot)
+        values (${productId}, 2, 'نام تازه ماگ', '', ${mediaId}, ${variantId}, ${sql.json({ ...productSnapshot, name: "نام تازه ماگ", publicationVersion: 2 })})`;
+      await sql`update product_products set publication_version = 2, revision = 2 where id = ${productId}`;
+      const latestProduct =
+        await sql`select publication.name from product_products product join product_publications publication on publication.product_id = product.id and publication.publication_version = product.publication_version where product.id = ${productId}`;
+      expect(latestProduct[0]?.name).toBe("نام تازه ماگ");
       const actionable = await server.inject({
         method: "GET",
         url: "/v1/seller/orders",
@@ -103,6 +130,7 @@ describe("related store buyers and contextual delivery reveal", () => {
         { orderId: first.orderId, itemNames: ["ماگ نمونه"] },
       ]);
       expect(JSON.stringify(actionable.json())).not.toContain("کالای فروشگاه دیگر");
+      expect(JSON.stringify(actionable.json())).not.toContain("نام تازه ماگ");
       expect(JSON.stringify(actionable.json())).not.toContain("09123456789");
       const deliveredEvent = await projectFulfillmentStatus(
         first.orderId,
@@ -393,6 +421,7 @@ describe("related store buyers and contextual delivery reveal", () => {
       `;
       for (const fixture of [first, olderFirstBuyerOrder, second, unrelated])
         await cleanupOrder(fixture);
+      await sql`delete from product_products where id = ${productId}`;
       if (storeId) {
         await sql`delete from store_idempotency_records where actor_identity_id = ${sellerId}`;
         await sql`delete from store_stores where id = ${storeId}`;
