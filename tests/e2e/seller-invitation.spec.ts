@@ -13,7 +13,7 @@ test("empty discovery invites guests but not an approved seller", async ({
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({ json: discoveryV1Examples.DiscoveryFeedPageV1 }),
   );
-  await page.goto("/");
+  await page.goto("/discover");
   await expect(page.getByRole("link", { name: "فروشنده شوید" })).toBeVisible();
   const fixture = await createSellerWorkspaceFixture(page, {
     mobile: invitationSellerTestMobiles[visualProjectIndex(testInfo.project.name)]!,
@@ -21,7 +21,7 @@ test("empty discovery invites guests but not an approved seller", async ({
     storeName: "فروشگاه نمونه",
   });
   try {
-    await page.goto("/");
+    await page.goto("/discover");
     await expect(page.getByText("فعلاً کالایی برای دیدن نیست.")).toBeVisible();
     await expect(page.getByRole("link", { name: "فروشنده شوید" })).toHaveCount(0);
   } finally {
@@ -35,13 +35,13 @@ test("a signed-in applicant can still find the invitation", async ({
   await page.route("**/api/discovery*", (route) =>
     route.fulfill({ json: discoveryV1Examples.DiscoveryFeedPageV1 }),
   );
-  await page.goto("/login?returnTo=%2F");
+  await page.goto("/login?returnTo=%2Fdiscover");
   await page
     .getByLabel("شماره موبایل")
     .fill(invitationApplicantTestMobiles[visualProjectIndex(testInfo.project.name)]!);
   await page.getByRole("button", { name: "دریافت کد" }).click();
   await page.getByLabel("کد شش‌رقمی").fill("111111");
   await page.getByRole("button", { name: "ورود" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/discover$/);
   await expect(page.getByRole("link", { name: "فروشنده شوید" })).toBeVisible();
 });
