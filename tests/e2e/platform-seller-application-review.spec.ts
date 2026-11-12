@@ -442,6 +442,10 @@ test("platform agent confirms approval before the initial store is created", asy
     page.getByText("درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد."),
   ).toBeVisible();
   await expect(page.getByText("درخواستی برای بررسی باقی نمانده است.")).toBeVisible();
+  await expect(page.getByText("یک درخواست را از صف انتخاب کنید.")).toHaveCount(0);
+  await expect(
+    page.getByText("درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد."),
+  ).toHaveCount(0, { timeout: 4_000 });
   expect(approvalPayload).toMatchObject({
     expectedRevision: 1,
     reasonCode: "ELIGIBILITY_CONFIRMED",
@@ -508,6 +512,8 @@ test("keeps the committed approval clear when the queue refresh fails", async ({
   await expect(
     page.getByText(/درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد/),
   ).toBeVisible();
+  await expect(page.getByText(/تازه‌سازی صف انجام نشد/)).toBeVisible();
+  await page.waitForTimeout(3_200);
   await expect(page.getByText(/تازه‌سازی صف انجام نشد/)).toBeVisible();
   await expect(page.getByText("صف در دسترس نیست.", { exact: true })).toHaveCount(0);
 });
