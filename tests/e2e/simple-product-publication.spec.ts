@@ -98,8 +98,20 @@ test("seller publishes one simple variant that a guest sees without private data
 
   await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "یک گونه" })).toBeChecked();
-  await page.getByLabel("قیمت گونه اصلی").fill("325000");
-  await page.getByLabel("موجودی گونه اصلی").fill("7");
+  await page.getByLabel("قیمت گونه اصلی").fill("abc");
+  await expect(page.getByText("قیمت باید عدد صحیح و مثبت باشد.")).toBeVisible();
+  await page.getByLabel("قیمت گونه اصلی").fill("۳۲۵۰۰۰");
+  await expect(page.getByLabel("قیمت گونه اصلی")).toHaveValue("325000");
+  for (const invalid of ["1e3", " ", "abc", ""]) {
+    await page.getByLabel("موجودی گونه اصلی").fill(invalid);
+    await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
+    await expect(page.getByText("موجودی باید عدد صحیح و نامنفی باشد.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "فروش کالا" })).toBeVisible();
+  }
+  await page.getByLabel("موجودی گونه اصلی").fill("۰");
+  await expect(page.getByText("موجودی باید عدد صحیح و نامنفی باشد.")).toHaveCount(0);
+  await page.getByLabel("موجودی گونه اصلی").fill("٧");
+  await expect(page.getByLabel("موجودی گونه اصلی")).toHaveValue("7");
   await page.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
 
   await expect(page.getByRole("heading", { name: "پیش‌نمایش کالا" })).toBeVisible();

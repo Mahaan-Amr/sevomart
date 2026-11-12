@@ -502,7 +502,7 @@ export function SimpleProductBuilder({
       if (!tomanToMoney(sale?.priceToman ?? "")) {
         return setMessage("");
       }
-      if (!Number.isInteger(Number(sale?.onHand)) || Number(sale?.onHand) < 0) {
+      if (!isValidStock(sale?.onHand ?? "")) {
         return setMessage("");
       }
     }
@@ -1379,7 +1379,9 @@ function SaleStep(props: {
                       ? `sale-price-error-${domIdPart(variant.clientKey)}`
                       : undefined
                   }
-                  onChange={(event) => update({ priceToman: event.target.value })}
+                  onChange={(event) =>
+                    update({ priceToman: normalizeNumericDigits(event.target.value) })
+                  }
                 />
                 {priceError || producerPriceError ? (
                   <small
@@ -1424,7 +1426,9 @@ function SaleStep(props: {
                       ? `sale-stock-error-${domIdPart(variant.clientKey)}`
                       : undefined
                   }
-                  onChange={(event) => update({ onHand: event.target.value })}
+                  onChange={(event) =>
+                    update({ onHand: normalizeNumericDigits(event.target.value) })
+                  }
                 />
                 {stockError || producerStockError ? (
                   <small
@@ -1589,9 +1593,7 @@ function salePriceError(value: string, showErrors: boolean) {
 
 function saleStockError(value: string, showErrors: boolean) {
   if (!showErrors && !value) return "";
-  return Number.isInteger(Number(value)) && Number(value) >= 0
-    ? ""
-    : "موجودی باید عدد صحیح و نامنفی باشد.";
+  return isValidStock(value) ? "" : "موجودی باید عدد صحیح و نامنفی باشد.";
 }
 
 function normalizeLabel(value: string) {
@@ -1729,6 +1731,16 @@ function isRevisionConflict(body: unknown) {
 }
 
 class RevisionConflictHandledError extends Error {}
+
+function normalizeNumericDigits(value: string) {
+  return value
+    .replace(/[۰-۹]/gu, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٠-٩]/gu, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+}
+
+function isValidStock(value: string) {
+  return /^\d+$/u.test(value) && Number.isSafeInteger(Number(value));
+}
 
 function tomanToMoney(value: string) {
   if (!/^\d+$/u.test(value)) return null;
