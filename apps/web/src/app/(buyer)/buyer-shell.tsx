@@ -27,7 +27,15 @@ export function BuyerShell({
     useFeedWorkspace();
   const returnTo = `${pathname}${query ? `?${query}` : ""}`;
   const activeFeed =
-    pathname === "/" ? "discovery" : pathname === "/following" ? "following" : null;
+    pathname === "/"
+      ? session
+        ? "following"
+        : "discovery"
+      : pathname === "/discover"
+        ? "discovery"
+        : pathname === "/following"
+          ? "following"
+          : null;
 
   async function signOut() {
     setEndingSession(true);

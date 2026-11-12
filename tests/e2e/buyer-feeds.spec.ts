@@ -70,7 +70,7 @@ test("discovery and following keep independent cursor and scroll state", async (
     }),
   );
 
-  await page.goto("/");
+  await page.goto("/discover");
   await page.getByRole("button", { name: "دیدن کالاهای بیشتر" }).click();
   await expect(page.getByRole("listitem")).toHaveCount(19);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -99,7 +99,7 @@ test("discovery and following keep independent cursor and scroll state", async (
   });
 
   const discoveryTab = page
-    .getByLabel("فید فروشگاه‌ها")
+    .getByRole("navigation", { name: "فید فروشگاه‌ها" })
     .getByRole("link", { name: "کشف", exact: true });
   await page.locator("body").click({ position: { x: 1, y: 1 } });
   for (let step = 0; step < 8; step += 1) {
@@ -140,13 +140,13 @@ test("following asks a guest to sign in and cancellation restores discovery", as
     route.fulfill({ status: 401, json: { code: "UNAUTHENTICATED" } }),
   );
 
-  await page.goto("/");
+  await page.goto("/discover");
   await expect(page.getByText("کالای تازه 1")).toBeVisible();
   await page.getByRole("link", { name: "دنبال‌شده‌ها" }).click();
   await expect(page).toHaveURL(/\/login\?/);
   const loginUrl = new URL(page.url());
   expect(loginUrl.searchParams.get("returnTo")).toBe("/following");
-  expect(loginUrl.searchParams.get("cancelTo")).toBe("/");
+  expect(loginUrl.searchParams.get("cancelTo")).toBe("/discover");
 
   await page.getByRole("link", { name: "انصراف و بازگشت", exact: true }).click();
   await expect(page.getByText("کالای تازه 1")).toBeVisible();
@@ -177,7 +177,7 @@ test("returning from product detail restores the loaded feed, scroll, and origin
     }),
   );
 
-  await page.goto("/");
+  await page.goto("/discover");
   await page.getByRole("button", { name: "دیدن کالاهای بیشتر" }).click();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const origin = page.getByRole("link", { name: "کالای تازه 19", exact: true });
@@ -219,7 +219,7 @@ test("loading is announced without layout shift and empty feeds keep distinct gu
     await route.fulfill({ json: discoveryV1Examples.DiscoveryFeedPageV1 });
   });
 
-  await page.goto("/");
+  await page.goto("/discover");
   await expect(page.getByRole("status", { name: "" })).toContainText(
     "در حال دریافت کالاها",
   );
@@ -382,7 +382,7 @@ test("discovery shows products without a separate seller-media feed", async ({
     return route.fulfill({ json: { items: [] } });
   });
 
-  await page.goto("/");
+  await page.goto("/discover");
 
   const productList = page.getByRole("list", { name: "کالاهای تازه" });
   await expect(

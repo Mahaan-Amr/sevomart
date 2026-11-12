@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
+import { readIdentitySession } from "../lib/identity-api-proxy";
 import { readSellerWorkspaceAccess } from "../lib/seller-workspace-access";
 import { Suspense, type ReactNode } from "react";
 
@@ -25,6 +26,9 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
   const cookieStore = await cookies();
+  const signedIn =
+    cookieStore.has("sevo_session") &&
+    !!(await readIdentitySession(cookieStore.toString()));
   const seller =
     cookieStore.has("sevo_session") &&
     (await readSellerWorkspaceAccess(cookieStore.toString())).kind === "ACTIVE";
@@ -34,7 +38,7 @@ export default async function RootLayout({
         <FeedWorkspace>
           {children}
           <Suspense fallback={null}>
-            <BuyerNavigation seller={seller} />
+            <BuyerNavigation seller={seller} signedIn={signedIn} />
           </Suspense>
         </FeedWorkspace>
         <PwaRegistration />

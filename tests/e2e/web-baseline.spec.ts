@@ -43,7 +43,7 @@ function checkoutPreparationV2() {
 
 test("the web baseline is Persian, accessible, and right-to-left", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
+  await page.goto("/discover");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "fa");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -388,10 +388,12 @@ test("identity login preserves the current discovery cursor", async ({ page }) =
   await page.getByText("هویت سوو", { exact: true }).click();
   await page.getByRole("link", { name: "ورود و ادامه" }).click();
   await expect(page).toHaveURL(/\/login\?/);
-  expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/?cursor=resume-feed");
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe(
+    "/discover?cursor=resume-feed",
+  );
   await expect(
     page.getByRole("link", { name: "انصراف و بازگشت", exact: true }),
-  ).toHaveAttribute("href", "/?cursor=resume-feed");
+  ).toHaveAttribute("href", "/discover?cursor=resume-feed");
 });
 
 test("discovery keeps a readable grid with long Persian text and follows its cursor to an empty page", async ({
@@ -427,7 +429,7 @@ test("discovery keeps a readable grid with long Persian text and follows its cur
           },
     }),
   );
-  await page.goto("/");
+  await page.goto("/discover");
   const cards = page.getByRole("list", { name: "کالاهای تازه" }).getByRole("listitem");
   await expect(cards).toHaveCount(3);
   const tops = await cards.evaluateAll((elements) =>
@@ -441,7 +443,7 @@ test("discovery keeps a readable grid with long Persian text and follows its cur
     fullPage: true,
   });
   await page.getByRole("button", { name: "دیدن کالاهای بیشتر" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/discover$/);
   await expect(cards).toHaveCount(3);
   await expect(page.getByRole("button", { name: "دیدن کالاهای بیشتر" })).toHaveCount(0);
 });
