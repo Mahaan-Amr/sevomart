@@ -72,7 +72,9 @@ test("receipt load failure stops loading and allows retry", async ({ page }) => 
     return route.fulfill({ json: {} });
   });
   await page.goto(`/purchases/${groupId}`);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(
+    page.getByText("رسید این خرید بارگیری نشد. دوباره تلاش کنید."),
+  ).toBeVisible();
   await expect(page.getByText("در حال آماده‌کردن رسید…")).toHaveCount(0);
   await page.getByRole("button", { name: "تلاش دوباره" }).click();
   await expect.poll(() => calls).toBe(2);
