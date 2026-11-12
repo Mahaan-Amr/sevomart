@@ -7,7 +7,7 @@ import {
 test("guest browses discovery and finds seller entry in the identity menu", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/discover");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   const products = page
     .getByRole("list", { name: "کالاهای تازه" })
@@ -39,7 +39,7 @@ test("signed-in buyer finds seller entry in the identity menu while browsing dis
   await context.addCookies([
     { name: "buyer", value: "1", url: "http://127.0.0.1:3339" },
   ]);
-  await page.goto("/");
+  await page.goto("/discover");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   const products = page
     .getByRole("list", { name: "کالاهای تازه" })
