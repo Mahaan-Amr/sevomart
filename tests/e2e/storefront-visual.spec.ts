@@ -336,6 +336,51 @@ test("the storefront shows stopped sales content without a purchase action", asy
   await expect(detail).not.toBeVisible();
 });
 
+test("a long Persian caption appears only after opening a sales cover", async ({
+  page,
+}) => {
+  const caption = "این کالا با دقت ساخته شده و برای استفاده روزمره مناسب است. "
+    .repeat(7)
+    .trim();
+  await page.route("**/api/sales-content*", (route) => {
+    const storeId = new URL(route.request().url()).searchParams.get("storeIds");
+    return route.fulfill({
+      json: {
+        projectionUpdatedAt: "2026-09-01T10:00:00.000Z",
+        items: [
+          {
+            contentId: "71fe87eb-6c0f-47ca-93ca-9f9a038ca270",
+            source: "SELLER",
+            storeId,
+            media: { mediaId: "807c619f-a989-4fd9-8b78-a437a07c7bc4", kind: "IMAGE" },
+            products: [
+              { productId: "a78fdcc0-caad-4315-a7cd-b22834fe76d4", active: false },
+            ],
+            caption,
+            publishedAt: "2026-09-01T09:00:00.000Z",
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/store/media/807c619f-*", (route) => route.abort());
+  await page.goto(`/s/${stores.defaultSlug}`);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  const cover = page.getByRole("button", { name: /دیدن محتوای فروش/ });
+  await expect(cover).toHaveCount(1);
+  await expect(cover).not.toContainText(caption);
+  await expect(page.getByText(caption)).not.toBeVisible();
+  await cover.click();
+  const detail = page.getByRole("dialog", { name: /محتوای فروش/ });
+  await expect(detail.getByText(caption)).toBeVisible();
+  expect(await detail.evaluate((element) => getComputedStyle(element).direction)).toBe(
+    "rtl",
+  );
+  await assertNoHorizontalOverflow(page);
+  await page.keyboard.press("Escape");
+  await expect(detail).not.toBeVisible();
+});
+
 test("the storefront reflows without clipping at an effective 200% zoom", async ({
   page,
 }, testInfo) => {

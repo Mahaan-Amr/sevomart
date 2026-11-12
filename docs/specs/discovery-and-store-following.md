@@ -656,3 +656,7 @@ Issue projection می‌تواند با fixture قرارداد شروع شود،
 پیش از هر برش، PR قبلی ادغام، `origin/main` دریافت، SHA پایه در Issue ثبت و
 بررسی‌های مرتبط سبز می‌شود. دو شاخه هم‌زمان schema، migration، contract entrypoint،
 route فروشگاه یا فایل مرکزی یکسان را تغییر نمی‌دهند.
+
+### سازگاری کپشن محتوای فروش
+
+مهاجرت `20260927110000__content__sales-caption` برای محتوای فروشنده و تصویر عمومی، ستون کپشن nullable اضافه می‌کند؛ سطرهای قدیمی بدون کپشن معتبر می‌مانند. آزمون `sales-caption-legacy-migration.test.ts` ساختار migrationهای قبلی و سطرهای پیش از افزودن کپشن را بازسازی می‌کند و حفظ آن‌ها را پس از اجرای migration واقعی می‌سنجد. همان migrationهای Prisma در مسیر native (`prisma migrate deploy`) و سرویس migration در Compose اجرا می‌شوند؛ تغییر این مسیرها باید هر دو را بررسی کند.
