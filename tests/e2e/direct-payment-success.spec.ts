@@ -420,9 +420,11 @@ test("seller sees the real paid actionable order", async ({ page }, testInfo) =>
     await expect(
       page.getByRole("heading", { name: "سفارش‌های آماده اقدام" }),
     ).toBeVisible();
-    await expect(page.getByText(`سفارش ${ids.order}`)).toBeVisible({
+    await expect(page.locator(`a[href="/seller/orders/${ids.order}"]`)).toBeVisible({
       timeout: 15_000,
     });
+    await page.getByText("شناسه سفارش").click();
+    await expect(page.getByText(ids.order, { exact: true })).toBeVisible();
     await expect(page.getByText("۱ کالا")).toBeVisible();
   } finally {
     await sql`delete from order_items where order_id = ${ids.order}`;

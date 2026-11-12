@@ -22,10 +22,17 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
   const mobile = sellerFulfillmentTestMobiles[index]!;
   const orderId = randomUUID();
   const deniedOrderId = randomUUID();
+  const awaitingProjectionId = randomUUID();
+  const refundOrderId = randomUUID();
   let status: "ACTION_REQUIRED" | "PREPARING" | "SHIPPED" | "DELIVERED" =
     "ACTION_REQUIRED";
   const timelineStatuses = ["ACTION_REQUIRED"] as Array<typeof status>;
   let shippingConflictReturned = false;
+  let listMode: "loading" | "failure" | "special" | "ready" = "loading";
+  let releaseLoading!: () => void;
+  const loadingGate = new Promise<void>((resolve) => {
+    releaseLoading = resolve;
+  });
   const longShippingMethod =
     "ارسال ویژه فروشگاه با پست پیشتاز و تحویل هماهنگ‌شده در نشانی خریدار";
 
@@ -38,6 +45,10 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
   const { identityId } = fixture;
 
   await page.route("**/api/seller/orders/*/fulfillment**", async (route) => {
+    if (route.request().url().includes(awaitingProjectionId)) {
+      await route.fulfill({ status: 404, json: {} });
+      return;
+    }
     if (route.request().url().includes(deniedOrderId)) {
       await route.fulfill({
         status: 200,
@@ -105,6 +116,40 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
     });
   });
   await page.route("**/api/seller/orders", async (route) => {
+    if (listMode === "loading") {
+      await loadingGate;
+      await route.fulfill({ json: { orders: [] } });
+      return;
+    }
+    if (listMode === "failure") {
+      await route.fulfill({ status: 503, json: {} });
+      return;
+    }
+    if (listMode === "special") {
+      await route.fulfill({
+        json: {
+          orders: [
+            {
+              orderId: awaitingProjectionId,
+              status: "PAID",
+              total: { amount: 100000, currency: "IRR" },
+              paidAt: "2026-08-31T07:00:00.000Z",
+              createdAt: "2026-08-31T06:00:00.000Z",
+              itemCount: 1,
+            },
+            {
+              orderId: refundOrderId,
+              status: "CANCELLATION_PENDING_REFUND",
+              total: { amount: 100000, currency: "IRR" },
+              paidAt: "2026-08-31T07:00:00.000Z",
+              createdAt: "2026-08-31T06:00:00.000Z",
+              itemCount: 1,
+            },
+          ],
+        },
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       json: {
@@ -122,7 +167,34 @@ test("seller advances the nearest fulfillment step and recovers from a conflict"
 
   try {
     await page.goto("/seller/orders");
+    await expect(page.getByRole("status")).toContainText("در حال دریافت سفارش‌ها");
+    releaseLoading();
+    await expect(page.getByText("فعلاً سفارشی برای اقدام ندارید.")).toBeVisible();
+    listMode = "failure";
+    await page.reload();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "سفارش‌ها دریافت نشدند" }),
+    ).toBeVisible();
+    listMode = "special";
+    await page.reload();
+    await expect(page.getByText("وضعیت در حال بررسی")).toBeVisible();
+    await expect(page.getByText("در انتظار بازپرداخت")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "دیدن وضعیت بازپرداخت" }),
+    ).toHaveAttribute("href", `/seller/orders/${refundOrderId}/refund`);
+    listMode = "ready";
+    await page.reload();
     await expect(page.getByText(deniedOrderId)).toHaveCount(0);
+    await expect(page.getByText("نیازمند شروع آماده‌سازی")).toBeVisible();
+    await expect(page.getByText("۲ کالا")).toBeVisible();
+    await expect(page.getByText("ثبت سفارش:", { exact: false })).toBeVisible();
+    await page.getByText("شناسه سفارش", { exact: true }).click();
+    await expect(page.getByText(orderId, { exact: true })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+    await assertInteractiveTargets(page.getByRole("link", { name: "انجام سفارش" }));
+    await assertMinimumContrast(page.getByRole("link", { name: "انجام سفارش" }));
+    await page.getByRole("link", { name: "انجام سفارش" }).focus();
+    await expect(page.getByRole("link", { name: "انجام سفارش" })).toBeFocused();
     await expect(page.getByRole("link", { name: "انجام سفارش" })).toHaveCount(1);
     await page.getByRole("link", { name: "انجام سفارش" }).click();
     await expect(page).toHaveURL(new RegExp(`/seller/orders/${orderId}$`));

@@ -4,13 +4,21 @@ import {
   sellerActionableOrderListContract,
   type SellerActionableOrder,
 } from "@sevo/contracts/orders/v1";
-import { fulfillmentTimelineContract } from "@sevo/contracts/fulfillment/v1";
+import {
+  fulfillmentTimelineContract,
+  type FulfillmentStatus,
+} from "@sevo/contracts/fulfillment/v1";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { formatIrrAsToman } from "../../../../lib/format-money";
 import { isOverdueSellerPreparation } from "../../../../lib/seller-order-actionability";
 import styles from "./seller-orders.module.css";
+
+type ListedOrder = {
+  order: SellerActionableOrder;
+  fulfillmentStatus?: FulfillmentStatus;
+};
 
 export function SellerOrders({
   overdueOnly = false,
@@ -19,7 +27,7 @@ export function SellerOrders({
   overdueOnly?: boolean;
   overdueAfterHours?: number;
 }) {
-  const [orders, setOrders] = useState<SellerActionableOrder[]>();
+  const [orders, setOrders] = useState<ListedOrder[]>();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (overdueOnly && overdueAfterHours === undefined) {
@@ -40,7 +48,7 @@ export function SellerOrders({
         const actionable = await Promise.all(
           parsed.data.orders.map(async (order) => {
             if (order.status === "CANCELLATION_PENDING_REFUND") {
-              return overdueOnly ? undefined : order;
+              return overdueOnly ? undefined : { order };
             }
             const fulfillmentResponse = await fetch(
               `/api/seller/orders/${encodeURIComponent(order.orderId)}/fulfillment`,
@@ -49,7 +57,7 @@ export function SellerOrders({
             // IDs come from the store-scoped actionable list. Here, 404 means the
             // fulfillment projection has not caught up with a newly paid order yet.
             if (fulfillmentResponse.status === 404) {
-              return overdueOnly ? undefined : order;
+              return overdueOnly ? undefined : { order };
             }
             const fulfillment = fulfillmentTimelineContract.safeParse(
               await fulfillmentResponse.json(),
@@ -58,13 +66,14 @@ export function SellerOrders({
               throw new Error("fulfillment unavailable");
             }
             if (!fulfillment.data.nextStatus) return undefined;
-            if (!overdueOnly) return order;
+            if (!overdueOnly)
+              return { order, fulfillmentStatus: fulfillment.data.status };
             return isOverdueSellerPreparation(
               fulfillment.data,
               new Date(),
               overdueAfterHours!,
             )
-              ? order
+              ? { order, fulfillmentStatus: fulfillment.data.status }
               : undefined;
           }),
         );
@@ -82,23 +91,50 @@ export function SellerOrders({
               ? "آماده‌سازی‌های معوق"
               : "سفارش‌های آماده اقدام"}
         </h1>
+        <p className={styles.intro}>
+          سفارش‌های پرداخت‌شده و کارهای بعدی آن‌ها را اینجا ببینید.
+        </p>
+        {!orders && !failed ? <p role="status">در حال دریافت سفارش‌ها…</p> : null}
         {failed ? <p role="alert">سفارش‌ها دریافت نشدند. دوباره تلاش کنید.</p> : null}
         {orders?.length === 0 ? (
           <p>
             {overdueOnly && overdueAfterHours !== undefined
               ? `فعلاً سفارشی با آماده‌سازی بیشتر از ${overdueAfterHours.toLocaleString("fa-IR")} ساعت نیست.`
-              : "فعلاً سفارش پرداخت‌شده‌ای ندارید."}
+              : "فعلاً سفارشی برای اقدام ندارید."}
           </p>
         ) : null}
         <ul className={styles.orders}>
-          {orders?.map((order) => (
+          {orders?.map(({ order, fulfillmentStatus }) => (
             <li key={order.orderId}>
-              <span>
-                <b>سفارش {order.orderId}</b>
-                <small>{order.itemCount.toLocaleString("fa-IR")} کالا</small>
-              </span>
-              <strong>{formatIrrAsToman(order.total.amount)}</strong>
+              <div className={styles.orderHeader}>
+                <div>
+                  <span className={styles.state}>
+                    {order.status === "CANCELLATION_PENDING_REFUND"
+                      ? "در انتظار بازپرداخت"
+                      : statusLabel(fulfillmentStatus)}
+                  </span>
+                  <p className={styles.date}>
+                    ثبت سفارش:{" "}
+                    <time dateTime={order.createdAt}>
+                      {new Intl.DateTimeFormat("fa-IR", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                        timeZone: "Asia/Tehran",
+                      }).format(new Date(order.createdAt))}
+                    </time>
+                  </p>
+                </div>
+                <strong>{formatIrrAsToman(order.total.amount)}</strong>
+              </div>
+              <p className={styles.count}>
+                {order.itemCount.toLocaleString("fa-IR")} کالا
+              </p>
+              <details className={styles.identifier}>
+                <summary>شناسه سفارش</summary>
+                <span dir="ltr">{order.orderId}</span>
+              </details>
               <Link
+                className={styles.action}
                 href={
                   order.status === "PAID"
                     ? `/seller/orders/${order.orderId}`
@@ -116,4 +152,17 @@ export function SellerOrders({
       </section>
     </main>
   );
+}
+
+function statusLabel(status?: FulfillmentStatus) {
+  switch (status) {
+    case "ACTION_REQUIRED":
+      return "نیازمند شروع آماده‌سازی";
+    case "PREPARING":
+      return "در حال آماده‌سازی";
+    case "SHIPPED":
+      return "ارسال‌شده، در انتظار ثبت تحویل";
+    default:
+      return "وضعیت در حال بررسی";
+  }
 }
