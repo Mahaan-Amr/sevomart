@@ -21,12 +21,15 @@ export function PurchaseReceipt({
   const [purchase, setPurchase] = useState<PurchaseGroupV2>();
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void load();
   }, [groupId]);
 
   async function load() {
+    setLoading(true);
+    setMessage("");
     try {
       const response = await fetch(
         `/api/purchase-groups/${encodeURIComponent(groupId)}`,
@@ -37,6 +40,8 @@ export function PurchaseReceipt({
       setPurchase(parsed.data);
     } catch {
       setMessage("رسید این خرید بارگیری نشد. دوباره تلاش کنید.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -87,7 +92,17 @@ export function PurchaseReceipt({
         </a>
         <h1 id="purchase-title">خرید شما</h1>
         {!purchase ? (
-          <p role="status">در حال آماده‌کردن رسید…</p>
+          loading ? (
+            <p role="status">در حال آماده‌کردن رسید…</p>
+          ) : (
+            <button
+              className={styles.primary}
+              type="button"
+              onClick={() => void load()}
+            >
+              تلاش دوباره
+            </button>
+          )
         ) : (
           <>
             <div className={receipt.status} role="status">

@@ -64,3 +64,16 @@ for (const [status, label] of [
     ).not.toBe("none");
   });
 }
+
+test("receipt load failure stops loading and allows retry", async ({ page }) => {
+  let calls = 0;
+  await page.route(`**/api/purchase-groups/${groupId}`, (route) => {
+    calls++;
+    return route.fulfill({ json: {} });
+  });
+  await page.goto(`/purchases/${groupId}`);
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByText("در حال آماده‌کردن رسید…")).toHaveCount(0);
+  await page.getByRole("button", { name: "تلاش دوباره" }).click();
+  await expect.poll(() => calls).toBe(2);
+});
