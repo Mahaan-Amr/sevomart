@@ -45,6 +45,7 @@
     "test:integration": "pnpm build:packages && node scripts/run-integration-tests.mjs && pnpm test:qa-scenario",
     "test:qa-scenario": "node scripts/run-qa-scenario-tests.mjs",
     "test:e2e": "node scripts/run-e2e-tests.mjs",
+    "test:checkout-runtime": "pnpm --filter @sevo/contracts build && pnpm --filter @sevo/web build && pnpm exec playwright test --config playwright.payment-runtime.config.ts --workers=1",
     "test:seller-invitation-error": "pnpm exec playwright test --config playwright.seller-invitation-error.config.ts --workers=1",
     "e2e:api": "node scripts/run-e2e-api.mjs",
     "e2e:web": "node scripts/run-e2e-web.mjs",

@@ -178,6 +178,7 @@ services:
       dockerfile: apps/web/Dockerfile
     environment:
       NODE_ENV: production
+      SEVO_RUNTIME_ENV: development
       API_BASE_URL: http://api:3001
       HOSTNAME: 0.0.0.0
       PORT: 3000
