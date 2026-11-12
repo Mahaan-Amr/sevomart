@@ -22,7 +22,6 @@ export function CartView() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [attached, setAttached] = useState(false);
   const [mergeConflict, setMergeConflict] = useState<MergeConflict>();
 
   useEffect(() => {
@@ -64,7 +63,6 @@ export function CartView() {
       const parsed = cartV2Contract.safeParse(body);
       if (response.ok && parsed.success) {
         setCart(parsed.data);
-        setAttached(false);
         setMessage(removing ? "کالا از سبد حذف شد." : "تعداد به‌روز شد.");
       } else {
         const current = cartV2Contract.safeParse(body.currentCart);
@@ -134,7 +132,15 @@ export function CartView() {
         return;
       }
       setMergeConflict(undefined);
-      setAttached(true);
+      if (
+        !parsed.data.reviewRequired &&
+        parsed.data.stores.length > 0 &&
+        parsed.data.stores.every((store) =>
+          store.items.every((item) => item.availability === "AVAILABLE"),
+        )
+      ) {
+        window.location.assign("/checkout/delivery");
+      }
     } catch {
       setMessage("ادامه خرید آماده نشد. دوباره تلاش کنید.");
     } finally {
@@ -315,7 +321,7 @@ export function CartView() {
                 </button>
               </section>
             ) : null}
-            {!cart.reviewRequired && !attached && !mergeConflict ? (
+            {!cart.reviewRequired && !mergeConflict ? (
               <button
                 className={styles.primaryAction}
                 type="button"
@@ -329,11 +335,6 @@ export function CartView() {
               >
                 {pending ? "در حال آماده‌سازی…" : "ادامه برای ثبت سفارش"}
               </button>
-            ) : null}
-            {!cart.reviewRequired && attached ? (
-              <a className={styles.primaryLink} href="/checkout/delivery">
-                ادامه به تحویل سفارش
-              </a>
             ) : null}
           </>
         ) : null}
