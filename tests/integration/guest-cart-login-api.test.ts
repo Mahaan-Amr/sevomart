@@ -659,6 +659,125 @@ describe("guest cart and login attachment HTTP API", () => {
       payload: { scenario: "success" },
     });
     expect(retryAfterReview.statusCode).toBe(409);
+
+    // A provider success followed by a failure while finalizing the second
+    // seller must roll back both child orders and prohibit another payment.
+    const thirdFirst = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId, quantity: 1, expectedRevision: 0 },
+    });
+    expect(thirdFirst.statusCode).toBe(200);
+    const thirdSecond = await server.inject({
+      method: "PUT",
+      url: `/v2/cart/items/${other.variantId}`,
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: { variantId: other.variantId, quantity: 1, expectedRevision: 1 },
+    });
+    expect(thirdSecond.statusCode).toBe(200);
+    const thirdCart = cartV2Contract.parse(thirdSecond.json());
+    const thirdOptions = checkoutOptionsV2Contract.parse(
+      (
+        await server.inject({
+          method: "GET",
+          url: "/v2/checkout/options",
+          headers: { cookie: sessionCookie },
+        })
+      ).json(),
+    );
+    const thirdPrepare = await server.inject({
+      method: "POST",
+      url: "/v2/checkout/prepare",
+      headers: { cookie: sessionCookie },
+      payload: {
+        cartId: thirdCart.cartId,
+        cartRevision: thirdCart.revision,
+        shipping: thirdOptions.stores.map((store) => ({
+          storeId: store.storeId,
+          shippingMethodId: store.shippingMethods[0]!.id,
+          shippingMethodRevision: store.shippingMethods[0]!.revision,
+        })),
+      },
+    });
+    expect(thirdPrepare.statusCode).toBe(200);
+    const thirdRevision = checkoutPreparationV2Contract.parse(thirdPrepare.json());
+    const thirdCreate = await server.inject({
+      method: "POST",
+      url: "/v2/purchase-groups",
+      headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+      payload: {
+        checkoutRevision: thirdRevision.checkoutRevision,
+        cartRevision: thirdCart.revision,
+      },
+    });
+    expect(thirdCreate.statusCode).toBe(201);
+    const thirdGroup = purchaseGroupContract.parse(thirdCreate.json());
+    const paymentDb = postgres(apiTestEnvironment.DATABASE_URL, { max: 1 });
+    const marker2 = `test_finalize_${crypto.randomUUID().replaceAll("-", "")}`;
+    const proc2 = `${marker2}_fn`;
+    const trigger2 = `${marker2}_trigger`;
+    try {
+      await paymentDb.unsafe(`create sequence ${marker2}`);
+      await paymentDb.unsafe(`create function ${proc2}() returns trigger language plpgsql as $$
+        begin
+          if NEW.status = 'CONSUMED' and exists (
+            select 1 from inventory_reservations r
+            join order_orders first_order on first_order.reservation_id = r.id
+            join order_orders this_order on this_order.reservation_id = NEW.id
+            where r.status = 'CONSUMED' and first_order.purchase_group_id = this_order.purchase_group_id
+              and this_order.purchase_group_id = '${thirdGroup.groupId}'::uuid
+          ) then
+            perform nextval('${marker2}');
+            raise exception 'injected second finalization failure';
+          end if;
+          return NEW;
+        end $$`);
+      await paymentDb.unsafe(
+        `create trigger ${trigger2} before update on inventory_reservations for each row execute function ${proc2}()`,
+      );
+      const result = await server.inject({
+        method: "POST",
+        url: `/v2/purchase-groups/${thirdGroup.groupId}/dev-payment`,
+        headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+        payload: { scenario: "success" },
+      });
+      expect(result.statusCode, JSON.stringify(result.json())).toBe(200);
+      expect(devPurchaseGroupPaymentResultContract.parse(result.json())).toMatchObject({
+        paymentStatus: "REVIEW_REQUIRED",
+        purchase: { status: "PAYMENT_REVIEW" },
+      });
+      const fired = await paymentDb.unsafe<Array<{ is_called: boolean }>>(
+        `select is_called from ${marker2}`,
+      );
+      expect(fired[0]?.is_called).toBe(true);
+      const children = await paymentDb<
+        Array<{ status: string; reservationStatus: string }>
+      >`
+        select o.status, r.status as "reservationStatus" from order_orders o
+        join inventory_reservations r on r.id = o.reservation_id
+        where o.purchase_group_id = ${thirdGroup.groupId}::uuid`;
+      expect(children).toHaveLength(2);
+      expect(
+        children.every(
+          (child) => child.status !== "PAID" && child.reservationStatus !== "CONSUMED",
+        ),
+      ).toBe(true);
+      const retry = await server.inject({
+        method: "POST",
+        url: `/v2/purchase-groups/${thirdGroup.groupId}/dev-payment`,
+        headers: { cookie: sessionCookie, "idempotency-key": crypto.randomUUID() },
+        payload: { scenario: "success" },
+      });
+      expect(retry.statusCode).toBe(409);
+    } finally {
+      await paymentDb.unsafe(
+        `drop trigger if exists ${trigger2} on inventory_reservations`,
+      );
+      await paymentDb.unsafe(`drop function if exists ${proc2}()`);
+      await paymentDb.unsafe(`drop sequence if exists ${marker2}`);
+      await paymentDb.end();
+    }
   });
 
   it("keeps a server-side guest cart across refresh and revalidates its display", async () => {
