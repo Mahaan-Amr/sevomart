@@ -34,6 +34,7 @@ import {
 } from "../../../../../lib/conversation-time";
 import { loginHref } from "../../../../../lib/navigation";
 import styles from "./conversation-thread.module.css";
+import { StoreAvatar } from "../conversation-store-avatar";
 
 type LocalConversationMessage = ConversationOutgoingMessageV1 & {
   failure?: ConversationErrorPresentation;
@@ -236,8 +237,22 @@ export function ConversationThread({ conversationId }: { conversationId: string 
     <section className={styles.page} aria-labelledby="thread-title">
       <header className={styles.heading}>
         <Link href="/conversations">بازگشت به گفت‌وگوها</Link>
-        <h1 id="thread-title">{conversationContextTitle(thread.context)}</h1>
-        <p>{conversationContextDescription(thread.context)}</p>
+        <div className={styles.storeHeader}>
+          <StoreAvatar
+            name={thread.storeIdentity?.name}
+            logoMediaId={thread.storeIdentity?.logoMediaId}
+          />
+          <div>
+            <h1 id="thread-title">
+              {thread.storeIdentity?.name ?? conversationContextTitle(thread.context)}
+            </h1>
+            <p>
+              {thread.storeIdentity
+                ? conversationContextTitle(thread.context)
+                : conversationContextDescription(thread.context)}
+            </p>
+          </div>
+        </div>
       </header>
       {nextCursor ? (
         <button

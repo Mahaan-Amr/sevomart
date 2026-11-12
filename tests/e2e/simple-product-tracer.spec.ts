@@ -515,8 +515,12 @@ test("seller publishes a two-axis product that a guest sees on the storefront", 
   await page.getByRole("link", { name: "ویرایش فنجان تازه سرور" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
   await page.getByRole("button", { name: "ادامه" }).click();
-  await page.getByLabel("قیمت قرمز، کوچک").fill("457000");
-  await page.getByLabel("موجودی قرمز، کوچک").fill("9");
+  await page.getByLabel("قیمت قرمز، کوچک").fill("٤٥٧٠٠٠");
+  await expect(page.getByLabel("قیمت قرمز، کوچک")).toHaveValue("457000");
+  await page.getByLabel("موجودی قرمز، کوچک").fill("1e3");
+  await expect(page.getByText("موجودی باید عدد صحیح و نامنفی باشد.")).toBeVisible();
+  await page.getByLabel("موجودی قرمز، کوچک").fill("۹");
+  await expect(page.getByLabel("موجودی قرمز، کوچک")).toHaveValue("9");
   let offersSaved = 0;
   let inventorySaved = 0;
   let rejectedOfferRevision = false;

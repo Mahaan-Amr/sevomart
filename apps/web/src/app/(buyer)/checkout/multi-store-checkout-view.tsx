@@ -65,7 +65,15 @@ export function MultiStoreCheckoutView({
           ]),
         ),
       );
-      setAddressId(parsed.data.addresses[0]?.addressId ?? "");
+      const returnedAddressId = new URLSearchParams(window.location.search).get(
+        "addressId",
+      );
+      setAddressId(
+        parsed.data.addresses.find((address) => address.addressId === returnedAddressId)
+          ?.addressId ??
+          parsed.data.addresses[0]?.addressId ??
+          "",
+      );
     } catch {
       setMessage("ارتباط برقرار نشد. دوباره تلاش کنید.");
     }

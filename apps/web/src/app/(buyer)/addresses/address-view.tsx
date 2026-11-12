@@ -61,40 +61,53 @@ export function AddressView({ returnTo }: { returnTo: string }) {
     event.preventDefault();
     setPending(true);
     setMessage("");
-    const response = await fetch(
-      editing ? `/api/addresses/${editing.addressId}` : "/api/addresses",
-      {
-        method: editing ? "PUT" : "POST",
-        headers: {
-          "content-type": "application/json",
-          "idempotency-key": crypto.randomUUID(),
+    try {
+      const response = await fetch(
+        editing ? `/api/addresses/${editing.addressId}` : "/api/addresses",
+        {
+          method: editing ? "PUT" : "POST",
+          headers: {
+            "content-type": "application/json",
+            "idempotency-key": crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            ...fields,
+            postalCode: fields.postalCode || undefined,
+            ...(editing ? { expectedRevision: editing.revision } : {}),
+          }),
         },
-        body: JSON.stringify({
-          ...fields,
-          postalCode: fields.postalCode || undefined,
-          ...(editing ? { expectedRevision: editing.revision } : {}),
-        }),
-      },
-    );
-    const body = await response.json();
-    const parsed = savedAddressContract.safeParse(body);
-    if (response.ok && parsed.success) {
-      setEditing(undefined);
-      setFields(emptyAddress);
-      setMessage(editing ? "ویرایش نشانی ذخیره شد." : "نشانی ذخیره شد.");
-      await load();
-    } else {
-      setMessage(
-        typeof body?.message === "string"
-          ? body.message
-          : "نشانی ذخیره نشد. اطلاعات را بررسی کنید.",
       );
-      if (body?.currentAddress) {
-        const current = savedAddressContract.safeParse(body.currentAddress);
-        if (current.success) beginEdit(current.data);
+      const body = await response.json();
+      const parsed = savedAddressContract.safeParse(body);
+      if (response.ok && parsed.success) {
+        const destination = new URL(returnTo, window.location.origin);
+        if (destination.pathname === "/checkout/delivery") {
+          destination.searchParams.set("addressId", parsed.data.addressId);
+          window.location.assign(
+            `${destination.pathname}${destination.search}${destination.hash}`,
+          );
+          return;
+        }
+        setEditing(undefined);
+        setFields(emptyAddress);
+        setMessage(editing ? "ویرایش نشانی ذخیره شد." : "نشانی ذخیره شد.");
+        await load();
+      } else {
+        setMessage(
+          typeof body?.message === "string"
+            ? body.message
+            : "نشانی ذخیره نشد. اطلاعات را بررسی کنید.",
+        );
+        if (body?.currentAddress) {
+          const current = savedAddressContract.safeParse(body.currentAddress);
+          if (current.success) beginEdit(current.data);
+        }
       }
+    } catch {
+      setMessage("ارتباط برقرار نشد. دوباره تلاش کنید.");
+    } finally {
+      setPending(false);
     }
-    setPending(false);
   }
 
   function beginEdit(address: SavedAddress) {

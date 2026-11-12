@@ -126,3 +126,73 @@ test("cart keeps quantity controls together and explains the running total", asy
   );
   await expect(page.getByRole("link", { name: "دیدن کالاها" })).toBeVisible();
 });
+
+const readyCart = {
+  cartId: "999e100e-1383-47e8-8ad6-9f2f4ec9ac37",
+  revision: 1,
+  reviewRequired: false,
+  reviewChanges: [],
+  stores: [
+    {
+      storeId: "e234d421-7ca7-4772-8b7d-d8427e288805",
+      name: "فروشگاه نمونه",
+      slug: "sample-store",
+      subtotal: { amount: 4500000, currency: "IRR" },
+      items: [
+        {
+          productId: "b8e3d629-8115-4dfd-88bc-26984d5d04c8",
+          variantId: "e782b598-8e16-47df-a1c7-fbdb70b67653",
+          name: "فنجان سرامیکی",
+          image: {
+            id: "e16ffbdf-2524-4edc-9716-06ad3c91bcc9",
+            url: "/v1/media/e16ffbdf-2524-4edc-9716-06ad3c91bcc9",
+          },
+          quantity: 1,
+          unitPrice: { amount: 4500000, currency: "IRR" },
+          availability: "AVAILABLE",
+        },
+      ],
+    },
+  ],
+  subtotal: { amount: 4500000, currency: "IRR" },
+};
+
+test("a ready cart continues to delivery with one action", async ({ page }) => {
+  await page.route(/\/api\/cart\/v2$/, (route) =>
+    route.fulfill({ json: { cart: readyCart } }),
+  );
+  await page.route(/\/api\/cart\/v2\/attach$/, (route) =>
+    route.fulfill({ json: { cart: readyCart } }),
+  );
+  await page.route("**/checkout/delivery", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>تحویل سفارش</h1>" }),
+  );
+  await page.goto("/cart");
+  await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
+  await expect(page).toHaveURL(/\/checkout\/delivery$/);
+});
+
+test("cart changes found during attachment require review before delivery", async ({
+  page,
+}) => {
+  await page.route(/\/api\/cart\/v2$/, (route) =>
+    route.fulfill({ json: { cart: readyCart } }),
+  );
+  const updatedCart = {
+    ...readyCart,
+    reviewRequired: true,
+    reviewChanges: [
+      {
+        storeId: readyCart.stores[0]!.storeId,
+        change: { kind: "SHIPPING_METHOD_CHANGED", currentMethods: [] },
+      },
+    ],
+  };
+  await page.route(/\/api\/cart\/v2\/attach$/, (route) =>
+    route.fulfill({ json: { cart: updatedCart } }),
+  );
+  await page.goto("/cart");
+  await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
+  await expect(page).toHaveURL(/\/cart$/);
+  await expect(page.getByRole("heading", { name: "سبد تغییر کرده است" })).toBeVisible();
+});

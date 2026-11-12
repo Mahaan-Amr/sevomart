@@ -241,7 +241,8 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await expect(page.getByText("فنجان سرامیکی")).toBeVisible();
   await expect(page.getByText("تعداد ۳")).toBeVisible();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
-  await expect(page.getByRole("link", { name: "ادامه به تحویل سفارش" })).toBeVisible();
+  await expect(page).toHaveURL(/\/checkout\/delivery$/);
+  await page.goto("/cart");
   const reviewSql = postgres(databaseUrl, { max: 1 });
   try {
     await reviewSql`
@@ -270,7 +271,6 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: "تغییرها را دیدم" }).click();
   await expect(page.getByText("تغییرهای سبد تأیید شد.")).toBeVisible();
   await page.getByRole("button", { name: "ادامه برای ثبت سفارش" }).click();
-  await page.getByRole("link", { name: "ادامه به تحویل سفارش" }).click();
   await expect(page).toHaveURL(/\/checkout\/delivery$/);
   await page.getByRole("link", { name: "افزودن نشانی تحویل" }).click();
   await expect(page.getByRole("heading", { name: "نشانی تحویل" })).toBeVisible();
@@ -292,9 +292,6 @@ test("guest adds a product, signs in and continues the same cart", async ({
     "خیابان آزادی، بعد از میدان اصلی، کوچه بهار، ساختمان سپید، ورودی دوم، طبقه چهارم، واحد دوازده، زنگ احمدی";
   await page.getByLabel("نشانی کامل").fill(longAddress);
   await page.getByLabel("کدپستی (در صورت نیاز)").fill("۱۲۳۴۵۶۷۸۹۰");
-  await page.getByRole("button", { name: "ذخیره نشانی" }).click();
-  await expect(page.getByText("نشانی ذخیره شد.")).toBeVisible();
-  await expect(page.getByText(longAddress).first()).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await assertInteractiveTargets(page);
   await assertMinimumContrast(page.locator("main input, main textarea, main button"));
@@ -306,9 +303,20 @@ test("guest adds a product, signs in and continues the same cart", async ({
         Number.parseFloat(getComputedStyle(element).transitionDuration),
       ),
   ).toBeLessThan(0.001);
-  await page.getByRole("link", { name: "بازگشت به تحویل سفارش" }).click();
+  await page.getByRole("button", { name: "ذخیره نشانی" }).click();
   await expect(page).toHaveURL(/\/checkout\/delivery/);
   await expect(page.getByRole("heading", { name: "تحویل سفارش" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /سارا احمدی/ })).toBeChecked();
+  await page.getByRole("link", { name: "افزودن نشانی دیگر" }).click();
+  await page.getByLabel("نام گیرنده").fill("مینا احمدی");
+  await page.getByLabel("شماره موبایل گیرنده").fill("۰۹۱۲۳۴۵۶۷۸۹");
+  await page.getByLabel("استان").fill("تهران");
+  await page.getByLabel("شهر").fill("تهران");
+  await page.getByLabel("نشانی کامل").fill(longAddress);
+  await page.getByLabel("کدپستی (در صورت نیاز)").fill("۱۲۳۴۵۶۷۸۹۰");
+  await page.getByRole("button", { name: "ذخیره نشانی" }).click();
+  await expect(page).toHaveURL(/\/checkout\/delivery/);
+  await expect(page.getByRole("radio", { name: /مینا احمدی/ })).toBeChecked();
   await page.getByRole("button", { name: "مرور مبلغ نهایی" }).click();
   await expect(page).toHaveURL(/\/checkout\/review$/);
   await expect(page.getByRole("heading", { name: "مرور نهایی خرید" })).toBeVisible();
