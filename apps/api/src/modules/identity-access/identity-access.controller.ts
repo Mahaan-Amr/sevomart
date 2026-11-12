@@ -113,7 +113,7 @@ export class IdentityAccessController {
   @Post("password/recovery/requests")
   @HttpCode(HttpStatus.ACCEPTED)
   async requestPasswordRecovery(@Body() body: unknown, @Req() request: FastifyRequest) {
-    const parsed = otpRequestContract.safeParse(body);
+    const parsed = otpRequestContract.safeParse(normalizeOtpField(body, "mobile"));
     if (!parsed.success)
       throw validationError(request.id, "شماره موبایل را بررسی کنید.", [
         { field: "mobile", code: "INVALID_FORMAT" },
@@ -164,7 +164,7 @@ export class IdentityAccessController {
   @Post("otp/requests")
   @HttpCode(HttpStatus.ACCEPTED)
   async requestOtp(@Body() body: unknown, @Req() request: FastifyRequest) {
-    const parsed = otpRequestContract.safeParse(body);
+    const parsed = otpRequestContract.safeParse(normalizeOtpField(body, "mobile"));
     if (!parsed.success) {
       throw validationError(
         request.id,
@@ -197,7 +197,7 @@ export class IdentityAccessController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const parsed = otpVerificationContract.safeParse(body);
+    const parsed = otpVerificationContract.safeParse(normalizeOtpField(body, "code"));
     if (!parsed.success) {
       throw validationError(request.id, "کد شش‌رقمی را کامل وارد کنید.", [
         { field: "code", code: "INVALID_FORMAT" },
@@ -291,6 +291,18 @@ export class IdentityAccessController {
       `sevo_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
     );
   }
+}
+
+function normalizeOtpField(body: unknown, field: "mobile" | "code") {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const value = (body as Record<string, unknown>)[field];
+  if (typeof value !== "string") return body;
+  return {
+    ...body,
+    [field]: value.replace(/[۰-۹٠-٩]/g, (digit) =>
+      String(digit.charCodeAt(0) - (digit >= "۰" ? 0x06f0 : 0x0660)),
+    ),
+  };
 }
 
 async function passwordAdmission<T>(
