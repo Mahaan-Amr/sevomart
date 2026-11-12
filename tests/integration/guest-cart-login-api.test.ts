@@ -11,10 +11,13 @@ import {
   devPurchaseGroupPaymentResultContract,
 } from "@sevo/contracts/orders/v2";
 import { createHash } from "node:crypto";
+import { storeIdContract } from "@sevo/contracts/platform/v1";
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiApp } from "../../apps/api/src/create-app";
+import { CHECKOUT_REPOSITORY } from "../../apps/api/src/modules/orders/orders.tokens";
+import type { OrderPaymentWorkflow } from "../../apps/api/src/modules/orders/public";
 import { apiTestEnvironment } from "../helpers/api-test-environment";
 
 describe("guest cart and login attachment HTTP API", () => {
@@ -763,6 +766,22 @@ describe("guest cart and login attachment HTTP API", () => {
           (child) => child.status !== "PAID" && child.reservationStatus !== "CONSUMED",
         ),
       ).toBe(true);
+      const sellerOrders = app.get<OrderPaymentWorkflow>(CHECKOUT_REPOSITORY);
+      for (const store of [storeId, other.storeId]) {
+        const actionable = await sellerOrders.listActionableByStore(
+          storeIdContract.parse(store),
+        );
+        const paidChild = group.stores.find((child) => child.storeId === store);
+        const incompleteChild = thirdGroup.stores.find(
+          (child) => child.storeId === store,
+        );
+        expect(paidChild).toBeDefined();
+        expect(incompleteChild).toBeDefined();
+        expect(actionable.map((order) => order.orderId)).toContain(paidChild!.orderId);
+        expect(actionable.map((order) => order.orderId)).not.toContain(
+          incompleteChild!.orderId,
+        );
+      }
       const retry = await server.inject({
         method: "POST",
         url: `/v2/purchase-groups/${thirdGroup.groupId}/dev-payment`,
