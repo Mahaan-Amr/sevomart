@@ -40,6 +40,12 @@ const feed = {
 createServer((req, res) => {
   let body;
   if (req.url === "/health") body = { ok: true };
+  else if (req.url === "/v1/seller/orders") {
+    res.writeHead(403);
+    res.end();
+    return;
+  } else if (req.url?.startsWith("/v1/seller-applications/mine"))
+    body = identityAccessV1Examples.MySellerApplications;
   else if (req.url === "/v1/auth/session" && req.headers.cookie?.includes("buyer=1"))
     body = identityAccessV1Examples.IdentitySession;
   else if (req.url === "/v1/stores/khane-sofal-mah") body = store;

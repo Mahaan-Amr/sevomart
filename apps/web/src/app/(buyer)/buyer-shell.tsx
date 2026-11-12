@@ -12,9 +12,11 @@ import styles from "./buyer-shell.module.css";
 export function BuyerShell({
   children,
   session,
+  seller = false,
 }: {
   children: ReactNode;
   session?: IdentitySession;
+  seller?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -95,7 +97,11 @@ export function BuyerShell({
                 <>
                   <Link href="/orders">سفارش‌ها</Link>
                   <Link href="/account/addresses">نشانی‌ها</Link>
-                  <Link href="/seller/start">درخواست فروشندگی</Link>
+                  {seller ? (
+                    <Link href="/seller">فضای فروشنده</Link>
+                  ) : (
+                    <Link href="/seller/start">درخواست فروشندگی</Link>
+                  )}
                   <button type="button" onClick={signOut} disabled={endingSession}>
                     {endingSession ? "در حال خروج…" : "خروج"}
                   </button>

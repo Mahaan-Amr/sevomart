@@ -1,0 +1,131 @@
+.profile {
+  max-width: 760px;
+  margin-inline: auto;
+  color: var(--color-text);
+}
+.header {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.topline,
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.topline h1,
+.sectionHeading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.identity {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-block: 24px 16px;
+}
+.avatar {
+  display: grid;
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+  font-size: 28px;
+  font-weight: 700;
+}
+.avatar img,
+.tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.identityText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.identityText span,
+.grid small {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+.stats strong {
+  color: var(--color-text);
+}
+.bio {
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.profile .secondary,
+.profile .primary {
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-align: center;
+}
+.profile .secondary {
+  background: var(--color-cover-start);
+}
+.profile .primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.sectionHeading {
+  padding-block: 16px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.profile .grid a {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 0;
+  min-width: 0;
+  color: var(--color-text);
+}
+.tile {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  background: var(--color-cover-start);
+  color: var(--color-primary-dark);
+}
+.productName {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.empty {
+  padding-block: 36px;
+  text-align: center;
+}
+.empty p {
+  color: var(--color-muted);
+}
