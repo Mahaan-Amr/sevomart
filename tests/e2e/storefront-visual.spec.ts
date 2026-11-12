@@ -107,6 +107,12 @@ test("a guest reads a published empty storefront from the real API", async ({
   await expect(page.getByText("۰ کالای فعال")).toBeVisible();
   await expect(page.getByText("۰ خرید تأییدشده")).toBeVisible();
   await expect(page.getByText("۰ دنبال‌کننده")).toBeVisible();
+  const productStat = await page.getByText("۰ کالای فعال").boundingBox();
+  const purchaseStat = await page.getByText("۰ خرید تأییدشده").boundingBox();
+  const followerStat = await page.getByText("۰ دنبال‌کننده").boundingBox();
+  expect(Math.abs(productStat!.y - purchaseStat!.y)).toBeLessThan(2);
+  expect(Math.abs(productStat!.y - followerStat!.y)).toBeLessThan(2);
+  await assertNoHorizontalOverflow(page);
   await expect(
     page.getByRole("listitem").filter({ hasText: "پست پیشتاز" }),
   ).toBeVisible();
