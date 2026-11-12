@@ -34,7 +34,9 @@ export function BuyerShell({
       const response = await fetch("/api/auth/session", { method: "DELETE" });
       if (response.ok) {
         resetWorkspace();
-        router.refresh();
+        if (pathname === "/conversations" || pathname.startsWith("/conversations/")) {
+          window.location.replace(loginHref("/conversations", "/"));
+        } else router.refresh();
       } else setSignOutError(true);
     } catch {
       setSignOutError(true);

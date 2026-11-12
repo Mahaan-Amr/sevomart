@@ -11,6 +11,7 @@ import { conversationErrorPresentation } from "../../../../lib/conversation-erro
 import { conversationContextTitle } from "../../../../lib/conversation-navigation";
 import { loginHref } from "../../../../lib/navigation";
 import styles from "./conversations.module.css";
+import { StoreAvatar } from "./conversation-store-avatar";
 
 export function ConversationsList() {
   const [items, setItems] = useState<ConversationThreadV1[]>([]);
@@ -83,8 +84,18 @@ export function ConversationsList() {
           <ul className={styles.list} aria-label="فهرست گفت‌وگوها">
             {items.map((thread) => (
               <li key={thread.conversationId}>
-                <Link href={`/conversations/${thread.conversationId}`}>
-                  <span>{conversationContextTitle(thread.context)}</span>
+                <Link
+                  className={styles.threadLink}
+                  href={`/conversations/${thread.conversationId}`}
+                >
+                  <StoreAvatar
+                    name={thread.storeIdentity?.name}
+                    logoMediaId={thread.storeIdentity?.logoMediaId}
+                  />
+                  <span className={styles.threadDetails}>
+                    <strong>{thread.storeIdentity?.name ?? "فروشگاه"}</strong>
+                    <span>{conversationContextTitle(thread.context)}</span>
+                  </span>
                   <time dateTime={thread.updatedAt}>
                     {formatDate(thread.updatedAt)}
                   </time>
