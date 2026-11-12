@@ -63,7 +63,9 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
     page.getByRole("banner").getByRole("link", { name: "سبد" }),
   ).toBeVisible();
   await expect(navigation.getByRole("link", { name: "گفت‌وگوها" })).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "دنبال‌شده‌ها" })).toBeVisible();
+  await expect(
+    page.getByLabel("فید فروشگاه‌ها").getByRole("link", { name: "دنبال‌شده‌ها" }),
+  ).toBeVisible();
   await expect(navigation.getByRole("link", { name: "سفارش‌ها" })).toHaveAttribute(
     "href",
     "/orders",

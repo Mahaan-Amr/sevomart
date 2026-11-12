@@ -98,7 +98,9 @@ test("discovery and following keep independent cursor and scroll state", async (
     sensitiveRegions: [],
   });
 
-  const discoveryTab = page.getByRole("link", { name: "کشف", exact: true });
+  const discoveryTab = page
+    .getByLabel("فید فروشگاه‌ها")
+    .getByRole("link", { name: "کشف", exact: true });
   await page.locator("body").click({ position: { x: 1, y: 1 } });
   for (let step = 0; step < 8; step += 1) {
     await page.keyboard.press("Tab");
