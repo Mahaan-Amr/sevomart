@@ -312,6 +312,12 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     .evaluate((button) => getComputedStyle(button).transitionDuration);
   expect(Number.parseFloat(transitionDuration)).toBeLessThanOrEqual(0.001);
 
+  await page.unroute("**/api/store/me/follows/*");
+  await page.getByRole("button", { name: "لغو دنبال‌کردن فروشگاه" }).click();
+  await expect(page.getByText("۰ دنبال‌کننده")).toBeVisible();
+  await page.getByRole("button", { name: "دنبال‌کردن فروشگاه", exact: true }).click();
+  await expect(page.getByText("۱ دنبال‌کننده")).toBeVisible();
+
   const sql = postgres(databaseUrl, { max: 1 });
   await sql`
     insert into platform_outbox_consumptions (consumer_name, event_id, consumed_at)
@@ -339,7 +345,7 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     {
       headers: {
         "Idempotency-Key": `e2e-feed-unfollow-${storeId}`,
-        "If-Match": '"1"',
+        "If-Match": '"3"',
       },
     },
   );
@@ -357,7 +363,7 @@ test("guest cancel preserves the store and login completes a retriable follow", 
     {
       headers: {
         "Idempotency-Key": `e2e-feed-refollow-${storeId}`,
-        "If-Match": '"2"',
+        "If-Match": '"4"',
       },
     },
   );

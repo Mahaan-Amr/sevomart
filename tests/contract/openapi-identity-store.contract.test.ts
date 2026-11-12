@@ -247,6 +247,15 @@ describe("OpenAPI identity and store compatibility", () => {
         .pattern,
     );
     expect(recoveryOutputPattern.test("۰".repeat(43))).toBe(false);
+    const otpRequestPattern = new RegExp(
+      document.components.schemas.OtpRequestUserInput.properties.mobile.pattern,
+    );
+    const otpCodePattern = new RegExp(
+      document.components.schemas.OtpVerificationUserInput.properties.code.pattern,
+    );
+    expect(otpRequestPattern.test("۰۹۱۲۳۴۵۶۷۸۹")).toBe(true);
+    expect(otpRequestPattern.test("09123456789")).toBe(true);
+    expect(otpCodePattern.test("١١١١١١")).toBe(true);
     const completeSurfaceHash = createHash("sha256")
       .update(
         JSON.stringify({
@@ -257,7 +266,7 @@ describe("OpenAPI identity and store compatibility", () => {
       )
       .digest("hex");
     expect(completeSurfaceHash).toBe(
-      "4765d18fd98e75823b916b2c60b99926c425d19dfe1a388294b90d0d42240618",
+      "05940e7e90095ec04f6f4ed9153498342d3ab0806963516fff10a64818ab304d",
     );
   });
 

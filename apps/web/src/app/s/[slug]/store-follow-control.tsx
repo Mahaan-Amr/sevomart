@@ -6,6 +6,7 @@ import {
   type ViewerStoreFollowV1,
 } from "@sevo/contracts/discovery/v1";
 import { useEffect, useRef, useState } from "react";
+import type { PublicStore } from "@sevo/contracts/store/v1";
 
 import styles from "./storefront.module.css";
 
@@ -18,12 +19,18 @@ export function StoreFollowControl({
   initialCount,
   initialViewer,
   autoFollow,
+  activeProductCount,
+  verifiedPurchases,
+  rating,
 }: {
   storeId: string;
   slug: string;
   initialCount: PublicFollowerCountV1;
   initialViewer?: ViewerStoreFollowV1;
   autoFollow: boolean;
+  activeProductCount: number;
+  verifiedPurchases?: PublicStore["verifiedPurchases"];
+  rating?: PublicStore["rating"];
 }) {
   const [count, setCount] = useState(initialCount.count);
   const [countUpdatedAt, setCountUpdatedAt] = useState(initialCount.updatedAt);
@@ -133,7 +140,36 @@ export function StoreFollowControl({
   return (
     <section className={styles.follow} aria-label="دنبال‌کردن فروشگاه">
       <div className={styles.followSummary}>
+        <strong>
+          {new Intl.NumberFormat("fa-IR").format(activeProductCount)} کالای فعال
+        </strong>
+        {verifiedPurchases ? (
+          <strong>
+            {new Intl.NumberFormat("fa-IR").format(verifiedPurchases.count)} خرید
+            تأییدشده
+          </strong>
+        ) : null}
         <strong>{new Intl.NumberFormat("fa-IR").format(count)} دنبال‌کننده</strong>
+        {rating ? (
+          <small>
+            امتیاز{" "}
+            {new Intl.NumberFormat("fa-IR", {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            }).format(rating.average)}{" "}
+            از ۵
+          </small>
+        ) : null}
+        {verifiedPurchases?.updatedAt ? (
+          <small>
+            آخرین ثبت وضعیت تحویل:{" "}
+            {new Intl.DateTimeFormat("fa-IR", {
+              dateStyle: "medium",
+              timeStyle: "short",
+              timeZone: "Asia/Tehran",
+            }).format(new Date(verifiedPurchases.updatedAt))}
+          </small>
+        ) : null}
         <time dateTime={countUpdatedAt}>
           به‌روزرسانی تا{" "}
           {new Intl.DateTimeFormat("fa-IR", { dateStyle: "short" }).format(
