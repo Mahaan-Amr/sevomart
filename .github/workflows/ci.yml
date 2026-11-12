@@ -61,6 +61,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - name: Verify checkout runtime payment guard
         run: pnpm test:checkout-runtime
+      - name: Verify seller invitation on service failure
+        run: pnpm test:seller-invitation-error
       - name: Run discovery and storefront layout tests
         id: playwright-grid
         run: pnpm exec playwright test --config playwright.grid.config.ts

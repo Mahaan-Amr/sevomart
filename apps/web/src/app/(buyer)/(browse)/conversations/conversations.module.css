@@ -81,6 +81,54 @@
   text-decoration: none;
 }
 
+.list .threadLink {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  text-align: start;
+}
+
+.avatar {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--color-primary-dark);
+  background: var(--color-cover-start);
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.threadDetails {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.list .threadDetails span {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.list time {
+  white-space: nowrap;
+}
+
+@media (max-width: 360px) {
+  .list .threadLink {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  .list .threadLink time {
+    grid-column: 2;
+  }
+}
+
 .list span {
   font-weight: 600;
 }

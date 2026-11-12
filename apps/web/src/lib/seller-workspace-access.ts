@@ -9,6 +9,10 @@ export type SellerWorkspaceAccess =
   | { kind: "SIGNED_OUT" }
   | { kind: "UNAVAILABLE" };
 
+export function canInviteSeller(access: SellerWorkspaceAccess): boolean {
+  return access.kind === "SIGNED_OUT" || access.kind === "APPLICANT";
+}
+
 export async function readSellerWorkspaceAccess(
   cookieHeader: string,
 ): Promise<SellerWorkspaceAccess> {

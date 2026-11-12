@@ -44,6 +44,8 @@ const reasonLabels = {
 
 const rejectionCompletionMessage =
   "بررسی پایان یافت؛ دلیل به متقاضی نمایش داده می‌شود و اقدامی در این پرونده باقی نمانده است.";
+const approvalCompletionMessage =
+  "درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد.";
 
 export function PlatformSellerApplicationReview() {
   const [queue, setQueue] = useState<PlatformSellerApplicationPage["items"]>([]);
@@ -136,6 +138,12 @@ export function PlatformSellerApplicationReview() {
     };
   }, [readQueue]);
 
+  useEffect(() => {
+    if (message !== approvalCompletionMessage) return;
+    const timer = window.setTimeout(() => setMessage(""), 3_000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
   async function selectApplication(applicationId: string) {
     setMessage("");
     setLoading(true);
@@ -205,7 +213,7 @@ export function PlatformSellerApplicationReview() {
         approveSellerApplicationResultContract.parse(body);
         setApplication(undefined);
         setSelectedId(undefined);
-        committedMessage = "درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد.";
+        committedMessage = approvalCompletionMessage;
         setMessage(committedMessage);
       } else {
         const updated = platformSellerApplicationViewContract.parse(body);
@@ -464,11 +472,11 @@ export function PlatformSellerApplicationReview() {
                 </p>
               )}
             </>
-          ) : (
+          ) : queue.length > 0 ? (
             <p className={styles.empty} id="case-title">
               یک درخواست را از صف انتخاب کنید.
             </p>
-          )}
+          ) : null}
         </section>
       </div>
     </main>

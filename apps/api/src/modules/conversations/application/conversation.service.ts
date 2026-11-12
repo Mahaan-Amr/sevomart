@@ -217,12 +217,15 @@ export class ConversationService {
         const thread = await this.repository.read(entry.itemId);
         if (!thread) continue;
         try {
+          const viewerRole = await this.role(identityId, thread);
+          const storeIdentity = await this.readDisplayStore(thread.context.storeId);
           items.push(
             conversationThreadV1Contract.parse({
               version: 1,
               conversationId: thread.conversationId,
               context: thread.context,
-              viewerRole: await this.role(identityId, thread),
+              viewerRole,
+              ...(storeIdentity ? { storeIdentity } : {}),
               createdAt: thread.createdAt.toISOString(),
               updatedAt: entry.sortAt.toISOString(),
             }),
@@ -329,6 +332,7 @@ export class ConversationService {
     const thread = id.success ? await this.repository.read(id.data) : undefined;
     if (!thread) throw new ConversationFault("CONVERSATION_NOT_FOUND");
     const viewerRole = await this.role(identityId, thread);
+    const storeIdentity = await this.readDisplayStore(thread.context.storeId);
     await this.repository.audit(
       identityId,
       "ReadConversation.v1",
@@ -341,9 +345,24 @@ export class ConversationService {
       conversationId: thread.conversationId,
       context: thread.context,
       viewerRole,
+      ...(storeIdentity ? { storeIdentity } : {}),
       createdAt: thread.createdAt.toISOString(),
       updatedAt: thread.updatedAt.toISOString(),
     });
+  }
+
+  private async readDisplayStore(storeId: ConversationContextV1["storeId"]) {
+    try {
+      const store = await this.stores.readStore(storeId);
+      if (store?.publicationStatus !== "PUBLISHED" || !store.displayIdentity.name)
+        return undefined;
+      return {
+        name: store.displayIdentity.name,
+        logoMediaId: store.displayIdentity.logoMediaId ?? null,
+      };
+    } catch {
+      return undefined;
+    }
   }
 }
 
