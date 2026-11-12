@@ -55,14 +55,14 @@ producer گفت‌وگو aggregate فروشگاه، کالا یا سفارش ر�
 همه operationها `identitySession` می‌خواهند و برای هر درخواست وضعیت زنده هویت و
 دسترسی به رشته دوباره بررسی می‌شود.
 
-| operation                     | مسیر                                               | نتیجه                                    |
-| ----------------------------- | -------------------------------------------------- | ---------------------------------------- |
-| `ListConversations.v1`        | `GET /v1/conversations`                            | صفحه رشته‌های همان participant           |
-| `ReadConversationNeedsReply.v1` | `GET /v1/conversations/needs-reply`              | نزدیک‌ترین رشته نیازمند پاسخ فروشنده یا `NONE` |
-| `OpenConversation.v1`         | `POST /v1/conversations` با `Idempotency-Key`      | رشته موجود یا تازه برای زمینه واجد شرایط |
-| `ReadConversation.v1`         | `GET /v1/conversations/{conversationId}`           | زمینه و نقش viewer بدون داده تماس        |
-| `ListConversationMessages.v1` | `GET /v1/conversations/{conversationId}/messages`  | صفحه پیام‌های مجاز همان رشته             |
-| `SendMessage.v1`              | `POST /v1/conversations/{conversationId}/messages` | پیام ثبت‌شده با `messageId/status`       |
+| operation                       | مسیر                                               | نتیجه                                          |
+| ------------------------------- | -------------------------------------------------- | ---------------------------------------------- |
+| `ListConversations.v1`          | `GET /v1/conversations`                            | صفحه رشته‌های همان participant                 |
+| `ReadConversationNeedsReply.v1` | `GET /v1/conversations/needs-reply`                | نزدیک‌ترین رشته نیازمند پاسخ فروشنده یا `NONE` |
+| `OpenConversation.v1`           | `POST /v1/conversations` با `Idempotency-Key`      | رشته موجود یا تازه برای زمینه واجد شرایط       |
+| `ReadConversation.v1`           | `GET /v1/conversations/{conversationId}`           | زمینه و نقش viewer بدون داده تماس              |
+| `ListConversationMessages.v1`   | `GET /v1/conversations/{conversationId}/messages`  | صفحه پیام‌های مجاز همان رشته                   |
+| `SendMessage.v1`                | `POST /v1/conversations/{conversationId}/messages` | پیام ثبت‌شده با `messageId/status`             |
 
 `cursor` مات، امضاشده و به operation، participant و snapshot همان پیمایش بسته
 است و حداکثر ۲۴ ساعت اعتبار دارد. `limit` میان ۱ تا ۵۰ است. cursor ناقص، دست‌کاری
@@ -93,6 +93,8 @@ scope کلید اول برابر `OpenConversation.v1 + actor identity + key` و
 قدم بعدی را می‌سازد و `message` سرور fallback است.
 
 ## ۶. پیام، رسانه و حریم خصوصی
+
+در فهرست و مشاهده رشته مجاز، هویت نمایشی فروشگاه منتشرشده به‌صورت افزایشی و اختیاری شامل نام و شناسه نشان عمومی آن بازگردانده می‌شود. نبود یا خطای خواندن فروشگاه مانع دسترسی به گفت‌وگو نیست و هیچ داده مالک یا هویت طرف مقابل افزوده نمی‌شود. خروج موفق از گفت‌وگوی خریدار بلافاصله صفحه خصوصی را ترک می‌کند؛ اعتبار نشست و عضویت همچنان در سرور بررسی می‌شود.
 
 پیام فقط یکی از دو محتوای strict را می‌پذیرد: متن ۱ تا ۴۰۰۰ نویسه، یا `mediaId`
 به‌همراه caption اختیاری. producer واقعی باید مالکیت actor، آمادگی پردازش و نوع
@@ -134,7 +136,6 @@ log، trace، metric یا projection عمومی ممنوع‌اند. envelope ا
   دامنه دیگر تغییر نمی‌کند و FK میان دامنه‌ها اضافه نمی‌شود.
 - هر دو مسیر `docker compose up --build` و `pnpm dev` همین migration و composer
   را اجرا می‌کنند. dependency، env و port تازه لازم نیست.
-
 
 ## ۸. اجرای producer و نگهداری
 
