@@ -4,9 +4,11 @@ import { cookies } from "next/headers";
 import { readSellerWorkspaceAccess } from "../../../lib/seller-workspace-access";
 import { readIdentitySession } from "../../../lib/identity-api-proxy";
 import { BuyerShell } from "../buyer-shell";
+import { homeThemeCookie } from "../home-theme";
 
 export default async function BrowseLayout({ children }: { children: ReactNode }) {
-  const cookieHeader = (await cookies()).toString();
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore.toString();
   const session = await readIdentitySession(cookieHeader);
   const seller =
     !!session && (await readSellerWorkspaceAccess(cookieHeader)).kind === "ACTIVE";
@@ -18,7 +20,11 @@ export default async function BrowseLayout({ children }: { children: ReactNode }
         </main>
       }
     >
-      <BuyerShell session={session} seller={seller}>
+      <BuyerShell
+        session={session}
+        seller={seller}
+        initialHomeDark={cookieStore.get(homeThemeCookie)?.value === "dark"}
+      >
         {children}
       </BuyerShell>
     </Suspense>

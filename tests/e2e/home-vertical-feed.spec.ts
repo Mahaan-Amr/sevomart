@@ -33,7 +33,14 @@ test("guest home shows a vertical image-led feed with real store and availabilit
   await expect(
     posts.first().getByRole("link", { name: item.store.name }),
   ).toBeVisible();
-  await expect(posts.first().locator("img")).toBeVisible();
+  const card = posts.first().getByRole("article");
+  const image = card.getByRole("link", { name: /دیدن.*گزینه/ }).locator("img");
+  await expect(image).toBeVisible();
+  const imageBounds = await image.boundingBox();
+  expect(imageBounds?.width).toBe(imageBounds?.height);
+  await expect(card).toHaveCSS("border-radius", "20px");
+  await expect(card).toHaveCSS("border-inline-start-width", "1px");
+  await expect(card).toHaveCSS("border-inline-end-width", "1px");
   await expect(posts.last()).toContainText("ناموجود");
   const first = await posts.nth(0).boundingBox();
   const second = await posts.nth(1).boundingBox();
@@ -60,6 +67,17 @@ test("guest home shows a vertical image-led feed with real store and availabilit
   await page.goBack();
   await expect(page).toHaveURL(/\/$/);
   await expect(detail).toBeFocused();
+
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const lastDetail = posts.last().getByRole("link", { name: "دیدن کالا", exact: true });
+  await expect(lastDetail).toBeInViewport();
+  const lastDetailBottom = await lastDetail.evaluate(
+    (element) => element.getBoundingClientRect().bottom,
+  );
+  const navigationTop = await page
+    .getByRole("navigation", { name: "فضای خریدار" })
+    .evaluate((element) => element.getBoundingClientRect().top);
+  expect(lastDetailBottom).toBeLessThanOrEqual(navigationTop);
 });
 
 test("signed-in buyer home displays followed products as vertical posts", async ({
@@ -100,4 +118,50 @@ test("signed-in buyer home displays followed products as vertical posts", async 
   const first = await posts.nth(0).boundingBox();
   const second = await posts.nth(1).boundingBox();
   expect(second!.y).toBeGreaterThan(first!.y + first!.height - 1);
+});
+
+test("home theme switches with the keyboard, survives reloading, and stays scoped to home", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
+  await page.goto("/");
+  const header = page.getByRole("banner");
+  const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
+  const enableDark = header.getByRole("button", { name: "حالت تاریک" });
+  const enableLight = header.getByRole("button", { name: "حالت روشن" });
+  const body = page.locator("body");
+  const lightNavigation = await navigation.evaluate(
+    (element) => getComputedStyle(element).background,
+  );
+
+  await expect(enableDark).toBeVisible({ timeout: 5000 });
+  await expect(body).toHaveCSS("color-scheme", "light");
+  await header.getByRole("link", { name: "سبد" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(enableDark).toBeFocused();
+  await expect(enableDark).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(enableLight).toBeFocused();
+  await expect(body).toHaveCSS("color-scheme", "dark");
+  await expect(navigation).toHaveCSS("background-color", "rgb(34, 34, 34)");
+
+  await page.reload();
+  await expect(enableLight).toBeVisible();
+  await expect(body).toHaveCSS("color-scheme", "dark");
+
+  await navigation.getByRole("link", { name: "کشف", exact: true }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(enableLight).toHaveCount(0);
+  await expect(body).toHaveCSS("color-scheme", "light");
+  await expect(navigation).toHaveCSS("background", lightNavigation);
+
+  await navigation.getByRole("link", { name: "خانه", exact: true }).click();
+  await expect(enableLight).toBeVisible();
+  await expect(body).toHaveCSS("color-scheme", "dark");
+  await enableLight.click();
+  await page.reload();
+  await expect(enableDark).toBeVisible();
+  await expect(body).toHaveCSS("color-scheme", "light");
 });

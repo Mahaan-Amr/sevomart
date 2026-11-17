@@ -223,3 +223,32 @@
     animation: none;
   }
 }
+
+:global(body):has([data-home-theme="dark"]) .bar {
+  border-color: var(--color-divider);
+  background: #222;
+  box-shadow: 0 6px 26px rgb(0 0 0 / 40%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:global(body):has([data-home-theme="dark"]) .activeLens {
+  border-color: transparent;
+  background: var(--color-cover-start);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:global(body):has([data-home-theme="dark"]) .activeLens::after,
+:global(body):has([data-home-theme="dark"]) .refraction {
+  display: none;
+}
+
+:global(body):has([data-home-theme="dark"]) .bar a:hover {
+  background: var(--color-cover-start);
+}
+
+:global(body):has([data-home-theme="dark"]) .label {
+  background: transparent;
+}
