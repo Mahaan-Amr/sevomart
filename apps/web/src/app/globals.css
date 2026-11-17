@@ -20,18 +20,14 @@
   --shadow-highlight: rgb(255 255 255 / 72%);
   --shadow-highlight-strong: rgb(255 255 255 / 70%);
   --shadow-primary: rgb(118 11 41 / 20%);
+  --elevation-raised:
+    8px 8px 16px var(--shadow-neutral-soft), -8px -8px 16px var(--shadow-highlight);
   --elevation-hover:
     4px 4px 8px var(--shadow-neutral-soft), -4px -4px 8px var(--shadow-highlight);
   --elevation-pressed: inset 2px 2px 4px var(--shadow-neutral-soft);
   --elevation-action: 4px 4px 8px var(--shadow-primary);
   --buyer-navigation-clearance: calc(104px + env(safe-area-inset-bottom));
   font-family: "Yekan Bakh", Tahoma, sans-serif;
-}
-
-:root,
-body:has([data-home-theme="dark"]) {
-  --elevation-raised:
-    8px 8px 16px var(--shadow-neutral-soft), -8px -8px 16px var(--shadow-highlight);
 }
 
 * {
@@ -81,8 +77,7 @@ body:has([data-home-theme="dark"]) {
   --color-on-primary: #121212;
   --color-cover-start: #422631;
   --color-divider: #424242;
-  --shadow-neutral-soft: rgb(0 0 0 / 20%);
-  --shadow-highlight: rgb(0 0 0 / 16%);
+  --elevation-raised: 0 6px 26px rgb(0 0 0 / 40%);
 }
 
 main {

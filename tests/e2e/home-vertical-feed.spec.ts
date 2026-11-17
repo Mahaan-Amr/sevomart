@@ -183,6 +183,10 @@ test("home theme switches with the keyboard, survives reloading, and stays scope
   await expect(enableLight).toBeFocused();
   await expect(body).toHaveCSS("color-scheme", "dark");
   await expect(navigation).toHaveCSS("background-color", "rgb(34, 34, 34)");
+  await expect(navigation).toHaveCSS(
+    "box-shadow",
+    "rgba(0, 0, 0, 0.4) 0px 6px 26px 0px",
+  );
 
   const headerSurface = await header.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
