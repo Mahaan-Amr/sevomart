@@ -36,6 +36,7 @@
     "projection:rebuild:discovery": "pnpm --filter @sevo/worker rebuild:discovery",
     "dev": "pnpm infra:up && pnpm --filter @sevo/database exec prisma migrate deploy && pnpm build:packages && pnpm dev:apps",
     "dev:apps": "node --env-file-if-exists=.env scripts/run-dev-apps.mjs",
+    "prototype:home": "pnpm --filter @sevo/contracts build && pnpm --filter @sevo/web dev --port 3110",
     "format": "prettier --write \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"ops/**/*.{yaml,yml}\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json,md}\" \"packages/**/*.{ts,json,md}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"ops/**/*.{yaml,yml}\" \"*.{json,yaml,yml,mjs,ts}\" \".github/workflows/*.yml\"",
     "lint": "eslint . && pnpm check:architecture",
