@@ -4,7 +4,6 @@ import { cookies } from "next/headers";
 import { readSellerWorkspaceAccess } from "../../../lib/seller-workspace-access";
 import { readIdentitySession } from "../../../lib/identity-api-proxy";
 import { BuyerShell } from "../buyer-shell";
-import { homeThemeCookie } from "../home-theme";
 
 export default async function BrowseLayout({ children }: { children: ReactNode }) {
   const cookieStore = await cookies();
@@ -20,11 +19,7 @@ export default async function BrowseLayout({ children }: { children: ReactNode }
         </main>
       }
     >
-      <BuyerShell
-        session={session}
-        seller={seller}
-        initialHomeDark={cookieStore.get(homeThemeCookie)?.value === "dark"}
-      >
+      <BuyerShell session={session} seller={seller}>
         {children}
       </BuyerShell>
     </Suspense>

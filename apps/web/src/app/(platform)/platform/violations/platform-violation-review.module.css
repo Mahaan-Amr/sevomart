@@ -156,7 +156,7 @@
 .revealPanel button {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
 }
 
 .receipt {

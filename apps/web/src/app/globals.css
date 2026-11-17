@@ -14,6 +14,7 @@
   --color-highlight-soft: rgb(255 255 255 / 65%);
   --color-border-primary-soft: rgb(164 20 57 / 10%);
   --color-border-primary: rgb(164 20 57 / 12%);
+  --color-brand-tint: rgb(164 20 57 / 4%);
   --color-divider: rgb(129 118 122 / 18%);
   --shadow-neutral: rgb(96 73 80 / 10%);
   --shadow-neutral-soft: rgb(96 73 80 / 8%);
@@ -44,13 +45,13 @@ body {
   color: var(--color-text);
 }
 
-html:has([data-home-theme]) {
+html:has([data-buyer-home]) {
   scroll-padding-block-start: 64px;
   scroll-padding-block-end: var(--buyer-navigation-clearance);
 }
 
 @media (max-width: 300px) {
-  html:has([data-home-theme]) {
+  html:has([data-buyer-home]) {
     scroll-padding-block-start: 128px;
   }
 }
@@ -61,11 +62,8 @@ html:has([data-home-theme]) {
   }
 }
 
-html:has([data-home-theme="dark"]) {
+html[data-theme="dark"] {
   color-scheme: dark;
-}
-
-body:has([data-home-theme="dark"]) {
   --color-background: #121212;
   --color-surface: #1c1c1c;
   --color-dock-surface: #222222;
@@ -75,9 +73,23 @@ body:has([data-home-theme="dark"]) {
   --color-primary-dark: #ffa7bf;
   --color-primary-light: #ffa7bf;
   --color-on-primary: #121212;
+  --color-success: #8bd2a6;
   --color-cover-start: #422631;
+  --color-cover-end: #33232a;
+  --color-highlight-soft: rgb(255 255 255 / 8%);
+  --color-border-primary-soft: rgb(255 167 191 / 14%);
+  --color-border-primary: rgb(255 167 191 / 24%);
+  --color-brand-tint: rgb(255 167 191 / 8%);
   --color-divider: #424242;
+  --shadow-neutral: rgb(0 0 0 / 35%);
+  --shadow-neutral-soft: rgb(0 0 0 / 28%);
+  --shadow-highlight: rgb(255 255 255 / 5%);
+  --shadow-highlight-strong: rgb(255 255 255 / 7%);
+  --shadow-primary: rgb(0 0 0 / 35%);
   --elevation-raised: 0 6px 26px rgb(0 0 0 / 40%);
+  --elevation-hover: 0 3px 10px rgb(0 0 0 / 35%);
+  --elevation-pressed: inset 2px 2px 4px rgb(0 0 0 / 28%);
+  --elevation-action: 0 3px 10px rgb(0 0 0 / 35%);
 }
 
 main {

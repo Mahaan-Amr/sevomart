@@ -32,7 +32,7 @@
 }
 .page button {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
   cursor: pointer;
 }
 .page button:focus-visible,

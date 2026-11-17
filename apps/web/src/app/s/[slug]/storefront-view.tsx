@@ -8,6 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { formatIrrAsToman } from "../../../lib/format-money";
 import { newConversationHref } from "../../../lib/conversation-navigation";
+import { readableStoreForeground } from "../../../lib/store-color";
 import { BuyerProductCard } from "../../(buyer)/_components/buyer-product-card";
 import styles from "./storefront.module.css";
 import { StoreContactDialog } from "./store-contact-dialog";
@@ -140,7 +141,10 @@ export function ReadyStorefront({
   products?: Array<PublicSimpleProductSummary | PublicProductSummary>;
   autoFollow?: boolean;
 }) {
-  const identityStyle = { "--store-accent": store.themeColor } as CSSProperties;
+  const identityStyle = {
+    "--store-accent": store.themeColor,
+    "--store-foreground": readableStoreForeground(store.themeColor),
+  } as CSSProperties;
   const monogram = Array.from(store.name.trim())[0] ?? "س";
 
   return (

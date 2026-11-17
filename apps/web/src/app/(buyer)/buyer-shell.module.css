@@ -18,7 +18,7 @@
   padding: 12px 24px;
 }
 
-.shell[data-home-theme] .header {
+.shell[data-buyer-home] .header {
   position: sticky;
   inset-block-start: 0;
   z-index: 3;
@@ -26,14 +26,14 @@
   background: var(--color-surface);
 }
 
-.shell[data-home-theme] .headerInner {
+.shell[data-buyer-home] .headerInner {
   width: min(100%, 880px);
   min-height: 56px;
   padding: 4px 16px;
   gap: 8px;
 }
 
-.shell[data-home-theme] .brand {
+.shell[data-buyer-home] .brand {
   font-size: 24px;
 }
 
@@ -159,7 +159,7 @@
   padding: 24px;
   overflow-wrap: anywhere;
 }
-.shell[data-home-theme] .content {
+.shell[data-buyer-home] .content {
   width: min(100%, 560px);
   padding: 16px;
 }

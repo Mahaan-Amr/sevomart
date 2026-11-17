@@ -148,7 +148,7 @@ test("signed-in buyer home displays followed products as vertical posts", async 
   expect(second!.y).toBeGreaterThan(first!.y + first!.height - 1);
 });
 
-test("home theme switches with the keyboard, survives reloading, and stays scoped to home", async ({
+test("home theme switch keeps the same appearance on other pages and reloads", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
@@ -231,17 +231,33 @@ test("home theme switches with the keyboard, survives reloading, and stays scope
   await expect(enableLight).toBeVisible();
   await expect(body).toHaveCSS("color-scheme", "dark");
 
-  await navigation.getByRole("link", { name: "کشف", exact: true }).click();
+  await discover.click();
   await expect(page).toHaveURL(/\/discover$/);
   await expect(enableLight).toHaveCount(0);
-  await expect(body).toHaveCSS("color-scheme", "light");
-  await expect(navigation).toHaveCSS("background", lightNavigation);
+  await expect(body).toHaveCSS("color-scheme", "dark");
+  await expect(navigation).toHaveCSS("background-color", "rgb(34, 34, 34)");
 
   await navigation.getByRole("link", { name: "خانه", exact: true }).click();
+  await expect(enableLight).toBeVisible();
+  await card.getByRole("link", { name: "دیدن کالا", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(item.productId));
+  await expect(body).toHaveCSS("background-color", "rgb(18, 18, 18)");
+  await page.goBack();
+  await expect(enableLight).toBeVisible();
+
+  for (const route of ["/cart", "/login", "/seller/login", "/platform/login"]) {
+    await page.goto(route);
+    await expect(body).toHaveCSS("color-scheme", "dark");
+    await expect(body).toHaveCSS("background-color", "rgb(18, 18, 18)");
+    await expect(enableLight).toHaveCount(0);
+  }
+
+  await page.goto("/");
   await expect(enableLight).toBeVisible();
   await expect(body).toHaveCSS("color-scheme", "dark");
   await enableLight.click();
   await page.reload();
   await expect(enableDark).toBeVisible();
   await expect(body).toHaveCSS("color-scheme", "light");
+  await expect(navigation).toHaveCSS("background", lightNavigation);
 });

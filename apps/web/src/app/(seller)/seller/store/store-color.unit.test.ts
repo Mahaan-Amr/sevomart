@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readableStoreForeground } from "./store-color";
+import { readableStoreForeground } from "../../../../lib/store-color";
 
 function toRgb(hex: string): string {
   const channels = hex

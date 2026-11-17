@@ -87,7 +87,7 @@
   border-radius: 20px;
   background: var(--store-accent, var(--color-primary));
   box-shadow: 0 8px 16px var(--shadow-primary);
-  color: var(--color-on-primary);
+  color: var(--store-foreground, var(--color-on-primary));
   font-size: 24px;
   font-weight: 600;
   transform: translateY(-16px);
