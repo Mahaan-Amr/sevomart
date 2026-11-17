@@ -1,4 +1,5 @@
 import { discoveryV1Examples } from "@sevo/contracts/discovery/v1";
+import { contrastRatio } from "../helpers/color-contrast";
 import { expect, test } from "../helpers/release-playwright";
 
 const item = discoveryV1Examples.DiscoveryFeedItemV1;
@@ -22,28 +23,48 @@ test("guest home shows a vertical image-led feed with real store and availabilit
       },
     }),
   );
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  expect(
-    await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches),
-  ).toBe(true);
+  const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
+  const indicator = navigation.locator(":scope > span[aria-hidden=true]");
+  const reflection = indicator.locator("span");
+  await expect(page.locator("html")).toHaveCSS("scroll-behavior", "smooth");
+  await expect(indicator).toHaveCSS("transition-property", "transform, opacity");
+  await expect(reflection).not.toHaveCSS("animation-name", "none");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveCSS("scroll-behavior", "auto");
+  await expect(indicator).toHaveCSS("transition-property", "none");
+  await expect(reflection).toHaveCSS("animation-name", "none");
   const posts = page.getByRole("listitem");
   await expect(posts).toHaveCount(2);
   await expect(
     posts.first().getByRole("link", { name: item.store.name }),
   ).toBeVisible();
-  await expect(posts.first().locator("img")).toBeVisible();
+  const card = posts.first().getByRole("article");
+  const image = card.getByRole("link", { name: /دیدن.*گزینه/ }).locator("img");
+  await expect(image).toBeVisible();
+  const imageBounds = await image.boundingBox();
+  expect(imageBounds?.width).toBe(imageBounds?.height);
+  await expect(card).toHaveCSS("border-radius", "20px");
+  await expect(card).toHaveCSS("border-inline-start-width", "1px");
+  await expect(card).toHaveCSS("border-inline-end-width", "1px");
   await expect(posts.last()).toContainText("ناموجود");
   const first = await posts.nth(0).boundingBox();
   const second = await posts.nth(1).boundingBox();
   expect(second!.y).toBeGreaterThan(first!.y + first!.height - 1);
   const imageLink = posts.first().getByRole("link", { name: /دیدن.*گزینه/ });
   await expect(imageLink).toHaveAttribute("href", new RegExp(item.productId));
+  await page.getByRole("banner").locator("summary").focus();
+  await page.keyboard.press("Tab");
+  const firstStore = card.getByRole("link", { name: item.store.name });
+  await expect(firstStore).toBeFocused();
+  expect((await firstStore.boundingBox())!.y).toBeGreaterThanOrEqual(
+    (await page.getByRole("banner").boundingBox())!.height,
+  );
+  await page.keyboard.press("Tab");
+  await expect(imageLink).toBeFocused();
   await imageLink.scrollIntoViewIfNeeded();
   const scrollBefore = await page.evaluate(() => window.scrollY);
-  await imageLink.focus();
-  await expect(imageLink).toBeFocused();
   expect(
     await imageLink.evaluate((element) => getComputedStyle(element).outlineStyle),
   ).not.toBe("none");
@@ -60,6 +81,31 @@ test("guest home shows a vertical image-led feed with real store and availabilit
   await page.goBack();
   await expect(page).toHaveURL(/\/$/);
   await expect(detail).toBeFocused();
+
+  const lastPost = posts.last();
+  await lastPost.getByRole("heading").getByRole("link").focus();
+  await page.keyboard.press("Tab");
+  const lastDetail = lastPost.getByRole("link", { name: "دیدن کالا", exact: true });
+  await expect(lastDetail).toBeFocused();
+  await expect(lastDetail).toBeInViewport();
+  const lastDetailBottom = await lastDetail.evaluate(
+    (element) => element.getBoundingClientRect().bottom,
+  );
+  const navigationTop = await navigation.evaluate(
+    (element) => element.getBoundingClientRect().top,
+  );
+  expect(lastDetailBottom).toBeLessThanOrEqual(navigationTop);
+
+  await page.setViewportSize({ width: 240, height: 800 });
+  const { headerBottom, scrollPadding } = await page
+    .getByRole("banner")
+    .evaluate((element) => ({
+      headerBottom: element.getBoundingClientRect().bottom,
+      scrollPadding: parseFloat(
+        getComputedStyle(document.documentElement).scrollPaddingBlockStart,
+      ),
+    }));
+  expect(scrollPadding).toBeGreaterThanOrEqual(headerBottom);
 });
 
 test("signed-in buyer home displays followed products as vertical posts", async ({
@@ -100,4 +146,102 @@ test("signed-in buyer home displays followed products as vertical posts", async 
   const first = await posts.nth(0).boundingBox();
   const second = await posts.nth(1).boundingBox();
   expect(second!.y).toBeGreaterThan(first!.y + first!.height - 1);
+});
+
+test("home theme switches with the keyboard, survives reloading, and stays scoped to home", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
+  await page.route("**/api/discovery*", (route) =>
+    route.fulfill({
+      json: {
+        ...discoveryV1Examples.DiscoveryFeedPageV1,
+        emptyState: undefined,
+        items: [item],
+      },
+    }),
+  );
+  await page.goto("/");
+  const header = page.getByRole("banner");
+  const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
+  const enableDark = header.getByRole("button", { name: "حالت تاریک" });
+  const enableLight = header.getByRole("button", { name: "حالت روشن" });
+  const body = page.locator("body");
+  const lightNavigation = await navigation.evaluate(
+    (element) => getComputedStyle(element).background,
+  );
+
+  await expect(enableDark).toBeVisible({ timeout: 5000 });
+  await expect(body).toHaveCSS("color-scheme", "light");
+  const discover = navigation.getByRole("link", { name: "کشف", exact: true });
+  await discover.hover();
+  await expect(discover.getByText("کشف", { exact: true })).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+  await header.getByRole("link", { name: "سبد" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(enableDark).toBeFocused();
+  await expect(enableDark).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(enableLight).toBeFocused();
+  await expect(body).toHaveCSS("color-scheme", "dark");
+  await expect(navigation).toHaveCSS("background-color", "rgb(34, 34, 34)");
+  await expect(navigation).toHaveCSS(
+    "box-shadow",
+    "rgba(0, 0, 0, 0.4) 0px 6px 26px 0px",
+  );
+
+  const headerSurface = await header.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  const dockSurface = await navigation.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  const card = page.getByRole("listitem").first().getByRole("article");
+  const cardSurface = await card.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  const titleColor = await card
+    .getByRole("heading")
+    .getByRole("link")
+    .evaluate((element) => getComputedStyle(element).color);
+  const detail = await card
+    .getByRole("link", { name: "دیدن کالا", exact: true })
+    .evaluate((element) => {
+      const { backgroundColor, color } = getComputedStyle(element);
+      return { backgroundColor, color };
+    });
+  const dockText = await navigation
+    .getByRole("link", { name: "کشف", exact: true })
+    .evaluate((element) => getComputedStyle(element).color);
+  const focusColor = await enableLight.evaluate(
+    (element) => getComputedStyle(element).outlineColor,
+  );
+  expect(contrastRatio(titleColor, cardSurface)).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(detail.color, detail.backgroundColor)).toBeGreaterThanOrEqual(
+    4.5,
+  );
+  expect(contrastRatio(dockText, dockSurface)).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(focusColor, headerSurface)).toBeGreaterThanOrEqual(3);
+
+  await page.reload();
+  await expect(enableLight).toBeVisible();
+  await expect(body).toHaveCSS("color-scheme", "dark");
+
+  await navigation.getByRole("link", { name: "کشف", exact: true }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(enableLight).toHaveCount(0);
+  await expect(body).toHaveCSS("color-scheme", "light");
+  await expect(navigation).toHaveCSS("background", lightNavigation);
+
+  await navigation.getByRole("link", { name: "خانه", exact: true }).click();
+  await expect(enableLight).toBeVisible();
+  await expect(body).toHaveCSS("color-scheme", "dark");
+  await enableLight.click();
+  await page.reload();
+  await expect(enableDark).toBeVisible();
+  await expect(body).toHaveCSS("color-scheme", "light");
 });

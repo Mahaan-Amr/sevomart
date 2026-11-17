@@ -7,35 +7,46 @@ import type { IdentitySession } from "@sevo/contracts/identity-access/v1";
 
 import { loginHref } from "../../lib/navigation";
 import { useFeedWorkspace } from "./(browse)/feed-workspace";
+import { homeThemeCookie } from "./home-theme";
 import styles from "./buyer-shell.module.css";
 
 export function BuyerShell({
   children,
   session,
   seller = false,
+  initialHomeDark = false,
 }: {
   children: ReactNode;
   session?: IdentitySession;
   seller?: boolean;
+  initialHomeDark?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const query = useSearchParams().toString();
   const [endingSession, setEndingSession] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
+  const [homeDark, setHomeDark] = useState(initialHomeDark);
+  const home = pathname === "/";
+  const themeAction = homeDark ? "حالت روشن" : "حالت تاریک";
   const { clearRestoredFocus, resetWorkspace, restored, restoredFocus, scrollFor } =
     useFeedWorkspace();
   const returnTo = `${pathname}${query ? `?${query}` : ""}`;
-  const activeFeed =
-    pathname === "/"
-      ? session
+  const activeFeed = home
+    ? session
+      ? "following"
+      : "discovery"
+    : pathname === "/discover"
+      ? "discovery"
+      : pathname === "/following"
         ? "following"
-        : "discovery"
-      : pathname === "/discover"
-        ? "discovery"
-        : pathname === "/following"
-          ? "following"
-          : null;
+        : null;
+
+  function toggleHomeTheme() {
+    const dark = !homeDark;
+    setHomeDark(dark);
+    document.cookie = `${homeThemeCookie}=${dark ? "dark" : ""}; Path=/; Max-Age=${dark ? 31536000 : 0}; SameSite=Lax`;
+  }
 
   async function signOut() {
     setEndingSession(true);
@@ -80,53 +91,88 @@ export function BuyerShell({
   }, [activeFeed, clearRestoredFocus, restored, restoredFocus, scrollFor]);
 
   return (
-    <div className={styles.shell}>
+    <div
+      className={styles.shell}
+      data-home-theme={home ? (homeDark ? "dark" : "light") : undefined}
+    >
       <a className={styles.skipLink} href="#buyer-content">
         رفتن به محتوای صفحه
       </a>
       <header className={styles.header}>
-        <Link href="/" className={styles.brand} aria-label="سوو؛ کشف تازه‌ها">
-          سوو
-        </Link>
-        <div className={styles.actions}>
-          <Link href="/cart">سبد</Link>
-          <details className={styles.identity}>
-            <summary>
-              {session ? (
-                <bdi className={styles.mobileNumber} dir="ltr">
-                  {formatMaskedMobile(session.maskedMobile)}
-                </bdi>
-              ) : (
-                "هویت سوو"
-              )}
-            </summary>
-            <div className={styles.identityMenu}>
-              {session ? (
-                <>
-                  <Link href="/orders">سفارش‌ها</Link>
-                  <Link href="/account/addresses">نشانی‌ها</Link>
-                  {seller ? (
-                    <Link href="/seller">فضای فروشنده</Link>
+        <div className={styles.headerInner}>
+          <Link href="/" className={styles.brand} aria-label="سوو؛ کشف تازه‌ها">
+            سوو
+          </Link>
+          <div className={styles.actions}>
+            <Link href="/cart">سبد</Link>
+            {home ? (
+              <button
+                type="button"
+                className={styles.themeToggle}
+                aria-label={themeAction}
+                title={themeAction}
+                onClick={toggleHomeTheme}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="22"
+                  height="22"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {homeDark ? (
+                    <>
+                      <circle cx="12" cy="12" r="4" />
+                      <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5" />
+                    </>
                   ) : (
-                    <Link href="/seller/start">درخواست فروشندگی</Link>
+                    <path d="M21 13.2A9.2 9.2 0 0 1 10.8 3 9.1 9.1 0 1 0 21 13.2Z" />
                   )}
-                  <button type="button" onClick={signOut} disabled={endingSession}>
-                    {endingSession ? "در حال خروج…" : "خروج"}
-                  </button>
-                  {signOutError ? (
-                    <p className={styles.identityError} role="alert">
-                      خروج انجام نشد. دوباره تلاش کنید.
-                    </p>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <Link href="/seller/start">فروشنده شوید</Link>
-                  <Link href={loginHref(returnTo, returnTo)}>ورود و ادامه</Link>
-                </>
-              )}
-            </div>
-          </details>
+                </svg>
+              </button>
+            ) : null}
+            <details className={styles.identity}>
+              <summary>
+                {session ? (
+                  <bdi className={styles.mobileNumber} dir="ltr">
+                    {formatMaskedMobile(session.maskedMobile)}
+                  </bdi>
+                ) : (
+                  "هویت سوو"
+                )}
+              </summary>
+              <div className={styles.identityMenu}>
+                {session ? (
+                  <>
+                    <Link href="/orders">سفارش‌ها</Link>
+                    <Link href="/account/addresses">نشانی‌ها</Link>
+                    {seller ? (
+                      <Link href="/seller">فضای فروشنده</Link>
+                    ) : (
+                      <Link href="/seller/start">درخواست فروشندگی</Link>
+                    )}
+                    <button type="button" onClick={signOut} disabled={endingSession}>
+                      {endingSession ? "در حال خروج…" : "خروج"}
+                    </button>
+                    {signOutError ? (
+                      <p className={styles.identityError} role="alert">
+                        خروج انجام نشد. دوباره تلاش کنید.
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <Link href="/seller/start">فروشنده شوید</Link>
+                    <Link href={loginHref(returnTo, returnTo)}>ورود و ادامه</Link>
+                  </>
+                )}
+              </div>
+            </details>
+          </div>
         </div>
       </header>
       <main id="buyer-content" className={styles.content} tabIndex={-1}>

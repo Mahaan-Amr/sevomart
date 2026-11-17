@@ -5,13 +5,54 @@
 }
 
 .header {
+  width: min(100%, 1060px);
+  margin-inline: auto;
+  border-block-end: 1px solid var(--color-divider);
+}
+
+.headerInner {
   display: flex;
   align-items: center;
   gap: 24px;
-  width: min(100%, 1060px);
   margin-inline: auto;
   padding: 12px 24px;
-  border-block-end: 1px solid var(--color-divider);
+}
+
+.shell[data-home-theme] .header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  width: 100%;
+  background: var(--color-surface);
+}
+
+.shell[data-home-theme] .headerInner {
+  width: min(100%, 880px);
+  min-height: 56px;
+  padding: 4px 16px;
+  gap: 8px;
+}
+
+.shell[data-home-theme] .brand {
+  font-size: 24px;
+}
+
+.themeToggle {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  color: var(--color-primary-dark);
+  background: transparent;
+  cursor: pointer;
+}
+
+.themeToggle:hover {
+  background: var(--color-cover-start);
 }
 
 .shell a,
@@ -29,6 +70,7 @@
 }
 
 .shell a:focus-visible,
+.themeToggle:focus-visible,
 .identity summary:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 3px;
@@ -117,6 +159,11 @@
   padding: 24px;
   overflow-wrap: anywhere;
 }
+.shell[data-home-theme] .content {
+  width: min(100%, 560px);
+  padding: 16px;
+}
+
 .shell .skipLink {
   position: fixed;
   inset-block-start: 8px;
@@ -130,7 +177,7 @@
 }
 
 @media (max-width: 767px) {
-  .header {
+  .headerInner {
     padding: 8px 16px;
     gap: 8px;
   }
@@ -140,7 +187,7 @@
 }
 
 @media (max-width: 300px) {
-  .header {
+  .headerInner {
     flex-wrap: wrap;
   }
 }
