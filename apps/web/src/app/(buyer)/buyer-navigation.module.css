@@ -219,7 +219,7 @@
   }
 }
 
-:global(body):has([data-home-theme="dark"]) .bar {
+:global(html[data-theme="dark"]) .bar {
   border-color: var(--color-divider);
   background: var(--color-dock-surface);
   box-shadow: var(--elevation-raised);
@@ -227,7 +227,7 @@
   backdrop-filter: none;
 }
 
-:global(body):has([data-home-theme="dark"]) .activeLens {
+:global(html[data-theme="dark"]) .activeLens {
   border-color: transparent;
   background: var(--color-cover-start);
   box-shadow: none;
@@ -235,11 +235,11 @@
   backdrop-filter: none;
 }
 
-:global(body):has([data-home-theme="dark"]) .activeLens::after,
-:global(body):has([data-home-theme="dark"]) .refraction {
+:global(html[data-theme="dark"]) .activeLens::after,
+:global(html[data-theme="dark"]) .refraction {
   display: none;
 }
 
-:global(body):has([data-home-theme="dark"]) .bar a:hover {
+:global(html[data-theme="dark"]) .bar a:hover {
   background: var(--color-cover-start);
 }

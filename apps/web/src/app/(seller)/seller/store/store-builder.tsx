@@ -21,7 +21,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import styles from "./store-builder.module.css";
-import { readableStoreForeground } from "./store-color";
+import { readableStoreForeground } from "../../../../lib/store-color";
 
 type Stage = "edit" | "preview" | "published";
 export type StoreSection = "setup" | "profile" | "shipping" | "returns" | "appearance";

@@ -7,28 +7,27 @@ import type { IdentitySession } from "@sevo/contracts/identity-access/v1";
 
 import { loginHref } from "../../lib/navigation";
 import { useFeedWorkspace } from "./(browse)/feed-workspace";
-import { homeThemeCookie } from "./home-theme";
+import { useTheme } from "../theme";
 import styles from "./buyer-shell.module.css";
 
 export function BuyerShell({
   children,
   session,
   seller = false,
-  initialHomeDark = false,
 }: {
   children: ReactNode;
   session?: IdentitySession;
   seller?: boolean;
-  initialHomeDark?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const query = useSearchParams().toString();
   const [endingSession, setEndingSession] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
-  const [homeDark, setHomeDark] = useState(initialHomeDark);
+  const { theme, toggle } = useTheme();
+  const dark = theme === "dark";
   const home = pathname === "/";
-  const themeAction = homeDark ? "حالت روشن" : "حالت تاریک";
+  const themeAction = dark ? "حالت روشن" : "حالت تاریک";
   const { clearRestoredFocus, resetWorkspace, restored, restoredFocus, scrollFor } =
     useFeedWorkspace();
   const returnTo = `${pathname}${query ? `?${query}` : ""}`;
@@ -41,12 +40,6 @@ export function BuyerShell({
       : pathname === "/following"
         ? "following"
         : null;
-
-  function toggleHomeTheme() {
-    const dark = !homeDark;
-    setHomeDark(dark);
-    document.cookie = `${homeThemeCookie}=${dark ? "dark" : ""}; Path=/; Max-Age=${dark ? 31536000 : 0}; SameSite=Lax`;
-  }
 
   async function signOut() {
     setEndingSession(true);
@@ -91,10 +84,7 @@ export function BuyerShell({
   }, [activeFeed, clearRestoredFocus, restored, restoredFocus, scrollFor]);
 
   return (
-    <div
-      className={styles.shell}
-      data-home-theme={home ? (homeDark ? "dark" : "light") : undefined}
-    >
+    <div className={styles.shell} data-buyer-home={home ? "" : undefined}>
       <a className={styles.skipLink} href="#buyer-content">
         رفتن به محتوای صفحه
       </a>
@@ -111,7 +101,7 @@ export function BuyerShell({
                 className={styles.themeToggle}
                 aria-label={themeAction}
                 title={themeAction}
-                onClick={toggleHomeTheme}
+                onClick={toggle}
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -124,7 +114,7 @@ export function BuyerShell({
                   strokeLinejoin="round"
                   aria-hidden="true"
                 >
-                  {homeDark ? (
+                  {dark ? (
                     <>
                       <circle cx="12" cy="12" r="4" />
                       <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5" />
