@@ -5,6 +5,7 @@ import {
   visualProjectIndex,
 } from "../helpers/visual-projects";
 import sharp from "sharp";
+import { discoveryV1Examples } from "@sevo/contracts/discovery/v1";
 
 test("a seller completes the application, setup and first product journey", async ({
   page,
@@ -53,6 +54,40 @@ test("a seller completes the application, setup and first product journey", asyn
     agent.getByText("درخواست تأیید شد؛ فروشندگی فعال و فروشگاه اولیه ساخته شد."),
   ).toBeVisible();
   await agentContext.close();
+  await page.route("**/api/discovery*", (route) =>
+    route.fulfill({ json: discoveryV1Examples.DiscoveryFeedPageV1 }),
+  );
+  await page.goto("/discover");
+  await page.locator("header summary").click();
+  await expect(
+    page.getByRole("banner").getByRole("link", { name: "فضای فروشنده" }),
+  ).toHaveAttribute("href", "/seller");
+  await page.locator("header summary").click();
+  await expect(page.getByText("فعلاً کالایی برای دیدن نیست.")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "فید کشف" })
+      .getByRole("link", { name: "فروشنده شوید" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "فید فروشگاه‌ها" })).toBeVisible();
+  await page.getByRole("link", { name: "پروفایل", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "پروفایل فروشگاه" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "ادامه راه‌اندازی" })).toHaveAttribute(
+    "href",
+    "/seller/store/setup",
+  );
+  await expect(
+    page.getByRole("link", { name: "فضای فروشنده" }).first(),
+  ).toHaveAttribute("href", "/seller");
+  await page
+    .getByRole("navigation", { name: "فضای خریدار" })
+    .getByRole("link", { name: "کشف", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "فید فروشگاه‌ها" })
+    .getByRole("link", { name: "دنبال‌شده‌ها" })
+    .click();
+  await expect(page).toHaveURL(/\/following$/);
   await page.goto("/seller/application");
   await expect(page).toHaveURL(/\/seller$/);
   await expect(page.getByRole("heading", { name: "کارهای نزدیک" })).toBeVisible();
@@ -120,18 +155,30 @@ test("a seller completes the application, setup and first product journey", asyn
     .getByLabel("انتخاب تصویر کالا")
     .setInputFiles({ name: "vase.png", mimeType: "image/png", buffer: image });
   await seller.getByRole("button", { name: "ادامه" }).click();
-  await seller.getByLabel("قیمت گونه اصلی").fill("325000");
-  await seller.getByLabel("موجودی گونه اصلی").fill("7");
+  await seller.getByLabel("قیمت گونه اصلی").fill("abc");
+  await expect(seller.getByText("قیمت باید عدد صحیح و مثبت باشد.")).toBeVisible();
+  await seller.getByLabel("قیمت گونه اصلی").fill("۳۲۵۰۰۰");
+  await seller.getByLabel("موجودی گونه اصلی").fill("٧");
+  await expect(seller.getByText("قیمت باید عدد صحیح و مثبت باشد.")).toHaveCount(0);
+  await expect(seller.getByText("موجودی باید عدد صحیح و نامنفی باشد.")).toHaveCount(0);
   await seller.getByRole("button", { name: "دیدن پیش‌نمایش" }).click();
   await seller.getByRole("button", { name: "انتشار کالا" }).click();
   const publicLink = seller.getByRole("link", { name: "دیدن کالا در فروشگاه" });
   await expect(publicLink).toBeVisible();
   const href = await publicLink.getAttribute("href");
   if (!href) throw new Error("Missing public product link");
+  await seller.goto("/profile");
+  await expect(seller.getByText("فروشگاه منتشر شده")).toBeVisible();
+  await expect(seller.getByRole("link", { name: "دیدن فروشگاه" })).toHaveAttribute(
+    "href",
+    `/s/${slug}`,
+  );
+  await expect(seller.getByRole("link", { name: /گلدان سفالی/ })).toBeVisible();
   const guestContext = await newCandidateContext(contextOptions);
   const guest = await guestContext.newPage();
   await guest.goto(href);
   await expect(guest.getByRole("heading", { name: "گلدان سفالی" })).toBeVisible();
+  await expect(guest.getByText(/۳۲۵٬۰۰۰ تومان/).first()).toBeVisible();
   await expect(guest.getByRole("button", { name: "افزودن به سبد" })).toBeEnabled();
   await guestContext.close();
   await seller.goto("/seller");

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 import { useFeedWorkspace } from "./(browse)/feed-workspace";
 import {
@@ -20,6 +21,35 @@ export function BuyerNavigation({
 }) {
   const pathname = usePathname();
   const { rememberScroll } = useFeedWorkspace();
+  const navigationRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const update = () => {
+      const nav = navigationRef.current;
+      const action = document.querySelector<HTMLElement>(
+        "[data-protect-bottom-navigation]",
+      );
+      if (!nav) return;
+      if (!action || window.innerWidth > 420 || nav.contains(document.activeElement)) {
+        nav.classList.remove(styles.actionVisible!);
+        return;
+      }
+      const a = action.getBoundingClientRect();
+      const n = nav.getBoundingClientRect();
+      nav.classList.toggle(
+        styles.actionVisible!,
+        a.top < n.bottom && a.bottom > n.top && a.left < n.right && a.right > n.left,
+      );
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    document.addEventListener("focusin", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      document.removeEventListener("focusin", update);
+    };
+  }, [pathname]);
   if (!showBuyerNavigation(pathname)) return null;
   const destinations: Array<{
     href: BuyerDestination;
@@ -46,7 +76,7 @@ export function BuyerNavigation({
 
   return (
     <div className={styles.area}>
-      <nav className={styles.bar} aria-label="فضای خریدار">
+      <nav ref={navigationRef} className={styles.bar} aria-label="فضای خریدار">
         <span
           className={styles.activeLens}
           aria-hidden="true"

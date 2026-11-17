@@ -37,6 +37,11 @@
   backdrop-filter: blur(22px) saturate(1.45);
 }
 
+.actionVisible {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .activeLens {
   position: absolute;
   inset-block: 8px;

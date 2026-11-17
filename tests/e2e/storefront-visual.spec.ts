@@ -591,3 +591,42 @@ async function uploadImage(
   expect(response.ok()).toBe(true);
   return (await response.json()) as { id: string };
 }
+
+test("the follow button stays reachable above the bottom navigation on narrow screens", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 195, height: 422 });
+  await page.goto(`/s/${stores.defaultSlug}`);
+  const follow = page.getByRole("button", { name: "دنبال‌کردن فروشگاه" });
+  const conversation = page.getByRole("link", { name: "گفت‌وگو با فروشگاه" });
+  const [followBox, conversationBox] = await Promise.all([
+    follow.boundingBox(),
+    conversation.boundingBox(),
+  ]);
+  expect(followBox).not.toBeNull();
+  expect(conversationBox).not.toBeNull();
+  expect(followBox!.y + followBox!.height).toBeLessThanOrEqual(conversationBox!.y);
+  expect(
+    await follow.evaluate((button) => button.scrollWidth <= button.clientWidth),
+  ).toBe(true);
+  await follow.evaluate((element) => {
+    window.scrollTo(
+      0,
+      element.getBoundingClientRect().top + window.scrollY - (window.innerHeight - 60),
+    );
+  });
+  await expect
+    .poll(() =>
+      follow.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const top = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        return top === element || element.contains(top);
+      }),
+    )
+    .toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page.getByRole("navigation", { name: "فضای خریدار" })).toBeVisible();
+});

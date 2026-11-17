@@ -26,19 +26,21 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
   const cookieStore = await cookies();
-  const signedIn =
-    cookieStore.has("sevo_session") &&
-    !!(await readIdentitySession(cookieStore.toString()));
-  const seller =
-    cookieStore.has("sevo_session") &&
-    (await readSellerWorkspaceAccess(cookieStore.toString())).kind === "ACTIVE";
+  const cookieHeader = cookieStore.toString();
+  const [session, access] = cookieStore.has("sevo_session")
+    ? await Promise.all([
+        readIdentitySession(cookieHeader),
+        readSellerWorkspaceAccess(cookieHeader),
+      ])
+    : [undefined, undefined];
+  const seller = access?.kind === "ACTIVE";
   return (
     <html lang="fa" dir="rtl">
       <body>
         <FeedWorkspace>
           {children}
           <Suspense fallback={null}>
-            <BuyerNavigation seller={seller} signedIn={signedIn} />
+            <BuyerNavigation seller={seller} signedIn={!!session} />
           </Suspense>
         </FeedWorkspace>
         <PwaRegistration />

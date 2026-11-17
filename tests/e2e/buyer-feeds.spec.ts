@@ -36,6 +36,85 @@ function feedItem(position: number, store = "خانه سفال") {
   };
 }
 
+test("home and discovery are distinct and home shows followed stores after sign-in", async ({
+  page,
+}) => {
+  await mockFeedMedia(page);
+  await page.route("**/api/discovery*", (route) =>
+    route.fulfill({
+      json: {
+        ...discoveryV1Examples.DiscoveryFeedPageV1,
+        emptyState: undefined,
+        items: [feedItem(1), feedItem(3)],
+      },
+    }),
+  );
+  await page.route("**/api/following*", (route) =>
+    route.fulfill({
+      json: {
+        ...discoveryV1Examples.FollowingFeedPageV1,
+        emptyState: undefined,
+        visibleFollowedStoreCount: 1,
+        followSetRevision: 1,
+        items: [feedItem(2)],
+      },
+    }),
+  );
+  await page.goto("/");
+  const homeItems = page
+    .getByRole("list", { name: "کالاهای تازه" })
+    .getByRole("listitem");
+  await expect(homeItems).toHaveCount(2);
+  const homePositions = await homeItems.evaluateAll((items) =>
+    items.map((item) => ({
+      x: item.getBoundingClientRect().x,
+      y: item.getBoundingClientRect().y,
+    })),
+  );
+  expect(homePositions[0]!.x).toBe(homePositions[1]!.x);
+  expect(homePositions[1]!.y).toBeGreaterThan(homePositions[0]!.y);
+  await expect(
+    page.getByRole("link", { name: "خانه سفال", exact: true }).first(),
+  ).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "فضای خریدار" });
+  await expect(
+    navigation.getByRole("link", { name: "خانه", exact: true }),
+  ).toBeVisible();
+  await navigation.getByRole("link", { name: "کشف", exact: true }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(page.getByText("کالای تازه 1")).toBeVisible();
+  const discoveryPositions = await page
+    .getByRole("list", { name: "کالاهای تازه" })
+    .getByRole("listitem")
+    .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().y));
+  expect(new Set(discoveryPositions).size).toBe(1);
+  await page.goto("/login?returnTo=%2F");
+  await page.getByLabel("شماره موبایل").fill("09123456789");
+  await page.getByRole("button", { name: "دریافت کد" }).click();
+  await page.getByLabel("کد شش‌رقمی").fill("111111");
+  await page.getByRole("button", { name: "ورود" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("کالای تازه 2")).toBeVisible();
+  await navigation.getByRole("link", { name: "کشف", exact: true }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(page.getByText("کالای تازه 1")).toBeVisible();
+});
+
+test("feed tabs stay readable on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 180, height: 400 });
+  await page.route("**/api/following*", (route) =>
+    route.fulfill({ json: discoveryV1Examples.FollowingFeedPageV1 }),
+  );
+  await page.goto("/following");
+  const tabs = page.getByRole("navigation", { name: "فید فروشگاه‌ها" });
+  const following = tabs.getByRole("link", { name: "دنبال‌شده‌ها" });
+  await expect(following).toBeVisible();
+  expect(
+    await following.evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await assertNoHorizontalOverflow(page);
+});
+
 test("discovery and following keep independent cursor and scroll state", async ({
   page,
 }, testInfo) => {
@@ -80,6 +159,16 @@ test("discovery and following keep independent cursor and scroll state", async (
 
   await followingTab.click();
   await expect(page.getByRole("heading", { name: "دنبال‌شده‌ها" })).toBeVisible();
+  const tabs = page.getByRole("navigation", { name: "فید فروشگاه‌ها" });
+  const tabBox = await tabs.boundingBox();
+  const followingBox = await tabs
+    .getByRole("link", { name: "دنبال‌شده‌ها" })
+    .boundingBox();
+  expect(followingBox!.width).toBeGreaterThanOrEqual(tabBox!.width * 0.45);
+  await expect(tabs.getByRole("link", { name: "دنبال‌شده‌ها" })).toHaveCSS(
+    "white-space",
+    "nowrap",
+  );
   await expect(
     page.getByRole("link", {
       name: "فروشگاه دنبال‌شده با نام بلند برای بررسی چیدمان فارسی",

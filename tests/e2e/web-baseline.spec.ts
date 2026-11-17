@@ -66,6 +66,9 @@ test("the web baseline is Persian, accessible, and right-to-left", async ({ page
   await expect(
     page.getByLabel("فید فروشگاه‌ها").getByRole("link", { name: "دنبال‌شده‌ها" }),
   ).toBeVisible();
+  await expect(
+    navigation.getByRole("link", { name: "کشف", exact: true }),
+  ).toHaveAttribute("href", "/discover");
   await expect(navigation.getByRole("link", { name: "سفارش‌ها" })).toHaveAttribute(
     "href",
     "/orders",

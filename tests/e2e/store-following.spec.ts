@@ -277,6 +277,15 @@ test("guest cancel preserves the store and login completes a retriable follow", 
   await assertMinimumContrast(activeFollow);
   await expect(page.getByText("۱ دنبال‌کننده")).toBeVisible();
 
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "خانه" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "فید دنبال‌شده‌ها" })
+      .getByText("فنجان دنبال‌شده 1"),
+  ).toBeVisible();
+  await page.goto(`/s/${slug}?source=discovery#store-actions`);
+
   await page.route("**/api/store/me/follows/*", async (route) => {
     if (route.request().method() === "DELETE") {
       await route.fulfill({

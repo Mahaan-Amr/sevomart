@@ -179,6 +179,7 @@ export function StoreFollowControl({
       </div>
       <button
         type="button"
+        data-protect-bottom-navigation="true"
         className={isFollowing ? styles.followingButton : styles.followButton}
         aria-pressed={isFollowing}
         aria-label={isFollowing ? "لغو دنبال‌کردن فروشگاه" : "دنبال‌کردن فروشگاه"}

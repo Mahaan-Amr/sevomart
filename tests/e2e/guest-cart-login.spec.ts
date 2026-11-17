@@ -347,6 +347,12 @@ test("guest adds a product, signs in and continues the same cart", async ({
   await page.getByRole("button", { name: /پرداخت آزمایشی/ }).click();
   await expect(page).toHaveURL(/\/purchases\/[^/]+$/, { timeout: 15_000 });
   await expect(page.getByText(/پرداخت این خرید ثبت شد/)).toBeVisible();
+  await expect(
+    page.getByText("این پرداخت آزمایشی بود و پول واقعی جابه‌جا نشد."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "پیگیری سفارش این فروشگاه" }),
+  ).toBeVisible();
   await assertNoHorizontalOverflow(page);
 
   const historySql = postgres(databaseUrl, { max: 1 });

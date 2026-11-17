@@ -196,6 +196,13 @@
   outline-offset: 3px;
 }
 
+@media (max-width: 280px) {
+  .feedTabs a {
+    font-size: 11px;
+    padding-inline: 4px;
+  }
+}
+
 .homeFeed,
 .homeLoading {
   display: grid;
