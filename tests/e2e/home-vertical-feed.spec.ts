@@ -173,6 +173,12 @@ test("home theme switches with the keyboard, survives reloading, and stays scope
 
   await expect(enableDark).toBeVisible({ timeout: 5000 });
   await expect(body).toHaveCSS("color-scheme", "light");
+  const discover = navigation.getByRole("link", { name: "کشف", exact: true });
+  await discover.hover();
+  await expect(discover.getByText("کشف", { exact: true })).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
   await header.getByRole("link", { name: "سبد" }).focus();
   await page.keyboard.press("Tab");
   await expect(enableDark).toBeFocused();

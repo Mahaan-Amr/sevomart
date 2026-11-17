@@ -26,7 +26,7 @@
       rgb(255 255 255 / 13%)
     ),
     linear-gradient(180deg, rgb(255 255 255 / 37%), transparent 55%),
-    rgb(250 248 248 / 16%);
+    rgb(250 248 248 / 78%);
   box-shadow:
     0 14px 32px rgb(47 37 40 / 14%),
     0 3px 12px rgb(255 255 255 / 68%),
@@ -137,7 +137,6 @@
   max-width: 100%;
   padding: 2px 4px;
   border-radius: 4px;
-  background: var(--color-surface);
   color: inherit;
   font-size: 11px;
   font-weight: 600;
@@ -243,8 +242,4 @@
 
 :global(body):has([data-home-theme="dark"]) .bar a:hover {
   background: var(--color-cover-start);
-}
-
-:global(body):has([data-home-theme="dark"]) .label {
-  background: transparent;
 }
